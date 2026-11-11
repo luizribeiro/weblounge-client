@@ -197,6 +197,7 @@ export function MobileConversation(props: MobileConversationProps) {
           />
           <MessageList
             bufferId={props.buffer.id}
+            channelStatus={props.buffer.channel_status}
             foregroundExitEpoch={props.foregroundExitEpoch}
             messages={props.messages}
             timeline={props.timeline}

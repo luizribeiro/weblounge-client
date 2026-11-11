@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { densityPresets } from "../../density/density";
+import type { SystemProjection } from "../../engine/generated/SystemProjection";
 import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type {
   BufferProjection,
@@ -60,9 +61,17 @@ import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionChips } from "./ReactionChips";
+import {
+  estimateSystemLineHeight,
+  systemLineSizeRevision,
+} from "./timeline/item-size-estimate";
+import { type RowFamily, topPadding } from "./timeline/row-spacing";
+import { SystemLine } from "./timeline/SystemLine";
+import { systemLineText, systemLineWords } from "./timeline/system-line-words";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
+  readonly channelStatus?: BufferProjection["channel_status"] | undefined;
   readonly foreground?: boolean | undefined;
   readonly foregroundExitEpoch?: number | undefined;
   readonly historyState?: HistoryState | undefined;
@@ -116,6 +125,14 @@ type TimelineRow =
       readonly engineOrder: TimelineItem["order"];
     }
   | {
+      readonly kind: "system";
+      readonly key: string;
+      readonly contentVersion: number;
+      readonly itemId: number;
+      readonly system: SystemProjection;
+      readonly engineOrder: TimelineItem["order"];
+    }
+  | {
       readonly kind: "message";
       readonly key: string;
       readonly message: MessageProjection;
@@ -134,6 +151,14 @@ type DisplayTimelineItem =
       readonly kind: "membership";
       readonly key: string;
       readonly membership: MembershipProjection;
+      readonly order: TimelineItem["order"];
+      readonly day: TimelineItem["day"];
+    }
+  | {
+      readonly kind: "system";
+      readonly contentVersion: number;
+      readonly id: number;
+      readonly system: SystemProjection;
       readonly order: TimelineItem["order"];
       readonly day: TimelineItem["day"];
     };
@@ -213,9 +238,33 @@ export function MessageList(props: MessageListProps) {
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const [measurementEpoch, setMeasurementEpoch] = createSignal(0);
+  const [expandedSystemIds, setExpandedSystemIds] = createSignal<
+    ReadonlySet<number>
+  >(new Set());
   const rows = createMemo(() =>
     timelineRows(orderedItems(), dividerMark(), props.historyState),
   );
+  const newestOwnKickId = createMemo(() => {
+    const items = orderedItems();
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (
+        item !== undefined &&
+        item.body.family === "system" &&
+        item.body.line.type === "event" &&
+        item.body.line.event.type === "kick" &&
+        item.body.line.event.subject.type === "you"
+      )
+        return item.id;
+    }
+    return undefined;
+  });
+  const toggleSystem = (itemId: number, expanded: boolean) => {
+    const next = new Set(expandedSystemIds());
+    if (expanded) next.add(itemId);
+    else next.delete(itemId);
+    setExpandedSystemIds(next);
+  };
   const rowSizeRevision = (
     row: TimelineRow,
     index: number,
@@ -227,6 +276,7 @@ export function MessageList(props: MessageListProps) {
       row.kind === "message" ? row.startsMobileGroup : undefined;
     const cached = rowRevisionCache.get(row.key);
     if (
+      row.kind !== "system" &&
       cached?.source === source &&
       cached.groupStart === groupStart &&
       cached.spacing === spacing
@@ -235,7 +285,17 @@ export function MessageList(props: MessageListProps) {
     const revision =
       row.kind === "message"
         ? messageSizeRevision(row.message, groupStart)
-        : decorationSizeRevision(row);
+        : row.kind === "system"
+          ? systemLineSizeRevision(
+              row.itemId,
+              row.contentVersion,
+              expandedSystemIds().has(row.itemId),
+              props.channelStatus === "kicked" &&
+                row.itemId === newestOwnKickId(),
+              rowFamily(currentRows[index - 1]) ?? "message",
+              props.presentation ?? "desktop",
+            )
+          : decorationSizeRevision(row);
     const value = `${revision}\u0000${spacing}`;
     rowRevisionCache.set(row.key, {
       groupStart,
@@ -384,6 +444,24 @@ export function MessageList(props: MessageListProps) {
       const currentRows = rows();
       const row = currentRows[index];
       const spacing = lineRowSpacing(currentRows, index);
+      const width =
+        observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
+      if (row?.kind === "system") {
+        const revision = rowSizeRevision(row, index, currentRows);
+        const cached = estimatedSizes.get(row.key);
+        if (cached?.revision === revision) return cached.size;
+        const estimated = estimateSystemLineHeight(
+          row.system,
+          width,
+          estimatedDensity,
+          props.presentation ?? "desktop",
+          expandedSystemIds().has(row.itemId),
+          props.channelStatus === "kicked" && row.itemId === newestOwnKickId(),
+          spacing,
+        );
+        estimatedSizes.set(row.key, { revision, size: estimated });
+        return estimated;
+      }
       if (row?.kind !== "message")
         return estimateDecorationHeight(
           row?.kind,
@@ -391,8 +469,6 @@ export function MessageList(props: MessageListProps) {
           props.presentation,
           spacing,
         );
-      const width =
-        observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
       const revision = rowSizeRevision(row, index, currentRows);
       if (cached?.revision === revision) return cached.size;
@@ -946,6 +1022,10 @@ export function MessageList(props: MessageListProps) {
             <For each={virtualItems}>
               {(virtualRow) => {
                 const row = () => rows()[virtualRow.index];
+                const systemRow = () => {
+                  const current = row();
+                  return current?.kind === "system" ? current : undefined;
+                };
                 const measuredStart = () => {
                   measurementEpoch();
                   return renderedRowStart(
@@ -976,11 +1056,19 @@ export function MessageList(props: MessageListProps) {
                   >
                     <TimelineRowView
                       index={virtualRow.index}
+                      canRejoin={
+                        props.channelStatus === "kicked" &&
+                        systemRow()?.itemId === newestOwnKickId()
+                      }
+                      expanded={expandedSystemIds().has(
+                        systemRow()?.itemId ?? -1,
+                      )}
                       nickLookup={nickLookup()}
                       onOpenChannel={props.onOpenChannel}
                       onOpenDirect={props.onOpenDirect}
                       onOpenExternal={props.onOpenExternal}
                       onRejoin={props.onRejoin}
+                      onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
                       presentation={props.presentation}
                       row={row()}
@@ -1032,12 +1120,15 @@ function renderedRowStart(
 }
 
 function TimelineRowView(props: {
+  readonly canRejoin: boolean;
+  readonly expanded: boolean;
   readonly index: number;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRejoin?: (() => void) | undefined;
+  readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly row: TimelineRow | undefined;
@@ -1111,6 +1202,23 @@ function TimelineRowView(props: {
                   </>
                 )}
               </div>
+            )}
+          </Match>
+          <Match when={row.kind === "system"}>
+            {row.kind === "system" && (
+              <SystemLine
+                canRejoin={props.canRejoin}
+                expanded={props.expanded}
+                onAction={(action) => {
+                  if (action === "expand")
+                    props.onToggleSystem(row.itemId, true);
+                  else if (action === "collapse")
+                    props.onToggleSystem(row.itemId, false);
+                  else if (action === "rejoin") props.onRejoin?.();
+                }}
+                presentation={props.presentation ?? "desktop"}
+                system={row.system}
+              />
             )}
           </Match>
         </Switch>
@@ -1424,6 +1532,16 @@ function timelineRows(
         engineOrder: item.order,
       });
       previousGroupMessage = undefined;
+    } else if (item.kind === "system") {
+      rows.push({
+        kind: "system",
+        key: `system-${item.id}`,
+        contentVersion: item.contentVersion,
+        itemId: item.id,
+        system: item.system,
+        engineOrder: item.order,
+      });
+      previousGroupMessage = undefined;
     }
   }
   return rows;
@@ -1434,21 +1552,6 @@ function projectDisplayItems(
 ): DisplayTimelineItem[] {
   const displayItems: DisplayTimelineItem[] = [];
   for (const item of items) {
-    const memberships = timelineMemberships(item);
-    for (const [index, membership] of memberships.entries())
-      displayItems.push({
-        kind: "membership",
-        key:
-          memberships.length === 1
-            ? `membership-${item.id}`
-            : `membership-${item.id}-${index}`,
-        membership,
-        order: item.order,
-        day: item.day,
-      });
-    if (memberships.length > 0) {
-      continue;
-    }
     if (item.body.family === "message")
       displayItems.push({
         kind: "message",
@@ -1456,84 +1559,17 @@ function projectDisplayItems(
         order: item.order,
         day: item.day,
       });
+    else if (item.body.family === "system")
+      displayItems.push({
+        kind: "system",
+        contentVersion: item.content_version,
+        id: item.id,
+        system: item.body,
+        order: item.order,
+        day: item.day,
+      });
   }
   return displayItems;
-}
-
-function timelineMemberships(item: TimelineItem): MembershipProjection[] {
-  if (item.body.family !== "system") return [];
-  const line = item.body.line;
-  if (line.type === "event") {
-    const event = line.event;
-    if (event.type !== "kick" || event.subject.type !== "you") return [];
-    return [
-      {
-        type: "kicked",
-        id: item.id,
-        actor:
-          event.actor.type === "user" ? event.actor.nick : event.actor.name,
-        reason: event.reason,
-        server_time_ms: item.body.time_ms,
-        received_at_ms: item.order[1],
-      },
-    ];
-  }
-  const timeMs = item.body.time_ms;
-  return line.clauses.flatMap((clause) => {
-    if (clause.type === "joined")
-      return [
-        membershipChange(
-          item,
-          timeMs,
-          "joined",
-          clause.people.map((person) => person.nick),
-        ),
-      ];
-    if (clause.type === "reconnected" || clause.type === "rejoined")
-      return [
-        membershipChange(
-          item,
-          timeMs,
-          "joined",
-          clause.people.map((person) => person.nick),
-        ),
-      ];
-    if (clause.type === "joined_and_left")
-      return [
-        membershipChange(
-          item,
-          timeMs,
-          "parted",
-          clause.people.map((person) => person.nick),
-        ),
-      ];
-    if (clause.type === "left" || clause.type === "quit")
-      return [
-        membershipChange(
-          item,
-          timeMs,
-          clause.type === "left" ? "parted" : "quit",
-          clause.people.map(({ person }) => person.nick),
-        ),
-      ];
-    return [];
-  });
-}
-
-function membershipChange(
-  item: TimelineItem,
-  timeMs: number,
-  kind: "joined" | "parted" | "quit",
-  nicks: readonly string[],
-): MembershipProjection {
-  return {
-    type: "change",
-    id: item.id,
-    kind,
-    nicks: [...nicks],
-    server_time_ms: timeMs,
-    received_at_ms: item.order[1],
-  };
 }
 
 function unreadStartId(
@@ -1701,6 +1737,8 @@ function rowRevisionSource(row: TimelineRow): object | string {
       return row.message;
     case "membership":
       return row.membership;
+    case "system":
+      return row.system;
     case "history":
       return row.state;
     case "day":
@@ -1735,6 +1773,8 @@ function decorationSizeRevision(
       return row.membership.type === "change"
         ? `${row.key}:${row.membership.kind}:${row.membership.nicks.join("\u0001")}`
         : `${row.key}:${row.membership.actor}:${row.membership.reason ?? ""}`;
+    case "system":
+      return `${row.key}:${row.contentVersion}`;
     case "day":
     case "new":
       return row.key;
@@ -1766,6 +1806,7 @@ function estimateDecorationHeight(
           Number.parseFloat(preset.oneLineRowPadding);
     return systemLineHeight + padding;
   }
+  if (kind === "system") return systemLineHeight;
   const [topPadding, bottomPadding] =
     presentation === "mobile"
       ? [preset.mobileDividerTopPadding, preset.mobileDividerBottomPadding]
@@ -1783,17 +1824,23 @@ function lineRowSpacing(
 ): LineSpacing {
   const current = rows[index];
   const previous = rows[index - 1];
-  if (current === undefined || !isSystemLineRow(current))
-    return isDividerRow(previous) ? "after-divider" : "after-message";
-  if (isDividerRow(previous)) return "after-divider";
-  return previous === undefined || isSystemLineRow(previous)
-    ? "after-line"
-    : "after-message";
+  return topPadding(
+    rowFamily(previous),
+    rowFamily(current) ?? "message",
+    "desktop",
+  );
+}
+
+function rowFamily(row: TimelineRow | undefined): RowFamily | undefined {
+  if (row === undefined) return undefined;
+  if (isDividerRow(row)) return "divider";
+  return isSystemLineRow(row) ? "line" : "message";
 }
 
 function isSystemLineRow(row: TimelineRow | undefined): boolean {
   return (
     row?.kind === "membership" ||
+    row?.kind === "system" ||
     (row?.kind === "message" && isNoticeMessage(row.message))
   );
 }
@@ -1864,11 +1911,16 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
     if (row.kind === "day") return { kind: "day-divider", label: row.label };
     if (row.kind === "membership")
       return {
-        kind: "membership",
+        kind: "system",
         text:
           row.membership.type === "kicked"
             ? `← ${kickText(row.membership)}`
             : `${membershipArrow(row.membership.kind)} ${formatNicks(row.membership.nicks)} ${membershipVerb(row.membership.kind)}`,
+      };
+    if (row.kind === "system")
+      return {
+        kind: "system",
+        text: systemLineText(systemLineWords(row.system.line).segments),
       };
     if (row.kind === "message" && row.message.kind === "action")
       return {
@@ -1887,7 +1939,7 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
         text: row.message.text,
       };
     if (row.kind === "message" && isNoticeMessage(row.message))
-      return { kind: "membership", text: noticeText(row.message) };
+      return { kind: "system", text: noticeText(row.message) };
     return undefined;
   });
 }

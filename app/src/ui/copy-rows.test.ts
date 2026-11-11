@@ -46,4 +46,13 @@ describe("serializeCopyRows", () => {
   it("serializes an empty range as empty text", () => {
     expect(serializeCopyRows([])).toBe("");
   });
+
+  it("copies system-line wording without visual chrome", () => {
+    expect(
+      serializeCopyRows([
+        { kind: "system", text: "kiwi, zed, ana and 3 others joined" },
+        { kind: "system", text: "mel kicked you: “link spam”" },
+      ]),
+    ).toBe("kiwi, zed, ana and 3 others joined\nmel kicked you: “link spam”");
+  });
 });

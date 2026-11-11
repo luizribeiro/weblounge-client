@@ -205,7 +205,7 @@ it("labels a divider from its engine day instead of its order", () => {
   }
 });
 
-it("uses engine days for dividers and membership run boundaries", () => {
+it("uses engine days for dividers and system-run boundaries", () => {
   const first = membershipItem({
     type: "change",
     id: 20,
@@ -234,7 +234,7 @@ it("uses engine days for dividers and membership run boundaries", () => {
   ));
 
   expect(document.querySelectorAll("[data-day-divider]")).toHaveLength(2);
-  expect(document.querySelectorAll("[data-membership-row]")).toHaveLength(2);
+  expect(document.querySelectorAll("[data-system-line]")).toHaveLength(2);
 });
 
 it("opens non-own authors and mentions through the same nickname action", () => {
@@ -1216,6 +1216,7 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   const rejoin = vi.fn();
   render(() => (
     <MessageList
+      channelStatus="kicked"
       memberships={[membership, kicked]}
       messages={messages}
       onRejoin={rejoin}
@@ -1232,9 +1233,11 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(screen.getByText("New")).toBeInTheDocument();
-  expect(screen.getByText("→ mel, rafa and cyd joined")).toBeInTheDocument();
-  expect(screen.getByText(/operator kicked you: too loud/u)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Rejoin" }));
+  expect(screen.getByLabelText("mel, rafa and cyd joined")).toBeVisible();
+  expect(
+    screen.getByLabelText("operator kicked you: “too loud” · Rejoin"),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Rejoin channel" }));
   expect(rejoin).toHaveBeenCalledOnce();
   expect(screen.getByText("waves").closest("[data-message-row]")).toHaveClass(
     /action/,
@@ -1246,7 +1249,7 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
-it("renders engine membership runs with the legacy wording and breakers", async () => {
+it("renders engine system runs with typed wording and breakers", async () => {
   const change = (
     id: number,
     kind: "joined" | "parted" | "quit",
@@ -1301,15 +1304,15 @@ it("renders engine membership runs with the legacy wording and breakers", async 
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(screen.getByText("→ mel and rafa joined")).toBeVisible();
+  expect(screen.getByLabelText("mel and rafa joined")).toBeVisible();
   expect(screen.getByText("membership run breaker")).toBeVisible();
-  expect(screen.getByText("→ cyd and dana joined")).toBeVisible();
-  expect(screen.getByText("← mel and rafa left")).toBeVisible();
-  expect(screen.getByText("← cyd and dana quit")).toBeVisible();
-  expect(document.querySelectorAll("[data-membership-row]")).toHaveLength(5);
+  expect(screen.getByLabelText("cyd and dana joined")).toBeVisible();
+  expect(screen.getByLabelText("mel and rafa left")).toBeVisible();
+  expect(screen.getByLabelText("cyd and dana quit")).toBeVisible();
+  expect(document.querySelectorAll("[data-system-line]")).toHaveLength(5);
 });
 
-it("keeps semantic membership clauses visible with the legacy wording", () => {
+it("keeps semantic clauses together in one system run", () => {
   const item = membershipItem({
     type: "change",
     id: 20,
@@ -1335,18 +1338,80 @@ it("keeps semantic membership clauses visible with the legacy wording", () => {
 
   render(() => <MessageList messages={[]} timeline={timelineView([item])} />);
 
-  expect(screen.getByText("→ mel joined")).toBeVisible();
-  expect(screen.getByText("← rafa left")).toBeVisible();
+  expect(
+    screen.getByLabelText("mel reconnected · rafa joined and left"),
+  ).toBeVisible();
 });
 
-it("remeasures collapsed membership content on its first revised frame", async () => {
+it("keeps expanded runs local to one pane", () => {
+  const item = membershipItem({
+    type: "change",
+    id: 20,
+    kind: "joined",
+    nicks: ["kiwi", "zed", "ana", "tomo", "bob"],
+    server_time_ms: 20,
+    received_at_ms: 20,
+  });
+  render(() => (
+    <>
+      <MessageList messages={[]} timeline={timelineView([item])} />
+      <MessageList messages={[]} timeline={timelineView([item])} />
+    </>
+  ));
+
+  const expanders = screen.getAllByRole("button", { name: "Show 2 others" });
+  expect(expanders).toHaveLength(2);
+  fireEvent.click(expanders[0] as HTMLElement);
+
+  expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(
+    document.querySelectorAll('[data-system-line][data-expanded="true"]'),
+  ).toHaveLength(1);
+});
+
+it("offers Rejoin only on the newest own kick while kicked", () => {
+  const first = membershipItem({
+    type: "kicked",
+    id: 20,
+    actor: "mel",
+    reason: null,
+    server_time_ms: 20,
+    received_at_ms: 20,
+  });
+  const newest = membershipItem({
+    type: "kicked",
+    id: 21,
+    actor: "iris",
+    reason: null,
+    server_time_ms: 21,
+    received_at_ms: 21,
+  });
+  render(() => (
+    <MessageList
+      channelStatus="kicked"
+      messages={[]}
+      timeline={timelineView([first, newest])}
+    />
+  ));
+
+  expect(
+    screen.getAllByRole("button", { name: "Rejoin channel" }),
+  ).toHaveLength(1);
+  expect(screen.getByLabelText("mel kicked you")).toBeVisible();
+  expect(screen.getByLabelText("iris kicked you · Rejoin")).toBeVisible();
+});
+
+it("remeasures revised system-line content on its first revised frame", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       if (!this.matches("li[data-row-key]")) return rect(0, 0);
-      const membership = this.querySelector("[data-membership-row]");
-      if (membership === null) return rect(0, 28);
-      return rect(0, membership.textContent?.includes("and") ? 70 : 30);
+      const systemLine = this.querySelector("[data-system-line]");
+      if (systemLine === null) return rect(0, 28);
+      return rect(0, systemLine.textContent?.includes("and") ? 70 : 30);
     },
   );
   const initialMembership: MembershipProjection = {
@@ -1367,14 +1432,17 @@ it("remeasures collapsed membership content on its first revised frame", async (
       ]}
       timeline={timelineView([
         messageItem({ ...message, received_at_ms: 1 }),
-        membershipItem(memberships()[0] as MembershipProjection),
+        {
+          ...membershipItem(memberships()[0] as MembershipProjection),
+          content_version: memberships()[0]?.nicks.length ?? 0,
+        },
         messageItem({ ...message, id: 2, received_at_ms: 3 }),
       ])}
     />
   ));
   const membershipHeight = () => {
     const membership = container.querySelector<HTMLLIElement>(
-      '[data-row-key="membership-20"]',
+      '[data-row-key="system-20"]',
     );
     const following = container.querySelector<HTMLLIElement>(
       '[data-row-key="message-2"]',

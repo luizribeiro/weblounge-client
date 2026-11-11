@@ -414,6 +414,7 @@ export function DesktopShell(props: DesktopShellProps) {
               )}
               <MessageList
                 bufferId={activeBuffer()?.id}
+                channelStatus={activeBuffer()?.channel_status}
                 foregroundExitEpoch={props.foregroundExitEpoch}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
                 timeline={props.timelines?.get(activeBuffer()?.id ?? -1)}
