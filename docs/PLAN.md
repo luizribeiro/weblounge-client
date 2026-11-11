@@ -8,16 +8,15 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 1d: delete the old timeline events (design 26 §8 1d).
-2. Buffer events 2: local day and system dedup.
-3. Buffer events 3: system lines for nick and mode changes.
-4. Buffer events 7: missing-history gap and divider rows.
-5. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-6. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-7. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-8. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-9. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-10. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 2: local day and system dedup.
+2. Buffer events 3: system lines for nick and mode changes.
+3. Buffer events 7: missing-history gap and divider rows.
+4. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+5. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+6. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+7. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+8. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+9. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -31,6 +30,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 1d; removed the legacy transcript protocol events and made the ordered
+  `TimelineChanged` patch the sole transcript stream while preserving the app's temporary
+  membership-run compatibility projection.
 - 2026-11-11: kept `/join` navigation to a projected channel local while its network reconnects,
   focusing joined buffers locally and rejoining cached buffers instead of stranding their drafts.
 - 2026-11-11: stabilized the timeline jump-count journey by giving its asserted oldest row a
@@ -66,6 +68,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Delete the legacy transcript events after auditing every consumer. Engine previews, unread
+  facts and notifications already derive from the record model; push parsing remains independent;
+  transcript copy, last-own selection and read dwell now consume the ordered timeline. Protocol
+  generation no longer exports snapshots or per-message append, prepend, update, confirmation,
+  retry or membership events. Runtime and app tests assert the atomic patches and their final
+  order, while `MessageList` retains the batch-1c app-side membership collapse until batch 3.
 - [x] Keep an existing channel navigable through `/join` while its transport reconnects. A reload
   can restore the buffer while the replacement connection accepts requests but its projection has
   not reached `Online`; JOIN now resolves projected channels before the generic offline rejection.
