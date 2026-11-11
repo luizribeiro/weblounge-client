@@ -6,6 +6,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import {
@@ -31,6 +32,13 @@ interface SeededChannel {
   readonly newest: string;
 }
 
+interface SeedFixture {
+  readonly channel: string;
+  readonly owner: IrcClient;
+  readonly senders: readonly IrcClient[];
+  readonly suffix: string;
+}
+
 const shells = [
   { name: "desktop", context: { viewport: { width: 1_400, height: 1_000 } } },
   {
@@ -44,12 +52,38 @@ for (const shell of shells) {
     browser,
     baseURL,
   }) => {
-    const seeded = await seedChannel();
-    const page = await openApp(browser, baseURL, shell.context);
+    const fixture = await createSeedFixture();
+    const page = await openApp(
+      browser,
+      baseURL,
+      shell.context,
+      fixture.channel,
+    );
     try {
       const row = page
         .locator("[data-buffer-id]")
-        .filter({ hasText: seeded.channel });
+        .filter({ hasText: fixture.channel });
+      await expect(row).toBeVisible();
+      if (shell.name === "desktop") {
+        await page
+          .getByRole("button", { name: "#lounge", exact: true })
+          .click();
+        await expect(row).not.toHaveAttribute("aria-current", "page");
+        await expect(row).toHaveAttribute("data-unread", "0");
+      } else await expect(row).toHaveAccessibleName(fixture.channel);
+
+      const seeded = await seedChannel(fixture);
+      if (shell.name === "desktop")
+        await expect(row).toHaveAttribute("data-unread", /^[1-9]\d*$/u);
+      else
+        await expect(row).toHaveAccessibleName(
+          new RegExp(`^${fixture.channel}, (?:[1-9]\\d*|99\\+) unread`, "u"),
+        );
+      await expect
+        .poll(async () => (await snapshotRow(page, seeded.channel))?.preview)
+        .toBe(`weblounge-bot: ${seeded.newest}`);
+
+      await page.goto(appUrl(seeded.channel));
       await expect(row).toBeVisible();
       await expectLatestPageLoaded(row, shell.name, seeded);
       await row.click();
@@ -89,12 +123,13 @@ for (const shell of shells) {
         await expect(row).toHaveAttribute("data-unread", "0");
     } finally {
       await page.context().close();
-      await leaveChannel(seeded.channel);
+      closeSeedFixture(fixture);
+      await leaveChannel(fixture.channel);
     }
   });
 }
 
-async function seedChannel(): Promise<SeededChannel> {
+async function createSeedFixture(): Promise<SeedFixture> {
   const suffix = Date.now().toString(36);
   const channel = `#older-${suffix}`;
   const owner = await IrcClient.connect(
@@ -113,32 +148,37 @@ async function seedChannel(): Promise<SeededChannel> {
       ),
     ),
   );
-  try {
-    const [louro] = senders;
-    if (louro === undefined) throw new Error("no history sender");
-    const split = await louro.privmsgSplitConfirmed(
-      channel,
-      Array.from({ length: 60 }, (_, index) => `louro-${suffix}-${index}`).join(
-        " ",
-      ),
-    );
-    const multiline = `louro multiline ${suffix} ${"long ".repeat(70)}\nsecond line ${suffix}`;
-    await louro.multilineConfirmed(channel, multiline);
-    const ownMultiline = `own multiline ${suffix}\nown second ${suffix}`;
-    await owner.multilineConfirmed(channel, ownMultiline);
-    await sendFillers(senders, channel, suffix);
-    const newest = `newest ${suffix}`;
-    await louro.privmsgConfirmed(channel, newest);
-    return {
-      channel,
-      older: [...split, multiline],
-      ownMultiline,
-      newest,
-    };
-  } finally {
-    owner.close();
-    for (const sender of senders) sender.close();
-  }
+  return { channel, owner, senders, suffix };
+}
+
+async function seedChannel(fixture: SeedFixture): Promise<SeededChannel> {
+  const { channel, owner, senders, suffix } = fixture;
+  const [louro] = senders;
+  if (louro === undefined) throw new Error("no history sender");
+  const split = await louro.privmsgSplitConfirmed(
+    channel,
+    Array.from({ length: 60 }, (_, index) => `louro-${suffix}-${index}`).join(
+      " ",
+    ),
+  );
+  const multiline = `louro multiline ${suffix} ${"long ".repeat(70)}\nsecond line ${suffix}`;
+  await louro.multilineConfirmed(channel, multiline);
+  const ownMultiline = `own multiline ${suffix}\nown second ${suffix}`;
+  await owner.multilineConfirmed(channel, ownMultiline);
+  await sendFillers(senders, channel, suffix);
+  const newest = `newest ${suffix}`;
+  await louro.privmsgConfirmed(channel, newest);
+  return {
+    channel,
+    older: [...split, multiline],
+    ownMultiline,
+    newest,
+  };
+}
+
+function closeSeedFixture(fixture: SeedFixture): void {
+  fixture.owner.close();
+  for (const sender of fixture.senders) sender.close();
 }
 
 async function sendFillers(
@@ -176,12 +216,21 @@ async function openApp(
   browser: Browser,
   baseURL: string | undefined,
   options: Parameters<Browser["newContext"]>[0],
+  channel: string,
 ): Promise<Page> {
   const context = await browser.newContext({ ...options, baseURL });
   const page = await context.newPage();
   await useDedicatedWorker(page);
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(appUrl(channel));
   return page;
+}
+
+function appUrl(channel: string): string {
+  const parameters = new URLSearchParams({
+    "irc-password": "weblounge-test",
+    "irc-autojoin": channel,
+  });
+  return `/?${parameters.toString()}`;
 }
 
 async function expectLatestPageLoaded(
@@ -221,4 +270,35 @@ async function rowTime(row: Locator): Promise<number> {
   return new Date(
     (await row.locator("time").getAttribute("datetime")) ?? 0,
   ).getTime();
+}
+
+interface SnapshotRow {
+  readonly preview?: string;
+  readonly title?: string;
+}
+
+async function snapshotRow(
+  page: Page,
+  title: string,
+): Promise<SnapshotRow | undefined> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(async (value, expectedTitle) => {
+      const bytes = await new Promise<unknown>((resolve, reject) => {
+        const request = value
+          .transaction("cache")
+          .objectStore("cache")
+          .get(new TextEncoder().encode("chat-list-snapshot"));
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      if (!(bytes instanceof Uint8Array)) return undefined;
+      const snapshot = JSON.parse(new TextDecoder().decode(bytes)) as {
+        rows?: readonly SnapshotRow[];
+      };
+      return snapshot.rows?.find((row) => row.title === expectedTitle);
+    }, title);
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }

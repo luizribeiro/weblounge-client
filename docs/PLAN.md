@@ -19,8 +19,7 @@ The single place a fresh session reads to know where the project stands. Update 
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
 - Closing a DM doesn't persist the chat-list snapshot.
-- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`; the
-  production-older-history desktop unread precondition.
+- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
 - 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
 
 ### Waiting
@@ -30,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 ### Done recently
 - 2026-11-11: pinned reconnect and lag transcript gaps to keep OS badge counts exact while
   conversation badges and unread dividers reflect incomplete history until catch-up covers it.
+- 2026-11-11: made the production older-history fixture establish and persist unread traffic before
+  relaunching into history paging. The previous fresh-device launch correctly seeded its local read
+  boundary after the already-stored messages, so its desktop unread readiness check could never hold.
 - 2026-11-11: buffer events 7; represented capped, lagged, unavailable and failed history ranges as
   mergeable timeline gaps, cleared covered markers, and replaced ad hoc transcript boundaries with
   the signed responsive divider family for gaps, history start/loading, empty, day and New rows.
