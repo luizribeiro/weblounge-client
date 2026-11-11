@@ -2103,6 +2103,19 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn projected_channel_for_join(&self, channel: &str) -> Option<(BufferId, bool)> {
+        let folded = self.casemapping.fold(channel);
+        self.buffers.iter().find_map(|(buffer_id, buffer)| {
+            (buffer.projection.kind == BufferKind::Channel
+                && self.casemapping.fold(&buffer.projection.title) == folded)
+                .then_some((
+                    *buffer_id,
+                    buffer.projection.channel_status == Some(ChannelStatus::Joined)
+                        && buffer.projection.available != Some(false),
+                ))
+        })
+    }
+
     pub(crate) fn snapshot_conversation_for_channel(
         &self,
         channel: &papo::ChannelName,

@@ -734,7 +734,23 @@ impl Runtime {
             |running| running.client.state().isupport().chantypes().to_owned(),
         );
         let parsed = commands::parse_with_registry(commands::registry(), input, &chantypes);
+        let projected_join = match &parsed {
+            Ok(Command::Join { channels, .. }) => self.projected_channels(&channels.0),
+            _ => None,
+        };
+        if let Some(channels) = projected_join
+            .as_ref()
+            .filter(|channels| channels.iter().all(|(_, focusable)| *focusable))
+        {
+            if let Some(name) = commands::explicit_command_name(input)
+                && let Some(running) = lock(&self.state).network.as_mut()
+            {
+                running.model.remember_command(name);
+            }
+            return focus_projected_channels(&id, channels);
+        }
         if parsed.as_ref().is_ok_and(server_command)
+            && projected_join.is_none()
             && !lock(&self.state)
                 .network
                 .as_ref()
@@ -1596,6 +1612,15 @@ impl Runtime {
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
         Vec::new()
+    }
+
+    fn projected_channels(&self, channels: &[String]) -> Option<Vec<(BufferId, bool)>> {
+        let state = lock(&self.state);
+        let model = &state.network.as_ref()?.model;
+        channels
+            .iter()
+            .map(|channel| model.projected_channel_for_join(channel))
+            .collect()
     }
 
     fn query(&self, command_id: String, nick: String, text: Option<String>) -> Vec<EngineToUi> {
@@ -5238,6 +5263,20 @@ fn send_events(outbound: &mpsc::UnboundedSender<EngineToUi>, events: Vec<EngineT
     }
 }
 
+fn focus_projected_channels(command_id: &str, channels: &[(BufferId, bool)]) -> Vec<EngineToUi> {
+    let mut output = channels
+        .iter()
+        .map(|(buffer_id, _)| EngineToUi::FocusBufferRequested {
+            command_id: command_id.into(),
+            buffer_id: *buffer_id,
+        })
+        .collect::<Vec<_>>();
+    output.push(EngineToUi::CommandResult {
+        id: command_id.into(),
+    });
+    output
+}
+
 fn identify_line(password: &str) -> papo::Line {
     papo::Line::new("PRIVMSG")
         .param("NickServ")
@@ -8519,7 +8558,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn submit_join_focuses_an_existing_channel_without_rejoining() {
+    async fn submit_join_focuses_an_existing_channel_while_reconnecting() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -8537,31 +8576,28 @@ async fn delay(duration: Duration) {
             .model
             .sync_channels(&client.state());
         let runtime = Runtime { state, outbound };
-        mark_runtime_online(&runtime);
 
-        assert!(
-            runtime
-                .request(EngineRequestEnvelope {
-                    id: "join-existing".into(),
-                    request: EngineRequest::SubmitInput {
-                        buffer_id: BufferId(1),
-                        input: "/join #room".into(),
-                    },
-                })
-                .is_empty()
-        );
-        let focus = receiver.recv().await.expect("existing channel is focused");
-        let result = receiver.recv().await.expect("join completes");
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "join-existing".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/join #room".into(),
+            },
+        });
+        let [focus, result] = output.as_slice() else {
+            panic!("existing channel focus completes locally")
+        };
         assert!(
             matches!(focus, EngineToUi::FocusBufferRequested { command_id, .. }
             if command_id == "join-existing")
         );
         assert_eq!(
             result,
-            EngineToUi::CommandResult {
+            &EngineToUi::CommandResult {
                 id: "join-existing".into()
             }
         );
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -8598,7 +8634,6 @@ async fn delay(duration: Duration) {
             _ = model.mark_vanished_restored_rows();
         }
         let runtime = Runtime { state, outbound };
-        mark_runtime_online(&runtime);
 
         assert_no_output(&runtime.request(EngineRequestEnvelope {
             id: "join-cached".into(),

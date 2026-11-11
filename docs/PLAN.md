@@ -31,6 +31,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: kept `/join` navigation to a projected channel local while its network reconnects,
+  focusing joined buffers locally and rejoining cached buffers instead of stranding their drafts.
 - 2026-11-11: stabilized the timeline jump-count journey by giving its asserted oldest row a
   deterministic server time before the concurrent multi-client seed.
 - 2026-11-11: buffer events 1c-ii; MessageList renders the engine's ordered timeline items and
@@ -64,6 +66,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep an existing channel navigable through `/join` while its transport reconnects. A reload
+  can restore the buffer while the replacement connection accepts requests but its projection has
+  not reached `Online`; JOIN now resolves projected channels before the generic offline rejection.
+  Already-joined channels focus locally, unavailable or kicked channels still use a real JOIN,
+  and unknown channels still reject offline.
 - [x] Keep the jump-count history journey's top-row assertion deterministic. Nine independent IRC
   writers can reach Ergo in a different order than the test's send loop, so the row labelled zero
   was sometimes correctly ordered below the virtualizer's top window. The fixture now confirms and
