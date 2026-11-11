@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
+import type { TimelineView } from "../../engine/timeline-store";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { MobileShell } from "./MobileShell";
@@ -79,6 +80,57 @@ it("opens a deep link above the chats list", () => {
   fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+});
+
+it("projects the active buffer's engine timeline into a deep-linked chat", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  const item = {
+    id: 9,
+    order: [1, 2, 3] as [number, number, number],
+    day: 0,
+    content_version: 0,
+    body: {
+      family: "system" as const,
+      time_ms: 1,
+      line: {
+        type: "run" as const,
+        clauses: [
+          {
+            type: "joined" as const,
+            people: [{ nick: "pat", nick_color_index: 1, me: false }],
+          },
+        ],
+      },
+    },
+  };
+  const timeline: TimelineView = {
+    items: [item],
+    geometry: "mixed",
+    change: { reset: true, upserted: [item], removed: [] },
+  };
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={buffer.id}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+      timelines={new Map([[buffer.id, timeline]])}
+    />
+  ));
+
+  expect(screen.getByText("→ pat joined")).toBeVisible();
 });
 
 it("projects the active buffer's typers into a deep-linked chat", () => {
