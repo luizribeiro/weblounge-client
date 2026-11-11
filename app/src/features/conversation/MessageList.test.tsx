@@ -15,6 +15,7 @@ import {
   keyboardLayoutCommitEvent,
   keyboardLayoutWillCommitEvent,
 } from "../../platform/viewport-geometry";
+import { formatTime } from "../../ui/format-time";
 import { composerGeometryChangeEvent } from "../composer/geometry";
 import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
@@ -1479,20 +1480,66 @@ it("uses one history-edge divider for loading and the reached boundary", async (
     loading: true,
   });
   const { container } = render(() => (
-    <MessageList historyState={historyState()} messages={[message]} />
+    <MessageList
+      bufferKind="channel"
+      bufferTitle="#room"
+      historyState={historyState()}
+      messages={[message]}
+    />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(container.querySelector("[data-history-edge]")).toHaveTextContent(
-    "Loading earlier messages…",
+    "Loading older messages…",
   );
   setHistoryState({ at_start: true, loading: false });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   expect(container.querySelector("[data-history-edge]")).toHaveTextContent(
-    "Start of history",
+    "Beginning of #room",
+  );
+  expect(container.querySelector("[data-history-edge]")).toHaveTextContent(
+    "Server history starts",
   );
   setHistoryState({ at_start: false, loading: false });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(container.querySelector("[data-history-edge]")).toBeNull();
+});
+
+it("renders a timeline gap as a dashed labelled divider", async () => {
+  const fromMs = Date.UTC(2026, 2, 3, 0, 12);
+  const toMs = Date.UTC(2026, 2, 3, 0, 19);
+  const { container } = render(() => (
+    <MessageList
+      messages={[]}
+      timeline={timelineView([gapItem(fromMs, toMs)])}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-gap-row]")).toHaveTextContent(
+    `Messages may be missing · ${formatTime(fromMs)} to ${formatTime(toMs)}`,
+  );
+  expect(container.querySelector("[data-gap-row]")).toHaveAttribute(
+    "role",
+    "separator",
+  );
+});
+
+it("renders the signed empty direct row after history settles", async () => {
+  const { container } = render(() => (
+    <MessageList
+      bufferKind="direct"
+      bufferTitle="iris"
+      historyState={{ at_start: true, loading: false }}
+      messages={[]}
+      timeline={timelineView([])}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-empty-row]")).toHaveTextContent(
+    "No messages yetMessages you and iris send will appear here.",
+  );
   expect(container.querySelector("[data-history-edge]")).toBeNull();
 });
 
@@ -2657,6 +2704,16 @@ function messageItem(value: MessageProjection): TimelineItem {
     day: 0,
     content_version: 0,
     body: { family: "message", ...value },
+  };
+}
+
+function gapItem(fromMs: number, toMs: number): TimelineItem {
+  return {
+    id: 99,
+    order: [fromMs, toMs, 99],
+    day: 0,
+    content_version: 0,
+    body: { family: "gap", from_ms: fromMs, to_ms: toMs },
   };
 }
 

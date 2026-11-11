@@ -269,35 +269,6 @@
 .noticeTopic {
   color: var(--wl-color-fg);
 }
-.divider,
-.newLine {
-  align-items: center;
-  color: var(--wl-color-muted);
-  display: flex;
-  font-size: 11px;
-  font-weight: 650;
-  gap: 10px;
-  line-height: var(--wl-message-system-line-height);
-  padding-block: var(--wl-density-message-divider-top-padding)
-    var(--wl-density-message-divider-bottom-padding);
-  padding-inline: 14px;
-}
-.divider::before,
-.divider::after,
-.newLine::before,
-.newLine::after {
-  background: var(--wl-color-border);
-  content: "";
-  flex: 1;
-  height: 1px;
-}
-.newLine {
-  color: var(--wl-color-accent);
-}
-.newLine::before,
-.newLine::after {
-  background: var(--wl-color-accent);
-}
 .jump {
   background: var(--wl-color-accent);
   border: 0;
@@ -414,10 +385,6 @@
   .row {
   --wl-message-highlight-inset: 0px;
   padding-block-start: 0;
-}
-.list[data-presentation="mobile"] :is(.divider, .newLine) {
-  padding-block: var(--wl-density-message-mobile-divider-top-padding)
-    var(--wl-density-message-mobile-divider-bottom-padding);
 }
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;

@@ -61,6 +61,7 @@ import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionChips } from "./ReactionChips";
+import { Divider } from "./timeline/Divider";
 import {
   estimateSystemLineHeight,
   systemLineSizeRevision,
@@ -71,6 +72,8 @@ import { systemLineText, systemLineWords } from "./timeline/system-line-words";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
+  readonly bufferKind?: BufferProjection["kind"] | undefined;
+  readonly bufferTitle?: string | undefined;
   readonly channelStatus?: BufferProjection["channel_status"] | undefined;
   readonly foreground?: boolean | undefined;
   readonly foregroundExitEpoch?: number | undefined;
@@ -105,7 +108,23 @@ type TimelineRow =
       readonly kind: "history";
       readonly key: string;
       readonly state: HistoryState;
+      readonly caption?: string | undefined;
+      readonly title: string;
       readonly engineOrder?: TimelineItem["order"] | undefined;
+    }
+  | {
+      readonly kind: "empty";
+      readonly key: string;
+      readonly caption: string;
+      readonly title: string;
+      readonly engineOrder?: TimelineItem["order"] | undefined;
+    }
+  | {
+      readonly kind: "gap";
+      readonly key: string;
+      readonly fromMs: number;
+      readonly toMs: number;
+      readonly engineOrder: TimelineItem["order"];
     }
   | {
       readonly kind: "day";
@@ -159,6 +178,14 @@ type DisplayTimelineItem =
       readonly contentVersion: number;
       readonly id: number;
       readonly system: SystemProjection;
+      readonly order: TimelineItem["order"];
+      readonly day: TimelineItem["day"];
+    }
+  | {
+      readonly kind: "gap";
+      readonly id: number;
+      readonly fromMs: number;
+      readonly toMs: number;
       readonly order: TimelineItem["order"];
       readonly day: TimelineItem["day"];
     };
@@ -242,7 +269,13 @@ export function MessageList(props: MessageListProps) {
     ReadonlySet<number>
   >(new Set());
   const rows = createMemo(() =>
-    timelineRows(orderedItems(), dividerMark(), props.historyState),
+    timelineRows(
+      orderedItems(),
+      dividerMark(),
+      props.historyState,
+      props.bufferKind,
+      props.bufferTitle,
+    ),
   );
   const newestOwnKickId = createMemo(() => {
     const items = orderedItems();
@@ -1151,23 +1184,47 @@ function TimelineRowView(props: {
       {(row) => (
         <Switch>
           <Match when={row.kind === "history"}>
-            <div class={styles.divider} data-history-edge="true">
-              <span>
-                {row.kind === "history" && row.state.loading
-                  ? t("messages.history.loading")
-                  : t("messages.history.start")}
-              </span>
-            </div>
+            {row.kind === "history" && (
+              <Divider
+                content={{
+                  kind: row.state.loading ? "loading" : "history",
+                  title: row.title,
+                  caption: row.caption,
+                }}
+              />
+            )}
+          </Match>
+          <Match when={row.kind === "empty"}>
+            {row.kind === "empty" && (
+              <Divider
+                content={{
+                  kind: "empty",
+                  title: row.title,
+                  caption: row.caption,
+                }}
+              />
+            )}
+          </Match>
+          <Match when={row.kind === "gap"}>
+            {row.kind === "gap" && (
+              <Divider
+                content={{
+                  kind: "gap",
+                  label: t("messages.gap", {
+                    from: formatTime(row.fromMs),
+                    to: formatTime(row.toMs),
+                  }),
+                }}
+              />
+            )}
           </Match>
           <Match when={row.kind === "day"}>
-            <div class={styles.divider} data-day-divider="true">
-              <span>{row.kind === "day" ? row.label : ""}</span>
-            </div>
+            {row.kind === "day" && (
+              <Divider content={{ kind: "day", label: row.label }} />
+            )}
           </Match>
           <Match when={row.kind === "new"}>
-            <div class={styles.newLine} data-new-line="true">
-              <span>{t("messages.new")}</span>
-            </div>
+            <Divider content={{ kind: "new", label: t("messages.new") }} />
           </Match>
           <Match when={row.kind === "message"}>
             {row.kind === "message" && (
@@ -1481,10 +1538,41 @@ function timelineRows(
   items: readonly TimelineItem[],
   readAtMs: number | null,
   historyState?: HistoryState,
+  bufferKind?: BufferProjection["kind"],
+  bufferTitle?: string,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
-  if (historyState?.loading === true || historyState?.at_start === true) {
-    rows.push({ kind: "history", key: "history-edge", state: historyState });
+  if (historyState?.loading === true) {
+    rows.push({
+      kind: "history",
+      key: "history-edge",
+      state: historyState,
+      title: t("messages.history.loading"),
+    });
+  } else if (historyState?.at_start === true && items.length > 0) {
+    rows.push({
+      kind: "history",
+      key: "history-edge",
+      state: historyState,
+      title: historyStartTitle(bufferKind, bufferTitle),
+      caption: t("messages.history.caption", {
+        date: formatCalendarDay(items[0]?.day),
+      }),
+    });
+  } else if (
+    historyState?.at_start === true &&
+    items.length === 0 &&
+    (bufferKind === "channel" || bufferKind === "direct")
+  ) {
+    rows.push({
+      kind: "empty",
+      key: "empty",
+      title: t("messages.empty.title"),
+      caption:
+        bufferKind === "direct"
+          ? t("messages.empty.direct", { target: bufferTitle ?? "" })
+          : t("messages.empty.channel", { target: bufferTitle ?? "" }),
+    });
   }
   let day: TimelineItem["day"] | undefined;
   let newInserted = false;
@@ -1542,6 +1630,15 @@ function timelineRows(
         engineOrder: item.order,
       });
       previousGroupMessage = undefined;
+    } else if (item.kind === "gap") {
+      rows.push({
+        kind: "gap",
+        key: `gap-${item.id}`,
+        fromMs: item.fromMs,
+        toMs: item.toMs,
+        engineOrder: item.order,
+      });
+      previousGroupMessage = undefined;
     }
   }
   return rows;
@@ -1565,6 +1662,15 @@ function projectDisplayItems(
         contentVersion: item.content_version,
         id: item.id,
         system: item.body,
+        order: item.order,
+        day: item.day,
+      });
+    else
+      displayItems.push({
+        kind: "gap",
+        id: item.id,
+        fromMs: item.body.from_ms,
+        toMs: item.body.to_ms,
         order: item.order,
         day: item.day,
       });
@@ -1640,10 +1746,24 @@ function formatDay(day: TimelineItem["day"]): string {
   const today = localDay(Date.now());
   if (day === today) return t("messages.date.today");
   if (day === today - 1) return t("messages.date.yesterday");
+  return formatCalendarDay(day);
+}
+
+function formatCalendarDay(day: TimelineItem["day"] | undefined): string {
+  if (day === undefined) return "";
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(new Date(day * localDayMilliseconds));
+}
+
+function historyStartTitle(
+  kind: BufferProjection["kind"] | undefined,
+  title: string | undefined,
+): string {
+  if (kind === "direct")
+    return t("messages.history.direct", { target: title ?? "" });
+  return t("messages.history.channel", { target: title ?? "" });
 }
 
 function messageTime(message: MessageProjection): number {
@@ -1740,7 +1860,11 @@ function rowRevisionSource(row: TimelineRow): object | string {
     case "system":
       return row.system;
     case "history":
-      return row.state;
+      return `${row.state.loading}:${row.state.at_start}:${row.title}:${row.caption ?? ""}`;
+    case "empty":
+      return `${row.title}:${row.caption}`;
+    case "gap":
+      return `${row.fromMs}:${row.toMs}`;
     case "day":
       return row.label;
     case "new":
@@ -1768,7 +1892,11 @@ function decorationSizeRevision(
 ): string {
   switch (row.kind) {
     case "history":
-      return `${row.key}:${row.state.loading}:${row.state.at_start}`;
+      return `${row.key}:${row.state.loading}:${row.state.at_start}:${row.caption ?? ""}`;
+    case "empty":
+      return `${row.key}:${row.caption}`;
+    case "gap":
+      return `${row.key}:${row.fromMs}:${row.toMs}`;
     case "membership":
       return row.membership.type === "change"
         ? `${row.key}:${row.membership.kind}:${row.membership.nicks.join("\u0001")}`
@@ -1846,7 +1974,13 @@ function isSystemLineRow(row: TimelineRow | undefined): boolean {
 }
 
 function isDividerRow(row: TimelineRow | undefined): boolean {
-  return row?.kind === "history" || row?.kind === "day" || row?.kind === "new";
+  return (
+    row?.kind === "history" ||
+    row?.kind === "empty" ||
+    row?.kind === "gap" ||
+    row?.kind === "day" ||
+    row?.kind === "new"
+  );
 }
 
 function measureRowElement(
