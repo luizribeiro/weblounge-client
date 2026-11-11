@@ -23,9 +23,11 @@ it("broadcasts optimistic state to every shared port", async () => {
     handle: () =>
       JSON.stringify([
         {
-          type: "messages_appended",
+          type: "timeline_changed",
           buffer_id: 2,
-          messages: [{ delivery: "optimistic" }],
+          reset: false,
+          upserted: [],
+          removed: [],
         },
         { type: "command_result", id: "send-1" },
       ]),
@@ -37,25 +39,24 @@ it("broadcasts optimistic state to every shared port", async () => {
   first.receive({ type: "request", payload: { id: "send-1" } });
   await vi.waitFor(() =>
     expect(first.sent).toContainEqual(
-      expect.objectContaining({ type: "messages_appended" }),
+      expect.objectContaining({ type: "timeline_changed" }),
     ),
   );
 
   expect(second.sent).toContainEqual(
-    expect.objectContaining({ type: "messages_appended" }),
+    expect.objectContaining({ type: "timeline_changed" }),
   );
   expect(second.sent).not.toContainEqual(
     expect.objectContaining({ type: "command_result" }),
   );
 });
 
-it("forwards timeline patches alongside their legacy turn", async () => {
+it("forwards timeline patches to every shared port", async () => {
   const first = new FakePort();
   const second = new FakePort();
   const runtime = new EngineWorkerRuntime(async () => ({
     handle: () =>
       JSON.stringify([
-        { type: "messages_appended", buffer_id: 2, messages: [] },
         {
           type: "timeline_changed",
           buffer_id: 2,
@@ -70,7 +71,7 @@ it("forwards timeline patches alongside their legacy turn", async () => {
   runtime.attach(second);
 
   first.receive({ type: "request", payload: { id: "turn-1" } });
-  await vi.waitFor(() => expect(first.sent).toHaveLength(3));
+  await vi.waitFor(() => expect(first.sent).toHaveLength(2));
 
   expect(
     first.sent.map((event) =>
@@ -78,14 +79,14 @@ it("forwards timeline patches alongside their legacy turn", async () => {
         ? event.type
         : undefined,
     ),
-  ).toEqual(["messages_appended", "timeline_changed", "command_result"]);
+  ).toEqual(["timeline_changed", "command_result"]);
   expect(
     second.sent.map((event) =>
       typeof event === "object" && event !== null && "type" in event
         ? event.type
         : undefined,
     ),
-  ).toEqual(["messages_appended", "timeline_changed"]);
+  ).toEqual(["timeline_changed"]);
 });
 
 it("routes asynchronous buffer focus requests only to the submitting port", async () => {
@@ -213,9 +214,11 @@ it("broadcasts asynchronous buffer and member patches to every shared port", asy
     },
     { type: "members_changed", buffer_id: 2 },
     {
-      type: "membership_changed",
+      type: "timeline_changed",
       buffer_id: 2,
-      membership: { type: "kicked", id: 5, actor: "operator" },
+      reset: false,
+      upserted: [],
+      removed: [],
     },
     {
       type: "notice",
