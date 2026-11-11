@@ -1081,7 +1081,7 @@ impl Runtime {
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if restored_push {
-            output.extend(model.snapshot_events());
+            output.extend(model.take_timeline_changes(true));
             output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
         }
         output.push(EngineToUi::CommandResult { id: command_id });
@@ -1164,7 +1164,7 @@ impl Runtime {
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if restored_push {
-            output.extend(model.snapshot_events());
+            output.extend(model.take_timeline_changes(true));
             output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
         }
         output.push(EngineToUi::CommandResult { id: command_id });
@@ -2064,7 +2064,6 @@ fn attach_shell(running: &mut RunningNetwork, command_id: String) -> Vec<EngineT
             network_id: model.id(),
         },
     ];
-    output.extend(model.snapshot_events());
     output.extend(model.take_timeline_changes(true));
     output.extend(typing_snapshot_events(model, &running.client.state()));
     if let Some(state) = running.push.state.clone() {

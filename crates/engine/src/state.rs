@@ -583,23 +583,6 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn snapshot_events(&self) -> Vec<EngineToUi> {
-        self.buffer_order
-            .iter()
-            .filter_map(|id| self.buffers.get(id).map(|buffer| (*id, buffer)))
-            .map(|(buffer_id, buffer)| EngineToUi::BufferSnapshot {
-                buffer_id,
-                messages: buffer
-                    .timeline
-                    .iter()
-                    .filter_map(chat_projection)
-                    .cloned()
-                    .collect(),
-                memberships: legacy_memberships(buffer),
-            })
-            .collect()
-    }
-
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
         self.network.nickname = nickname;
         self.network_event()
@@ -3790,80 +3773,6 @@ fn evict_over_budget(
         buffer.system_server_times.remove(&id);
     }
     (released, evicted_items)
-}
-
-fn legacy_memberships(buffer: &BufferState) -> Vec<MembershipProjection> {
-    let mut memberships = Vec::<MembershipProjection>::new();
-    let mut run_open = false;
-    for record in &buffer.timeline {
-        let change = match &record.body {
-            RecordBody::Fold(FoldEvent::Joined(who)) => Some((MembershipKind::Joined, &who.nick)),
-            RecordBody::Fold(FoldEvent::Parted(who, _)) => {
-                Some((MembershipKind::Parted, &who.nick))
-            }
-            RecordBody::Fold(FoldEvent::Quit(who, _, _)) => Some((MembershipKind::Quit, &who.nick)),
-            RecordBody::Line(LineEvent::Kick {
-                actor: Actor::User(actor),
-                reason,
-                subject: Subject::You,
-            }) => {
-                memberships.push(MembershipProjection::Kicked {
-                    id: record.id,
-                    actor: actor.nick.clone(),
-                    reason: reason.clone(),
-                    server_time_ms: buffer
-                        .system_server_times
-                        .get(&record.id)
-                        .copied()
-                        .flatten(),
-                    received_at_ms: record.order.1,
-                });
-                run_open = false;
-                None
-            }
-            RecordBody::Chat(_)
-            | RecordBody::Fold(_)
-            | RecordBody::Line(_)
-            | RecordBody::Gap(_) => {
-                run_open = false;
-                None
-            }
-        };
-        let Some((kind, nick)) = change else {
-            continue;
-        };
-        let server_time_ms = buffer
-            .system_server_times
-            .get(&record.id)
-            .copied()
-            .flatten();
-        if let Some(MembershipProjection::Change {
-            kind: previous_kind,
-            nicks,
-            server_time_ms: previous_time,
-            received_at_ms,
-            ..
-        }) = memberships.last_mut()
-            && run_open
-            && *previous_kind == kind
-        {
-            if !nicks.contains(nick) {
-                nicks.push(nick.clone());
-            }
-            *previous_time = server_time_ms.or(*previous_time);
-            *received_at_ms = record.order.1;
-        } else {
-            memberships.push(MembershipProjection::Change {
-                id: record.id,
-                kind,
-                nicks: vec![nick.clone()],
-                server_time_ms,
-                received_at_ms: record.order.1,
-            });
-        }
-        run_open = true;
-    }
-    memberships
 }
 
 fn next_message_id_after_stub(msgid: &str) -> u64 {
