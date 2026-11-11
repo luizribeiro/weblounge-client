@@ -81,10 +81,12 @@ The single place a fresh session reads to know where the project stands. Update 
   visible rows, accessible names, transcript copy and row estimates without storing IRC keys;
   membership runs show three names plus an expandable remainder and reason-bearing per-person
   details. Signed event icons, responsive grids and density-owned spacing replace the temporary
-  arrow rows. The newest own-kick row becomes a warning with Rejoin only while the channel is
-  kicked. Focused units cover every wording clause, key redaction, copy and estimation; built-app
-  local-Ergo journeys cover desktop and touch-primary phone layouts in both themes, including
-  collapse, expansion, PART/QUIT runs, kick and live rejoin.
+  arrow rows. Desktop system lines share message time/text columns, and four-person runs keep all
+  four names instead of abbreviating one as “other.” The newest own-kick row becomes a warning
+  with Rejoin only while the channel is kicked. Focused units cover every wording clause, key
+  redaction, copy and estimation; built-app local-Ergo journeys cover desktop and touch-primary
+  phone layouts in both themes, including collapse, expansion, PART/QUIT runs, kick and live
+  rejoin.
 - [x] Fold buffer-event runs in the engine. Same-day foldable records now collapse once per turn;
   chats, standalone lines, gaps and day changes close the run. Membership clauses derive from
   each casemapped person's first and last event, nick chains collapse, modes and invites group by
