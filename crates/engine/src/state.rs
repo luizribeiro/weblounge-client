@@ -6762,10 +6762,7 @@ mod tests {
             }
         };
         let note = model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key());
-        assert!(note.iter().all(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { buffer_id, .. } if *buffer_id == old_buffer
-        )));
+        assert!(note.is_empty());
         let message = take_changed_messages(&mut model)
             .pop()
             .expect("rename note")

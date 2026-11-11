@@ -7,9 +7,7 @@ import type { CompletionTrigger } from "./CompletionTrigger";
 import type { EngineMessageKey } from "./EngineMessageKey";
 import type { LocalSendId } from "./LocalSendId";
 import type { MemberProjection } from "./MemberProjection";
-import type { MembershipProjection } from "./MembershipProjection";
 import type { MessageId } from "./MessageId";
-import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
 import type { NoticeAction } from "./NoticeAction";
@@ -210,43 +208,7 @@ command_id: string,
 /**
  * Buffer to focus.
  */
-buffer_id: BufferId, } | { "type": "messages_appended",
-/**
- * Destination buffer.
- */
-buffer_id: BufferId,
-/**
- * Newly visible rows.
- */
-messages: Array<MessageProjection>, } | { "type": "message_updated",
-/**
- * Destination buffer.
- */
-buffer_id: BufferId,
-/**
- * Complete current message projection.
- */
-message: MessageProjection, } | { "type": "messages_prepended",
-/**
- * Destination buffer.
- */
-buffer_id: BufferId,
-/**
- * Older rows in established timeline order.
- */
-messages: Array<MessageProjection>, } | { "type": "buffer_snapshot",
-/**
- * Buffer whose rows are replaced.
- */
-buffer_id: BufferId,
-/**
- * Retained rows in established timeline order.
- */
-messages: Array<MessageProjection>,
-/**
- * Retained membership runs.
- */
-memberships: Array<MembershipProjection>, } | { "type": "timeline_changed",
+buffer_id: BufferId, } | { "type": "timeline_changed",
 /**
  * Buffer whose timeline changed.
  */
@@ -274,27 +236,7 @@ loading: boolean,
 /**
  * Whether the server reported that no older page exists.
  */
-at_start: boolean, } | { "type": "membership_changed",
-/**
- * Destination channel buffer.
- */
-buffer_id: BufferId,
-/**
- * Complete current projection for the run.
- */
-membership: MembershipProjection, } | { "type": "members_changed", buffer_id: BufferId, view_id: string, version: number, window_size: number, offset: number, total: number, counts: [number, number, number, number, number], members: Array<MemberProjection>, filter?: string, } | { "type": "message_confirmed",
-/**
- * Destination buffer.
- */
-buffer_id: BufferId,
-/**
- * Optimistic send identity.
- */
-local_send_id: LocalSendId,
-/**
- * Confirmed row preserving every returned msgid.
- */
-message: MessageProjection, } | { "type": "message_failed",
+at_start: boolean, } | { "type": "members_changed", buffer_id: BufferId, view_id: string, version: number, window_size: number, offset: number, total: number, counts: [number, number, number, number, number], members: Array<MemberProjection>, filter?: string, } | { "type": "message_failed",
 /**
  * Network that owns the failed target.
  */
@@ -314,12 +256,4 @@ local_send_id: LocalSendId,
 /**
  * Stable localization key, never a secret-bearing error string.
  */
-message_key: EngineMessageKey, } | { "type": "message_retrying",
-/**
- * Destination buffer.
- */
-buffer_id: BufferId,
-/**
- * Retried optimistic send identity.
- */
-local_send_id: LocalSendId, };
+message_key: EngineMessageKey, };

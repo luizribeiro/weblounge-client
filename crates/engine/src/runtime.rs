@@ -7105,11 +7105,10 @@ async fn delay(duration: Duration) {
 
     fn assert_version_notice(events: &[EngineToUi], text: &str) {
         let messages = changed_messages(events);
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, EngineToUi::CommandResult { .. }))
-        );
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::CommandResult { .. })
+        ));
         assert!(matches!(
             messages.as_slice(),
             [(_, message)]
@@ -7479,13 +7478,15 @@ async fn delay(duration: Duration) {
             },
         });
 
-        assert!(
-            output
-                .iter()
-                .any(|event| matches!(event, EngineToUi::TimelineChanged { reset: true, .. }))
-        );
-        assert!(output.iter().any(
-            |event| matches!(event, EngineToUi::CommandResult { id } if id == "connect-again")
+        assert!(matches!(
+            output.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::BuffersChanged { .. },
+                EngineToUi::RecentDirectsReady { .. },
+                EngineToUi::TimelineChanged { reset: true, .. },
+                EngineToUi::CommandResult { id },
+            ] if id == "connect-again"
         ));
         let hosted = runtime.request(EngineRequestEnvelope {
             id: "hosted".into(),
@@ -7569,16 +7570,16 @@ async fn delay(duration: Duration) {
                 autojoin: vec!["#lounge".into()],
             },
         });
-        assert!(
-            duplicate
-                .iter()
-                .any(|event| matches!(event, EngineToUi::TimelineChanged { reset: true, .. }))
-        );
-        assert!(
-            duplicate.iter().any(
-                |event| matches!(event, EngineToUi::CommandResult { id } if id == "second-tab")
-            )
-        );
+        assert!(matches!(
+            duplicate.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::BuffersChanged { .. },
+                EngineToUi::RecentDirectsReady { .. },
+                EngineToUi::TimelineChanged { reset: true, .. },
+                EngineToUi::CommandResult { id },
+            ] if id == "second-tab"
+        ));
 
         assert_hosted_token_unavailable(&runtime);
 
@@ -8683,10 +8684,7 @@ async fn delay(duration: Duration) {
         )
         .expect("state limit is classified");
 
-        assert!(output.iter().all(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { buffer_id: actual, .. } if *actual == buffer_id
-        )));
+        assert!(output.is_empty());
         assert!(
             changed_messages(&model.take_timeline_changes(false))
                 .iter()

@@ -1174,36 +1174,6 @@ pub enum EngineToUi {
         /// Buffer to focus.
         buffer_id: BufferId,
     },
-    /// Append received messages in established timeline order.
-    MessagesAppended {
-        /// Destination buffer.
-        buffer_id: BufferId,
-        /// Newly visible rows.
-        messages: Vec<MessageProjection>,
-    },
-    /// Replace one visible message after authoritative metadata arrives.
-    MessageUpdated {
-        /// Destination buffer.
-        buffer_id: BufferId,
-        /// Complete current message projection.
-        message: MessageProjection,
-    },
-    /// Insert a requested history page before already rendered live rows.
-    MessagesPrepended {
-        /// Destination buffer.
-        buffer_id: BufferId,
-        /// Older rows in established timeline order.
-        messages: Vec<MessageProjection>,
-    },
-    /// Replace one buffer's rows for a shell attaching to an already running network.
-    BufferSnapshot {
-        /// Buffer whose rows are replaced.
-        buffer_id: BufferId,
-        /// Retained rows in established timeline order.
-        messages: Vec<MessageProjection>,
-        /// Retained membership runs.
-        memberships: Vec<MembershipProjection>,
-    },
     /// Atomically reconcile one buffer's engine-ordered timeline.
     TimelineChanged {
         /// Buffer whose timeline changed.
@@ -1223,13 +1193,6 @@ pub enum EngineToUi {
         loading: bool,
         /// Whether the server reported that no older page exists.
         at_start: bool,
-    },
-    /// Insert or replace an engine-collapsed membership run.
-    MembershipChanged {
-        /// Destination channel buffer.
-        buffer_id: BufferId,
-        /// Complete current projection for the run.
-        membership: MembershipProjection,
     },
     /// Replace a requested bounded member window and current group counts.
     #[allow(missing_docs)]
@@ -1251,15 +1214,6 @@ pub enum EngineToUi {
         #[ts(optional)]
         filter: Option<String>,
     },
-    /// Replace an optimistic row with its `papo::Sent` confirmation.
-    MessageConfirmed {
-        /// Destination buffer.
-        buffer_id: BufferId,
-        /// Optimistic send identity.
-        local_send_id: LocalSendId,
-        /// Confirmed row preserving every returned msgid.
-        message: MessageProjection,
-    },
     /// Mark one optimistic row as failed.
     MessageFailed {
         /// Network that owns the failed target.
@@ -1272,13 +1226,6 @@ pub enum EngineToUi {
         local_send_id: LocalSendId,
         /// Stable localization key, never a secret-bearing error string.
         message_key: EngineMessageKey,
-    },
-    /// Return one failed row to its optimistic state before retrying it.
-    MessageRetrying {
-        /// Destination buffer.
-        buffer_id: BufferId,
-        /// Retried optimistic send identity.
-        local_send_id: LocalSendId,
     },
 }
 

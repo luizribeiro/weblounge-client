@@ -224,6 +224,7 @@ mod tests {
                     "app/src/engine/decodeTimelineSystem.ts",
                     "nick" | "quit" | "topic",
                 )
+                | ("app/src/engine/protocol.ts", "quit")
                 | (
                     "app/src/features/conversation/message-size-estimate.ts",
                     "notice" | "topic",

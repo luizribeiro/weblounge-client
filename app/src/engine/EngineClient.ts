@@ -714,7 +714,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     default:
-      throw new Error(`unsupported legacy engine message: ${messageType}`);
+      return assertNever(messageType);
   }
 
   throw new Error("invalid engine message");
