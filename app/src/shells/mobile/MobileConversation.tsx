@@ -29,6 +29,7 @@ import {
 import {
   createReadDwell,
   newestCommittedMessageId,
+  newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
@@ -83,7 +84,9 @@ export function MobileConversation(props: MobileConversationProps) {
   const sync = () => bufferSyncPresentation(props.buffer, props.network);
   const bufferId = createMemo(() => props.buffer.id);
   const newestMessageId = createMemo(() =>
-    newestCommittedMessageId(props.messages),
+    props.timeline === undefined
+      ? newestCommittedMessageId(props.messages)
+      : newestCommittedTimelineMessageId(props.timeline.items),
   );
   createReadDwell({
     atLiveEdge,

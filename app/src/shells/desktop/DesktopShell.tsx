@@ -47,6 +47,7 @@ import {
 import {
   createReadDwell,
   newestCommittedMessageId,
+  newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
@@ -157,9 +158,14 @@ export function DesktopShell(props: DesktopShellProps) {
           props.networks.find((network) => network.id === buffer.network_id),
         );
   });
-  const newestMessageId = createMemo(() =>
-    newestCommittedMessageId(props.messages.get(activeBufferId() ?? -1) ?? []),
-  );
+  const newestMessageId = createMemo(() => {
+    const timeline = props.timelines?.get(activeBufferId() ?? -1);
+    return timeline === undefined
+      ? newestCommittedMessageId(
+          props.messages.get(activeBufferId() ?? -1) ?? [],
+        )
+      : newestCommittedTimelineMessageId(timeline.items);
+  });
   const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
     const buffer = activeBuffer();
     return new Set(buffer === undefined ? [] : [buffer.id]);

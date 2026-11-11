@@ -1,4 +1,5 @@
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
+import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type { MessageProjection } from "../../engine/protocol";
 
 interface ReadDwellOptions {
@@ -82,6 +83,16 @@ export function newestCommittedMessageId(
       newest = message;
   }
   return newest?.id;
+}
+
+export function newestCommittedTimelineMessageId(
+  items: readonly TimelineItem[],
+): number | undefined {
+  return newestCommittedMessageId(
+    items.flatMap((item) =>
+      item.body.family === "message" ? [item.body] : [],
+    ),
+  );
 }
 
 function compareMessageTime(

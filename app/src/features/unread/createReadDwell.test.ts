@@ -1,8 +1,13 @@
 import { render } from "@solidjs/testing-library";
 import { batch, createMemo, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type { MessageProjection } from "../../engine/protocol";
-import { createReadDwell, newestCommittedMessageId } from "./createReadDwell";
+import {
+  createReadDwell,
+  newestCommittedMessageId,
+  newestCommittedTimelineMessageId,
+} from "./createReadDwell";
 
 const noForegroundExit = () => undefined;
 
@@ -47,6 +52,14 @@ it("marks the newest server time when catch-up appends behind live traffic", () 
   expect(newestCommittedMessageId([newerLive, olderCatchup, localNotice])).toBe(
     9,
   );
+  const item: TimelineItem = {
+    id: newerLive.id,
+    order: [2_000, 2_100, 1],
+    day: 0,
+    content_version: 0,
+    body: { family: "message", ...newerLive },
+  };
+  expect(newestCommittedTimelineMessageId([item])).toBe(9);
 });
 
 it("keeps the dwell armed across equal read-state snapshots", () => {
