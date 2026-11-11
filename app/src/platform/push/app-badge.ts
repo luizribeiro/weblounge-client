@@ -21,8 +21,7 @@ interface RegistrationProvider {
 
 export function appBadgeCount(buffers: readonly BufferProjection[]): number {
   return buffers.reduce(
-    (count, buffer) =>
-      count + (buffer.kind === "direct" ? buffer.unread : buffer.mentions),
+    (count, buffer) => count + knownNotificationCount(buffer),
     0,
   );
 }
@@ -38,11 +37,16 @@ export function conversationNotificationCounts(
     )
     .map((buffer) => ({
       tag: `${networkLabels.get(buffer.network_id)}/${buffer.title.toLowerCase()}`,
-      count: buffer.kind === "direct" ? buffer.unread : buffer.mentions,
+      count: knownNotificationCount(buffer),
       ...(buffer.read_at_ms === undefined
         ? {}
         : { readAtMs: buffer.read_at_ms }),
     }));
+}
+
+function knownNotificationCount(buffer: BufferProjection): number {
+  // Direct-message mention facts include every unread peer message and stay exact across gaps.
+  return buffer.kind === "server" ? 0 : buffer.mentions;
 }
 
 export async function syncAppBadge(

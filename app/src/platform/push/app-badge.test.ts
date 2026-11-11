@@ -16,6 +16,12 @@ it("counts unread direct messages once plus channel mentions", () => {
   ).toBe(6);
 });
 
+it("counts only known direct messages across a transcript gap", () => {
+  expect(
+    appBadgeCount([buffer({ kind: "direct", unread: 100, mentions: 2 })]),
+  ).toBe(2);
+});
+
 it("maps engine counters to the notification tags shared with the worker", () => {
   expect(
     conversationNotificationCounts(
@@ -42,6 +48,23 @@ it("maps engine counters to the notification tags shared with the worker", () =>
     { tag: "Lounge/alice", count: 3 },
     { tag: "Lounge/#lounge", count: 2 },
   ]);
+});
+
+it("stores only known direct messages across a transcript gap", () => {
+  expect(
+    conversationNotificationCounts(
+      [
+        buffer({
+          kind: "direct",
+          network_id: 4,
+          title: "Alice",
+          unread: 100,
+          mentions: 2,
+        }),
+      ],
+      new Map([[4, "Lounge"]]),
+    ),
+  ).toEqual([{ tag: "Lounge/alice", count: 2 }]);
 });
 
 it("closes only notifications at or before the engine read marker", async () => {

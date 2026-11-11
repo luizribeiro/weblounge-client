@@ -4957,6 +4957,20 @@ mod tests {
         model.finish_disconnect_gap(200, false);
 
         assert_eq!(projected_app_badge(&model, channel_id, direct_id), 3);
+        assert_eq!(
+            (
+                model.buffers[&direct_id].projection.unread,
+                model.buffers[&direct_id].projection.mentions,
+            ),
+            (100, 2)
+        );
+        assert_eq!(
+            (
+                model.buffers[&channel_id].projection.unread,
+                model.buffers[&channel_id].projection.mentions,
+            ),
+            (100, 1)
+        );
         for buffer_id in [channel_id, direct_id] {
             let facts = &model.buffers[&buffer_id].read_facts;
             assert_eq!(
