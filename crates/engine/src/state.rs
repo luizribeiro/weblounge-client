@@ -20,9 +20,9 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     timeline::{
-        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalCalendar, OrderKey,
-        Person, RecordBody, Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord,
-        diff, fold,
+        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalCalendar, MemberRank,
+        ModeMeaning, ModeProjection, OrderKey, Person, RecordBody, Subject, SystemLine,
+        SystemProjection, TimelineItem, TimelineRecord, diff, fold,
     },
 };
 
@@ -1083,6 +1083,68 @@ impl NetworkModel {
             buffer.system_dedup.insert(id, dedup);
         }
         self.dirty_timelines.insert(buffer_id);
+    }
+
+    pub(crate) fn receive_mode_change(&mut self, event: &papo::event::ModeChanged) -> Option<()> {
+        let papo::Subject::Channel(channel) = &event.subject else {
+            return None;
+        };
+        let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let projected = event
+            .changes
+            .iter()
+            .map(|change| project_mode(change, event, self.casemapping))
+            .collect::<Vec<_>>();
+        if projected.is_empty() {
+            return None;
+        }
+        let msgid = event.msgid.as_ref().map(ToString::to_string);
+        let server_time_ms = event.server_time.map(time_millis);
+        let actor_name = event.actor.to_string();
+        let actor = match &event.actor {
+            papo::Source::User(_) => Actor::User(person(
+                self.casemapping,
+                actor_name.clone(),
+                event.authorship == papo::Authorship::Own,
+            )),
+            papo::Source::Server(server) => Actor::Server {
+                name: server.to_string(),
+            },
+            _ => return None,
+        };
+        let dedup = system_dedup_reference(
+            buffer_id,
+            msgid,
+            server_time_ms,
+            "mode",
+            actor_name.clone(),
+            Some(projected.iter().map(|change| change.raw.as_str()).collect()),
+        );
+        if dedup
+            .as_ref()
+            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
+        {
+            return None;
+        }
+        let id = self.allocate_message_id();
+        let order = self.allocate_order(server_time_ms, time_millis(event.received_at));
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer.timeline.push(TimelineRecord {
+            id,
+            order,
+            day: self.calendar.day(order.primary_ms()),
+            body: RecordBody::Fold(FoldEvent::Modes {
+                actor,
+                changes: projected,
+            }),
+        });
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer.system_server_times.insert(id, server_time_ms);
+        if let Some(dedup) = dedup {
+            buffer.system_dedup.insert(id, dedup);
+        }
+        self.dirty_timelines.insert(buffer_id);
+        Some(())
     }
 
     #[cfg(test)]
@@ -3824,6 +3886,76 @@ fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
     }
 }
 
+fn project_mode(
+    change: &papo::ModeChange,
+    event: &papo::event::ModeChanged,
+    casemapping: papo::Casemapping,
+) -> ModeProjection {
+    let added = change.action == papo::ModeAction::Add;
+    let meaning = match (&change.arg, change.mode) {
+        (Some(papo::ModeArg::Member { nick, prefix, .. }), _) => ModeMeaning::Rank {
+            rank: MemberRank {
+                mode: prefix.mode(),
+                symbol: prefix.symbol(),
+            },
+            member: person(
+                casemapping,
+                nick.to_string(),
+                event.about(change) == papo::Authorship::Own,
+            ),
+        },
+        (Some(papo::ModeArg::Mask(mask)), 'b') => ModeMeaning::Ban {
+            mask: mask.to_string(),
+        },
+        (Some(papo::ModeArg::Mask(mask)), 'e') => ModeMeaning::BanException {
+            mask: mask.to_string(),
+        },
+        (Some(papo::ModeArg::Mask(mask)), 'I') => ModeMeaning::InviteException {
+            mask: mask.to_string(),
+        },
+        (Some(papo::ModeArg::Mask(mask)), 'q') => ModeMeaning::Quiet {
+            mask: mask.to_string(),
+        },
+        (_, 'm') => ModeMeaning::Moderated,
+        (_, 't') => ModeMeaning::TopicLocked,
+        (_, 'n') => ModeMeaning::NoExternal,
+        (_, 'i') => ModeMeaning::InviteOnly,
+        (_, 's') => ModeMeaning::Secret,
+        (_, 'p') => ModeMeaning::Private,
+        (_, 'k') => ModeMeaning::Key,
+        (Some(papo::ModeArg::Value(limit)), 'l') if added => ModeMeaning::Limit {
+            limit: Some(limit.clone()),
+        },
+        (_, 'l') => ModeMeaning::Limit { limit: None },
+        _ => ModeMeaning::Other,
+    };
+    ModeProjection {
+        added,
+        meaning,
+        raw: safe_raw_mode(change),
+    }
+}
+
+fn safe_raw_mode(change: &papo::ModeChange) -> String {
+    let sign = if change.action == papo::ModeAction::Add {
+        '+'
+    } else {
+        '-'
+    };
+    let mut raw = format!("{sign}{}", change.mode);
+    let argument = match &change.arg {
+        Some(papo::ModeArg::Member { nick, .. }) => Some(nick.as_str()),
+        Some(papo::ModeArg::Mask(mask)) => Some(mask.as_str()),
+        Some(papo::ModeArg::Value(value)) => Some(value.as_str()),
+        _ => None,
+    };
+    if let Some(argument) = argument {
+        raw.push(' ');
+        raw.push_str(argument);
+    }
+    raw
+}
+
 fn project_timeline(
     buffer: &BufferState,
 ) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
@@ -4246,8 +4378,8 @@ mod tests {
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{MessageStub, ServerTimeMs},
         timeline::{
-            FixedOffsetCalendar, ItemBody, LocalDay, RecordBody, TimelineItem,
-            apply_timeline_change,
+            FixedOffsetCalendar, ItemBody, LocalDay, ModeMeaning, ModeProjection, RecordBody,
+            RunClause, TimelineItem, apply_timeline_change,
         },
     };
 
@@ -4255,6 +4387,76 @@ mod tests {
         // The in-memory connector never performs a handshake, so platform roots only add a host dependency.
         papo::Client::builder("ircs://verified.example", "weblounge")
             .tls_ca_pem(include_bytes!("../tests/data/secure-wire-ca.pem"))
+    }
+
+    async fn next_mode(events: &mut papo::Events) -> papo::event::ModeChanged {
+        loop {
+            if let Some(papo::Event::ModeChanged(changed)) = events.next().await {
+                return changed;
+            }
+        }
+    }
+
+    fn assert_mode_meanings(changes: &[ModeProjection]) {
+        assert!(changes.iter().any(|change| matches!(
+            &change.meaning,
+            ModeMeaning::Rank { rank, .. } if rank.mode == 'h' && rank.symbol == '%'
+        )));
+        for (meaning, mask) in [
+            ("ban", "*!*@spam.example"),
+            ("quiet", "*!*@noisy.example"),
+            ("ban_exception", "*!*@friend.example"),
+            ("invite_exception", "*!*@invite.example"),
+        ] {
+            assert!(changes.iter().any(|change| match &change.meaning {
+                ModeMeaning::Ban { mask: actual } => meaning == "ban" && actual == mask,
+                ModeMeaning::Quiet { mask: actual } => meaning == "quiet" && actual == mask,
+                ModeMeaning::BanException { mask: actual } => {
+                    meaning == "ban_exception" && actual == mask
+                }
+                ModeMeaning::InviteException { mask: actual } => {
+                    meaning == "invite_exception" && actual == mask
+                }
+                _ => false,
+            }));
+        }
+        assert!(changes.iter().any(|change| matches!(
+            &change.meaning,
+            ModeMeaning::Limit { limit } if limit.as_deref() == Some("50")
+        )));
+        assert!(
+            changes.iter().any(|change| {
+                matches!(&change.meaning, ModeMeaning::Other) && change.raw == "+z"
+            })
+        );
+        for meaning in [
+            ModeMeaning::Moderated,
+            ModeMeaning::TopicLocked,
+            ModeMeaning::NoExternal,
+            ModeMeaning::InviteOnly,
+            ModeMeaning::Secret,
+            ModeMeaning::Private,
+        ] {
+            assert!(
+                changes
+                    .iter()
+                    .any(|change| change.added && change.meaning == meaning)
+            );
+            assert!(
+                changes
+                    .iter()
+                    .any(|change| !change.added && change.meaning == meaning)
+            );
+        }
+        assert_eq!(
+            changes
+                .iter()
+                .filter_map(|change| {
+                    matches!(&change.meaning, ModeMeaning::Key).then_some(&change.raw)
+                })
+                .collect::<Vec<_>>(),
+            ["+k", "-k"]
+        );
     }
 
     #[test]
@@ -7200,6 +7402,60 @@ mod tests {
         model.receive_nick_change(&changed);
 
         assert!(model.take_timeline_changes(false).is_empty());
+    }
+
+    #[tokio::test]
+    async fn channel_modes_project_meanings_fold_and_never_expose_keys() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(
+            ":offline.test 005 weblounge PREFIX=(ohv)@%+ CHANMODES=qIbe,k,l,imnpst :supported",
+        )
+        .await;
+        let _ = events.next().await;
+        for nick in ["weblounge", "alice", "bob"] {
+            wire.server(format!(":{nick}!u@host JOIN #room")).await;
+            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        }
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+
+        for line in [
+            ":mel!u@host MODE #room +ov alice bob",
+            ":mel!u@host MODE #room +h alice",
+            ":mel!u@host MODE #room -v bob",
+            ":mel!u@host MODE #room +bq *!*@spam.example *!*@noisy.example",
+            ":mel!u@host MODE #room -bq *!*@spam.example *!*@noisy.example",
+            ":mel!u@host MODE #room +eI *!*@friend.example *!*@invite.example",
+            ":mel!u@host MODE #room -eI *!*@friend.example *!*@invite.example",
+            ":mel!u@host MODE #room +mtikln swordfish 50",
+            ":mel!u@host MODE #room -mtikln *",
+            ":mel!u@host MODE #room +sp",
+            ":mel!u@host MODE #room -sp",
+            ":mel!u@host MODE #room +z",
+        ] {
+            wire.server(line).await;
+            let changed = next_mode(&mut events).await;
+            assert!(model.receive_mode_change(&changed).is_some());
+        }
+
+        let patches = model.take_timeline_changes(false);
+        let [EngineToUi::TimelineChanged { upserted, .. }] = patches.as_slice() else {
+            panic!("one folded mode patch expected")
+        };
+        let ItemBody::System(system) = &upserted[0].body else {
+            panic!("system line expected")
+        };
+        let crate::timeline::SystemLine::Run { clauses } = &system.line else {
+            panic!("run expected")
+        };
+        let [RunClause::Modes { changes, .. }] = clauses.as_slice() else {
+            panic!("one actor's modes should fold into one clause")
+        };
+        assert_mode_meanings(changes);
+        let serialized = serde_json::to_string(&upserted).expect("mode patch serializes");
+        assert!(!serialized.contains("swordfish"));
     }
 
     #[tokio::test]

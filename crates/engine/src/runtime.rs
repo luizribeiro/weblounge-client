@@ -3916,6 +3916,7 @@ fn process_papo_event(
             process_nick_change(&mut running.model, &changed, output);
             Vec::new()
         }
+        papo::Event::ModeChanged(changed) => process_mode_change(&mut running.model, &changed),
         papo::Event::AccountChanged(changed) => {
             process_account_event(running, snapshot, &changed, output);
             Vec::new()
@@ -4620,8 +4621,7 @@ fn process_history(
 ) {
     let shared_state = Arc::clone(state);
     let conversation = page.conversation.clone();
-    let item_count = page.items.len();
-    let end = page.end;
+    let (item_count, end) = (page.items.len(), page.end);
     let bounds = history_page_bounds(&page);
     let snapshot = client.state();
     let mut state = lock(state);
@@ -4695,6 +4695,7 @@ fn process_history(
                 }
             }
             papo::Event::NickChanged(changed) => history_nick(&mut running.model, &changed),
+            papo::Event::ModeChanged(changed) => _ = running.model.receive_mode_change(&changed),
             papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
                 receive_history_kick(&mut running.model, &kicked);
             }
@@ -4738,6 +4739,14 @@ fn history_nick(model: &mut NetworkModel, changed: &papo::event::NickChanged) {
     if changed.authorship != papo::Authorship::Own {
         model.receive_nick_change(changed);
     }
+}
+
+fn process_mode_change(
+    model: &mut NetworkModel,
+    changed: &papo::event::ModeChanged,
+) -> Vec<HistoryFetch> {
+    let _ = model.receive_mode_change(changed);
+    Vec::new()
 }
 
 fn finish_history_page(
