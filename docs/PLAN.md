@@ -8,15 +8,14 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 2: local day and system dedup.
-2. Buffer events 3: system lines for nick and mode changes.
-3. Buffer events 7: missing-history gap and divider rows.
-4. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-5. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-6. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-7. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-8. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-9. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 3: system lines for nick and mode changes.
+2. Buffer events 7: missing-history gap and divider rows.
+3. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+4. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+5. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+6. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+7. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+8. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -30,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 2; assigned timeline days through the platform local calendar, made
+  dividers and membership-run boundaries consume those days, and deduplicated live/history system
+  overlap per buffer while retaining historical kicks and departure reasons.
 - 2026-11-11: buffer events 1d; removed the legacy transcript protocol events and made the ordered
   `TimelineChanged` patch the sole transcript stream while preserving the app's temporary
   membership-run compatibility projection.
@@ -68,6 +70,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Land buffer-events batch 2. The engine assigns every chat and system record a platform-local
+  calendar day; browser builds use the device time zone and deterministic tests use fixed offsets.
+  Day changes split the temporary membership projection, while divider boundaries and labels now
+  consume `TimelineItem.day` and preserve the stable Today-to-Yesterday relabel. System events
+  deduplicate by buffer plus msgid, with the signed server-time/kind/nick/subject fallback and no
+  fallback for untimed events. Live/history overlap emits one row, the same QUIT still emits in
+  each affected channel, and historical kicks and departure reasons remain available for later
+  system-line rendering. Engine, app and built-app local-Ergo coverage includes desktop and both
+  phone layout engines, the native-feel idle/hidden audits, and before/after day-boundary captures.
 - [x] Delete the legacy transcript events after auditing every consumer. Engine previews, unread
   facts and notifications already derive from the record model; push parsing remains independent;
   transcript copy, last-own selection and read dwell now consume the ordered timeline. Protocol
