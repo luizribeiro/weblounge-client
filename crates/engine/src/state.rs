@@ -200,6 +200,7 @@ struct BufferState {
     timeline: Vec<TimelineRecord>,
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
+    system_msgids: HashMap<MessageId, String>,
     emitted_timeline: Vec<TimelineItem>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
@@ -458,6 +459,7 @@ pub(crate) struct NetworkModel {
     names: HashMap<NameKey, BufferId>,
     directs: HashMap<DirectKey, BufferId>,
     msgids: HashMap<String, MsgidReference>,
+    system_msgids: HashSet<(BufferId, String)>,
     reactions: ReactionIndex,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     dirty_timelines: HashSet<BufferId>,
@@ -523,6 +525,7 @@ impl NetworkModel {
             timeline: Vec::new(),
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
+            system_msgids: HashMap::new(),
             emitted_timeline: Vec::new(),
             direct: None,
             direct_pin: None,
@@ -556,6 +559,7 @@ impl NetworkModel {
             names: HashMap::new(),
             directs: HashMap::new(),
             msgids: HashMap::new(),
+            system_msgids: HashSet::new(),
             reactions: ReactionIndex::with_preload_limit(window_limit),
             fallbacks: HashMap::new(),
             dirty_timelines: HashSet::new(),
@@ -1523,10 +1527,16 @@ impl NetworkModel {
         received_at_ms: i64,
     ) -> Option<()> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        if msgid
+            .as_ref()
+            .is_some_and(|msgid| !self.system_msgids.insert((buffer_id, msgid.clone())))
+        {
+            return None;
+        }
         let who = crate::timeline::Who {
             nick,
             own: false,
-            msgid,
+            msgid: msgid.clone(),
         };
         let event = match kind {
             MembershipKind::Joined => FoldEvent::Joined(who),
@@ -1544,6 +1554,9 @@ impl NetworkModel {
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
+        if let Some(msgid) = msgid {
+            buffer.system_msgids.insert(id, msgid);
+        }
         self.dirty_timelines.insert(buffer_id);
         Some(())
     }
@@ -2156,6 +2169,9 @@ impl NetworkModel {
         let buffer = self.buffers.remove(&buffer_id)?;
         for metadata in buffer.chat_metadata.into_values() {
             self.release_dedup(metadata.dedup);
+        }
+        for msgid in buffer.system_msgids.into_values() {
+            self.system_msgids.remove(&(buffer_id, msgid));
         }
         self.reactions.clear_buffer(buffer_id);
         Some(EngineToUi::BufferRemoved { buffer_id })
@@ -3258,6 +3274,7 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
+                system_msgids: HashMap::new(),
                 emitted_timeline: Vec::new(),
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
@@ -3397,6 +3414,7 @@ impl NetworkModel {
         buffer_ids.sort_unstable_by_key(|id| id.0);
         let mut output = Vec::new();
         let mut released = Vec::new();
+        let mut released_system = Vec::new();
         for buffer_id in buffer_ids {
             let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
                 continue;
@@ -3428,14 +3446,18 @@ impl NetworkModel {
                     removed: change.removed,
                 });
             }
-            let (dedup, evicted) = evict_over_budget(buffer, self.window_limit);
+            let (dedup, system_msgids, evicted) = evict_over_budget(buffer, self.window_limit);
             buffer
                 .emitted_timeline
                 .retain(|item| !evicted.contains(&item.id));
             released.extend(dedup);
+            released_system.extend(system_msgids.into_iter().map(|msgid| (buffer_id, msgid)));
         }
         for dedup in released {
             self.release_dedup(dedup);
+        }
+        for key in released_system {
+            self.system_msgids.remove(&key);
         }
         output
     }
@@ -3774,9 +3796,9 @@ fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
 fn evict_over_budget(
     buffer: &mut BufferState,
     limit: usize,
-) -> (Vec<DedupReferences>, HashSet<MessageId>) {
+) -> (Vec<DedupReferences>, Vec<String>, HashSet<MessageId>) {
     let Ok(items) = fold(&buffer.timeline) else {
-        return (Vec::new(), HashSet::new());
+        return (Vec::new(), Vec::new(), HashSet::new());
     };
     let chat_excess = items
         .iter()
@@ -3812,13 +3834,17 @@ fn evict_over_budget(
         .timeline
         .retain(|record| !evicted_records.contains(&record.id));
     let mut released = Vec::new();
+    let mut system_msgids = Vec::new();
     for id in evicted_records {
         if let Some(metadata) = buffer.chat_metadata.remove(&id) {
             released.push(metadata.dedup);
         }
         buffer.system_server_times.remove(&id);
+        if let Some(msgid) = buffer.system_msgids.remove(&id) {
+            system_msgids.push(msgid);
+        }
     }
-    (released, evicted_items)
+    (released, system_msgids, evicted_items)
 }
 
 fn next_message_id_after_stub(msgid: &str) -> u64 {
@@ -6030,6 +6056,26 @@ mod tests {
                         if people[0].reason.as_deref() == Some("gone"))
             )
         )));
+    }
+
+    #[test]
+    fn live_and_history_membership_overlap_emits_one_item() {
+        let (mut model, state) = model(10);
+        let room = channel_name(&state, "#room");
+        model.ensure_buffer(NameKey::Channel(room.clone()), None, None);
+        for received_at_ms in [10, 20] {
+            model.receive_membership_event(
+                &room,
+                MembershipKind::Joined,
+                "mel".into(),
+                None,
+                Some("shared-join".into()),
+                Some(10),
+                received_at_ms,
+            );
+        }
+
+        assert_eq!(take_changed_items(&mut model).len(), 1);
     }
 
     #[test]
