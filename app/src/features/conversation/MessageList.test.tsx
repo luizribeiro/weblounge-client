@@ -157,7 +157,10 @@ it("updates a day divider when its relative label changes", () => {
     const messageTime = new Date(2026, 10, 10, 12).getTime();
     vi.setSystemTime(new Date(2026, 10, 10, 18));
     const currentMessage = { ...message, received_at_ms: messageTime };
-    const item = { ...messageItem(currentMessage), day: 20_407 };
+    const item = {
+      ...messageItem(currentMessage),
+      day: Date.UTC(2026, 10, 10) / 86_400_000,
+    };
     const [timeline, setTimeline] = createSignal(timelineView([item]));
     render(() => (
       <MessageList messages={[]} timeline={timeline()} timelineEnabled />
@@ -166,6 +169,34 @@ it("updates a day divider when its relative label changes", () => {
 
     vi.setSystemTime(new Date(2026, 10, 11, 18));
     setTimeline(timelineView([item]));
+
+    expect(screen.getByText("Yesterday")).toBeVisible();
+    expect(screen.queryByText("Today")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("labels a divider from its engine day instead of its order", () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date(2026, 10, 11, 18));
+    const currentMessage = {
+      ...message,
+      received_at_ms: new Date(2026, 10, 11, 12).getTime(),
+    };
+    render(() => (
+      <MessageList
+        messages={[]}
+        timeline={timelineView([
+          {
+            ...messageItem(currentMessage),
+            day: Date.UTC(2026, 10, 10) / 86_400_000,
+          },
+        ])}
+        timelineEnabled
+      />
+    ));
 
     expect(screen.getByText("Yesterday")).toBeVisible();
     expect(screen.queryByText("Today")).not.toBeInTheDocument();

@@ -1392,7 +1392,7 @@ function timelineRows(
       rows.push({
         kind: "day",
         key: `day-${day}`,
-        label: formatDay(new Date(item.order[0])),
+        label: formatDay(day),
       });
       previousGroupMessage = undefined;
     }
@@ -1606,17 +1606,16 @@ function latestMessageTime(
   }, undefined);
 }
 
-function formatDay(time: Date): string {
-  const today = new Date();
-  if (time.toDateString() === today.toDateString())
-    return t("messages.date.today");
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (time.toDateString() === yesterday.toDateString())
-    return t("messages.date.yesterday");
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
-    time,
-  );
+const localDayMilliseconds = 86_400_000;
+
+function formatDay(day: TimelineItem["day"]): string {
+  const today = localDay(Date.now());
+  if (day === today) return t("messages.date.today");
+  if (day === today - 1) return t("messages.date.yesterday");
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(day * localDayMilliseconds));
 }
 
 function messageTime(message: MessageProjection): number {
@@ -1646,7 +1645,8 @@ function messageTimelineItems(
 function localDay(milliseconds: number): number {
   const time = new Date(milliseconds);
   return Math.floor(
-    Date.UTC(time.getFullYear(), time.getMonth(), time.getDate()) / 86_400_000,
+    Date.UTC(time.getFullYear(), time.getMonth(), time.getDate()) /
+      localDayMilliseconds,
   );
 }
 
