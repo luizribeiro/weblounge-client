@@ -6,6 +6,7 @@ import {
   applyTimelineChange,
   type TimelineChange,
   type TimelineGeometry,
+  TimelineStore,
 } from "./timeline-store";
 
 it("matches the Rust reducer on every shared fixture", () => {
@@ -38,6 +39,37 @@ it("applies reset and removed identities", () => {
       removed: [1],
     }),
   ).toEqual({ items: [gap(2, 20)], geometry: "mixed" });
+});
+
+it("keeps buffer timelines independent and removes closed buffers", () => {
+  const store = new TimelineStore();
+  store.apply(1, change([gap(1, 10)]));
+  store.apply(2, change([gap(2, 20)]));
+
+  expect(store.get(1)?.items).toEqual([gap(1, 10)]);
+  expect(store.get(2)?.items).toEqual([gap(2, 20)]);
+  store.remove(1);
+  expect(store.get(1)).toBeUndefined();
+});
+
+it("retains full focus history and bounds every unfocused family", () => {
+  const store = new TimelineStore();
+  const items = Array.from({ length: 501 }, (_, index) => [
+    message(index * 2 + 1, index * 2 + 1),
+    gap(index * 2 + 2, index * 2 + 2),
+  ]).flat();
+  store.focus(1);
+  store.apply(1, { reset: true, upserted: items, removed: [] });
+  store.apply(2, { reset: true, upserted: items, removed: [] });
+
+  expect(store.get(1)?.items).toHaveLength(1_002);
+  expect(store.get(2)?.items).toHaveLength(1_000);
+  expect(store.get(2)?.items.map((item) => item.id)).not.toContain(1);
+  expect(store.get(2)?.items.map((item) => item.id)).not.toContain(2);
+
+  store.focus(2);
+  expect(store.get(1)?.items).toHaveLength(1_000);
+  expect(store.get(2)?.items).toHaveLength(1_000);
 });
 
 interface FixtureFile {
@@ -124,6 +156,35 @@ function gap(id: number, time: number): TimelineItem {
     content_version: 0,
     body: { family: "gap", from_ms: time, to_ms: time + 1 },
   };
+}
+
+function message(id: number, time: number): TimelineItem {
+  return {
+    id,
+    order: [time, time, id],
+    day: 1,
+    content_version: 0,
+    body: {
+      family: "message",
+      id,
+      author: "nick",
+      text: "text",
+      kind: "text",
+      bot: false,
+      authorship: "other",
+      nick_color_index: 0,
+      highlighted: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: [],
+      server_time_ms: time,
+      received_at_ms: time,
+    },
+  };
+}
+
+function change(upserted: readonly TimelineItem[]): TimelineChange {
+  return { reset: false, upserted, removed: [] };
 }
 
 function isOrder(value: unknown): value is [number, number, number] {

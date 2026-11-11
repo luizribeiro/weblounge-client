@@ -13,6 +13,46 @@ export interface AppliedTimeline {
   readonly geometry: TimelineGeometry;
 }
 
+const engineWindowLimit = 500;
+
+export class TimelineStore {
+  readonly #buffers = new Map<number, AppliedTimeline>();
+  #focusedBufferId: number | undefined;
+
+  get(bufferId: number): AppliedTimeline | undefined {
+    return this.#buffers.get(bufferId);
+  }
+
+  apply(bufferId: number, change: TimelineChange): AppliedTimeline {
+    const applied = applyTimelineChange(
+      this.#buffers.get(bufferId)?.items ?? [],
+      change,
+    );
+    const retained =
+      bufferId === this.#focusedBufferId
+        ? applied
+        : { ...applied, items: retainEngineWindow(applied.items) };
+    this.#buffers.set(bufferId, retained);
+    return retained;
+  }
+
+  focus(bufferId: number | undefined): void {
+    this.#focusedBufferId = bufferId;
+    for (const [id, timeline] of this.#buffers) {
+      if (id !== bufferId)
+        this.#buffers.set(id, {
+          ...timeline,
+          items: retainEngineWindow(timeline.items),
+        });
+    }
+  }
+
+  remove(bufferId: number): void {
+    this.#buffers.delete(bufferId);
+    if (this.#focusedBufferId === bufferId) this.#focusedBufferId = undefined;
+  }
+}
+
 export function applyTimelineChange(
   current: readonly TimelineItem[],
   change: TimelineChange,
@@ -92,4 +132,26 @@ function compareOrder(
   right: TimelineItem["order"],
 ): number {
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
+}
+
+function retainEngineWindow(
+  items: readonly TimelineItem[],
+): readonly TimelineItem[] {
+  let messages = 0;
+  let system = 0;
+  const retained = new Set<number>();
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item === undefined) continue;
+    if (item.body.family === "message") {
+      messages += 1;
+      if (messages <= engineWindowLimit) retained.add(item.id);
+    } else {
+      system += 1;
+      if (system <= engineWindowLimit) retained.add(item.id);
+    }
+  }
+  return retained.size === items.length
+    ? items
+    : items.filter((item) => retained.has(item.id));
 }
