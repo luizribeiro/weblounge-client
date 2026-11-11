@@ -478,7 +478,7 @@ export function MessageList(props: MessageListProps) {
         element.getBoundingClientRect().height || element.offsetHeight;
       return index === undefined ? [] : [{ element, index, size }];
     });
-    preserveVisualScrollAnchor(list, () => {
+    const resize = () => {
       if (clearMeasurements) virtualizer.measure();
       const mountedIndexes = new Set(measurements.map(({ index }) => index));
       for (const index of revisedIndexes)
@@ -493,7 +493,9 @@ export function MessageList(props: MessageListProps) {
         element.dataset.index = String(index);
         virtualizer.measureElement(element);
       }
-    });
+    };
+    if (logicallyAtLiveEdge) resize();
+    else preserveVisualScrollAnchor(list, resize);
     setMeasurementEpoch((epoch) => epoch + 1);
   };
   const remeasureAll = () => remeasureRows(true);

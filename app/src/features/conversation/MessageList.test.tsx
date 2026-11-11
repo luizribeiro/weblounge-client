@@ -1388,11 +1388,21 @@ it("remeasures collapsed membership content on its first revised frame", async (
   };
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   expect(membershipHeight()).toBe(30);
+  const bottomBeforeGrowth = translateY(
+    container.querySelector<HTMLLIElement>('[data-row-key="message-2"]')?.style
+      .transform ?? "",
+  );
 
   setMemberships([{ ...initialMembership, nicks: ["mel", "rafa", "cyd"] }]);
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   expect(membershipHeight()).toBe(70);
+  expect(
+    translateY(
+      container.querySelector<HTMLLIElement>('[data-row-key="message-2"]')
+        ?.style.transform ?? "",
+    ),
+  ).toBe(bottomBeforeGrowth);
 });
 
 it("uses one history-edge divider for loading and the reached boundary", async () => {
