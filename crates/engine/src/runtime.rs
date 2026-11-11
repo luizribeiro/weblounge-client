@@ -4769,7 +4769,7 @@ fn finish_history_page(
     }) else {
         return Vec::new();
     };
-    let output = model
+    model
         .buffer_updated(completion.buffer_id)
         .into_iter()
         .chain(
@@ -4781,11 +4781,7 @@ fn finish_history_page(
                     at_start,
                 }),
         )
-        .collect::<Vec<_>>();
-    if completion.gap {
-        let _ = model.append_history_gap(completion.buffer_id);
-    }
-    output
+        .collect()
 }
 
 fn record_read_advances_and_flush(

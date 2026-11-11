@@ -20,9 +20,9 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     timeline::{
-        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalCalendar, MemberRank,
-        ModeMeaning, ModeProjection, OrderKey, Person, RecordBody, Subject, SystemLine,
-        SystemProjection, TimelineItem, TimelineRecord, diff, fold,
+        Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
+        LocalCalendar, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person, RecordBody,
+        Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord, diff, fold,
     },
 };
 
@@ -219,6 +219,7 @@ struct BufferState {
     direct_mismatch: Option<DirectMismatch>,
     read_facts: ReadFacts,
     history: HistoryState,
+    refresh_from_ms: Option<i64>,
     newest: Option<HistoryCursor>,
     pushed_history_pending: bool,
     pushed_history_retry_available: bool,
@@ -338,7 +339,6 @@ impl HistoryCursor {
 pub(crate) struct HistoryCompletion {
     pub(crate) buffer_id: BufferId,
     pub(crate) at_start: Option<bool>,
-    pub(crate) gap: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -547,6 +547,7 @@ impl NetworkModel {
                 oldest: None,
                 at_start: true,
             },
+            refresh_from_ms: None,
             newest: None,
             pushed_history_pending: false,
             pushed_history_retry_available: false,
@@ -1470,30 +1471,58 @@ impl NetworkModel {
         Some(())
     }
 
-    pub(crate) fn append_history_gap(&mut self, buffer_id: BufferId) -> Option<()> {
-        let received_at_ms = self.buffers.get(&buffer_id)?.newest.as_ref().map_or_else(
-            || time_millis(papo::time::now()),
-            |cursor| time_millis(cursor.server_time),
-        );
-        let message = MessageProjection {
-            id: self.allocate_message_id(),
-            author: String::new(),
-            text: "Some messages were skipped while reconnecting.".into(),
-            kind: MessageKind::Notice(NoticeKind::Info),
-            bot: Some(false),
-            authorship: MessageAuthorship::Own,
-            nick_color_index: 0,
-            highlighted: false,
-            unverified_sender: None,
-            reactions: None,
-            delivery: MessageDelivery::Received,
-            local_send_id: None,
-            server_ids: Vec::new(),
-            server_time_ms: None,
-            received_at_ms,
-        };
-        self.insert(buffer_id, message.clone(), None, DedupReferences::default())
-            .ok()?;
+    pub(crate) fn record_gap(
+        &mut self,
+        buffer_id: BufferId,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Option<()> {
+        let (from_ms, to_ms) = (from_ms.min(to_ms), from_ms.max(to_ms));
+        let overlapping = self
+            .buffers
+            .get(&buffer_id)?
+            .timeline
+            .iter()
+            .filter_map(|record| {
+                let RecordBody::Gap(gap) = &record.body else {
+                    return None;
+                };
+                (gap.from_ms <= to_ms && from_ms <= gap.to_ms).then_some((
+                    record.id,
+                    gap.from_ms,
+                    gap.to_ms,
+                ))
+            });
+        let mut merged_ids = Vec::new();
+        let mut merged_from = from_ms;
+        let mut merged_to = to_ms;
+        for (id, existing_from, existing_to) in overlapping {
+            merged_ids.push(id);
+            merged_from = merged_from.min(existing_from);
+            merged_to = merged_to.max(existing_to);
+        }
+        let kept_id = merged_ids.iter().min_by_key(|id| id.0).copied();
+        let id = kept_id.unwrap_or_else(|| self.allocate_message_id());
+        let order = self.allocate_order(Some(merged_from), merged_to);
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer
+            .timeline
+            .retain(|record| !merged_ids.contains(&record.id));
+        buffer.timeline.push(TimelineRecord {
+            id,
+            order,
+            day: self.calendar.day(merged_from),
+            body: RecordBody::Gap(GapProjection {
+                from_ms: merged_from,
+                to_ms: merged_to,
+            }),
+        });
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer
+            .read_facts
+            .merge_gap_until(ServerTimeMs::new(merged_to));
+        derive_read_projection(buffer);
+        self.dirty_timelines.insert(buffer_id);
         Some(())
     }
 
@@ -2172,7 +2201,7 @@ impl NetworkModel {
                 buffer.history,
                 HistoryState::LoadingLatest | HistoryState::Refreshing { .. }
             );
-        let mut gap = false;
+        let mut gap_range = None;
         let at_start = match buffer.history.clone() {
             HistoryState::LoadingOlder { oldest: previous } => {
                 let oldest = oldest.or(Some(previous));
@@ -2190,13 +2219,16 @@ impl NetworkModel {
                 Some(item_count == 0)
             }
             HistoryState::Refreshing { oldest, at_start } => {
+                let refresh_from_ms = buffer.refresh_from_ms.take();
                 advance_cursor(buffer, newest);
                 buffer.history = if end {
                     HistoryState::Ready { oldest, at_start }
                 } else {
                     HistoryState::RefreshCapped
                 };
-                gap = !end;
+                if !end && let (Some(from_ms), Some(to_ms)) = (refresh_from_ms, oldest_time_ms) {
+                    gap_range = Some((from_ms, to_ms));
+                }
                 None
             }
             HistoryState::Unrequested
@@ -2213,18 +2245,15 @@ impl NetworkModel {
             buffer.pushed_history_pending = false;
             buffer.pushed_history_retry_available = false;
         }
-        if gap && let Some(oldest_time_ms) = oldest_time_ms {
-            buffer
-                .read_facts
-                .merge_gap_until(ServerTimeMs::new(oldest_time_ms));
-        }
         buffer.projection.sync_state = history_sync_state(buffer);
         derive_read_projection(buffer);
         let completion = HistoryCompletion {
             buffer_id,
             at_start,
-            gap,
         };
+        if let Some((from_ms, to_ms)) = gap_range {
+            let _ = self.record_gap(buffer_id, from_ms, to_ms);
+        }
         self.settle_target_history(&key, true);
         Some(completion)
     }
@@ -3449,6 +3478,7 @@ impl NetworkModel {
                 direct_mismatch: None,
                 read_facts,
                 history: HistoryState::Unrequested,
+                refresh_from_ms: None,
                 newest: None,
                 pushed_history_pending: false,
                 pushed_history_retry_available: false,
@@ -3655,14 +3685,16 @@ impl NetworkModel {
 fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
     match fetch {
         HistoryFetch::Latest(_) => {
+            buffer.refresh_from_ms = None;
             set_history_state(buffer, HistoryState::LoadingLatest);
         }
-        HistoryFetch::After { .. } => {
+        HistoryFetch::After { newest, .. } => {
             let (oldest, at_start) = match &buffer.history {
                 HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
                 HistoryState::Unrequested | HistoryState::QueuedLatest => (None, false),
                 _ => unreachable!("after fetch starts from idle history"),
             };
+            buffer.refresh_from_ms = Some(time_millis(newest.server_time()));
             set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
         }
         HistoryFetch::Before { .. } => {}
@@ -3675,13 +3707,16 @@ fn begin_pushed_history(buffer: &mut BufferState, target: HistoryTarget) -> Opti
             (HistoryState::LoadingLatest, HistoryFetch::Latest(target))
         }
         HistoryState::Ready { oldest, at_start } => match buffer.newest.clone() {
-            Some(newest) => (
-                HistoryState::Refreshing {
-                    oldest: oldest.clone(),
-                    at_start: *at_start,
-                },
-                HistoryFetch::After { target, newest },
-            ),
+            Some(newest) => {
+                buffer.refresh_from_ms = Some(time_millis(newest.server_time()));
+                (
+                    HistoryState::Refreshing {
+                        oldest: oldest.clone(),
+                        at_start: *at_start,
+                    },
+                    HistoryFetch::After { target, newest },
+                )
+            }
             None => (HistoryState::LoadingLatest, HistoryFetch::Latest(target)),
         },
         HistoryState::LoadingLatest
@@ -4698,6 +4733,33 @@ mod tests {
         );
         old.extend(patches);
         old
+    }
+
+    #[test]
+    fn record_gap_merges_touching_ranges_and_updates_read_facts() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel), None, None);
+
+        model.record_gap(buffer_id, 20, 30).expect("first gap");
+        model.record_gap(buffer_id, 10, 20).expect("touching gap");
+        model.record_gap(buffer_id, 50, 40).expect("separate gap");
+
+        let gaps = take_changed_items(&mut model)
+            .into_iter()
+            .filter_map(|item| match item.body {
+                ItemBody::Gap(gap) => Some(gap),
+                ItemBody::Message(_) | ItemBody::System(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(gaps.len(), 2);
+        assert_eq!((gaps[0].from_ms, gaps[0].to_ms), (10, 30));
+        assert_eq!((gaps[1].from_ms, gaps[1].to_ms), (40, 50));
+        assert_eq!(
+            model.buffers[&buffer_id].read_facts.gap_until(),
+            Some(ServerTimeMs::new(50))
+        );
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
     }
 
     #[test]
@@ -5950,7 +6012,7 @@ mod tests {
             history.origin = TimelineOrigin::History;
             model.receive_incoming(history, &state);
         }
-        let completion = model
+        model
             .finish_history(
                 &papo::Conversation::Private(nick),
                 None,
@@ -5960,11 +6022,14 @@ mod tests {
                 false,
             )
             .expect("capped refresh finishes");
-        assert!(completion.gap);
         assert_eq!(
             model.buffers[&buffer_id].read_facts.gap_until(),
             Some(ServerTimeMs::new(299))
         );
+        assert!(take_changed_items(&mut model).iter().any(|item| matches!(
+            item.body,
+            ItemBody::Gap(ref gap) if gap.from_ms == 50 && gap.to_ms == 299
+        )));
         assert!(matches!(
             model.buffers[&buffer_id].history,
             HistoryState::RefreshCapped
