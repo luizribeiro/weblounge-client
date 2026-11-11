@@ -320,21 +320,24 @@ describe("WorkerEngineClient", () => {
       received_at_ms: 30,
     };
 
-    port.emit({ type: "messages_appended", buffer_id: 2, messages: [notice] });
-    port.emit({
-      type: "message_updated",
+    const appended = {
+      type: "timeline_changed",
       buffer_id: 2,
-      message: { ...notice, server_time_ms: 10 },
-    });
+      reset: false,
+      upserted: [timelineMessage(notice)],
+      removed: [],
+    };
+    const updated = {
+      ...appended,
+      upserted: [timelineMessage({ ...notice, server_time_ms: 10 })],
+    };
+    port.emit(appended);
+    port.emit(updated);
     frames[0]?.(0);
 
     expect(listener.mock.calls.map(([message]) => message)).toEqual([
-      { type: "messages_appended", buffer_id: 2, messages: [notice] },
-      {
-        type: "message_updated",
-        buffer_id: 2,
-        message: { ...notice, server_time_ms: 10 },
-      },
+      appended,
+      updated,
     ]);
   });
 
@@ -358,14 +361,17 @@ describe("WorkerEngineClient", () => {
       received_at_ms: 30,
     };
 
-    port.emit({ type: "messages_appended", buffer_id: 2, messages: [notice] });
+    const patch = {
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [timelineMessage(notice)],
+      removed: [],
+    };
+    port.emit(patch);
     frames[0]?.(0);
 
-    expect(listener).toHaveBeenCalledWith({
-      type: "messages_appended",
-      buffer_id: 2,
-      messages: [notice],
-    });
+    expect(listener).toHaveBeenCalledWith(patch);
   });
 
   it("decodes the engine runtime command registry", () => {
@@ -624,15 +630,16 @@ describe("WorkerEngineClient", () => {
     });
   });
 
-  it("decodes a buffer snapshot for an attaching tab", () => {
+  it("decodes a timeline reset for an attaching tab", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
-    const snapshot = {
-      type: "buffer_snapshot",
+    const reset = {
+      type: "timeline_changed",
       buffer_id: 2,
-      messages: [
-        {
+      reset: true,
+      upserted: [
+        timelineMessage({
           id: 4,
           author: "louro",
           text: "long first\nlong second",
@@ -646,15 +653,15 @@ describe("WorkerEngineClient", () => {
           server_ids: ["ml"],
           server_time_ms: 2,
           received_at_ms: 3,
-        },
+        }),
       ],
-      memberships: [],
+      removed: [],
     };
 
-    port.emit(snapshot);
+    port.emit(reset);
     frames[0]?.(0);
 
-    expect(listener).toHaveBeenCalledWith(snapshot);
+    expect(listener).toHaveBeenCalledWith(reset);
   });
 
   it("applies timeline patches by buffer before publishing them", () => {
@@ -899,32 +906,36 @@ describe("WorkerEngineClient", () => {
     };
 
     port.emit(notice("already-queued"));
-    port.emit({
-      type: "messages_appended",
+    const optimisticPatch = {
+      type: "timeline_changed",
       buffer_id: 2,
-      messages: [optimistic],
-    });
-    port.emit({
-      type: "message_confirmed",
-      buffer_id: 2,
-      local_send_id: 1,
-      message: {
-        ...optimistic,
-        delivery: "confirmed",
-        local_send_id: null,
-      },
-    });
+      reset: false,
+      upserted: [timelineMessage(optimistic)],
+      removed: [],
+    };
+    const confirmedPatch = {
+      ...optimisticPatch,
+      upserted: [
+        timelineMessage({
+          ...optimistic,
+          delivery: "confirmed",
+          local_send_id: null,
+        }),
+      ],
+    };
+    port.emit(optimisticPatch);
+    port.emit(confirmedPatch);
 
     expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
       "notice",
-      "messages_appended",
+      "timeline_changed",
     ]);
 
     frames[0]?.(0);
     expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
       "notice",
-      "messages_appended",
-      "message_confirmed",
+      "timeline_changed",
+      "timeline_changed",
     ]);
   });
 
@@ -1006,6 +1017,25 @@ function timelineGap(id: number, time: number) {
     day: 1,
     content_version: 0,
     body: { family: "gap", from_ms: time, to_ms: time + 1 },
+  };
+}
+
+function timelineMessage(message: {
+  readonly id: number;
+  readonly received_at_ms: number;
+  readonly server_time_ms: number | null;
+  readonly [key: string]: unknown;
+}) {
+  return {
+    id: message.id,
+    order: [
+      message.server_time_ms ?? message.received_at_ms,
+      message.received_at_ms,
+      message.id,
+    ],
+    day: 1,
+    content_version: 0,
+    body: { family: "message", ...message },
   };
 }
 
