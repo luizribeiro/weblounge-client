@@ -8,15 +8,14 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 3.2: route nick changes into system-line runs.
-2. Buffer events 3.3: project channel mode changes through typed system-line wording.
-3. Buffer events 7: missing-history gap and divider rows.
-4. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-5. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-6. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-7. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-8. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-9. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 3.3: project channel mode changes through typed system-line wording.
+2. Buffer events 7: missing-history gap and divider rows.
+3. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+4. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+5. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+6. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+7. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+8. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -30,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 3.2; routed nick changes to shared channels, matching pinned DMs,
+  and the server buffer for own changes, preserving case-only changes inside folded runs without
+  unread or highlight effects.
 - 2026-11-11: aligned the kicked-channel journey with the signed own-kick warning while preserving
   its read-only composer, reachable Rejoin action, and successful post-rejoin send coverage.
 - 2026-11-11: aligned the mobile deep-link timeline test with the signed system-line accessible
@@ -83,6 +85,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Route nick changes into typed system-line runs. Other users now fan out to every projected
+  shared channel and a continuity-matched old-nick DM, while own changes fan out to shared channels
+  and the server buffer. Case-only changes stay visible, exact round trips disappear, live/history
+  overlap deduplicates per buffer, and system rows never change unread or mention counts. Shared
+  Rust/TypeScript fixtures and the built-app journey cover the channel/DM projection and folding
+  with joins, with signed light desktop and phone captures.
 - [x] Render typed system lines for buffer-events batch 3.1b. A single wording model now feeds
   visible rows, accessible names, transcript copy and row estimates without storing IRC keys;
   membership runs show three names plus an expandable remainder and reason-bearing per-person
