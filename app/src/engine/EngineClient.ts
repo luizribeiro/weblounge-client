@@ -1,3 +1,9 @@
+import {
+  decodeArray,
+  decodeNumber,
+  isOneOf,
+  isRecord,
+} from "./decode-primitives";
 import { decodeCommandSpecs } from "./decodeCommandSpec";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
 import type {
@@ -1163,7 +1169,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
   };
 }
 
-function decodeMessage(value: unknown): MessageProjection | undefined {
+export function decodeMessage(value: unknown): MessageProjection | undefined {
   const kind = isRecord(value) ? decodeMessageKind(value.kind) : undefined;
   const reactions = isRecord(value)
     ? decodeReactions(value.reactions)
@@ -1274,29 +1280,6 @@ function decodeNoticeKind(
   return undefined;
 }
 
-function decodeArray<T>(
-  value: unknown,
-  decode: (item: unknown) => T | undefined,
-): T[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const decoded: T[] = [];
-  for (const item of value) {
-    const result = decode(item);
-    if (result === undefined) return undefined;
-    decoded.push(result);
-  }
-  return decoded;
-}
-
-function isOneOf<const T extends string>(
-  value: unknown,
-  choices: readonly T[],
-): value is T {
-  return (
-    typeof value === "string" && choices.some((choice) => choice === value)
-  );
-}
-
 function isStringArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) && value.every((item) => typeof item === "string")
@@ -1305,8 +1288,4 @@ function isStringArray(value: unknown): value is string[] {
 
 function assertNever(value: never): never {
   throw new Error(`unhandled engine message type: ${String(value)}`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
