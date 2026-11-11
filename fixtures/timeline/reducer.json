@@ -44,6 +44,20 @@
       "geometry": "mixed"
     },
     {
+      "name": "fold run growth",
+      "initial": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 100, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }] }] } } }],
+      "change": { "reset": false, "upserted": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 1, "body": { "family": "system", "time_ms": 110, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }, { "nick": "rafa", "nick_color_index": 2, "me": false }] }] } } }], "removed": [] },
+      "expected_items": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 1, "body": { "family": "system", "time_ms": 110, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }, { "nick": "rafa", "nick_color_index": 2, "me": false }] }] } } }],
+      "geometry": "in-place"
+    },
+    {
+      "name": "fold run merge",
+      "initial": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 100, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }] }] } } }, { "id": 20, "order": [110, 110, 20], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 110, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "rafa", "nick_color_index": 2, "me": false }] }] } } }],
+      "change": { "reset": false, "upserted": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 1, "body": { "family": "system", "time_ms": 110, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }, { "nick": "rafa", "nick_color_index": 2, "me": false }] }] } } }], "removed": [20] },
+      "expected_items": [{ "id": 10, "order": [100, 100, 10], "day": 1, "content_version": 1, "body": { "family": "system", "time_ms": 110, "line": { "type": "run", "clauses": [{ "type": "joined", "people": [{ "nick": "mel", "nick_color_index": 1, "me": false }, { "nick": "rafa", "nick_color_index": 2, "me": false }] }] } } }],
+      "geometry": "mixed"
+    },
+    {
       "name": "reset",
       "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
       "change": { "reset": true, "upserted": [{ "id": 3, "order": [30, 30, 3], "day": 2, "content_version": 4, "body": { "family": "gap", "from_ms": 30, "to_ms": 31 } }], "removed": [] },

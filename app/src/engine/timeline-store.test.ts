@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { decodeArray, decodeNumber, isRecord } from "./decode-primitives";
+import { decodeTimelineItem } from "./decodeTimelineItem";
 import type { TimelineItem } from "./generated/TimelineItem";
 import {
   applyTimelineChange,
@@ -15,7 +16,7 @@ it("matches the Rust reducer on every shared fixture", () => {
     JSON.parse(readFileSync("../fixtures/timeline/reducer.json", "utf8")),
   );
   expect(fixtures.version).toBe(1);
-  expect(fixtures.cases).toHaveLength(7);
+  expect(fixtures.cases).toHaveLength(9);
 
   for (const fixture of fixtures.cases) {
     expect(applyTimelineChange(fixture.initial, fixture.change)).toEqual({
@@ -117,14 +118,14 @@ function decodeFixtures(value: unknown): FixtureFile {
 
 function decodeCase(value: unknown): FixtureCase | undefined {
   if (!isRecord(value) || !isGeometry(value.geometry)) return undefined;
-  const initial = decodeArray(value.initial, decodeGapItem);
+  const initial = decodeArray(value.initial, decodeTimelineItem);
   const upserted = isRecord(value.change)
-    ? decodeArray(value.change.upserted, decodeGapItem)
+    ? decodeArray(value.change.upserted, decodeTimelineItem)
     : undefined;
   const removed = isRecord(value.change)
     ? decodeArray(value.change.removed, decodeNumber)
     : undefined;
-  const expected = decodeArray(value.expected_items, decodeGapItem);
+  const expected = decodeArray(value.expected_items, decodeTimelineItem);
   if (
     initial === undefined ||
     upserted === undefined ||
@@ -139,32 +140,6 @@ function decodeCase(value: unknown): FixtureCase | undefined {
     change: { reset: value.change.reset, upserted, removed },
     expected_items: expected,
     geometry: value.geometry,
-  };
-}
-
-function decodeGapItem(value: unknown): TimelineItem | undefined {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "number" ||
-    !isOrder(value.order) ||
-    typeof value.day !== "number" ||
-    typeof value.content_version !== "number" ||
-    !isRecord(value.body) ||
-    value.body.family !== "gap" ||
-    typeof value.body.from_ms !== "number" ||
-    typeof value.body.to_ms !== "number"
-  )
-    return undefined;
-  return {
-    id: value.id,
-    order: value.order,
-    day: value.day,
-    content_version: value.content_version,
-    body: {
-      family: "gap",
-      from_ms: value.body.from_ms,
-      to_ms: value.body.to_ms,
-    },
   };
 }
 
@@ -211,14 +186,6 @@ function ownBody(id: number, time: number) {
   const body = message(id, time).body;
   if (body.family !== "message") throw new Error("message fixture expected");
   return { ...body, authorship: "own" as const };
-}
-
-function isOrder(value: unknown): value is [number, number, number] {
-  return (
-    Array.isArray(value) &&
-    value.length === 3 &&
-    value.every((part) => typeof part === "number")
-  );
 }
 
 function isGeometry(value: unknown): value is TimelineGeometry {
