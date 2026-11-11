@@ -31,6 +31,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: stabilized the timeline jump-count journey by giving its asserted oldest row a
+  deterministic server time before the concurrent multi-client seed.
 - 2026-11-11: buffer events 1c-ii; MessageList renders the engine's ordered timeline items and
   derives geometry and jump counts from their patches while the legacy event stream remains live.
 - 2026-11-10: chat-list snapshot saves immediately, including push-restored rows and own sends in loading DMs; jump pill counts only newer messages; top-of-transcript history race; read-carry anchored to raw markers; buffer events 1b and 1c-i.
@@ -62,6 +64,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the jump-count history journey's top-row assertion deterministic. Nine independent IRC
+  writers can reach Ergo in a different order than the test's send loop, so the row labelled zero
+  was sometimes correctly ordered below the virtualizer's top window. The fixture now confirms and
+  rewrites that row before releasing the concurrent bulk, matching the spacing audit's ordering
+  fence without changing product scroll or jump-count behavior.
 - [x] Render the engine's ordered timeline items without sorting or merging them in `MessageList`,
   while retaining the legacy event stream for batch 1d. The app keeps timeline views reactive
   across desktop and mobile shells, and buffer focus refreshes dormant retention without waiting

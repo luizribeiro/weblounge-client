@@ -5,6 +5,7 @@ import {
   scrollToTranscriptTop,
 } from "./message-list-scroll";
 import { useDedicatedWorker } from "./production-ergo";
+import { armMessageTime } from "./time-rewrite";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -32,11 +33,18 @@ test("counts only new peer suffix rows across history, own send, and catch-up", 
     (_, index) => `jump seed ${suffix} ${index} ${"wrapped ".repeat(8)}`,
   );
   try {
+    const oldest = seeded[0];
+    const firstBot = bots[0];
+    if (oldest === undefined || firstBot === undefined)
+      throw new Error("oldest jump seed is missing");
+    const oldestEcho = await firstBot.privmsgConfirmed(channel, oldest);
+    await armMessageTime(oldest, Date.parse(serverTime(oldestEcho)) - 1_000);
+    const bulkSeeded = seeded.slice(1);
     const finalEchoes: Promise<string>[] = [];
-    for (const [index, text] of seeded.entries()) {
+    for (const [index, text] of bulkSeeded.entries()) {
       const bot = bots[index % bots.length];
       if (bot === undefined) throw new Error("jump bot is missing");
-      if (index >= seeded.length - bots.length)
+      if (index >= bulkSeeded.length - bots.length)
         finalEchoes.push(bot.privmsgConfirmed(channel, text));
       else bot.privmsg(channel, text);
     }
@@ -46,7 +54,6 @@ test("counts only new peer suffix rows across history, own send, and catch-up", 
     await page.getByRole("button", { name: channel }).click();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     const list = page.locator("[data-message-list]");
-    const oldest = seeded[0] ?? "missing oldest";
     await expect
       .poll(async () => {
         await scrollToTranscriptTop(list);
@@ -117,6 +124,13 @@ function networkState(page: Page) {
     .locator("[data-network-state]")
     .first()
     .getAttribute("data-network-state");
+}
+
+function serverTime(line: string): string {
+  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
+  if (value === undefined)
+    throw new Error(`message has no server time: ${line}`);
+  return value;
 }
 
 function jumpButton(page: Page) {
