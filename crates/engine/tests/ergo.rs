@@ -63,14 +63,14 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
             text: text.clone(),
         },
     }));
-    assert!(optimistic.iter().any(|event| matches!(
-        event,
-        EngineToUi::MessagesAppended { messages, .. }
-            if messages.iter().any(|message| {
+    assert!(
+        optimistic
+            .iter()
+            .any(|event| timeline_messages(event).any(|message| {
                 message.text == text
                     && message.delivery == weblounge_engine::MessageDelivery::Optimistic
-            })
-    )));
+            }))
+    );
 
     let received = receive_weblounge_message(&mut reader_events).await;
     assert_eq!(received.text, text);
@@ -79,7 +79,10 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             match events.recv().await {
-                Some(EngineToUi::MessageConfirmed { message, .. }) => {
+                Some(event) if timeline_messages(&event).any(|message| message.text == text) => {
+                    let message = timeline_messages(&event)
+                        .find(|message| message.text == text)
+                        .expect("confirmed message is present");
                     assert_eq!(message.text, text);
                     assert_eq!(
                         message.delivery,
@@ -100,6 +103,20 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
         .quit("multiline regression complete")
         .await
         .expect("second client quits cleanly");
+}
+
+fn timeline_messages(
+    event: &EngineToUi,
+) -> impl Iterator<Item = &weblounge_engine::MessageProjection> {
+    let upserted = match event {
+        EngineToUi::TimelineChanged { upserted, .. } => upserted.as_slice(),
+        _ => &[],
+    };
+    upserted.iter().filter_map(|item| match &item.body {
+        weblounge_engine::timeline::ItemBody::Message(message) => Some(message),
+        weblounge_engine::timeline::ItemBody::System(_)
+        | weblounge_engine::timeline::ItemBody::Gap(_) => None,
+    })
 }
 
 #[tokio::test]
