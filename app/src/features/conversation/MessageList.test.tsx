@@ -1,10 +1,12 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { batch, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import type { TimelineView } from "../../engine/timeline-store";
 import {
   keyboardMotionTranscriptRevealEvent,
   observeKeyboardMotion,
@@ -14,11 +16,7 @@ import {
   keyboardLayoutWillCommitEvent,
 } from "../../platform/viewport-geometry";
 import { composerGeometryChangeEvent } from "../composer/geometry";
-import {
-  countMessagesAfterPreviousNewest,
-  MessageList,
-  type MessageListController,
-} from "./MessageList";
+import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
 
 vi.mock("./nick-lookup", async (importOriginal) => {
@@ -79,41 +77,6 @@ const message: MessageProjection = {
   server_time_ms: null,
   received_at_ms: 1,
 };
-
-it("counts only messages after the previous live edge", () => {
-  const at = (
-    id: number,
-    time: number,
-    authorship: MessageProjection["authorship"] = "other",
-  ): MessageProjection => ({
-    ...message,
-    id,
-    authorship,
-    delivery: authorship === "own" ? "confirmed" : "received",
-    server_time_ms: time,
-    received_at_ms: time,
-  });
-  const existing = [at(3, 30), at(4, 40)];
-
-  expect(
-    countMessagesAfterPreviousNewest(existing, [
-      at(1, 10),
-      at(2, 20),
-      ...existing,
-    ]),
-  ).toBe(0);
-  expect(
-    countMessagesAfterPreviousNewest(existing, [...existing, at(5, 40, "own")]),
-  ).toBe(1);
-  expect(
-    countMessagesAfterPreviousNewest(existing, [
-      at(2, 20),
-      ...existing,
-      at(5, 40),
-    ]),
-  ).toBe(1);
-  expect(countMessagesAfterPreviousNewest([], [at(1, 10), at(2, 20)])).toBe(0);
-});
 
 it("renders highlight, nick colour, and failed delivery presentation", () => {
   const { container } = render(() => <MessageList messages={[message]} />);
@@ -1153,43 +1116,51 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
     server_time_ms: 6,
     received_at_ms: 6,
   };
+  const messages = [
+    {
+      ...message,
+      id: 1,
+      text: "first",
+      highlighted: false,
+      delivery: "received" as const,
+    },
+    {
+      ...message,
+      id: 2,
+      author: "weblounge",
+      authorship: "own" as const,
+      bot: true,
+      delivery: "optimistic" as const,
+      kind: "action" as const,
+      highlighted: false,
+      text: "waves",
+      received_at_ms: 3,
+    },
+    {
+      ...message,
+      id: 3,
+      author: "concierge",
+      bot: true,
+      delivery: "received" as const,
+      highlighted: false,
+      text: "welcome",
+      received_at_ms: 4,
+    },
+  ];
   const rejoin = vi.fn();
   render(() => (
     <MessageList
       memberships={[membership, kicked]}
-      messages={[
-        {
-          ...message,
-          id: 1,
-          text: "first",
-          highlighted: false,
-          delivery: "received",
-        },
-        {
-          ...message,
-          id: 2,
-          author: "weblounge",
-          authorship: "own",
-          bot: true,
-          delivery: "optimistic",
-          kind: "action",
-          highlighted: false,
-          text: "waves",
-          received_at_ms: 3,
-        },
-        {
-          ...message,
-          id: 3,
-          author: "concierge",
-          bot: true,
-          delivery: "received",
-          highlighted: false,
-          text: "welcome",
-          received_at_ms: 4,
-        },
-      ]}
+      messages={messages}
       onRejoin={rejoin}
       readAtMs={1}
+      timeline={timelineView([
+        messageItem(messages[0] as MessageProjection),
+        membershipItem(membership),
+        messageItem(messages[1] as MessageProjection),
+        messageItem(messages[2] as MessageProjection),
+        membershipItem(kicked),
+      ])}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -1235,6 +1206,11 @@ it("remeasures collapsed membership content on its first revised frame", async (
         { ...message, received_at_ms: 1 },
         { ...message, id: 2, received_at_ms: 3 },
       ]}
+      timeline={timelineView([
+        messageItem({ ...message, received_at_ms: 1 }),
+        membershipItem(memberships()[0] as MembershipProjection),
+        messageItem({ ...message, id: 2, received_at_ms: 3 }),
+      ])}
     />
   ));
   const membershipHeight = () => {
@@ -2030,7 +2006,7 @@ it("restacks measured rows when the New boundary moves past a long row", async (
   await flushRowSizes();
 
   setMessages([
-    ...messages(),
+    ...messages().slice(0, 2),
     {
       ...message,
       id: 4,
@@ -2039,6 +2015,7 @@ it("restacks measured rows when the New boundary moves past a long row", async (
       text: "own reply",
       received_at_ms: 2,
     },
+    ...(messages().slice(2) as readonly MessageProjection[]),
   ]);
   await flushRowSizes();
 
@@ -2433,6 +2410,80 @@ function renderedRowGeometry(container: HTMLElement) {
 function translateY(transform: string): number {
   const match = /translateY\(([-\d.]+)px\)/.exec(transform);
   return Number(match?.[1] ?? 0);
+}
+
+function messageItem(value: MessageProjection): TimelineItem {
+  const time = value.server_time_ms ?? value.received_at_ms;
+  return {
+    id: value.id,
+    order: [time, value.received_at_ms, value.id],
+    day: 0,
+    content_version: 0,
+    body: { family: "message", ...value },
+  };
+}
+
+function membershipItem(value: MembershipProjection): TimelineItem {
+  const time = value.server_time_ms ?? value.received_at_ms;
+  return {
+    id: value.id,
+    order: [time, value.received_at_ms, value.id],
+    day: 0,
+    content_version: 0,
+    body:
+      value.type === "change"
+        ? {
+            family: "system",
+            time_ms: time,
+            line: {
+              type: "run",
+              clauses: [
+                {
+                  type:
+                    value.kind === "joined"
+                      ? "joined"
+                      : value.kind === "parted"
+                        ? "left"
+                        : "quit",
+                  people: value.nicks.map((nick) =>
+                    value.kind === "joined"
+                      ? { nick, nick_color_index: 0, me: false }
+                      : {
+                          person: { nick, nick_color_index: 0, me: false },
+                          reason: null,
+                        },
+                  ),
+                },
+              ],
+            },
+          }
+        : {
+            family: "system",
+            time_ms: time,
+            line: {
+              type: "event",
+              event: {
+                type: "kick",
+                actor: {
+                  type: "user",
+                  nick: value.actor,
+                  nick_color_index: 0,
+                  me: false,
+                },
+                subject: { type: "you" },
+                reason: value.reason,
+              },
+            },
+          },
+  } as TimelineItem;
+}
+
+function timelineView(items: readonly TimelineItem[]): TimelineView {
+  return {
+    items,
+    geometry: "mixed",
+    change: { reset: true, upserted: items, removed: [] },
+  };
 }
 
 function rect(top: number, height: number): DOMRect {

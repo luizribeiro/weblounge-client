@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { densityPresets } from "../../density/density";
+import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type {
   BufferProjection,
   HistoryState,
@@ -23,6 +24,10 @@ import type {
   MessageProjection,
   NoticeKind,
 } from "../../engine/protocol";
+import {
+  deriveJumpCount,
+  type TimelineView,
+} from "../../engine/timeline-store";
 import { keyboardMotionTranscriptRevealEvent } from "../../platform/keyboard-motion";
 import {
   type AppGeometryChange,
@@ -63,6 +68,8 @@ interface MessageListProps {
   readonly historyState?: HistoryState | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
+  readonly timeline?: TimelineView | undefined;
+  readonly timelineEnabled?: boolean | undefined;
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readAtMs?: number | null | undefined;
   readonly syncState?: BufferProjection["sync_state"] | undefined;
@@ -89,19 +96,31 @@ type TimelineRow =
       readonly kind: "history";
       readonly key: string;
       readonly state: HistoryState;
+      readonly engineOrder?: TimelineItem["order"] | undefined;
     }
-  | { readonly kind: "day"; readonly key: string; readonly label: string }
-  | { readonly kind: "new"; readonly key: string }
+  | {
+      readonly kind: "day";
+      readonly key: string;
+      readonly label: string;
+      readonly engineOrder?: TimelineItem["order"] | undefined;
+    }
+  | {
+      readonly kind: "new";
+      readonly key: string;
+      readonly engineOrder?: TimelineItem["order"] | undefined;
+    }
   | {
       readonly kind: "membership";
       readonly key: string;
       readonly membership: MembershipProjection;
+      readonly engineOrder: TimelineItem["order"];
     }
   | {
       readonly kind: "message";
       readonly key: string;
       readonly message: MessageProjection;
       readonly startsMobileGroup: boolean;
+      readonly engineOrder: TimelineItem["order"];
     };
 
 type NoticeMessage = MessageProjection & {
@@ -137,22 +156,37 @@ export function MessageList(props: MessageListProps) {
     for (const key of rowRevisionCache.keys())
       if (!currentKeys.has(key)) rowRevisionCache.delete(key);
   };
+  const timelineActive = () =>
+    props.timelineEnabled === true || props.timeline !== undefined;
+  const legacyItems = new WeakMap<MessageProjection, TimelineItem>();
+  const orderedItems = createMemo(() =>
+    timelineActive()
+      ? (props.timeline?.items ?? [])
+      : messageTimelineItems(props.messages, legacyItems),
+  );
+  const orderedMessages = createMemo(() =>
+    timelineActive()
+      ? orderedItems().flatMap((item) =>
+          item.body.family === "message" ? [item.body] : [],
+        )
+      : props.messages,
+  );
   let renderedMessages: readonly MessageProjection[] = [];
   let currentBuffer = props.bufferId;
   const initialReadAt = dividerMarkAfterOwnSend(
     props.readAtMs ?? null,
-    props.messages,
+    orderedMessages(),
   );
   let dividerTracksMark = !openingBoundaryPending(
-    props.messages,
+    orderedMessages(),
     initialReadAt,
     props.syncState,
     props.unread,
   );
   let observedForegroundExitEpoch = props.foregroundExitEpoch;
   let watchedThrough: number | undefined;
-  let observedOwnTime = latestCommittedOwnTime(props.messages);
-  let observedPeerTime = latestPeerTime(props.messages);
+  let observedOwnTime = latestCommittedOwnTime(orderedMessages());
+  let observedPeerTime = latestPeerTime(orderedMessages());
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
@@ -165,12 +199,7 @@ export function MessageList(props: MessageListProps) {
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const [measurementEpoch, setMeasurementEpoch] = createSignal(0);
   const rows = createMemo(() =>
-    timelineRows(
-      props.messages,
-      props.memberships ?? [],
-      dividerMark(),
-      props.historyState,
-    ),
+    timelineRows(orderedItems(), dividerMark(), props.historyState),
   );
   const rowSizeRevision = (
     row: TimelineRow,
@@ -207,7 +236,7 @@ export function MessageList(props: MessageListProps) {
     const current = rows();
     return (index: number) => current[index]?.key ?? index;
   });
-  const nickLookup = createMemo(() => createNickLookup(props.messages));
+  const nickLookup = createMemo(() => createNickLookup(orderedMessages()));
   const setLiveEdge = (live: boolean) => {
     if (scrollLiveEdgeFrame !== undefined) {
       window.cancelAnimationFrame(scrollLiveEdgeFrame);
@@ -470,7 +499,7 @@ export function MessageList(props: MessageListProps) {
     scrollToLiveEdge();
   };
   const selectLastOwn = () => {
-    const message = [...props.messages]
+    const message = [...orderedMessages()]
       .reverse()
       .find((item) => item.authorship === "own" && !isNoticeMessage(item));
     if (message === undefined) return;
@@ -489,19 +518,19 @@ export function MessageList(props: MessageListProps) {
       currentBuffer = props.bufferId;
       const marker = dividerMarkAfterOwnSend(
         props.readAtMs ?? null,
-        props.messages,
+        orderedMessages(),
       );
       setDividerMark(marker);
       dividerTracksMark = !openingBoundaryPending(
-        props.messages,
+        orderedMessages(),
         marker,
         props.syncState,
         props.unread,
       );
       observedForegroundExitEpoch = props.foregroundExitEpoch;
       watchedThrough = undefined;
-      observedOwnTime = latestCommittedOwnTime(props.messages);
-      observedPeerTime = latestPeerTime(props.messages);
+      observedOwnTime = latestCommittedOwnTime(orderedMessages());
+      observedPeerTime = latestPeerTime(orderedMessages());
       renderedMessages = [];
       olderPageArmed = true;
       setUnseen(0);
@@ -519,13 +548,14 @@ export function MessageList(props: MessageListProps) {
       observedForegroundExitEpoch = foregroundExitEpoch;
     }
     if (
-      props.messages.length === 0 &&
+      orderedMessages().length === 0 &&
       props.syncState !== "syncing" &&
       (props.unread ?? 0) === 0
     )
       dividerTracksMark = true;
-    const ownTime = latestCommittedOwnTime(props.messages);
-    const peerTime = latestPeerTime(props.messages);
+    const messages = orderedMessages();
+    const ownTime = latestCommittedOwnTime(messages);
+    const peerTime = latestPeerTime(messages);
     if (
       ownTime !== undefined &&
       (observedOwnTime === undefined || ownTime > observedOwnTime)
@@ -533,7 +563,7 @@ export function MessageList(props: MessageListProps) {
       const ownMark = Math.max(marker ?? ownTime, ownTime);
       setDividerMark(ownMark);
       dividerTracksMark =
-        !hasUnreadAfter(props.messages, ownMark) ||
+        !hasUnreadAfter(messages, ownMark) ||
         (peerTime !== undefined &&
           (observedPeerTime === undefined || peerTime > observedPeerTime));
       watchedThrough = undefined;
@@ -543,7 +573,7 @@ export function MessageList(props: MessageListProps) {
     if (dividerMark() === null && marker !== null) {
       setDividerMark(marker);
       dividerTracksMark = !openingBoundaryPending(
-        props.messages,
+        messages,
         marker,
         props.syncState,
         props.unread,
@@ -570,7 +600,7 @@ export function MessageList(props: MessageListProps) {
       watchedThrough = undefined;
     }
     if (watchedThrough !== undefined) {
-      const watched = latestMessageTime(props.messages);
+      const watched = latestMessageTime(messages);
       if (watched !== undefined && watched > watchedThrough) {
         setDividerMark(watched);
         watchedThrough = watched;
@@ -579,8 +609,8 @@ export function MessageList(props: MessageListProps) {
     }
     if (!dividerTracksMark) return;
     const current = dividerMark();
-    if (hasUnreadAfter(props.messages, current)) {
-      const watched = latestMessageTime(props.messages);
+    if (hasUnreadAfter(messages, current)) {
+      const watched = latestMessageTime(messages);
       setDividerMark(watched ?? current);
       dividerTracksMark = false;
       watchedThrough = watched;
@@ -588,15 +618,30 @@ export function MessageList(props: MessageListProps) {
       setDividerMark(maximumMark(current, marker));
     }
   });
+  let renderedTimeline = props.timeline;
   createEffect(() => {
-    const messages = props.messages;
+    const messages = orderedMessages();
     const previousMessages = renderedMessages;
-    const appended = countMessagesAfterPreviousNewest(
-      previousMessages,
-      messages,
-    );
-    if (appended > 0 && !logicallyAtLiveEdge)
-      setUnseen((count) => count + appended);
+    const timeline = props.timeline;
+    if (timelineActive() && timeline !== renderedTimeline) {
+      if (timeline !== undefined)
+        setUnseen((count) =>
+          deriveJumpCount(
+            count,
+            logicallyAtLiveEdge,
+            timeline.change,
+            timeline.geometry,
+          ),
+        );
+      renderedTimeline = timeline;
+    } else if (!timelineActive()) {
+      const appended = countPeerMessagesAfterPreviousNewest(
+        previousMessages,
+        messages,
+      );
+      if (appended > 0 && !logicallyAtLiveEdge)
+        setUnseen((count) => count + appended);
+    }
     renderedMessages = messages;
     if (messages.length !== previousMessages.length && logicallyAtLiveEdge)
       scrollToLiveEdge();
@@ -605,8 +650,12 @@ export function MessageList(props: MessageListProps) {
   let measuredRevisions = measuredRows.map((row, index) =>
     rowSizeRevision(row, index, measuredRows),
   );
+  let measuredTimeline = props.timeline;
   createEffect(() => {
     const currentRows = rows();
+    const timeline = props.timeline;
+    const timelineChanged = timelineActive() && timeline !== measuredTimeline;
+    measuredTimeline = timeline;
     pruneRowCaches(currentRows);
     const currentRevisions = currentRows.map((row, index) =>
       rowSizeRevision(row, index, currentRows),
@@ -620,14 +669,15 @@ export function MessageList(props: MessageListProps) {
         currentRevisions,
       );
     if (unchanged) return;
-    const appended =
-      currentRows.length > measuredRows.length &&
-      samePrefix(
-        measuredRows,
-        measuredRevisions,
-        currentRows,
-        currentRevisions,
-      );
+    const appended = timelineChanged
+      ? timeline?.geometry === "suffix"
+      : currentRows.length > measuredRows.length &&
+        samePrefix(
+          measuredRows,
+          measuredRevisions,
+          currentRows,
+          currentRevisions,
+        );
     const previousRevisions = new Map(
       measuredRows.map((row, index) => [row.key, measuredRevisions[index]]),
     );
@@ -897,6 +947,7 @@ export function MessageList(props: MessageListProps) {
                   <li
                     class={styles.virtualRow}
                     data-copy-row-index={virtualRow.index}
+                    data-engine-order={formatEngineOrder(row()?.engineOrder)}
                     data-index={virtualRow.index}
                     data-line-spacing={lineRowSpacing(rows(), virtualRow.index)}
                     data-row-key={String(virtualRow.key)}
@@ -1302,8 +1353,7 @@ function openingBoundaryPending(
 }
 
 function timelineRows(
-  messages: readonly MessageProjection[],
-  memberships: readonly MembershipProjection[],
+  items: readonly TimelineItem[],
   readAtMs: number | null,
   historyState?: HistoryState,
 ): TimelineRow[] {
@@ -1314,55 +1364,48 @@ function timelineRows(
   let day = "";
   let newInserted = false;
   let previousGroupMessage: MessageProjection | undefined;
-  const firstUnread = unreadStartId(messages, readAtMs);
-  const items = [
-    ...messages.map((value) => ({
-      kind: "message" as const,
-      value,
-      time: messageTime(value),
-    })),
-    ...memberships.map((value) => ({
-      kind: "membership" as const,
-      value,
-      time: value.server_time_ms ?? value.received_at_ms,
-    })),
-  ].sort(
-    (left, right) => left.time - right.time || left.value.id - right.value.id,
+  const messages = items.flatMap((item) =>
+    item.body.family === "message" ? [item.body] : [],
   );
+  const firstUnread = unreadStartId(messages, readAtMs);
   for (const item of items) {
-    const time = new Date(item.time);
+    const message = item.body.family === "message" ? item.body : undefined;
+    const membership = timelineMembership(item);
+    if (message === undefined && membership === undefined) continue;
+    const milliseconds =
+      message === undefined
+        ? (membership?.server_time_ms ?? membership?.received_at_ms ?? 0)
+        : messageTime(message);
+    const time = new Date(milliseconds);
     const nextDay = `${time.getFullYear()}-${time.getMonth()}-${time.getDate()}`;
     if (nextDay !== day) {
       day = nextDay;
       rows.push({ kind: "day", key: `day-${day}`, label: formatDay(time) });
       previousGroupMessage = undefined;
     }
-    if (
-      !newInserted &&
-      item.kind === "message" &&
-      item.value.id === firstUnread
-    ) {
+    if (!newInserted && message !== undefined && message.id === firstUnread) {
       rows.push({ kind: "new", key: `new-before-${firstUnread}` });
       newInserted = true;
       previousGroupMessage = undefined;
     }
-    if (item.kind === "message") {
+    if (message !== undefined) {
       rows.push({
         kind: "message",
-        key: `message-${item.value.id}`,
-        message: item.value,
+        key: `message-${message.id}`,
+        message,
+        engineOrder: item.order,
         startsMobileGroup: startsMobileMessageGroup(
           previousGroupMessage,
-          item.value,
+          message,
         ),
       });
-      previousGroupMessage =
-        item.value.kind === "text" ? item.value : undefined;
-    } else {
+      previousGroupMessage = message.kind === "text" ? message : undefined;
+    } else if (membership !== undefined) {
       rows.push({
         kind: "membership",
-        key: `membership-${item.value.id}`,
-        membership: item.value,
+        key: `membership-${membership.id}`,
+        membership,
+        engineOrder: item.order,
       });
       previousGroupMessage = undefined;
     }
@@ -1370,16 +1413,64 @@ function timelineRows(
   return rows;
 }
 
+function timelineMembership(
+  item: TimelineItem,
+): MembershipProjection | undefined {
+  if (item.body.family !== "system") return undefined;
+  const line = item.body.line;
+  if (line.type === "event") {
+    const event = line.event;
+    if (event.type !== "kick" || event.subject.type !== "you") return undefined;
+    return {
+      type: "kicked",
+      id: item.id,
+      actor: event.actor.type === "user" ? event.actor.nick : event.actor.name,
+      reason: event.reason,
+      server_time_ms: item.body.time_ms,
+      received_at_ms: item.order[1],
+    };
+  }
+  const clause = line.clauses.length === 1 ? line.clauses[0] : undefined;
+  if (clause === undefined) return undefined;
+  if (clause.type === "joined")
+    return membershipChange(
+      item,
+      item.body.time_ms,
+      "joined",
+      clause.people.map((person) => person.nick),
+    );
+  if (clause.type === "left" || clause.type === "quit")
+    return membershipChange(
+      item,
+      item.body.time_ms,
+      clause.type === "left" ? "parted" : "quit",
+      clause.people.map(({ person }) => person.nick),
+    );
+  return undefined;
+}
+
+function membershipChange(
+  item: TimelineItem,
+  timeMs: number,
+  kind: "joined" | "parted" | "quit",
+  nicks: readonly string[],
+): MembershipProjection {
+  return {
+    type: "change",
+    id: item.id,
+    kind,
+    nicks: [...nicks],
+    server_time_ms: timeMs,
+    received_at_ms: item.order[1],
+  };
+}
+
 function unreadStartId(
   messages: readonly MessageProjection[],
   readAtMs: number | null,
 ): number | undefined {
   if (readAtMs === null) return undefined;
-  const ordered = [...messages].sort(
-    (left, right) =>
-      messageTime(left) - messageTime(right) || left.id - right.id,
-  );
-  return ordered.find(
+  return messages.find(
     (message) =>
       message.authorship !== "own" && messageTime(message) > readAtMs,
   )?.id;
@@ -1454,7 +1545,26 @@ function messageTime(message: MessageProjection): number {
   return message.server_time_ms ?? message.received_at_ms;
 }
 
-export function countMessagesAfterPreviousNewest(
+function messageTimelineItems(
+  messages: readonly MessageProjection[],
+  cache: WeakMap<MessageProjection, TimelineItem>,
+): readonly TimelineItem[] {
+  return messages.map((message, index) => {
+    const cached = cache.get(message);
+    if (cached !== undefined) return cached;
+    const item: TimelineItem = {
+      id: message.id,
+      order: [messageTime(message), message.received_at_ms, index],
+      day: 0,
+      content_version: 0,
+      body: { family: "message", ...message },
+    };
+    cache.set(message, item);
+    return item;
+  });
+}
+
+function countPeerMessagesAfterPreviousNewest(
   previous: readonly MessageProjection[],
   current: readonly MessageProjection[],
 ): number {
@@ -1467,7 +1577,10 @@ export function countMessagesAfterPreviousNewest(
   );
   return newest === undefined
     ? 0
-    : current.filter((message) => compareMessages(message, newest) > 0).length;
+    : current.filter(
+        (message) =>
+          message.authorship !== "own" && compareMessages(message, newest) > 0,
+      ).length;
 }
 
 function compareMessages(
@@ -1475,6 +1588,10 @@ function compareMessages(
   right: MessageProjection,
 ): number {
   return messageTime(left) - messageTime(right) || left.id - right.id;
+}
+
+function formatEngineOrder(order: TimelineItem["order"] | undefined) {
+  return order?.join(":");
 }
 
 function formatNoticeTime(milliseconds: number): string {
