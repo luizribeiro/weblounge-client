@@ -1809,6 +1809,17 @@ impl NetworkModel {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn projected_messages(&self, buffer_id: BufferId) -> Vec<MessageProjection> {
+        self.buffers
+            .get(&buffer_id)
+            .into_iter()
+            .flat_map(|buffer| buffer.timeline.iter())
+            .filter_map(chat_projection)
+            .cloned()
+            .collect()
+    }
+
     pub(crate) fn request_history(
         &mut self,
         buffer_id: BufferId,

@@ -9408,21 +9408,6 @@ async fn delay(duration: Duration) {
             .expect("seed cache");
     }
 
-    fn take_buffer_snapshot_texts(
-        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
-    ) -> Vec<String> {
-        collect(receiver)
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::BufferSnapshot { messages, .. } => Some(messages),
-                _ => None,
-            })
-            .expect("interleaved catch-up replaces the visible timeline")
-            .into_iter()
-            .map(|message| message.text)
-            .collect()
-    }
-
     async fn enable_test_monitor(
         events: &mut papo::Events,
         wire: &mut papo_testing::Wire,
@@ -12903,7 +12888,14 @@ async fn delay(duration: Duration) {
             .expect("catch-up task completes")
             .expect("catch-up page succeeds");
         process_history(&state, &outbound, &client, 1, page);
-        let merged = take_buffer_snapshot_texts(&mut receiver);
+        _ = collect(&mut receiver);
+        let mut merged = channel_timeline_texts(&state, &client);
+        merged.retain(|text| {
+            matches!(
+                text.as_str(),
+                "before disconnect" | "missed while away" | "newer live arrival"
+            )
+        });
 
         assert_eq!(
             merged,
@@ -12980,10 +12972,12 @@ async fn delay(duration: Duration) {
         let confirmed = model
             .confirm_send(&pending, &sent)
             .expect("optimistic row exists");
-        assert!(confirmed.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. } if message.text == "operator send"
-        )));
+        assert!(!confirmed.is_empty());
+        assert!(
+            changed_messages(&model.take_timeline_changes(false))
+                .iter()
+                .any(|(_, message)| message.text == "operator send")
+        );
 
         wire.server(":alice!a@host PRIVMSG #room :historical line")
             .await;
@@ -12994,7 +12988,8 @@ async fn delay(duration: Duration) {
         else {
             panic!("history message expected");
         };
-        let historical = model.receive(&history, true, &client.state(), None);
+        model.receive(&history, true, &client.state(), None);
+        let historical = model.take_timeline_changes(false);
 
         wire.server(":alice!a@host PRIVMSG #room :live line").await;
         let papo::Event::Message(live) = next_matching(&mut events, |event| {
@@ -13004,13 +12999,14 @@ async fn delay(duration: Duration) {
         else {
             panic!("live message expected");
         };
-        let live = model.receive(&live, false, &client.state(), None);
+        model.receive(&live, false, &client.state(), None);
+        let live = model.take_timeline_changes(false);
         for (events, text) in [(historical, "historical line"), (live, "live line")] {
-            assert!(events.iter().any(|event| matches!(
-                event,
-                EngineToUi::MessagesAppended { messages, .. }
-                    if messages.first().is_some_and(|message| message.text == text)
-            )));
+            assert!(
+                changed_messages(&events)
+                    .first()
+                    .is_some_and(|(_, message)| message.text == text)
+            );
         }
     }
 
@@ -13068,16 +13064,12 @@ async fn delay(duration: Duration) {
         let confirmation_events = model
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
-
-        let confirmed = confirmation_events
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessageConfirmed { message, .. }
-                    if message.server_ids.is_empty() && message.server_time_ms.is_none() =>
-                {
-                    Some(message.id)
-                }
-                _ => None,
+        let confirmation = model.take_timeline_changes(false);
+        let confirmed = changed_messages(&confirmation)
+            .into_iter()
+            .find_map(|(_, message)| {
+                (message.server_ids.is_empty() && message.server_time_ms.is_none())
+                    .then_some(message.id)
             })
             .expect("confirmation has no server metadata");
         let advance = model
@@ -13137,14 +13129,13 @@ async fn delay(duration: Duration) {
         let confirmation = model
             .confirm_send(&pending, &sent)
             .expect("optimistic row exists");
-
-        assert!(confirmation.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.kind == crate::MessageKind::Action
-                    && message.text == "hides"
-                    && message.server_ids == ["action"]
-        )));
+        let timeline = model.take_timeline_changes(false);
+        assert!(!confirmation.is_empty());
+        assert!(changed_messages(&timeline).iter().any(|(_, message)| {
+            message.kind == crate::MessageKind::Action
+                && message.text == "hides"
+                && message.server_ids == ["action"]
+        }));
     }
 
     #[tokio::test]
@@ -13217,14 +13208,11 @@ async fn delay(duration: Duration) {
         let confirmation_events = model
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
-
-        assert!(confirmation_events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.server_ids == ["whole"]
-                    && message.text == text
-                    && !message.text.contains('\n')
-        )));
+        let timeline = model.take_timeline_changes(false);
+        assert!(!confirmation_events.is_empty());
+        assert!(changed_messages(&timeline).iter().any(|(_, message)| {
+            message.server_ids == ["whole"] && message.text == text && !message.text.contains('\n')
+        }));
     }
 
     #[tokio::test]
@@ -13286,19 +13274,17 @@ async fn delay(duration: Duration) {
         let confirmation_events = model
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
-
-        assert!(confirmation_events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.server_ids == ["first"] && message.text == first_text
-        )));
-        assert!(confirmation_events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages.len() == 1
-                    && messages[0].server_ids == ["second"]
-                    && messages[0].text == second_text
-        )));
+        let timeline = model.take_timeline_changes(false);
+        let messages = changed_messages(&timeline);
+        assert!(!confirmation_events.is_empty());
+        assert!(
+            messages.iter().any(|(_, message)| {
+                message.server_ids == ["first"] && message.text == first_text
+            })
+        );
+        assert!(messages.iter().any(|(_, message)| {
+            message.server_ids == ["second"] && message.text == second_text
+        }));
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(10), events.next())
                 .await
@@ -13357,7 +13343,7 @@ async fn delay(duration: Duration) {
                         event,
                         EngineToUi::HistoryStateChanged { loading: false, .. }
                     );
-                    live |= timeline_texts(std::slice::from_ref(&event), false)
+                    live |= timeline_texts(std::slice::from_ref(&event))
                         .iter()
                         .any(|text| text == sentinel);
                     output.push(event);
@@ -13371,11 +13357,10 @@ async fn delay(duration: Duration) {
         async fn timeline_output(&mut self, expected: &[&str]) -> Vec<EngineToUi> {
             let mut output = Vec::new();
             tokio::time::timeout(Duration::from_secs(1), async {
-                while !expected.iter().all(|expected| {
-                    timeline_texts(&output, false)
-                        .iter()
-                        .any(|text| text == expected)
-                }) {
+                while !expected
+                    .iter()
+                    .all(|expected| timeline_texts(&output).iter().any(|text| text == expected))
+                {
                     output.push(self.receiver.recv().await.expect("runtime remains active"));
                 }
             })
@@ -13385,29 +13370,40 @@ async fn delay(duration: Duration) {
         }
     }
 
-    fn timeline_texts(events: &[EngineToUi], prepended: bool) -> Vec<String> {
+    fn timeline_texts(events: &[EngineToUi]) -> Vec<String> {
         events
             .iter()
-            .flat_map(|event| match event {
-                EngineToUi::MessagesPrepended { messages, .. } if prepended => messages.as_slice(),
-                EngineToUi::MessagesAppended { messages, .. } if !prepended => messages.as_slice(),
-                EngineToUi::BufferSnapshot { messages, .. } if !prepended => messages.as_slice(),
-                _ => &[],
-            })
+            .flat_map(event_timeline_messages)
             .map(|message| message.text.clone())
             .collect()
     }
 
-    fn timeline_messages(events: &[EngineToUi]) -> Vec<&crate::MessageProjection> {
-        events
-            .iter()
-            .flat_map(|event| match event {
-                EngineToUi::MessagesAppended { messages, .. }
-                | EngineToUi::MessagesPrepended { messages, .. }
-                | EngineToUi::BufferSnapshot { messages, .. } => messages.as_slice(),
-                _ => &[],
-            })
+    fn room_timeline_texts(harness: &ReplayHarness) -> Vec<String> {
+        channel_timeline_texts(&harness.state, &harness.client)
+    }
+
+    fn channel_timeline_texts(
+        state: &Arc<Mutex<RuntimeState>>,
+        client: &papo::Client,
+    ) -> Vec<String> {
+        let state = lock(state);
+        let model = &state
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model;
+        let channel = known_channel(client, "#room");
+        let buffer_id = model
+            .buffer_id_for_channel(&channel)
+            .expect("channel buffer");
+        snapshot_messages(model, buffer_id)
+            .into_iter()
+            .map(|message| message.text)
             .collect()
+    }
+
+    fn timeline_messages(events: &[EngineToUi]) -> Vec<&crate::MessageProjection> {
+        events.iter().flat_map(event_timeline_messages).collect()
     }
 
     fn projected_reaction<'a>(
@@ -13416,13 +13412,7 @@ async fn delay(duration: Duration) {
     ) -> Option<&'a crate::ReactionProjection> {
         events
             .iter()
-            .flat_map(|event| match event {
-                EngineToUi::MessagesAppended { messages, .. }
-                | EngineToUi::MessagesPrepended { messages, .. }
-                | EngineToUi::BufferSnapshot { messages, .. } => messages.as_slice(),
-                EngineToUi::MessageUpdated { message, .. } => std::slice::from_ref(message),
-                _ => &[],
-            })
+            .flat_map(event_timeline_messages)
             .filter(|message| message.text == text)
             .find_map(|message| {
                 message
@@ -13443,18 +13433,7 @@ async fn delay(duration: Duration) {
         model: &NetworkModel,
         buffer_id: BufferId,
     ) -> Vec<crate::MessageProjection> {
-        model
-            .snapshot_events()
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::BufferSnapshot {
-                    buffer_id: current,
-                    messages,
-                    ..
-                } if current == buffer_id => Some(messages),
-                _ => None,
-            })
-            .expect("buffer snapshot")
+        model.projected_messages(buffer_id)
     }
 
     #[tokio::test]
@@ -13595,12 +13574,16 @@ async fn delay(duration: Duration) {
             "kind": "notice",
         }))
         .expect("pushed notice");
-        let restored = lock(&state)
-            .network
-            .as_mut()
-            .expect("network remains active")
-            .model
-            .restore_pushed_messages(vec![pushed], &client.state());
+        let restored = {
+            let mut state = lock(&state);
+            let model = &mut state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model;
+            model.restore_pushed_messages(vec![pushed], &client.state());
+            model.take_timeline_changes(false)
+        };
         let provisional = timeline_messages(&restored)
             .into_iter()
             .find(|message| message.text == "notice while closed")
@@ -13613,31 +13596,30 @@ async fn delay(duration: Duration) {
             next_matching(&mut events, |event| matches!(event, papo::Event::Notice(_))).await;
         process_event(&state, &outbound, &client, 1, notice);
         let output = collect(&mut receiver);
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageUpdated { message, .. }
-                if message.text == "notice while closed" && is_irc_notice(message)
-        )));
+        assert!(
+            timeline_messages(&output)
+                .iter()
+                .any(|message| message.text == "notice while closed" && is_irc_notice(message))
+        );
         let state = lock(&state);
         let model = &state
             .network
             .as_ref()
             .expect("network remains active")
             .model;
+        let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
+            panic!("buffer projections")
+        };
+        let room_id = buffers
+            .iter()
+            .find(|buffer| buffer.title == "#room")
+            .expect("room buffer")
+            .id;
         let room = model
-            .snapshot_events()
+            .projected_messages(room_id)
             .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::BufferSnapshot { messages, .. }
-                    if messages
-                        .iter()
-                        .any(|message| message.text == "notice while closed") =>
-                {
-                    Some(messages)
-                }
-                _ => None,
-            })
-            .expect("room snapshot");
+            .filter(|message| message.text == "notice while closed")
+            .collect::<Vec<_>>();
         assert_eq!(room.len(), 1);
         assert!(is_irc_notice(&room[0]));
     }
@@ -13754,10 +13736,13 @@ async fn delay(duration: Duration) {
 
         let output = harness.page_output("sentinel").await;
         assert_eq!(
-            timeline_texts(&output, true),
-            ["latest one", "long first\nlong second"]
+            timeline_texts(&output),
+            ["latest one", "long first\nlong second", "sentinel"]
         );
-        assert_eq!(timeline_texts(&output, false), ["sentinel"]);
+        assert_eq!(
+            room_timeline_texts(&harness),
+            ["latest one", "long first\nlong second", "sentinel"]
+        );
         harness.drain.abort();
     }
 
@@ -13805,8 +13790,16 @@ async fn delay(duration: Duration) {
         .await;
 
         let output = harness.page_output("second-sentinel").await;
-        assert_eq!(timeline_texts(&output, true), ["a week old"]);
-        assert!(!timeline_texts(&output, false).contains(&"a week old".to_owned()));
+        assert_eq!(timeline_texts(&output), ["a week old", "second-sentinel"]);
+        assert_eq!(
+            room_timeline_texts(&harness),
+            [
+                "a week old",
+                "latest one",
+                "first-sentinel",
+                "second-sentinel"
+            ]
+        );
         harness.drain.abort();
     }
 
@@ -13835,7 +13828,11 @@ async fn delay(duration: Duration) {
             .timeline_output(&["server playback", "live after playback"])
             .await;
         assert_eq!(
-            timeline_texts(&output, false),
+            timeline_texts(&output),
+            ["server playback", "live after playback"]
+        );
+        assert_eq!(
+            room_timeline_texts(&harness),
             ["server playback", "initial-sentinel", "live after playback"]
         );
         harness.drain.abort();
