@@ -9461,16 +9461,15 @@ async fn delay(duration: Duration) {
     fn take_prepended(
         receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
     ) -> (BufferId, Vec<crate::MessageProjection>) {
-        collect(receiver)
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesPrepended {
-                    buffer_id,
-                    messages,
-                } => Some((buffer_id, messages)),
-                _ => None,
-            })
-            .expect("requested history is prepended")
+        let messages = changed_messages(&collect(receiver));
+        let buffer_id = messages
+            .first()
+            .map(|(buffer_id, _)| *buffer_id)
+            .expect("requested history is prepended");
+        (
+            buffer_id,
+            messages.into_iter().map(|(_, message)| message).collect(),
+        )
     }
 
     fn assert_history(messages: &[crate::MessageProjection], texts: &[&str], timestamped: &[bool]) {
@@ -10638,15 +10637,9 @@ async fn delay(duration: Duration) {
         .await;
         process_event(&state, &outbound, &client, 1, message);
         let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        let (buffer_id, message_id) = changed_messages(&appended)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("live message is projected");
         let runtime = Runtime { state, outbound };
 
@@ -10713,15 +10706,9 @@ async fn delay(duration: Duration) {
         .await;
         process_event(&state, &outbound, &client, 1, message);
         let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        let (buffer_id, message_id) = changed_messages(&appended)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("live message is projected");
         set_harness_device_online(&state, false);
         let runtime = Runtime {
@@ -10807,15 +10794,9 @@ async fn delay(duration: Duration) {
             .await;
         process_next_message(&mut first_events, &state, &outbound, &first).await;
         let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        let (buffer_id, message_id) = changed_messages(&appended)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("live message is projected");
         set_harness_device_online(&state, false);
         _ = Runtime {
@@ -11181,15 +11162,9 @@ async fn delay(duration: Duration) {
         .await;
         process_event(&state, &outbound, &client, 1, message);
         let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        let (buffer_id, message_id) = changed_messages(&appended)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("live message is projected");
         let runtime = Runtime { state, outbound };
 
@@ -12148,11 +12123,11 @@ async fn delay(duration: Duration) {
                     text: text.into(),
                 },
             });
-            assert!(output.iter().any(|event| matches!(
-                event,
-                EngineToUi::MessagesAppended { messages, .. }
-                    if messages[0].delivery == crate::MessageDelivery::Optimistic
-            )));
+            assert!(
+                changed_messages(&output)
+                    .iter()
+                    .any(|(_, message)| { message.delivery == crate::MessageDelivery::Optimistic })
+            );
             assert!(output.iter().any(|event| matches!(
                 event,
                 EngineToUi::CommandResult { id: result_id } if result_id == id
@@ -12218,10 +12193,15 @@ async fn delay(duration: Duration) {
         });
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :own snapshot edge");
         tokio::time::timeout(Duration::from_secs(1), async {
-            while !matches!(
-                receiver.recv().await,
-                Some(EngineToUi::MessageConfirmed { .. })
-            ) {}
+            loop {
+                let event = receiver.recv().await.expect("runtime event");
+                if event_timeline_messages(&event).iter().any(|message| {
+                    message.delivery == MessageDelivery::Confirmed
+                        && message.text == "own snapshot edge"
+                }) {
+                    break;
+                }
+            }
         })
         .await
         .expect("send confirms");
@@ -12416,11 +12396,11 @@ async fn delay(duration: Duration) {
             &crate::MessageKind::Text,
         );
 
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].delivery == MessageDelivery::Optimistic
-        )));
+        assert!(
+            changed_messages(&output)
+                .iter()
+                .any(|(_, message)| message.delivery == MessageDelivery::Optimistic)
+        );
         assert!(
             output
                 .iter()
@@ -12593,11 +12573,11 @@ async fn delay(duration: Duration) {
                 text: "do not leave this pending".into(),
             },
         });
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].delivery == crate::MessageDelivery::Optimistic
-        )));
+        assert!(
+            changed_messages(&output)
+                .iter()
+                .any(|(_, message)| { message.delivery == crate::MessageDelivery::Optimistic })
+        );
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::CommandResult { id } if id == "reconnecting-direct"
