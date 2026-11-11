@@ -17,7 +17,6 @@ import type {
   EngineToUi,
   Hello,
   IncompatibleBuild,
-  MembershipProjection,
   MessageProjection,
   NetworkProjection,
   ResyncReason,
@@ -362,8 +361,6 @@ export class WorkerEngineClient implements EngineClient {
 }
 
 function containsOptimisticMessage(message: EngineToUi): boolean {
-  if (message.type === "messages_appended")
-    return message.messages.some((item) => item.delivery === "optimistic");
   return (
     message.type === "timeline_changed" &&
     message.upserted.some(
@@ -629,31 +626,10 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "messages_appended": {
-      const messages = decodeArray(value.messages, decodeMessage);
-      if (typeof value.buffer_id === "number" && messages !== undefined) {
-        return { type: messageType, buffer_id: value.buffer_id, messages };
-      }
-      break;
-    }
     case "typing_changed": {
       const typers = decodeArray(value.typers, decodeTypingProjection);
       if (typeof value.buffer_id === "number" && typers !== undefined) {
         return { type: messageType, buffer_id: value.buffer_id, typers };
-      }
-      break;
-    }
-    case "message_updated": {
-      const message = decodeMessage(value.message);
-      if (typeof value.buffer_id === "number" && message !== undefined) {
-        return { type: messageType, buffer_id: value.buffer_id, message };
-      }
-      break;
-    }
-    case "messages_prepended": {
-      const messages = decodeArray(value.messages, decodeMessage);
-      if (typeof value.buffer_id === "number" && messages !== undefined) {
-        return { type: messageType, buffer_id: value.buffer_id, messages };
       }
       break;
     }
@@ -671,23 +647,6 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "buffer_snapshot": {
-      const messages = decodeArray(value.messages, decodeMessage);
-      const memberships = decodeArray(value.memberships, decodeMembership);
-      if (
-        typeof value.buffer_id === "number" &&
-        messages !== undefined &&
-        memberships !== undefined
-      ) {
-        return {
-          type: messageType,
-          buffer_id: value.buffer_id,
-          messages,
-          memberships,
-        };
-      }
-      break;
-    }
     case "timeline_changed": {
       const upserted = decodeArray(value.upserted, decodeTimelineItem);
       const removed = decodeArray(value.removed, decodeNumber);
@@ -704,13 +663,6 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           upserted,
           removed,
         };
-      }
-      break;
-    }
-    case "membership_changed": {
-      const membership = decodeMembership(value.membership);
-      if (typeof value.buffer_id === "number" && membership !== undefined) {
-        return { type: messageType, buffer_id: value.buffer_id, membership };
       }
       break;
     }
@@ -743,22 +695,6 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
-    case "message_confirmed": {
-      const message = decodeMessage(value.message);
-      if (
-        typeof value.buffer_id === "number" &&
-        typeof value.local_send_id === "number" &&
-        message !== undefined
-      ) {
-        return {
-          type: messageType,
-          buffer_id: value.buffer_id,
-          local_send_id: value.local_send_id,
-          message,
-        };
-      }
-      break;
-    }
     case "message_failed":
       if (
         typeof value.network_id === "number" &&
@@ -777,20 +713,8 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "message_retrying":
-      if (
-        typeof value.buffer_id === "number" &&
-        typeof value.local_send_id === "number"
-      ) {
-        return {
-          type: "message_retrying",
-          buffer_id: value.buffer_id,
-          local_send_id: value.local_send_id,
-        };
-      }
-      break;
     default:
-      return assertNever(messageType);
+      throw new Error(`unsupported legacy engine message: ${messageType}`);
   }
 
   throw new Error("invalid engine message");
@@ -822,18 +746,11 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffer_updated" ||
     value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||
-    value === "messages_appended" ||
     value === "typing_changed" ||
-    value === "message_updated" ||
-    value === "messages_prepended" ||
-    value === "buffer_snapshot" ||
     value === "timeline_changed" ||
     value === "history_state_changed" ||
-    value === "membership_changed" ||
     value === "members_changed" ||
-    value === "message_confirmed" ||
-    value === "message_failed" ||
-    value === "message_retrying"
+    value === "message_failed"
   );
 }
 
@@ -1026,45 +943,6 @@ function decodeMemberCounts(
   )
     return undefined;
   return [operators, voiced, online, away, bots];
-}
-
-function decodeMembership(value: unknown): MembershipProjection | undefined {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "number" ||
-    !(
-      value.server_time_ms === null || typeof value.server_time_ms === "number"
-    ) ||
-    typeof value.received_at_ms !== "number"
-  )
-    return undefined;
-  if (
-    value.type === "change" &&
-    isOneOf(value.kind, ["joined", "parted", "quit"]) &&
-    isStringArray(value.nicks)
-  )
-    return {
-      type: value.type,
-      id: value.id,
-      kind: value.kind,
-      nicks: value.nicks,
-      server_time_ms: value.server_time_ms,
-      received_at_ms: value.received_at_ms,
-    };
-  if (
-    value.type === "kicked" &&
-    typeof value.actor === "string" &&
-    (value.reason === null || typeof value.reason === "string")
-  )
-    return {
-      type: value.type,
-      id: value.id,
-      actor: value.actor,
-      reason: value.reason,
-      server_time_ms: value.server_time_ms,
-      received_at_ms: value.received_at_ms,
-    };
-  return undefined;
 }
 
 function decodeNetwork(value: unknown): NetworkProjection | undefined {
