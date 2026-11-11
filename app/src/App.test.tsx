@@ -9,6 +9,7 @@ import type {
   EngineClientMessage,
   EngineMessageKey,
   EngineRequestEnvelope,
+  MessageProjection,
 } from "./engine/protocol";
 import { TimelineStore } from "./engine/timeline-store";
 import { OneShotAccessToken } from "./hosted/HostedSession";
@@ -664,46 +665,6 @@ it("lists projected networks, buffers, and messages", async () => {
     },
   });
   client.emit({
-    type: "messages_appended",
-    buffer_id: 2,
-    messages: [
-      {
-        id: 1,
-        author: "alice",
-        text: "hello",
-        kind: "text",
-        bot: false,
-        authorship: "other",
-        nick_color_index: 0,
-        highlighted: false,
-        delivery: "received",
-        local_send_id: null,
-        server_ids: ["msg-1"],
-        server_time_ms: null,
-        received_at_ms: 1,
-      },
-    ],
-  });
-  client.emit({
-    type: "message_updated",
-    buffer_id: 2,
-    message: {
-      id: 1,
-      author: "alice",
-      text: "hello",
-      kind: "text",
-      bot: false,
-      authorship: "other",
-      nick_color_index: 0,
-      highlighted: false,
-      delivery: "received",
-      local_send_id: null,
-      server_ids: ["msg-1"],
-      server_time_ms: 1,
-      received_at_ms: 1,
-    },
-  });
-  client.emit({
     type: "timeline_changed",
     buffer_id: 2,
     reset: false,
@@ -820,28 +781,29 @@ it("replaces a buffer's rows from the snapshot an attaching tab receives", async
       mentions: 0,
     },
   });
-  client.emit({
-    type: "buffer_snapshot",
-    buffer_id: 2,
-    messages: [
-      {
-        id: 7,
-        author: "louro",
-        text: "retained before this tab opened",
-        kind: "text",
-        bot: true,
-        authorship: "other",
-        nick_color_index: 0,
-        highlighted: false,
-        delivery: "received",
-        local_send_id: null,
-        server_ids: ["msg-7"],
-        server_time_ms: 7,
-        received_at_ms: 7,
-      },
-    ],
-    memberships: [],
-  });
+  client.emit(
+    timelineChange(
+      2,
+      [
+        {
+          id: 7,
+          author: "louro",
+          text: "retained before this tab opened",
+          kind: "text",
+          bot: true,
+          authorship: "other",
+          nick_color_index: 0,
+          highlighted: false,
+          delivery: "received",
+          local_send_id: null,
+          server_ids: ["msg-7"],
+          server_time_ms: 7,
+          received_at_ms: 7,
+        },
+      ],
+      true,
+    ),
+  );
 
   expect(
     await screen.findByText("retained before this tab opened"),
@@ -1246,15 +1208,9 @@ it("prepends requested history before live rows", async () => {
     server_time_ms: 2,
     received_at_ms: 2,
   };
-  client.emit({
-    type: "messages_appended",
-    buffer_id: 2,
-    messages: [live],
-  });
-  client.emit({
-    type: "messages_prepended",
-    buffer_id: 2,
-    messages: [
+  client.emit(timelineChange(2, [live]));
+  client.emit(
+    timelineChange(2, [
       {
         ...live,
         id: 1,
@@ -1263,8 +1219,8 @@ it("prepends requested history before live rows", async () => {
         server_time_ms: 1,
         received_at_ms: 1,
       },
-    ],
-  });
+    ]),
+  );
 
   await screen.findByText("older");
   expect(
@@ -1277,26 +1233,25 @@ it("prepends requested history before live rows", async () => {
 it("shows a confirmation received without this tab's optimistic row", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
-  client.emit({
-    type: "message_confirmed",
-    buffer_id: 2,
-    local_send_id: 7,
-    message: {
-      id: 9,
-      author: "weblounge",
-      text: "from another tab",
-      kind: "text",
-      bot: false,
-      authorship: "own",
-      nick_color_index: 0,
-      highlighted: false,
-      delivery: "confirmed",
-      local_send_id: null,
-      server_ids: ["msg-9"],
-      server_time_ms: 9,
-      received_at_ms: 8,
-    },
-  });
+  client.emit(
+    timelineChange(2, [
+      {
+        id: 9,
+        author: "weblounge",
+        text: "from another tab",
+        kind: "text",
+        bot: false,
+        authorship: "own",
+        nick_color_index: 0,
+        highlighted: false,
+        delivery: "confirmed",
+        local_send_id: null,
+        server_ids: ["msg-9"],
+        server_time_ms: 9,
+        received_at_ms: 8,
+      },
+    ]),
+  );
   client.emit({
     type: "buffer_added",
     buffer: {
@@ -1363,27 +1318,22 @@ it("shows an optimistic message as failed when sending fails", async () => {
       mentions: 0,
     },
   });
-  client.emit({
-    type: "messages_appended",
-    buffer_id: 2,
-    messages: [
-      {
-        id: 9,
-        author: "weblounge",
-        text: "will fail",
-        kind: "text",
-        bot: false,
-        authorship: "own",
-        nick_color_index: 0,
-        highlighted: false,
-        delivery: "optimistic",
-        local_send_id: 7,
-        server_ids: [],
-        server_time_ms: null,
-        received_at_ms: 8,
-      },
-    ],
-  });
+  const pending = {
+    id: 9,
+    author: "weblounge",
+    text: "will fail",
+    kind: "text",
+    bot: false,
+    authorship: "own",
+    nick_color_index: 0,
+    highlighted: false,
+    delivery: "optimistic",
+    local_send_id: 7,
+    server_ids: [],
+    server_time_ms: null,
+    received_at_ms: 8,
+  } satisfies MessageProjection;
+  client.emit(timelineChange(2, [pending]));
   client.emit({
     type: "message_failed",
     network_id: 1,
@@ -1392,6 +1342,7 @@ it("shows an optimistic message as failed when sending fails", async () => {
     local_send_id: 7,
     message_key: "engine.direct_target_gone",
   });
+  client.emit(timelineChange(2, [{ ...pending, delivery: "failed" }]));
 
   const failed = await screen.findByText(/will fail/);
   expect(failed.closest("[data-message-row]")).toHaveAttribute(
@@ -1479,27 +1430,22 @@ it("reopens a hidden failed DM from its typed notice", async () => {
     mentions: 0,
   };
   client.emit({ type: "buffer_added", buffer });
-  client.emit({
-    type: "messages_appended",
-    buffer_id: 2,
-    messages: [
-      {
-        id: 9,
-        author: "weblounge",
-        text: "hi",
-        kind: "text",
-        bot: false,
-        authorship: "own",
-        nick_color_index: 0,
-        highlighted: false,
-        delivery: "optimistic",
-        local_send_id: 7,
-        server_ids: [],
-        server_time_ms: null,
-        received_at_ms: 8,
-      },
-    ],
-  });
+  const pending = {
+    id: 9,
+    author: "weblounge",
+    text: "hi",
+    kind: "text",
+    bot: false,
+    authorship: "own",
+    nick_color_index: 0,
+    highlighted: false,
+    delivery: "optimistic",
+    local_send_id: 7,
+    server_ids: [],
+    server_time_ms: null,
+    received_at_ms: 8,
+  } satisfies MessageProjection;
+  client.emit(timelineChange(2, [pending]));
   client.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
   client.emit({
     type: "message_failed",
@@ -1509,6 +1455,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
     local_send_id: 7,
     message_key: "engine.send_failed",
   });
+  client.emit(timelineChange(2, [{ ...pending, delivery: "failed" }]));
   client.emit({
     type: "notice",
     key: "notice.message_not_delivered",
@@ -1538,7 +1485,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
     id: expect.any(String),
     request: { type: "retry_message", buffer_id: 2, local_send_id: 7 },
   });
-  client.emit({ type: "message_retrying", buffer_id: 2, local_send_id: 7 });
+  client.emit(timelineChange(2, [pending]));
   expect(screen.getByText("Sending…")).toBeVisible();
 });
 
@@ -1596,10 +1543,8 @@ it("clears a cached live-edge read before selection changes and tolerates a reje
     mentions: 0,
   };
   client.emit({ type: "buffers_changed", network_id: 1, buffers: [room] });
-  client.emit({
-    type: "messages_appended",
-    buffer_id: 2,
-    messages: [
+  client.emit(
+    timelineChange(2, [
       {
         id: 9,
         author: "alice",
@@ -1615,8 +1560,8 @@ it("clears a cached live-edge read before selection changes and tolerates a reje
         server_time_ms: 9,
         received_at_ms: 9,
       },
-    ],
-  });
+    ]),
+  );
 
   await vi.advanceTimersByTimeAsync(250);
   focus.mockReturnValue(false);
@@ -1789,6 +1734,30 @@ it("reloads only once for the same stale build", () => {
     "Engine update failed; reload site data to recover",
   );
 });
+
+function timelineChange(
+  bufferId: number,
+  messages: readonly MessageProjection[],
+  reset = false,
+): Extract<EngineClientMessage, { type: "timeline_changed" }> {
+  return {
+    type: "timeline_changed",
+    buffer_id: bufferId,
+    reset,
+    upserted: messages.map((message, index) => ({
+      id: message.id,
+      order: [
+        message.server_time_ms ?? message.received_at_ms,
+        message.received_at_ms,
+        index,
+      ],
+      day: 0,
+      content_version: 0,
+      body: { family: "message", ...message },
+    })),
+    removed: [],
+  };
+}
 
 function bufferProjection(
   id: number,
