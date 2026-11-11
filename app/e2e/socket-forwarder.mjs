@@ -13,6 +13,7 @@ const controlPort = Number(
 const connections = new Set();
 const incomingTimeRewrites = [];
 let available = true;
+let incomingPaused = false;
 
 const server = net.createServer((client) => {
   if (!available) {
@@ -29,6 +30,7 @@ const server = net.createServer((client) => {
     recentIncoming: Buffer.alloc(0),
   };
   const upstream = net.connect(targetPort, "127.0.0.1");
+  if (incomingPaused) upstream.pause();
   connection.upstream = upstream;
   connections.add(connection);
 
@@ -80,6 +82,18 @@ const control = http.createServer((request, response) => {
   if (request.method === "POST" && request.url === "/restore") {
     available = true;
     response.end("restored");
+    return;
+  }
+  if (request.method === "POST" && request.url === "/pause-incoming") {
+    incomingPaused = true;
+    for (const connection of connections) connection.upstream?.pause();
+    response.end("paused");
+    return;
+  }
+  if (request.method === "POST" && request.url === "/resume-incoming") {
+    incomingPaused = false;
+    for (const connection of connections) connection.upstream?.resume();
+    response.end("resumed");
     return;
   }
   const url = new URL(request.url ?? "/", "http://127.0.0.1");

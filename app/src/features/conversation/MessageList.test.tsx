@@ -482,6 +482,46 @@ it("anchors the viewport when history rows are prepended", async () => {
   expect(list.scrollTop).toBe(40 + firstMessageHeight);
 });
 
+it("keeps a newly inserted loading edge visible at the transcript top", async () => {
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: false,
+  });
+  const { container } = render(() => (
+    <MessageList
+      historyState={historyState()}
+      messages={[message]}
+      onLoadOlder={() => {}}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 5 },
+    scrollHeight: {
+      configurable: true,
+      get: () => (historyState().loading ? 101 : 63),
+    },
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  fireEvent.wheel(list, { deltaY: -100 });
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  expect(list.scrollTop).toBe(0);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  expect(list.scrollTop).toBe(0);
+
+  setHistoryState({ at_start: false, loading: true });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(list.scrollTop).toBe(0);
+  expect(
+    container.querySelector('[data-divider-kind="loading"]'),
+  ).toBeVisible();
+});
+
 it("caches mounted row heights on the first frame after ordered inserts", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   const heightForKey = (key: string) => {

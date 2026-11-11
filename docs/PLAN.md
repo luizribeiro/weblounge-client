@@ -32,6 +32,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-11: made the production older-history fixture establish and persist unread traffic before
   relaunching into history paging. The previous fresh-device launch correctly seeded its local read
   boundary after the already-stored messages, so its desktop unread readiness check could never hold.
+- 2026-11-11: kept the in-flight older-history edge visible when a reader reached the transcript
+  top, overriding prepend anchoring only for that top-owned load on desktop and phone WebKit.
 - 2026-11-11: prefetched older history when user-owned upward scrolling entered a 1.5-viewport
   top buffer, retaining the visible row across each prepend without issuing requests for
   programmatic scrolling, an in-flight page or a completed history boundary.
@@ -106,6 +108,9 @@ The single place a fresh session reads to know where the project stands. Update 
   units cover the threshold, programmatic movement, terminal state and re-arming; the
   production-profile journey pages through a 300-message channel on desktop and phone, verifies
   one request per page, the loading edge, the final Beginning divider and no terminal request.
+  When a reader outruns the prefetch and reaches the top, the loading edge now becomes the
+  virtualizer's explicit top target and remains inside the scroll viewport across WebKit's delayed
+  prepend correction; backgrounding cancels the finite stabilization frames.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
   update read facts, disappear when older history covers them, and leave with their buffer. The UI

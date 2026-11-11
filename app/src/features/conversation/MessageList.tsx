@@ -260,12 +260,14 @@ export function MessageList(props: MessageListProps) {
   let olderPageArmed = true;
   let olderPageRequestFrame: number | undefined;
   let olderAnchorFrame: number | undefined;
+  let loadingEdgePinFrame: number | undefined;
   let pendingOlderAnchor:
     | { readonly key: string; readonly top: number }
     | undefined;
   let olderPageLanded = false;
   let olderPageTimelineRestored = false;
   let observedScrollTop = 0;
+  let readerAtHistoryTop = false;
   let historyWasLoading = props.historyState?.loading === true;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
@@ -384,6 +386,32 @@ export function MessageList(props: MessageListProps) {
     window.cancelAnimationFrame(olderAnchorFrame);
     olderAnchorFrame = undefined;
   };
+  const cancelLoadingEdgePin = () => {
+    if (loadingEdgePinFrame === undefined) return;
+    window.cancelAnimationFrame(loadingEdgePinFrame);
+    loadingEdgePinFrame = undefined;
+  };
+  const stabilizeLoadingEdgeAtTop = (scroller: HTMLDivElement) => {
+    cancelLoadingEdgePin();
+    let stableFrames = 0;
+    const correctTop = () => {
+      loadingEdgePinFrame = undefined;
+      if (
+        props.foreground === false ||
+        props.historyState?.loading !== true ||
+        !readerAtHistoryTop
+      )
+        return;
+      if (scroller.scrollTop <= 0.1) stableFrames += 1;
+      else {
+        virtualizer.scrollToIndex(0, { align: "start" });
+        stableFrames = 0;
+      }
+      if (stableFrames < 2)
+        loadingEdgePinFrame = window.requestAnimationFrame(correctTop);
+    };
+    loadingEdgePinFrame = window.requestAnimationFrame(correctTop);
+  };
   const markPointerScrollIntent = (event: PointerEvent) => {
     if (event.isPrimary && event.button === 0) {
       cancelOlderAnchorCorrection();
@@ -464,6 +492,8 @@ export function MessageList(props: MessageListProps) {
     if (historyWasLoading && history?.loading === false) {
       if (history.at_start === false) olderPageArmed = true;
       olderPageLanded = true;
+      readerAtHistoryTop = false;
+      cancelLoadingEdgePin();
     }
     historyWasLoading = history?.loading === true;
   });
@@ -471,7 +501,11 @@ export function MessageList(props: MessageListProps) {
     cancelOlderAnchorCorrection();
     userScrollIntent.beginDiscrete();
     if (event.deltaY < 0) requestOlderWhenTracked();
-    else if (event.deltaY > 0) cancelOlderPageRequest();
+    else if (event.deltaY > 0) {
+      readerAtHistoryTop = false;
+      cancelLoadingEdgePin();
+      cancelOlderPageRequest();
+    }
   };
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) {
@@ -626,6 +660,7 @@ export function MessageList(props: MessageListProps) {
     clearMeasurements: boolean,
     revisedIndexes: readonly number[] = [],
     olderAnchor?: { readonly key: string; readonly top: number },
+    pinTop = false,
   ) => {
     if (list?.isConnected !== true) return;
     const scroller = list;
@@ -655,7 +690,11 @@ export function MessageList(props: MessageListProps) {
         virtualizer.measureElement(element);
       }
     };
-    if (olderAnchor !== undefined) {
+    if (pinTop) {
+      resize();
+      virtualizer.scrollToIndex(0, { align: "start" });
+      stabilizeLoadingEdgeAtTop(scroller);
+    } else if (olderAnchor !== undefined) {
       resize();
       const index = rows().findIndex((row) => row.key === olderAnchor.key);
       if (index >= 0) {
@@ -876,6 +915,11 @@ export function MessageList(props: MessageListProps) {
         currentRevisions,
       );
     if (unchanged) return;
+    const loadingEdgeInsertedAtTop =
+      readerAtHistoryTop &&
+      currentRows[0]?.kind === "history" &&
+      currentRows[0].state.loading &&
+      measuredRows[0]?.key !== currentRows[0].key;
     const appended = timelineChanged
       ? timeline?.geometry === "suffix"
       : currentRows.length > measuredRows.length &&
@@ -911,14 +955,21 @@ export function MessageList(props: MessageListProps) {
       olderPageTimelineRestored = false;
     }
     queueMicrotask(() => {
-      if (!appended) remeasureRows(false, revisedIndexes, olderAnchor);
-      if (logicallyAtLiveEdge) scrollToLiveEdge();
+      if (!appended)
+        remeasureRows(
+          false,
+          revisedIndexes,
+          olderAnchor,
+          loadingEdgeInsertedAtTop,
+        );
+      if (logicallyAtLiveEdge && !loadingEdgeInsertedAtTop) scrollToLiveEdge();
     });
   });
   let foregroundRefreshArmed = props.foreground === false;
   let foregroundRefreshFrame: number | undefined;
   createEffect(() => {
     if (props.foreground === false) {
+      cancelLoadingEdgePin();
       if (foregroundRefreshFrame !== undefined) {
         window.cancelAnimationFrame(foregroundRefreshFrame);
         foregroundRefreshFrame = undefined;
@@ -1050,6 +1101,7 @@ export function MessageList(props: MessageListProps) {
         window.cancelAnimationFrame(foregroundRefreshFrame);
       if (olderAnchorFrame !== undefined)
         window.cancelAnimationFrame(olderAnchorFrame);
+      cancelLoadingEdgePin();
       cancelOlderPageRequest();
       userScrollIntent.dispose();
     });
@@ -1070,6 +1122,12 @@ export function MessageList(props: MessageListProps) {
           const previousScrollTop = observedScrollTop;
           observedScrollTop = element.scrollTop;
           if (!userScrollIntent.consumeScroll()) return;
+          if (element.scrollTop <= liveEdgeTolerance) {
+            readerAtHistoryTop = true;
+            if (props.historyState?.loading === true)
+              stabilizeLoadingEdgeAtTop(element);
+          } else if (props.historyState?.loading !== true)
+            readerAtHistoryTop = false;
           if (
             !olderPageArmed ||
             olderPageRequestFrame !== undefined ||

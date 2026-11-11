@@ -191,6 +191,7 @@ export default defineConfig({
       testMatch: [
         "**/highlight-row.spec.ts",
         "**/phone-layout.spec.ts",
+        "**/history-loading-row.spec.ts",
         "**/spacing-audit.spec.ts",
         "**/spacing-audit-screenshot.spec.ts",
       ],
