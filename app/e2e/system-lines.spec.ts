@@ -38,6 +38,9 @@ for (const [layout, viewport] of [
       const joinerNicks = ["kiwi", "zed", "ana", "tomo", "bob", "eve"].map(
         (name) => `${name}-${suffix}`,
       );
+      const [opTarget, voiceTarget] = joinerNicks;
+      if (opTarget === undefined || voiceTarget === undefined)
+        throw new Error("mode targets are missing");
       try {
         await page.goto(accountUrl(baseURL, account));
         await joinChannel(page, channel);
@@ -98,6 +101,48 @@ for (const [layout, viewport] of [
           ).toBeVisible();
         await capture(page, layout, "expanded");
         await expanded.getByRole("button", { name: "Show less" }).click();
+
+        const modeBreaker = `mode breaker ${suffix}`;
+        await operator.privmsgConfirmed(channel, modeBreaker);
+        const banMask = `blocked-${suffix}!*@*`;
+        await operator.mode(channel, "+o", opTarget);
+        await operator.mode(channel, "+v", voiceTarget);
+        await operator.mode(channel, "+b", banMask);
+        const modes = systemLine(page, "gave op", [
+          renamedNick,
+          opTarget,
+          voiceTarget,
+          banMask,
+        ]);
+        await expect(modes).toContainText("voice to");
+        await expect(modes).toContainText("banned");
+        if (layout === "desktop") {
+          await expect(modes).toContainText(`+o ${opTarget}`);
+          await expect(modes).toContainText(`+v ${voiceTarget}`);
+          await expect(modes).toContainText(`+b ${banMask}`);
+        } else {
+          await expect(modes).not.toContainText("+o");
+          await expect(modes).not.toContainText("+v");
+          await expect(modes).not.toContainText("+b");
+        }
+        await capture(page, layout, "modes-alone");
+
+        await operator.privmsgConfirmed(
+          channel,
+          `mixed mode breaker ${suffix}`,
+        );
+        const mixedNick = `mix-${suffix}`;
+        const mixedJoiner = await IrcClient.connectIsolated(mixedNick, channel);
+        joiners.push(mixedJoiner);
+        await operator.mode(channel, "+v", mixedNick);
+        const mixedModes = systemLine(page, "joined", [
+          mixedNick,
+          renamedNick,
+        ]).filter({ hasText: "gave voice" });
+        await expect(mixedModes).toBeVisible();
+        await capture(page, layout, "modes-mixed");
+        mixedJoiner.close();
+        joiners.pop();
 
         const breaker = `run breaker ${suffix}`;
         await operator.privmsgConfirmed(channel, breaker);
@@ -230,7 +275,7 @@ async function expectDesktopColumnAlignment(
 async function capture(
   page: Page,
   layout: "desktop" | "phone",
-  phase: "collapsed" | "expanded" | "own-kick",
+  phase: "collapsed" | "expanded" | "modes-alone" | "modes-mixed" | "own-kick",
 ): Promise<void> {
   const directory = process.env.WEBLOUNGE_SYSTEM_LINE_SCREENSHOT_DIR;
   if (directory === undefined) return;
