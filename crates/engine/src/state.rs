@@ -7,9 +7,9 @@ use std::{
 
 use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
-    EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MembershipProjection,
-    MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
-    NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
+    EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
+    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -1582,34 +1582,49 @@ impl NetworkModel {
         Some(())
     }
 
-    pub(crate) fn receive_own_kick(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn receive_kick(
         &mut self,
         channel: &papo::ChannelName,
         actor: String,
+        subject: String,
+        subject_own: bool,
         reason: Option<String>,
+        msgid: Option<String>,
         server_time_ms: Option<i64>,
         received_at_ms: i64,
+        update_status: bool,
     ) -> Option<Vec<EngineToUi>> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let dedup = system_dedup_reference(
+            buffer_id,
+            msgid,
+            server_time_ms,
+            "kick",
+            actor.clone(),
+            Some(subject.clone()),
+        );
+        if dedup
+            .as_ref()
+            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
+        {
+            return None;
+        }
         let id = self.allocate_message_id();
         let order = self.allocate_order(server_time_ms, received_at_ms);
-        let membership = MembershipProjection::Kicked {
-            id,
-            actor: actor.clone(),
-            reason,
-            server_time_ms,
-            received_at_ms,
-        };
         let line = LineEvent::Kick {
             actor: Actor::User(person(self.casemapping, actor, false)),
-            subject: Subject::You,
-            reason: match &membership {
-                MembershipProjection::Kicked { reason, .. } => reason.clone(),
-                MembershipProjection::Change { .. } => None,
+            subject: if subject_own {
+                Subject::You
+            } else {
+                Subject::Other(person(self.casemapping, subject, false))
             },
+            reason,
         };
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        buffer.projection.channel_status = Some(ChannelStatus::Kicked);
+        if subject_own && update_status {
+            buffer.projection.channel_status = Some(ChannelStatus::Kicked);
+        }
         buffer.timeline.push(TimelineRecord {
             id,
             order,
@@ -1618,10 +1633,18 @@ impl NetworkModel {
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
+        if let Some(dedup) = dedup {
+            buffer.system_dedup.insert(id, dedup);
+        }
         self.dirty_timelines.insert(buffer_id);
-        Some(vec![EngineToUi::BufferUpdated {
-            buffer: buffer.projection.clone(),
-        }])
+        Some(
+            (subject_own && update_status)
+                .then(|| EngineToUi::BufferUpdated {
+                    buffer: buffer.projection.clone(),
+                })
+                .into_iter()
+                .collect(),
+        )
     }
 
     pub(crate) fn confirm_send(
@@ -6149,6 +6172,40 @@ mod tests {
         }
 
         assert_eq!(take_changed_items(&mut model).len(), 3);
+    }
+
+    #[test]
+    fn history_kick_of_another_user_keeps_its_reason_without_changing_status() {
+        let (mut model, state) = model(10);
+        let room = channel_name(&state, "#room");
+        model.ensure_buffer(NameKey::Channel(room.clone()), None, None);
+        let buffer_id = model.names[&NameKey::Channel(room.clone())];
+        model.receive_kick(
+            &room,
+            "operator".into(),
+            "mel".into(),
+            false,
+            Some("too loud".into()),
+            Some("kick-1".into()),
+            Some(10),
+            10,
+            false,
+        );
+
+        let item = take_changed_items(&mut model).pop().expect("kick row");
+        assert!(matches!(
+            item.body,
+            ItemBody::System(system) if matches!(
+                system.line,
+                crate::timeline::SystemLine::Event {
+                    event: crate::timeline::LineEvent::Kick { ref reason, .. }
+                } if reason.as_deref() == Some("too loud")
+            )
+        ));
+        assert_ne!(
+            model.buffers[&buffer_id].projection.channel_status,
+            Some(crate::ChannelStatus::Kicked),
+        );
     }
 
     #[test]

@@ -4542,15 +4542,16 @@ fn process_kick(
     kicked: &papo::event::Kicked,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryTarget> {
-    if kicked.subject_authorship != papo::Authorship::Own {
-        return Vec::new();
-    }
-    if let Some(events) = model.receive_own_kick(
+    if let Some(events) = model.receive_kick(
         &kicked.channel,
         kicked.actor.to_string(),
+        kicked.subject.to_string(),
+        kicked.subject_authorship == papo::Authorship::Own,
         kicked.reason.clone(),
+        kicked.msgid.as_ref().map(ToString::to_string),
         kicked.server_time.map(time_millis),
         time_millis(kicked.received_at),
+        true,
     ) {
         output.extend(events);
     }
@@ -4693,6 +4694,9 @@ fn process_history(
                     );
                 }
             }
+            papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
+                receive_history_kick(&mut running.model, &kicked);
+            }
             _ => {}
         }
     }
@@ -4713,6 +4717,20 @@ fn process_history(
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
     }
+}
+
+fn receive_history_kick(model: &mut NetworkModel, kicked: &papo::event::Kicked) {
+    let _ = model.receive_kick(
+        &kicked.channel,
+        kicked.actor.to_string(),
+        kicked.subject.to_string(),
+        false,
+        kicked.reason.clone(),
+        kicked.msgid.as_ref().map(ToString::to_string),
+        kicked.server_time.map(time_millis),
+        time_millis(kicked.received_at),
+        false,
+    );
 }
 
 fn finish_history_page(
