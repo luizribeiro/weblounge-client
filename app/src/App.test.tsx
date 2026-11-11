@@ -703,6 +703,36 @@ it("lists projected networks, buffers, and messages", async () => {
       received_at_ms: 1,
     },
   });
+  client.emit({
+    type: "timeline_changed",
+    buffer_id: 2,
+    reset: false,
+    upserted: [
+      {
+        id: 1,
+        order: [1, 1, 1],
+        day: 1,
+        content_version: 0,
+        body: {
+          family: "message",
+          id: 1,
+          author: "alice",
+          text: "hello",
+          kind: "text",
+          bot: false,
+          authorship: "other",
+          nick_color_index: 0,
+          highlighted: false,
+          delivery: "received",
+          local_send_id: null,
+          server_ids: ["msg-1"],
+          server_time_ms: 1,
+          received_at_ms: 1,
+        },
+      },
+    ],
+    removed: [],
+  });
 
   expect(await screen.findByText("1 network")).toBeInTheDocument();
   expect(

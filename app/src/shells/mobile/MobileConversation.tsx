@@ -15,6 +15,7 @@ import type {
   NetworkProjection,
   TypingProjection,
 } from "../../engine/protocol";
+import type { TimelineView } from "../../engine/timeline-store";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationTitle } from "../../features/conversation/ConversationTitle";
 import {
@@ -43,6 +44,8 @@ export interface MobileConversationProps {
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult;
   readonly messages: readonly MessageProjection[];
+  readonly timeline?: TimelineView | undefined;
+  readonly timelineEnabled?: boolean | undefined;
   readonly memberships: readonly MembershipProjection[];
   readonly historyState?: HistoryState | undefined;
   readonly typers?: readonly TypingProjection[] | undefined;
@@ -193,6 +196,8 @@ export function MobileConversation(props: MobileConversationProps) {
             bufferId={props.buffer.id}
             foregroundExitEpoch={props.foregroundExitEpoch}
             messages={props.messages}
+            timeline={props.timeline}
+            timelineEnabled={props.timelineEnabled}
             foreground={props.foreground !== false}
             memberships={props.memberships}
             historyState={props.historyState}

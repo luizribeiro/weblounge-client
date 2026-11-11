@@ -32,6 +32,7 @@ import type {
   NetworkProjection,
   TypingProjection,
 } from "./engine/protocol";
+import type { TimelineView } from "./engine/timeline-store";
 import { migrateDraft } from "./features/composer/draft-storage";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
@@ -188,6 +189,10 @@ export function App(props: AppProps) {
   const [messages, setMessages] = createSignal<
     ReadonlyMap<number, readonly MessageProjection[]>
   >(new Map());
+  const [timelines, setTimelines] = createSignal<
+    ReadonlyMap<number, TimelineView>
+  >(new Map());
+  const [timelineStreamActive, setTimelineStreamActive] = createSignal(false);
   const [memberships, setMemberships] = createSignal<
     ReadonlyMap<number, readonly MembershipProjection[]>
   >(new Map());
@@ -764,6 +769,16 @@ export function App(props: AppProps) {
           }),
         );
       }
+      if (message.type === "timeline_changed") {
+        setTimelineStreamActive(true);
+        const timeline = mountedClient.timeline(message.buffer_id);
+        if (timeline !== undefined)
+          setTimelines((current) =>
+            new Map(current).set(message.buffer_id, timeline),
+          );
+      }
+      if (message.type === "buffer_removed")
+        setTimelines((current) => withoutMapKey(current, message.buffer_id));
       applyDebugEvent(
         message,
         setNetworks,
@@ -1418,6 +1433,7 @@ export function App(props: AppProps) {
           completion={completion()}
           focusRequest={focusRequest()}
           messages={messages()}
+          timelines={timelineStreamActive() ? timelines() : undefined}
           memberships={memberships()}
           historyStates={historyStates()}
           typers={typers()}
@@ -1448,9 +1464,18 @@ export function App(props: AppProps) {
             const path = pathForBuffer(bufferId);
             if (path !== undefined) writeLastViewedPath(path);
           }}
-          onFocusedBufferChange={(bufferId) =>
-            client?.setFocusedTimelineBuffer(bufferId)
-          }
+          onFocusedBufferChange={(bufferId) => {
+            client?.setFocusedTimelineBuffer(bufferId);
+            setTimelines(
+              (current) =>
+                new Map(
+                  [...current.keys()].flatMap((id) => {
+                    const timeline = client?.timeline(id);
+                    return timeline === undefined ? [] : [[id, timeline]];
+                  }),
+                ),
+            );
+          }}
           onTurnOnNotifications={turnOnNotifications}
           pathForBuffer={pathForBuffer}
           onSend={(bufferId, text) => {

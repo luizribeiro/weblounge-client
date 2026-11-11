@@ -10,6 +10,7 @@ import type {
   NetworkProjection,
   TypingProjection,
 } from "../../engine/protocol";
+import type { TimelineView } from "../../engine/timeline-store";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
@@ -33,6 +34,7 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
   readonly completion: CompletionResult | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
+  readonly timelines?: ReadonlyMap<number, TimelineView> | undefined;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly historyStates?: ReadonlyMap<number, HistoryState> | undefined;
   readonly typers?:
@@ -156,6 +158,8 @@ export function MobileScreen(props: MobileScreenProps) {
           memberships={props.memberships.get(buffer()?.id ?? -1) ?? []}
           historyState={props.historyStates?.get(buffer()?.id ?? -1)}
           messages={props.messages.get(buffer()?.id ?? -1) ?? []}
+          timeline={props.timelines?.get(buffer()?.id ?? -1)}
+          timelineEnabled={props.timelines !== undefined}
           typers={props.typers?.get(buffer()?.id ?? -1) ?? []}
           network={props.networks.find(
             (network) => network.id === buffer()?.network_id,

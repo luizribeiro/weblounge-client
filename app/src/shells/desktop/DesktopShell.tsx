@@ -24,6 +24,7 @@ import type {
   NetworkProjection,
   TypingProjection,
 } from "../../engine/protocol";
+import type { TimelineView } from "../../engine/timeline-store";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
 import {
@@ -67,6 +68,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
     | ((request: { readonly bufferId: number }) => void)
     | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
+  readonly timelines?: ReadonlyMap<number, TimelineView> | undefined;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly historyStates?: ReadonlyMap<number, HistoryState> | undefined;
   readonly typers?:
@@ -408,6 +410,8 @@ export function DesktopShell(props: DesktopShellProps) {
                 bufferId={activeBuffer()?.id}
                 foregroundExitEpoch={props.foregroundExitEpoch}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
+                timeline={props.timelines?.get(activeBuffer()?.id ?? -1)}
+                timelineEnabled={props.timelines !== undefined}
                 foreground={props.foreground !== false}
                 memberships={
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
