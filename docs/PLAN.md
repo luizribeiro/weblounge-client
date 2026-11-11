@@ -8,14 +8,13 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 3.3: project channel mode changes through typed system-line wording.
-2. Buffer events 7: missing-history gap and divider rows.
-3. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-4. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-5. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-6. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-7. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-8. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 7: missing-history gap and divider rows.
+2. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+3. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+4. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+5. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+6. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+7. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -29,6 +28,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 3.3; projected channel and member mode changes into folded typed
+  system lines with signed wording and icons, redacted keys, desktop raw mode suffixes, and compact
+  phone presentation.
 - 2026-11-11: buffer events 3.2; routed nick changes to shared channels, matching pinned DMs,
   and the server buffer for own changes, preserving case-only changes inside folded runs without
   unread or highlight effects.
@@ -85,6 +87,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Project channel and member mode changes into typed system-line runs. Papo's negotiated PREFIX
+  and CHANMODES semantics map ranks, masks, channel flags, keys, limits and unknown modes without
+  exposing key arguments. Runs fold by actor while retaining each semantic clause; the shared
+  fixture keeps Rust and TypeScript reducers in parity. Signed words and icon families cover add
+  and remove forms, desktop shows the raw mode suffix, and phone stays concise. Local-Ergo browser
+  coverage verifies op, voice and ban rows alone and folded with membership in both themes.
 - [x] Route nick changes into typed system-line runs. Other users now fan out to every projected
   shared channel and a continuity-matched old-nick DM, while own changes fan out to shared channels
   and the server buffer. Case-only changes stay visible, exact round trips disappear, live/history
