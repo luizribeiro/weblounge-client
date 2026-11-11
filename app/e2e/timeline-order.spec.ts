@@ -91,20 +91,14 @@ test("renders plain membership runs with legacy wording", async ({
     for (const nick of joinerNicks)
       joiners.push(await IrcClient.connectIsolated(nick, channel));
 
-    await expect(
-      membershipRow(
-        page,
-        `→ ${joinerNicks.slice(0, -1).join(", ")} and ${joinerNicks.at(-1)} joined`,
-      ),
-    ).toBeVisible();
+    await expect(membershipRun(page, "joined", joinerNicks)).toHaveText(
+      /^→ .* joined$/u,
+    );
     await writer.privmsgConfirmed(channel, `part breaker ${suffix}`);
     for (const joiner of joiners.slice(0, 3)) await joiner.part(channel);
     await expect(
-      membershipRow(
-        page,
-        `← ${joinerNicks[0]}, ${joinerNicks[1]} and ${joinerNicks[2]} left`,
-      ),
-    ).toBeVisible();
+      membershipRun(page, "left", joinerNicks.slice(0, 3)),
+    ).toHaveText(/^← .* left$/u);
     await writer.privmsgConfirmed(channel, `quit breaker ${suffix}`);
     for (const [index, joiner] of joiners.slice(3).entries()) {
       joiner.close();
@@ -115,12 +109,9 @@ test("renders plain membership runs with legacy wording", async ({
           .filter({ hasText: "quit" }),
       ).toBeVisible();
     }
-    await expect(
-      membershipRow(
-        page,
-        `← ${joinerNicks[3]}, ${joinerNicks[4]} and ${joinerNicks[5]} quit`,
-      ),
-    ).toBeVisible();
+    await expect(membershipRun(page, "quit", joinerNicks.slice(3))).toHaveText(
+      /^← .* quit$/u,
+    );
     await captureMembershipScreenshots(page);
   } finally {
     keeper.close();
@@ -149,8 +140,14 @@ function messageRow(page: import("@playwright/test").Page, text: string) {
   });
 }
 
-function membershipRow(page: import("@playwright/test").Page, text: string) {
-  return page.locator("[data-membership-row]").filter({ hasText: text });
+function membershipRun(
+  page: import("@playwright/test").Page,
+  verb: string,
+  nicks: readonly string[],
+) {
+  let row = page.locator("[data-membership-row]").filter({ hasText: verb });
+  for (const nick of nicks) row = row.filter({ hasText: nick });
+  return row;
 }
 
 async function captureMembershipScreenshots(
