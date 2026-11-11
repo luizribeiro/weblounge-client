@@ -49,8 +49,9 @@ it("broadcasts optimistic state to every shared port", async () => {
   );
 });
 
-it("keeps timeline patches dormant while forwarding their legacy turn", async () => {
-  const port = new FakePort();
+it("forwards timeline patches alongside their legacy turn", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
   const runtime = new EngineWorkerRuntime(async () => ({
     handle: () =>
       JSON.stringify([
@@ -65,18 +66,26 @@ it("keeps timeline patches dormant while forwarding their legacy turn", async ()
         { type: "command_result", id: "turn-1" },
       ]),
   }));
-  runtime.attach(port);
+  runtime.attach(first);
+  runtime.attach(second);
 
-  port.receive({ type: "request", payload: { id: "turn-1" } });
-  await vi.waitFor(() => expect(port.sent).toHaveLength(2));
+  first.receive({ type: "request", payload: { id: "turn-1" } });
+  await vi.waitFor(() => expect(first.sent).toHaveLength(3));
 
   expect(
-    port.sent.map((event) =>
+    first.sent.map((event) =>
       typeof event === "object" && event !== null && "type" in event
         ? event.type
         : undefined,
     ),
-  ).toEqual(["messages_appended", "command_result"]);
+  ).toEqual(["messages_appended", "timeline_changed", "command_result"]);
+  expect(
+    second.sent.map((event) =>
+      typeof event === "object" && event !== null && "type" in event
+        ? event.type
+        : undefined,
+    ),
+  ).toEqual(["messages_appended", "timeline_changed"]);
 });
 
 it("routes asynchronous buffer focus requests only to the submitting port", async () => {
