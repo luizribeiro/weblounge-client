@@ -4643,9 +4643,7 @@ fn process_history(
         return;
     };
     let load = running.model.history_load(&conversation);
-    let prepend = matches!(load, Some(HistoryLoad::Latest | HistoryLoad::Older));
     let mut output = Vec::new();
-    let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut read_advances = Vec::new();
     for item in page.items {
         match item {
@@ -4653,23 +4651,25 @@ fn process_history(
                 let (received, advance) =
                     receive_chat(&mut running.model, (&message).into(), true, &snapshot, None);
                 read_advances.extend(advance);
-                merge_history_chat_events(received, &mut timeline, &mut output);
+                output.extend(received);
             }
             papo::Event::Notice(notice) => {
                 let (received, advance) =
                     receive_chat(&mut running.model, (&notice).into(), true, &snapshot, None);
                 read_advances.extend(advance);
-                merge_history_chat_events(received, &mut timeline, &mut output);
+                output.extend(received);
             }
             papo::Event::ServerNotice(notice) => {
                 let (received, advance) = running
                     .model
                     .receive_server_notice_with_advance(&notice, true, &snapshot);
                 read_advances.extend(advance);
-                merge_history_chat_events(received, &mut timeline, &mut output);
+                output.extend(received);
             }
             papo::Event::Reacted(reaction) => {
-                merge_history_reaction(&mut running.model, &reaction, &mut timeline, &mut output);
+                if let Some(event) = running.model.receive_reaction(&reaction) {
+                    output.push(event);
+                }
             }
             papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
                 if let Some(event) = running.model.receive_membership(
@@ -4709,7 +4709,6 @@ fn process_history(
             _ => {}
         }
     }
-    push_history_timeline(&running.model, &mut output, timeline, prepend);
     output.extend(record_read_advances(running, read_advances));
     let read_flush = start_read_flush(running);
     let finished = finish_history_page(
@@ -4726,65 +4725,6 @@ fn process_history(
     update_chat_list(&shared_state, outbound, instance);
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
-    }
-}
-
-fn merge_history_chat_events(
-    received: Vec<EngineToUi>,
-    timeline: &mut Option<(BufferId, Vec<crate::MessageProjection>)>,
-    output: &mut Vec<EngineToUi>,
-) {
-    for event in received {
-        match event {
-            EngineToUi::MessagesAppended {
-                buffer_id,
-                messages,
-            } => timeline
-                .get_or_insert_with(|| (buffer_id, Vec::new()))
-                .1
-                .extend(messages),
-            _ => output.push(event),
-        }
-    }
-}
-
-fn merge_history_reaction(
-    model: &mut NetworkModel,
-    reaction: &papo::event::Reacted,
-    timeline: &mut Option<(BufferId, Vec<crate::MessageProjection>)>,
-    output: &mut Vec<EngineToUi>,
-) {
-    let Some(event) = model.receive_reaction(reaction) else {
-        return;
-    };
-    if let EngineToUi::MessageUpdated { buffer_id, message } = &event
-        && let Some((timeline_buffer, messages)) = timeline
-        && timeline_buffer == buffer_id
-        && let Some(current) = messages.iter_mut().find(|current| current.id == message.id)
-    {
-        current.clone_from(message);
-        return;
-    }
-    output.push(event);
-}
-
-fn push_history_timeline(
-    model: &NetworkModel,
-    output: &mut Vec<EngineToUi>,
-    timeline: Option<(BufferId, Vec<crate::MessageProjection>)>,
-    prepend: bool,
-) {
-    let Some((buffer_id, mut messages)) = timeline else {
-        return;
-    };
-    messages.sort_by_key(message_projection_order);
-    if prepend {
-        output.push(EngineToUi::MessagesPrepended {
-            buffer_id,
-            messages,
-        });
-    } else if let Some(event) = model.history_append_event(buffer_id, messages) {
-        output.push(event);
     }
 }
 
@@ -5042,14 +4982,6 @@ fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
     };
     matches!(endpoint.kind(), papo::EndpointKind::SecureWebSocket)
         || (allow_insecure && matches!(endpoint.kind(), papo::EndpointKind::WebSocket))
-}
-
-fn message_projection_order(message: &crate::MessageProjection) -> (i64, i64, u64) {
-    (
-        message.server_time_ms.unwrap_or(message.received_at_ms),
-        message.received_at_ms,
-        message.id.0,
-    )
 }
 
 fn channel_target(
