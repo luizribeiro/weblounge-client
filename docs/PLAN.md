@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 3.1a; folded same-day membership records once per engine turn into
+  stable semantic runs, kept split/merge and silent-eviction parity, and removed the app's
+  temporary adjacency collapse without changing plain join, part or quit presentation.
 - 2026-11-11: buffer events 2; assigned timeline days through the platform local calendar, made
   dividers and membership-run boundaries consume those days, and deduplicated live/history system
   overlap per buffer while retaining historical kicks and departure reasons.
@@ -70,6 +73,13 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Fold buffer-event runs in the engine. Same-day foldable records now collapse once per turn;
+  chats, standalone lines, gaps and day changes close the run. Membership clauses derive from
+  each casemapped person's first and last event, nick chains collapse, modes and invites group by
+  actor, newest time and smallest-record identity stay stable, and item-boundary eviction retains
+  a join flood as one system item. Shared Rust/TypeScript fixtures cover run growth and merging.
+  `MessageList` renders the engine's plain join, part and quit people lists directly with the
+  existing wording and visuals; its temporary batch-1c adjacency collapse is gone.
 - [x] Land buffer-events batch 2. The engine assigns every chat and system record a platform-local
   calendar day; browser builds use the device time zone and deterministic tests use fixed offsets.
   Day changes split the temporary membership projection, while divider boundaries and labels now
