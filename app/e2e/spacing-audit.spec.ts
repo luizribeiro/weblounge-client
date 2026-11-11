@@ -116,8 +116,8 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     await expect(messageRow(page, scenario.own)).toBeVisible();
     await expect(page.locator("[data-notice-row]").first()).toBeVisible();
     await expect
-      .poll(() => page.locator("[data-membership-row]").count())
-      .toBeGreaterThanOrEqual(2);
+      .poll(() => page.locator("[data-system-line]").count())
+      .toBeGreaterThanOrEqual(1);
   } finally {
     scenario.close();
   }
@@ -435,7 +435,7 @@ async function transcriptDensity(
         throw new Error("post-divider message is missing");
       const afterDividerMessageStyle = getComputedStyle(afterDividerMessage);
       const afterDividerLine = document.querySelector<HTMLElement>(
-        '[data-line-spacing="after-divider"] [data-membership-row]',
+        '[data-line-spacing="after-divider"] [data-system-line]',
       );
       if (afterDividerLine === null)
         throw new Error("post-divider line is missing");
@@ -448,7 +448,7 @@ async function transcriptDensity(
       const afterDivider = dayDivider
         ?.closest("li")
         ?.nextElementSibling?.querySelector<HTMLElement>(
-          "[data-membership-row], [data-message-row]",
+          "[data-system-line], [data-message-row]",
         );
       const dividerLabel = dayDivider?.querySelector<HTMLElement>("span");
       if (

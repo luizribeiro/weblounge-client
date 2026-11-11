@@ -68,7 +68,7 @@ test("renders out-of-order arrivals and a moved confirmation in engine order", a
   }
 });
 
-test("renders plain membership runs with legacy wording", async ({
+test("renders typed membership runs around message breakers", async ({
   baseURL,
   page,
 }) => {
@@ -91,27 +91,25 @@ test("renders plain membership runs with legacy wording", async ({
     for (const nick of joinerNicks)
       joiners.push(await IrcClient.connectIsolated(nick, channel));
 
-    await expect(membershipRun(page, "joined", joinerNicks)).toHaveText(
-      /^→ .* joined$/u,
-    );
+    await expect(
+      systemRun(page, "joined", joinerNicks.slice(0, 3)),
+    ).toContainText("3 others");
     await writer.privmsgConfirmed(channel, `part breaker ${suffix}`);
     for (const joiner of joiners.slice(0, 3)) await joiner.part(channel);
     await expect(
-      membershipRun(page, "left", joinerNicks.slice(0, 3)),
-    ).toHaveText(/^← .* left$/u);
+      systemRun(page, "left", joinerNicks.slice(0, 3)),
+    ).toBeVisible();
     await writer.privmsgConfirmed(channel, `quit breaker ${suffix}`);
     for (const [index, joiner] of joiners.slice(3).entries()) {
       joiner.close();
       await expect(
         page
-          .locator("[data-membership-row]")
+          .locator("[data-system-line]")
           .filter({ hasText: joinerNicks[3 + index] })
           .filter({ hasText: "quit" }),
       ).toBeVisible();
     }
-    await expect(membershipRun(page, "quit", joinerNicks.slice(3))).toHaveText(
-      /^← .* quit$/u,
-    );
+    await expect(systemRun(page, "quit", joinerNicks.slice(3))).toBeVisible();
     await captureMembershipScreenshots(page);
   } finally {
     keeper.close();
@@ -140,12 +138,12 @@ function messageRow(page: import("@playwright/test").Page, text: string) {
   });
 }
 
-function membershipRun(
+function systemRun(
   page: import("@playwright/test").Page,
   verb: string,
   nicks: readonly string[],
 ) {
-  let row = page.locator("[data-membership-row]").filter({ hasText: verb });
+  let row = page.locator("[data-system-line]").filter({ hasText: verb });
   for (const nick of nicks) row = row.filter({ hasText: nick });
   return row;
 }
