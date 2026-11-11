@@ -65,6 +65,13 @@
       "geometry": "suffix"
     },
     {
+      "name": "mode run insert",
+      "initial": [],
+      "change": { "reset": false, "upserted": [{ "id": 31, "order": [130, 130, 31], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 130, "line": { "type": "run", "clauses": [{ "type": "modes", "actor": { "type": "user", "nick": "mel", "nick_color_index": 1, "me": false }, "changes": [{ "added": true, "meaning": { "type": "rank", "rank": { "mode": "o", "symbol": "@" }, "member": { "nick": "iris", "nick_color_index": 2, "me": false } }, "raw": "+o iris" }, { "added": true, "meaning": { "type": "key" }, "raw": "+k" }, { "added": false, "meaning": { "type": "limit", "limit": null }, "raw": "-l" }] }] } } }], "removed": [] },
+      "expected_items": [{ "id": 31, "order": [130, 130, 31], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 130, "line": { "type": "run", "clauses": [{ "type": "modes", "actor": { "type": "user", "nick": "mel", "nick_color_index": 1, "me": false }, "changes": [{ "added": true, "meaning": { "type": "rank", "rank": { "mode": "o", "symbol": "@" }, "member": { "nick": "iris", "nick_color_index": 2, "me": false } }, "raw": "+o iris" }, { "added": true, "meaning": { "type": "key" }, "raw": "+k" }, { "added": false, "meaning": { "type": "limit", "limit": null }, "raw": "-l" }] }] } } }],
+      "geometry": "suffix"
+    },
+    {
       "name": "reset",
       "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
       "change": { "reset": true, "upserted": [{ "id": 3, "order": [30, 30, 3], "day": 2, "content_version": 4, "body": { "family": "gap", "from_ms": 30, "to_ms": 31 } }], "removed": [] },

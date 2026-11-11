@@ -23,7 +23,7 @@ struct FixtureCase {
 fn shared_json_fixtures_cover_the_reducer_contract() {
     let fixtures: FixtureFile = serde_json::from_str(REDUCER_FIXTURES).expect("valid fixtures");
     assert_eq!(fixtures.version, 1);
-    assert_eq!(fixtures.cases.len(), 10);
+    assert_eq!(fixtures.cases.len(), 11);
 
     for case in fixtures.cases {
         let applied = apply_timeline_change(&case.initial, &case.change)
