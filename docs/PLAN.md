@@ -28,6 +28,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: pinned reconnect and lag transcript gaps to keep OS badge counts exact while
+  conversation badges and unread dividers reflect incomplete history until catch-up covers it.
 - 2026-11-11: buffer events 7; represented capped, lagged, unavailable and failed history ranges as
   mergeable timeline gaps, cleared covered markers, and replaced ad hoc transcript boundaries with
   the signed responsive divider family for gaps, history start/loading, empty, day and New rows.

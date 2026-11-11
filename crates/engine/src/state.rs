@@ -4566,7 +4566,10 @@ mod tests {
         chat_list_snapshot::{ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow},
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
-        read_model::{MessageStub, ServerTimeMs},
+        read_model::{
+            AppBadgeConversation, BadgeCount, ConversationKind, Divider, MessageStub, ServerTimeMs,
+            app_badge_count, conversation_badge, divider,
+        },
         timeline::{
             FixedOffsetCalendar, ItemBody, LocalDay, ModeMeaning, ModeProjection, RecordBody,
             RunClause, TimelineItem, apply_timeline_change,
@@ -4884,6 +4887,149 @@ mod tests {
         );
         old.extend(patches);
         old
+    }
+
+    fn model_with_gap_badges() -> (NetworkModel, papo::State, BufferId, BufferId) {
+        let (mut model, state) = model(20);
+        model.begin_target_sync(UNIX_EPOCH + Duration::from_millis(11));
+        model.receive_incoming(
+            incoming(
+                &state,
+                "hello weblounge",
+                Some("channel-mention"),
+                Some(20),
+                20,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        model.receive_incoming(direct_incoming(&state, "alice", "first", 30), &state);
+        model.receive_incoming(direct_incoming(&state, "alice", "second", 40), &state);
+
+        let channel_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
+        let direct_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        (model, state, channel_id, direct_id)
+    }
+
+    fn projected_app_badge(
+        model: &NetworkModel,
+        channel_id: BufferId,
+        direct_id: BufferId,
+    ) -> usize {
+        app_badge_count([
+            AppBadgeConversation {
+                kind: ConversationKind::Channel,
+                facts: &model.buffers[&channel_id].read_facts,
+                muted: false,
+            },
+            AppBadgeConversation {
+                kind: ConversationKind::Direct,
+                facts: &model.buffers[&direct_id].read_facts,
+                muted: false,
+            },
+        ])
+    }
+
+    fn assert_exact_gap_fixture_badges(
+        model: &NetworkModel,
+        channel_id: BufferId,
+        direct_id: BufferId,
+    ) {
+        assert_eq!(projected_app_badge(model, channel_id, direct_id), 3);
+        assert_eq!(
+            conversation_badge(&model.buffers[&direct_id].read_facts, false)
+                .map(|badge| badge.count),
+            Some(BadgeCount::Exact(2))
+        );
+        assert_eq!(
+            conversation_badge(&model.buffers[&channel_id].read_facts, false)
+                .map(|badge| badge.count),
+            Some(BadgeCount::Exact(1))
+        );
+    }
+
+    #[test]
+    fn reconnect_gap_keeps_app_badge_exact_and_caps_conversation_badges() {
+        let (mut model, _state, channel_id, direct_id) = model_with_gap_badges();
+        assert_exact_gap_fixture_badges(&model, channel_id, direct_id);
+
+        model.begin_disconnect_gap(100);
+        model.finish_disconnect_gap(200, false);
+
+        assert_eq!(projected_app_badge(&model, channel_id, direct_id), 3);
+        for buffer_id in [channel_id, direct_id] {
+            let facts = &model.buffers[&buffer_id].read_facts;
+            assert_eq!(
+                conversation_badge(facts, false).map(|badge| badge.count),
+                Some(BadgeCount::MoreThan99)
+            );
+            assert_eq!(divider(facts, facts.mark()), Some(Divider::AtTop));
+        }
+    }
+
+    #[test]
+    fn reconnect_catchup_restores_exact_conversation_badges() {
+        let (mut model, _state, channel_id, direct_id) = model_with_gap_badges();
+        for buffer_id in [channel_id, direct_id] {
+            super::set_history_state(
+                model.buffers.get_mut(&buffer_id).expect("buffer exists"),
+                HistoryState::Ready {
+                    oldest: None,
+                    at_start: false,
+                },
+            );
+        }
+
+        model.begin_disconnect_gap(100);
+        model.finish_disconnect_gap(200, true);
+        let fetches = model.fallback_target_history(true);
+        assert_eq!(fetches.len(), 2);
+        assert!(
+            fetches
+                .iter()
+                .all(|fetch| matches!(fetch, HistoryFetch::After { .. }))
+        );
+        for fetch in fetches {
+            let HistoryFetch::After { target, .. } = fetch else {
+                unreachable!("ready conversations fetch after their newest message")
+            };
+            model
+                .finish_history(&target.conversation(), None, None, None, 0, true)
+                .expect("catch-up reaches the end");
+        }
+
+        for buffer_id in [channel_id, direct_id] {
+            let buffer = &model.buffers[&buffer_id];
+            assert_eq!(buffer.pending_reconnect_gap, None);
+            assert_eq!(buffer.read_facts.gap_until(), None);
+            assert!(
+                buffer
+                    .timeline
+                    .iter()
+                    .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+            );
+        }
+        assert_exact_gap_fixture_badges(&model, channel_id, direct_id);
+    }
+
+    #[test]
+    fn covered_lag_refetch_leaves_badges_exact() {
+        let (mut model, state, channel_id, direct_id) = model_with_gap_badges();
+        let conversation = papo::Conversation::Channel(channel_name(&state, "#room"));
+
+        model.note_lagged_gap(&conversation, 100, 150);
+        model.finish_lagged_gap(&conversation, Some(100));
+
+        let buffer = &model.buffers[&channel_id];
+        assert_eq!(buffer.pending_lag_gap, None);
+        assert_eq!(buffer.read_facts.gap_until(), None);
+        assert!(
+            buffer
+                .timeline
+                .iter()
+                .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+        );
+        assert_exact_gap_fixture_badges(&model, channel_id, direct_id);
     }
 
     #[test]
