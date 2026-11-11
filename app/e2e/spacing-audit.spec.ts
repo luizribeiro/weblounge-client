@@ -46,9 +46,16 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     await expect
       .poll(async () => {
         await driveToTranscriptTop(list);
-        return page.locator("[data-history-edge]").allTextContents();
+        return page
+          .locator('[data-divider-kind="history"]')
+          .evaluateAll((rows) =>
+            rows.map((row) => row.getAttribute("aria-label")),
+          );
       })
-      .toContain("Start of history");
+      .toContain(`Beginning of ${scenario.channel}`);
+    await expect(page.locator('[data-divider-kind="history"]')).toContainText(
+      "Server history starts",
+    );
     await leaveConversation(page, phone);
     await scenario.sendUnread();
     await page.getByRole("button", { name: scenario.channel }).click();
