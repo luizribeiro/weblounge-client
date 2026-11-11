@@ -1378,7 +1378,7 @@ function timelineRows(
   let day: TimelineItem["day"] | undefined;
   let newInserted = false;
   let previousGroupMessage: MessageProjection | undefined;
-  const displayItems = legacyDisplayItems(items);
+  const displayItems = projectDisplayItems(items);
   const messages = displayItems.flatMap((item) =>
     item.kind === "message" ? [item.message] : [],
   );
@@ -1426,31 +1426,13 @@ function timelineRows(
   return rows;
 }
 
-function legacyDisplayItems(
+function projectDisplayItems(
   items: readonly TimelineItem[],
 ): DisplayTimelineItem[] {
   const displayItems: DisplayTimelineItem[] = [];
-  let openMembershipIndex: number | undefined;
   for (const item of items) {
     const membership = timelineMembership(item);
-    if (membership?.type === "change") {
-      const openIndex = openMembershipIndex;
-      const open =
-        openIndex === undefined ? undefined : displayItems[openIndex];
-      if (
-        openIndex !== undefined &&
-        open?.kind === "membership" &&
-        open.membership.type === "change" &&
-        open.membership.kind === membership.kind &&
-        open.day === item.day
-      ) {
-        displayItems[openIndex] = {
-          ...open,
-          membership: mergeMembershipChange(open.membership, membership),
-        };
-        continue;
-      }
-      openMembershipIndex = displayItems.length;
+    if (membership !== undefined) {
       displayItems.push({
         kind: "membership",
         membership,
@@ -1459,7 +1441,6 @@ function legacyDisplayItems(
       });
       continue;
     }
-    openMembershipIndex = undefined;
     if (item.body.family === "message")
       displayItems.push({
         kind: "message",
@@ -1467,29 +1448,8 @@ function legacyDisplayItems(
         order: item.order,
         day: item.day,
       });
-    else if (membership !== undefined)
-      displayItems.push({
-        kind: "membership",
-        membership,
-        order: item.order,
-        day: item.day,
-      });
   }
   return displayItems;
-}
-
-function mergeMembershipChange(
-  first: Extract<MembershipProjection, { type: "change" }>,
-  latest: Extract<MembershipProjection, { type: "change" }>,
-): Extract<MembershipProjection, { type: "change" }> {
-  const nicks = [...first.nicks];
-  for (const nick of latest.nicks) if (!nicks.includes(nick)) nicks.push(nick);
-  return {
-    ...first,
-    nicks,
-    server_time_ms: latest.server_time_ms ?? first.server_time_ms,
-    received_at_ms: latest.received_at_ms,
-  };
 }
 
 function timelineMembership(

@@ -1246,12 +1246,12 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
-it("collapses standalone membership runs with the legacy wording and breakers", async () => {
+it("renders engine membership runs with the legacy wording and breakers", async () => {
   const change = (
     id: number,
     kind: "joined" | "parted" | "quit",
     nick: string,
-  ): MembershipProjection => ({
+  ): Extract<MembershipProjection, { type: "change" }> => ({
     type: "change",
     id,
     kind,
@@ -1278,17 +1278,24 @@ it("collapses standalone membership runs with the legacy wording and breakers", 
     <MessageList
       messages={[]}
       timeline={timelineView([
-        membershipItem(change(20, "joined", "mel")),
-        membershipItem(change(21, "joined", "rafa")),
-        membershipItem(change(22, "joined", "mel")),
+        membershipItem({
+          ...change(20, "joined", "mel"),
+          nicks: ["mel", "rafa"],
+        }),
         messageItem(notice),
-        membershipItem(change(25, "joined", "cyd")),
-        membershipItem(change(26, "joined", "dana")),
+        membershipItem({
+          ...change(25, "joined", "cyd"),
+          nicks: ["cyd", "dana"],
+        }),
         membershipItem(kicked),
-        membershipItem(change(28, "parted", "mel")),
-        membershipItem(change(29, "parted", "rafa")),
-        membershipItem(change(30, "quit", "cyd")),
-        membershipItem(change(31, "quit", "dana")),
+        membershipItem({
+          ...change(28, "parted", "mel"),
+          nicks: ["mel", "rafa"],
+        }),
+        membershipItem({
+          ...change(30, "quit", "cyd"),
+          nicks: ["cyd", "dana"],
+        }),
       ])}
     />
   ));
