@@ -59,7 +59,7 @@ export function SystemLine(props: {
         </div>
         <For each={words().details}>
           {(segments) => (
-            <div class={styles.detail}>
+            <div class={styles.detail} data-system-detail="true">
               <Segments onAction={props.onAction} segments={segments} />
             </div>
           )}

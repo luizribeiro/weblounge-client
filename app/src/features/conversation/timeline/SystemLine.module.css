@@ -34,11 +34,10 @@
   color: var(--wl-color-error);
 }
 .content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-}
-.detail + .detail,
-.content > div:first-child + .detail {
-  margin-top: 4px;
 }
 .nick {
   font-weight: 600;
