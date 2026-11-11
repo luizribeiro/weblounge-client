@@ -5581,6 +5581,34 @@ mod tests {
         .expect("pushed message")
     }
 
+    fn event_timeline_messages(event: &EngineToUi) -> Vec<&crate::MessageProjection> {
+        let EngineToUi::TimelineChanged { upserted, .. } = event else {
+            return Vec::new();
+        };
+        upserted
+            .iter()
+            .filter_map(|item| match &item.body {
+                crate::timeline::ItemBody::Message(message) => Some(message),
+                crate::timeline::ItemBody::System(_) | crate::timeline::ItemBody::Gap(_) => None,
+            })
+            .collect()
+    }
+
+    fn changed_messages(events: &[EngineToUi]) -> Vec<(BufferId, crate::MessageProjection)> {
+        events
+            .iter()
+            .flat_map(|event| {
+                let buffer_id = match event {
+                    EngineToUi::TimelineChanged { buffer_id, .. } => Some(*buffer_id),
+                    _ => None,
+                };
+                event_timeline_messages(event)
+                    .into_iter()
+                    .filter_map(move |message| Some((buffer_id?, message.clone())))
+            })
+            .collect()
+    }
+
     #[test]
     fn wasm_reachable_runtime_uses_the_platform_delay() {
         let production = include_str!("runtime.rs")
@@ -5658,13 +5686,10 @@ async fn delay(duration: Duration) {
             )
             .expect("initial history finishes");
         let pushed = pushed_channel_message("pushed-edge", "provisional while suspended");
-        let pushed_buffer_id = model
-            .restore_pushed_messages(vec![pushed], &client.state())
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended { buffer_id, .. } => Some(*buffer_id),
-                _ => None,
-            })
+        model.restore_pushed_messages(vec![pushed], &client.state());
+        let pushed_buffer_id = changed_messages(&model.take_timeline_changes(false))
+            .first()
+            .map(|(buffer_id, _)| *buffer_id)
             .expect("pushed message is restored");
         assert_eq!(pushed_buffer_id, buffer_id);
 
@@ -5683,7 +5708,7 @@ async fn delay(duration: Duration) {
         );
         let conversation = papo::Conversation::Channel(channel);
         let load = model.history_load(&conversation);
-        let output = finish_history_page(
+        _ = finish_history_page(
             &mut model,
             load,
             &conversation,
@@ -5698,13 +5723,13 @@ async fn delay(duration: Duration) {
             true,
         );
 
-        assert!(!output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages.iter().any(|message| {
+        assert!(
+            !changed_messages(&model.take_timeline_changes(false))
+                .iter()
+                .any(|(_, message)| {
                     message.text == "Some messages were skipped while reconnecting."
                 })
-        )));
+        );
         assert_eq!(
             model.chat_list_snapshot("network".into()).rows[0].gap_until,
             None
@@ -6173,14 +6198,10 @@ async fn delay(duration: Duration) {
             },
         });
 
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::BufferSnapshot { messages, .. }
-                if messages.iter().any(|message| {
-                    message.text == "visible before history"
-                        && message.server_ids == ["push-before-connect"]
-                })
-        )));
+        assert!(changed_messages(&output).iter().any(|(_, message)| {
+            message.text == "visible before history"
+                && message.server_ids == ["push-before-connect"]
+        }));
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::PushedMessagesLoaded {
@@ -6275,11 +6296,11 @@ async fn delay(duration: Duration) {
         .await
         .expect("push load completes");
 
-        assert!(events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].text == "loaded into the open app"
-        )));
+        assert!(
+            changed_messages(&events)
+                .iter()
+                .any(|(_, message)| message.text == "loaded into the open app")
+        );
         assert_eq!(
             events
                 .iter()
@@ -6379,13 +6400,10 @@ async fn delay(duration: Duration) {
             loop {
                 let event = receiver.recv().await.expect("runtime event");
                 output.push(event);
-                if output.iter().any(|event| {
-                    matches!(
-                        event,
-                        EngineToUi::MessageUpdated { message, .. }
-                            if message.server_time_ms == Some(1_793_709_296_790)
-                    )
-                }) {
+                if changed_messages(&output)
+                    .iter()
+                    .any(|(_, message)| message.server_time_ms == Some(1_793_709_296_790))
+                {
                     break output;
                 }
             }
@@ -6393,11 +6411,11 @@ async fn delay(duration: Duration) {
         .await
         .expect("push load completes");
 
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].text == "loaded into the open app"
-        )));
+        assert!(
+            changed_messages(&output)
+                .iter()
+                .any(|(_, message)| message.text == "loaded into the open app")
+        );
         assert_eq!(
             output
                 .iter()
@@ -7208,17 +7226,18 @@ async fn delay(duration: Duration) {
     }
 
     fn assert_version_notice(events: &[EngineToUi], text: &str) {
+        let messages = changed_messages(events);
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, EngineToUi::CommandResult { .. }))
+        );
         assert!(matches!(
-            events,
-            [
-                EngineToUi::MessagesAppended { messages, .. },
-                EngineToUi::CommandResult { .. },
-                EngineToUi::TimelineChanged { .. },
-            ]
-                if messages.len() == 1
-                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
-                    && messages[0].text == text
-                    && messages[0].author.is_empty()
+            messages.as_slice(),
+            [(_, message)]
+                if matches!(&message.kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
+                    && message.text == text
+                    && message.author.is_empty()
         ));
     }
 
@@ -7582,16 +7601,13 @@ async fn delay(duration: Duration) {
             },
         });
 
-        assert!(matches!(
-            output.as_slice(),
-            [
-                EngineToUi::NetworkStateChanged { .. },
-                EngineToUi::BuffersChanged { .. },
-                EngineToUi::RecentDirectsReady { .. },
-                EngineToUi::BufferSnapshot { .. },
-                EngineToUi::TimelineChanged { reset: true, .. },
-                EngineToUi::CommandResult { id },
-            ] if id == "connect-again"
+        assert!(
+            output
+                .iter()
+                .any(|event| matches!(event, EngineToUi::TimelineChanged { reset: true, .. }))
+        );
+        assert!(output.iter().any(
+            |event| matches!(event, EngineToUi::CommandResult { id } if id == "connect-again")
         ));
         let hosted = runtime.request(EngineRequestEnvelope {
             id: "hosted".into(),
@@ -7675,17 +7691,16 @@ async fn delay(duration: Duration) {
                 autojoin: vec!["#lounge".into()],
             },
         });
-        assert!(matches!(
-            duplicate.as_slice(),
-            [
-                EngineToUi::NetworkStateChanged { .. },
-                EngineToUi::BuffersChanged { .. },
-                EngineToUi::RecentDirectsReady { .. },
-                EngineToUi::BufferSnapshot { .. },
-                EngineToUi::TimelineChanged { reset: true, .. },
-                EngineToUi::CommandResult { id },
-            ] if id == "second-tab"
-        ));
+        assert!(
+            duplicate
+                .iter()
+                .any(|event| matches!(event, EngineToUi::TimelineChanged { reset: true, .. }))
+        );
+        assert!(
+            duplicate.iter().any(
+                |event| matches!(event, EngineToUi::CommandResult { id } if id == "second-tab")
+            )
+        );
 
         assert_hosted_token_unavailable(&runtime);
 
@@ -8208,10 +8223,18 @@ async fn delay(duration: Duration) {
         let output = collect(&mut receiver);
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::MembershipChanged {
-                buffer_id: id,
-                membership: crate::MembershipProjection::Kicked { actor, reason, .. },
-            } if *id == buffer_id && actor == "operator" && reason.as_deref() == Some("too loud")
+            EngineToUi::TimelineChanged { buffer_id: id, upserted, .. }
+                if *id == buffer_id && upserted.iter().any(|item| matches!(
+                    &item.body,
+                    crate::timeline::ItemBody::System(system)
+                        if matches!(
+                            &system.line,
+                            crate::timeline::SystemLine::Event {
+                                event: crate::timeline::LineEvent::Kick { actor, reason, .. }
+                            } if matches!(actor, crate::timeline::Actor::User(person) if person.nick == "operator")
+                                && reason.as_deref() == Some("too loud")
+                        )
+                ))
         )));
         assert!(output.iter().any(|event| matches!(
             event,
@@ -8423,6 +8446,7 @@ async fn delay(duration: Duration) {
         let confirmation = model
             .confirm_send(&pending, &sent)
             .expect("retained optimistic row confirms");
+        let timeline = model.take_timeline_changes(false);
         if !close_first {
             model.close_direct(buffer_id).expect("direct closes");
         }
@@ -8432,11 +8456,12 @@ async fn delay(duration: Duration) {
             EngineToUi::BuffersChanged { buffers, .. }
                 if buffers.iter().all(|buffer| buffer.id != buffer_id)
         ));
-        assert!(confirmation.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.delivery == MessageDelivery::Confirmed
-        )));
+        assert!(!confirmation.is_empty());
+        assert!(
+            changed_messages(&timeline)
+                .iter()
+                .any(|(_, message)| { message.delivery == MessageDelivery::Confirmed })
+        );
     }
 
     #[tokio::test]
@@ -8780,13 +8805,22 @@ async fn delay(duration: Duration) {
         )
         .expect("state limit is classified");
 
-        assert!(matches!(
-            output.as_slice(),
-            [EngineToUi::MessagesAppended { buffer_id: actual, messages }]
-                if *actual == buffer_id
-                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
-                    && messages[0].text == "No entry was added because this channel's list is full."
-        ));
+        assert!(output.iter().all(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { buffer_id: actual, .. } if *actual == buffer_id
+        )));
+        assert!(
+            changed_messages(&model.take_timeline_changes(false))
+                .iter()
+                .any(|(actual, message)| {
+                    *actual == buffer_id
+                        && matches!(
+                            &message.kind,
+                            crate::MessageKind::Notice(crate::NoticeKind::Info)
+                        )
+                        && message.text == "No entry was added because this channel's list is full."
+                })
+        );
     }
 
     #[tokio::test]
@@ -9010,20 +9044,16 @@ async fn delay(duration: Duration) {
             "kind": "message",
         }))
         .expect("pushed message");
-        lock(state)
+        let mut state = lock(state);
+        let model = &mut state
             .network
             .as_mut()
             .expect("network remains active")
-            .model
-            .restore_pushed_messages(vec![pushed], &client.state())
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+            .model;
+        model.restore_pushed_messages(vec![pushed], &client.state());
+        changed_messages(&model.take_timeline_changes(false))
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("pushed message is restored")
     }
 
@@ -9060,15 +9090,9 @@ async fn delay(duration: Duration) {
             .await;
         process_next_message(&mut events, &state, &outbound, &client).await;
         let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        let (buffer_id, message_id) = changed_messages(&appended)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("live message is projected");
         let output = Runtime {
             state: Arc::clone(&state),
@@ -9123,11 +9147,17 @@ async fn delay(duration: Duration) {
         let (pending, immediate) = model
             .begin_send(buffer_id, text.into(), &client.state())
             .expect("buffer is sendable");
-        assert!(immediate.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages.first().is_some_and(|message| message.text == text)
-        )));
+        let timeline = model.take_timeline_changes(false);
+        assert!(
+            changed_messages(&timeline)
+                .first()
+                .is_some_and(|(_, message)| message.text == text)
+        );
+        assert!(
+            immediate
+                .iter()
+                .any(|event| matches!(event, EngineToUi::BufferUpdated { .. }))
+        );
         let sender = client.clone();
         let send_pending = pending.clone();
         let send_task = tokio::spawn(async move { super::send(&sender, &send_pending).await });
@@ -9172,19 +9202,16 @@ async fn delay(duration: Duration) {
                 input: "/topic".into(),
             },
         });
-        assert!(shown.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if matches!(
-                    &messages[0].kind,
-                    crate::MessageKind::Notice(crate::NoticeKind::Topic {
-                        setter: Some(setter),
-                        set_at: None,
-                    }) if setter == "weblounge"
-                )
-                    && messages[0].text == "new topic"
-                    && messages[0].author.is_empty()
-        )));
+        assert!(changed_messages(&shown).iter().any(|(_, message)| {
+            matches!(
+                &message.kind,
+                crate::MessageKind::Notice(crate::NoticeKind::Topic {
+                    setter: Some(setter),
+                    set_at: None,
+                }) if setter == "weblounge"
+            ) && message.text == "new topic"
+                && message.author.is_empty()
+        }));
     }
 
     fn process_runtime_event(runtime: &Runtime, event: papo::Event) {
