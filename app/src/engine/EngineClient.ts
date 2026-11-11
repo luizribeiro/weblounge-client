@@ -26,7 +26,7 @@ import type {
   VisibilityState,
   WorkerHostError,
 } from "./protocol";
-import { type AppliedTimeline, TimelineStore } from "./timeline-store";
+import { TimelineStore, type TimelineView } from "./timeline-store";
 
 export interface EngineClient {
   start(hello: Hello): Promise<void>;
@@ -34,6 +34,7 @@ export interface EngineClient {
   checkLiveness(): void;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
+  timeline(bufferId: number): TimelineView | undefined;
   setFocusedTimelineBuffer(bufferId: number | undefined): void;
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe;
   close(): Promise<void>;
@@ -188,7 +189,7 @@ export class WorkerEngineClient implements EngineClient {
     return () => this.#listeners.delete(listener);
   }
 
-  timeline(bufferId: number): AppliedTimeline | undefined {
+  timeline(bufferId: number): TimelineView | undefined {
     return this.#timelines.get(bufferId);
   }
 

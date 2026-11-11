@@ -682,6 +682,7 @@ describe("WorkerEngineClient", () => {
     expect(client.timeline(2)).toEqual({
       items: [timelineGap(1, 10), timelineRun(2, 20)],
       geometry: "suffix",
+      change: patch,
     });
     expect(client.timeline(3)).toBeUndefined();
 

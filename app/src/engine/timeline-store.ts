@@ -13,17 +13,21 @@ export interface AppliedTimeline {
   readonly geometry: TimelineGeometry;
 }
 
+export interface TimelineView extends AppliedTimeline {
+  readonly change: TimelineChange;
+}
+
 const engineWindowLimit = 500;
 
 export class TimelineStore {
-  readonly #buffers = new Map<number, AppliedTimeline>();
+  readonly #buffers = new Map<number, TimelineView>();
   #focusedBufferId: number | undefined;
 
-  get(bufferId: number): AppliedTimeline | undefined {
+  get(bufferId: number): TimelineView | undefined {
     return this.#buffers.get(bufferId);
   }
 
-  apply(bufferId: number, change: TimelineChange): AppliedTimeline {
+  apply(bufferId: number, change: TimelineChange): TimelineView {
     const applied = applyTimelineChange(
       this.#buffers.get(bufferId)?.items ?? [],
       change,
@@ -32,18 +36,17 @@ export class TimelineStore {
       bufferId === this.#focusedBufferId
         ? applied
         : { ...applied, items: retainEngineWindow(applied.items) };
-    this.#buffers.set(bufferId, retained);
-    return retained;
+    const view = { ...retained, change };
+    this.#buffers.set(bufferId, view);
+    return view;
   }
 
   focus(bufferId: number | undefined): void {
     this.#focusedBufferId = bufferId;
     for (const [id, timeline] of this.#buffers) {
-      if (id !== bufferId)
-        this.#buffers.set(id, {
-          ...timeline,
-          items: retainEngineWindow(timeline.items),
-        });
+      const items =
+        id === bufferId ? timeline.items : retainEngineWindow(timeline.items);
+      this.#buffers.set(id, resetView(items));
     }
   }
 
@@ -51,6 +54,14 @@ export class TimelineStore {
     this.#buffers.delete(bufferId);
     if (this.#focusedBufferId === bufferId) this.#focusedBufferId = undefined;
   }
+}
+
+function resetView(items: readonly TimelineItem[]): TimelineView {
+  return {
+    items,
+    geometry: "mixed",
+    change: { reset: true, upserted: items, removed: [] },
+  };
 }
 
 export function applyTimelineChange(

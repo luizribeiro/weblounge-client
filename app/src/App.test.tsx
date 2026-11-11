@@ -10,6 +10,7 @@ import type {
   EngineMessageKey,
   EngineRequestEnvelope,
 } from "./engine/protocol";
+import { TimelineStore } from "./engine/timeline-store";
 import { OneShotAccessToken } from "./hosted/HostedSession";
 import { SessionTokenError } from "./hosted/session-token";
 import { startupDeadlineMs } from "./hosted/startup-deadline";
@@ -1785,6 +1786,7 @@ class FakeEngineClient implements EngineClient {
   readonly requests: EngineRequestEnvelope[] = [];
   livenessChecks = 0;
   #listener: ((message: EngineClientMessage) => void) | undefined;
+  readonly #timelines = new TimelineStore();
 
   constructor(
     private readonly rejection?: EngineMessageKey,
@@ -1830,6 +1832,10 @@ class FakeEngineClient implements EngineClient {
   }
 
   emit(message: EngineClientMessage): void {
+    if (message.type === "timeline_changed")
+      this.#timelines.apply(message.buffer_id, message);
+    if (message.type === "buffer_removed")
+      this.#timelines.remove(message.buffer_id);
     this.#listener?.(message);
   }
 
@@ -1843,8 +1849,13 @@ class FakeEngineClient implements EngineClient {
     this.visibility.push(state);
   }
 
+  timeline(bufferId: number) {
+    return this.#timelines.get(bufferId);
+  }
+
   setFocusedTimelineBuffer(bufferId: number | undefined): void {
     this.focusedTimelineBuffers.push(bufferId);
+    this.#timelines.focus(bufferId);
   }
 
   subscribe(listener: (message: EngineClientMessage) => void) {
