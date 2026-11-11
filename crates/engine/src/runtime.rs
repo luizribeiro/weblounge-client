@@ -3370,7 +3370,7 @@ async fn fetch_history_page(
         process_history(state, outbound, client, instance, page);
         return;
     }
-    let (buffer_id, retry) = {
+    let (buffer_id, retry, timeline, history_failed) = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -3379,9 +3379,12 @@ async fn fetch_history_page(
         else {
             return;
         };
-        let buffer_id = running.model.fail_history(&fetch);
-        let retry = buffer_id.and_then(|id| running.model.retry_pushed_history(id));
-        (buffer_id, retry)
+        let gap_buffer_id = running.model.fail_pending_history_gaps(&fetch);
+        let history_buffer_id = running.model.fail_history(&fetch);
+        let buffer_id = history_buffer_id.or(gap_buffer_id);
+        let retry = history_buffer_id.and_then(|id| running.model.retry_pushed_history(id));
+        let timeline = running.model.take_timeline_changes(false);
+        (buffer_id, retry, timeline, history_buffer_id.is_some())
     };
     if let Some(buffer_id) = buffer_id {
         let sync = lock(state)
@@ -3389,16 +3392,18 @@ async fn fetch_history_page(
             .as_ref()
             .filter(|running| running.instance == instance)
             .and_then(|running| running.model.buffer_updated(buffer_id));
-        send_events(
-            outbound,
-            sync.into_iter()
-                .chain([EngineToUi::HistoryStateChanged {
-                    buffer_id,
-                    loading: retry.is_some(),
-                    at_start: false,
-                }])
-                .collect(),
-        );
+        let mut events = sync.into_iter().collect::<Vec<_>>();
+        if history_failed {
+            events.push(EngineToUi::HistoryStateChanged {
+                buffer_id,
+                loading: retry.is_some(),
+                at_start: false,
+            });
+        }
+        events.extend(timeline);
+        send_events(outbound, events);
+    } else {
+        send_events(outbound, timeline);
     }
     if let Some(retry) = retry {
         spawn_history_fetch(
@@ -4190,6 +4195,10 @@ fn process_connected(
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryFetch> {
     running.model.rebuild_name_keys(snapshot);
+    running.model.finish_disconnect_gap(
+        time_millis(papo::time::now()),
+        snapshot.supports(papo::Feature::History),
+    );
     let next = next_connection_state(
         running.model.connection(),
         ConnectionTransition::Connected,
@@ -4247,6 +4256,9 @@ fn process_disconnect(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
+    running
+        .model
+        .begin_disconnect_gap(time_millis(papo::time::now()));
     running.model.restart_inflight_history();
     running.model.invalidate_direct_handles();
     running.flushing_reads = false;
@@ -4297,6 +4309,13 @@ fn process_lagged(
         message: format!("{} papo events dropped", lagged.dropped),
     });
     model.rebuild_name_keys(snapshot);
+    for gap in &lagged.gaps {
+        let Some(first) = gap.first_server_time.or(gap.last_server_time) else {
+            continue;
+        };
+        let last = gap.last_server_time.unwrap_or(first);
+        model.note_lagged_gap(&gap.conversation, time_millis(first), time_millis(last));
+    }
     output.extend(model.sync_channels(snapshot));
     output.push(model.buffers_event());
     model.history_targets()
@@ -4757,6 +4776,7 @@ fn finish_history_page(
     item_count: usize,
     end: bool,
 ) -> Vec<EngineToUi> {
+    model.finish_lagged_gap(conversation, bounds.oldest_time_ms);
     let Some(completion) = load.and_then(|_| {
         model.finish_history(
             conversation,

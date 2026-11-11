@@ -220,6 +220,8 @@ struct BufferState {
     read_facts: ReadFacts,
     history: HistoryState,
     refresh_from_ms: Option<i64>,
+    pending_lag_gap: Option<(i64, i64)>,
+    pending_reconnect_gap: Option<(i64, i64)>,
     newest: Option<HistoryCursor>,
     pushed_history_pending: bool,
     pushed_history_retry_available: bool,
@@ -481,6 +483,7 @@ pub(crate) struct NetworkModel {
     seed_cursor: Option<SystemTime>,
     pending_live_cursor: Option<SystemTime>,
     cursor_settled: bool,
+    disconnected_at_ms: Option<i64>,
     targets_synced: bool,
     pending_target_sync: Option<PendingTargetSync>,
     #[cfg(test)]
@@ -548,6 +551,8 @@ impl NetworkModel {
                 at_start: true,
             },
             refresh_from_ms: None,
+            pending_lag_gap: None,
+            pending_reconnect_gap: None,
             newest: None,
             pushed_history_pending: false,
             pushed_history_retry_available: false,
@@ -582,6 +587,7 @@ impl NetworkModel {
             seed_cursor: None,
             pending_live_cursor: None,
             cursor_settled: false,
+            disconnected_at_ms: None,
             targets_synced: false,
             pending_target_sync: None,
             #[cfg(test)]
@@ -1526,6 +1532,124 @@ impl NetworkModel {
         Some(())
     }
 
+    pub(crate) fn begin_disconnect_gap(&mut self, at_ms: i64) {
+        self.disconnected_at_ms.get_or_insert(at_ms);
+    }
+
+    pub(crate) fn finish_disconnect_gap(&mut self, at_ms: i64, history_available: bool) {
+        let Some(from_ms) = self.disconnected_at_ms.take() else {
+            return;
+        };
+        let buffer_ids = self
+            .buffer_order
+            .iter()
+            .copied()
+            .filter(|buffer_id| {
+                self.buffers
+                    .get(buffer_id)
+                    .is_some_and(|buffer| match buffer.projection.kind {
+                        BufferKind::Channel => {
+                            buffer.projection.channel_status == Some(ChannelStatus::Joined)
+                        }
+                        BufferKind::Direct => buffer
+                            .timeline
+                            .iter()
+                            .any(|record| chat_projection(record).is_some()),
+                        BufferKind::Server => false,
+                    })
+            })
+            .collect::<Vec<_>>();
+        for buffer_id in buffer_ids {
+            if history_available {
+                let buffer = self.buffers.get_mut(&buffer_id).expect("collected buffer");
+                buffer.pending_reconnect_gap =
+                    Some(merge_span(buffer.pending_reconnect_gap, (from_ms, at_ms)));
+            } else {
+                let _ = self.record_gap(buffer_id, from_ms, at_ms);
+            }
+        }
+    }
+
+    pub(crate) fn note_lagged_gap(
+        &mut self,
+        conversation: &papo::Conversation,
+        first_ms: i64,
+        last_ms: i64,
+    ) {
+        let Some(buffer_id) = self.buffer_id_for_conversation(conversation) else {
+            return;
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        buffer.pending_lag_gap = Some(merge_span(buffer.pending_lag_gap, (first_ms, last_ms)));
+    }
+
+    pub(crate) fn finish_lagged_gap(
+        &mut self,
+        conversation: &papo::Conversation,
+        oldest_time_ms: Option<i64>,
+    ) {
+        let Some(buffer_id) = self.buffer_id_for_conversation(conversation) else {
+            return;
+        };
+        let Some((first_ms, last_ms)) = self
+            .buffers
+            .get_mut(&buffer_id)
+            .and_then(|buffer| buffer.pending_lag_gap.take())
+        else {
+            return;
+        };
+        if oldest_time_ms.is_none_or(|oldest| oldest > first_ms) {
+            let _ = self.record_gap(buffer_id, first_ms, last_ms);
+        }
+    }
+
+    pub(crate) fn fail_pending_history_gaps(&mut self, fetch: &HistoryFetch) -> Option<BufferId> {
+        let target = match fetch {
+            HistoryFetch::Latest(target)
+            | HistoryFetch::Before { target, .. }
+            | HistoryFetch::After { target, .. } => target,
+        };
+        let buffer_id = self.names.get(&target.name_key()).copied()?;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let spans = [
+            buffer.pending_lag_gap.take(),
+            buffer.pending_reconnect_gap.take(),
+        ];
+        let mut recorded = false;
+        for (from_ms, to_ms) in spans.into_iter().flatten() {
+            recorded |= self.record_gap(buffer_id, from_ms, to_ms).is_some();
+        }
+        recorded.then_some(buffer_id)
+    }
+
+    fn settle_reconnect_gap(&mut self, buffer_id: BufferId, filled: bool) {
+        let span = self
+            .buffers
+            .get_mut(&buffer_id)
+            .and_then(|buffer| buffer.pending_reconnect_gap.take());
+        if !filled && let Some((from_ms, to_ms)) = span {
+            let _ = self.record_gap(buffer_id, from_ms, to_ms);
+        }
+    }
+
+    fn clear_covered_gaps(&mut self, buffer_id: BufferId, from_ms: i64, to_ms: i64) {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        let previous = buffer.timeline.len();
+        buffer.timeline.retain(|record| {
+            !matches!(
+                &record.body,
+                RecordBody::Gap(gap) if from_ms <= gap.from_ms && gap.to_ms <= to_ms
+            )
+        });
+        if buffer.timeline.len() != previous {
+            self.dirty_timelines.insert(buffer_id);
+        }
+    }
+
     fn begin_send_kind(
         &mut self,
         buffer_id: BufferId,
@@ -2196,6 +2320,10 @@ impl NetworkModel {
         let key = NameKey::from_conversation(conversation)?;
         let buffer_id = self.names.get(&key).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
+        let loading_older = matches!(buffer.history, HistoryState::LoadingOlder { .. });
+        let newest_time_ms = newest
+            .as_ref()
+            .map(|cursor| time_millis(cursor.server_time()));
         let reconciles_push = buffer.pushed_history_pending
             && matches!(
                 buffer.history,
@@ -2251,9 +2379,14 @@ impl NetworkModel {
             buffer_id,
             at_start,
         };
+        if loading_older && let (Some(from_ms), Some(to_ms)) = (oldest_time_ms, newest_time_ms) {
+            self.clear_covered_gaps(buffer_id, from_ms, to_ms);
+        }
+        let reconnect_filled = end || gap_range.is_some();
         if let Some((from_ms, to_ms)) = gap_range {
             let _ = self.record_gap(buffer_id, from_ms, to_ms);
         }
+        self.settle_reconnect_gap(buffer_id, reconnect_filled);
         self.settle_target_history(&key, true);
         Some(completion)
     }
@@ -2396,6 +2529,11 @@ impl NetworkModel {
                 message.reactions = None;
             }
         }
+        buffer
+            .timeline
+            .retain(|record| !matches!(record.body, RecordBody::Gap(_)));
+        buffer.pending_lag_gap = None;
+        buffer.pending_reconnect_gap = None;
         self.dirty_timelines.insert(buffer_id);
         self.reactions.clear_buffer(buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
@@ -2560,6 +2698,8 @@ impl NetworkModel {
             ));
             if let Some(fetch) = &fetch {
                 begin_target_fetch(buffer, fetch);
+            } else {
+                buffer.pending_reconnect_gap = None;
             }
             if should_resolve {
                 buffer.direct = Some(DirectAvailability::Pending);
@@ -2636,6 +2776,8 @@ impl NetworkModel {
             let buffer = self.buffers.get_mut(&buffer_id)?;
             buffer.provisional_activity_ms = Some(time_millis(latest));
             begin_target_fetch(buffer, fetch);
+        } else if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.pending_reconnect_gap = None;
         }
         fetch
     }
@@ -3479,6 +3621,8 @@ impl NetworkModel {
                 read_facts,
                 history: HistoryState::Unrequested,
                 refresh_from_ms: None,
+                pending_lag_gap: None,
+                pending_reconnect_gap: None,
                 newest: None,
                 pushed_history_pending: false,
                 pushed_history_retry_available: false,
@@ -4394,6 +4538,13 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
     }
 }
 
+fn merge_span(current: Option<(i64, i64)>, next: (i64, i64)) -> (i64, i64) {
+    let (next_from, next_to) = (next.0.min(next.1), next.0.max(next.1));
+    current.map_or((next_from, next_to), |(from_ms, to_ms)| {
+        (from_ms.min(next_from), to_ms.max(next_to))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -4760,6 +4911,99 @@ mod tests {
             Some(ServerTimeMs::new(50))
         );
         assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
+    }
+
+    #[test]
+    fn reconnect_without_history_marks_joined_channels_and_nonempty_directs() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (channel_id, _) = model.ensure_buffer(NameKey::Channel(channel), None, None);
+        let direct = nick_name(&state, "alice");
+        model.receive_incoming(direct_incoming(&state, "alice", "hello", 90), &state);
+        let direct_id = model.names[&NameKey::Direct(direct.clone())];
+        let empty = nick_name(&state, "empty");
+        let (empty_id, _) = model.ensure_buffer(
+            NameKey::Direct(empty),
+            None,
+            Some(super::DirectAvailability::Pending),
+        );
+
+        model.begin_disconnect_gap(100);
+        model.finish_disconnect_gap(200, false);
+
+        for buffer_id in [channel_id, direct_id] {
+            assert!(model.buffers[&buffer_id].timeline.iter().any(|record| {
+                matches!(record.body, RecordBody::Gap(ref gap) if gap.from_ms == 100 && gap.to_ms == 200)
+            }));
+        }
+        assert!(
+            model.buffers[&empty_id]
+                .timeline
+                .iter()
+                .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+        );
+    }
+
+    #[test]
+    fn lagged_refetch_records_only_an_unreached_span() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let conversation = papo::Conversation::Channel(channel.clone());
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel), None, None);
+
+        model.note_lagged_gap(&conversation, 100, 150);
+        model.finish_lagged_gap(&conversation, Some(100));
+        assert!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+        );
+
+        model.note_lagged_gap(&conversation, 200, 250);
+        model.finish_lagged_gap(&conversation, Some(201));
+        assert!(model.buffers[&buffer_id].timeline.iter().any(|record| {
+            matches!(record.body, RecordBody::Gap(ref gap) if gap.from_ms == 200 && gap.to_ms == 250)
+        }));
+    }
+
+    #[test]
+    fn failed_catchup_records_and_an_older_covering_page_clears_the_gap() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let conversation = papo::Conversation::Channel(channel.clone());
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model.begin_disconnect_gap(100);
+        model.finish_disconnect_gap(200, true);
+        let fetch = HistoryFetch::Latest(HistoryTarget::Channel(channel));
+
+        assert_eq!(model.fail_pending_history_gaps(&fetch), Some(buffer_id));
+        assert!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .any(|record| matches!(record.body, RecordBody::Gap(_)))
+        );
+
+        model.buffers.get_mut(&buffer_id).expect("channel").history = HistoryState::LoadingOlder {
+            oldest: papo::HistoryReference::from(system_time_from_millis(200)),
+        };
+        model
+            .finish_history(
+                &conversation,
+                Some(papo::HistoryReference::from(system_time_from_millis(90))),
+                Some(90),
+                Some(HistoryCursor::new(Some("cover".into()), 210)),
+                2,
+                true,
+            )
+            .expect("older page finishes");
+        assert!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+        );
     }
 
     #[test]
