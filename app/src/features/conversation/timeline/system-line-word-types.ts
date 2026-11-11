@@ -4,10 +4,13 @@ export type SystemLineAction = "collapse" | "expand" | "join" | "rejoin";
 
 export type SystemLineIcon =
   | "ban"
+  | "chat"
+  | "flag"
   | "info"
   | "invite"
   | "join"
   | "kick"
+  | "loader"
   | "mode"
   | "nick"
   | "op"
