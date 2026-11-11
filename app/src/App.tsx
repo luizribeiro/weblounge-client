@@ -186,14 +186,14 @@ export function App(props: AppProps) {
   }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
-  const [messages, setMessages] = createSignal<
+  const [messages] = createSignal<
     ReadonlyMap<number, readonly MessageProjection[]>
   >(new Map());
   const [timelines, setTimelines] = createSignal<
     ReadonlyMap<number, TimelineView>
   >(new Map());
   const [timelineStreamActive, setTimelineStreamActive] = createSignal(false);
-  const [memberships, setMemberships] = createSignal<
+  const [memberships] = createSignal<
     ReadonlyMap<number, readonly MembershipProjection[]>
   >(new Map());
   const [historyStates, setHistoryStates] = createSignal<
@@ -596,8 +596,13 @@ export function App(props: AppProps) {
         }
       }
       if (
-        message.type === "message_confirmed" ||
-        message.type === "message_retrying"
+        message.type === "timeline_changed" &&
+        message.upserted.some(
+          (item) =>
+            item.body.family === "message" &&
+            (item.body.delivery === "confirmed" ||
+              item.body.delivery === "optimistic"),
+        )
       )
         clearMessageFailureNotice(message.buffer_id);
       if (message.type === "command_specs_changed") {
@@ -729,7 +734,11 @@ export function App(props: AppProps) {
         startupHistoryPending.delete(message.buffer_id);
         scheduleStartupContentCheck();
       }
-      if (message.type === "buffer_snapshot" && !startupRevealed()) {
+      if (
+        message.type === "timeline_changed" &&
+        message.reset &&
+        !startupRevealed()
+      ) {
         startupHistoryComplete.add(message.buffer_id);
         startupHistoryPending.delete(message.buffer_id);
         scheduleStartupContentCheck();
@@ -779,13 +788,7 @@ export function App(props: AppProps) {
       }
       if (message.type === "buffer_removed")
         setTimelines((current) => withoutMapKey(current, message.buffer_id));
-      applyDebugEvent(
-        message,
-        setNetworks,
-        setBuffers,
-        setMessages,
-        setMemberships,
-      );
+      applyDebugEvent(message, setNetworks, setBuffers);
     });
     let updateReady = serviceWorkerUpdateIsReady();
     const publishUpdateReady = () => {
@@ -1805,16 +1808,6 @@ function applyDebugEvent(
   setBuffers: (
     update: (current: BufferProjection[]) => BufferProjection[],
   ) => void,
-  setMessages: (
-    update: (
-      current: ReadonlyMap<number, readonly MessageProjection[]>,
-    ) => ReadonlyMap<number, readonly MessageProjection[]>,
-  ) => void,
-  setMemberships: (
-    update: (
-      current: ReadonlyMap<number, readonly MembershipProjection[]>,
-    ) => ReadonlyMap<number, readonly MembershipProjection[]>,
-  ) => void,
 ): void {
   if (message.type === "network_state_changed") {
     setNetworks((current) => upsert(current, message.network));
@@ -1829,113 +1822,12 @@ function applyDebugEvent(
     setBuffers((current) =>
       current.filter((buffer) => buffer.id !== message.buffer_id),
     );
-    setMessages((current) => withoutMapKey(current, message.buffer_id));
-    setMemberships((current) => withoutMapKey(current, message.buffer_id));
   } else if (message.type === "buffer_updated") {
     setBuffers((current) =>
       current.map((buffer) =>
         buffer.id === message.buffer.id ? message.buffer : buffer,
       ),
     );
-  } else if (message.type === "messages_appended") {
-    setMessages((current) => {
-      const next = new Map(current);
-      next.set(message.buffer_id, [
-        ...(current.get(message.buffer_id) ?? []),
-        ...message.messages,
-      ]);
-      return next;
-    });
-  } else if (message.type === "message_updated") {
-    setMessages((current) => {
-      const next = new Map(current);
-      next.set(
-        message.buffer_id,
-        (current.get(message.buffer_id) ?? []).map((item) =>
-          item.id === message.message.id ? message.message : item,
-        ),
-      );
-      return next;
-    });
-  } else if (message.type === "messages_prepended") {
-    setMessages((current) => {
-      const next = new Map(current);
-      const prependedIds = new Set(message.messages.map((item) => item.id));
-      next.set(message.buffer_id, [
-        ...message.messages,
-        ...(current.get(message.buffer_id) ?? []).filter(
-          (item) => !prependedIds.has(item.id),
-        ),
-      ]);
-      return next;
-    });
-  } else if (message.type === "buffer_snapshot") {
-    setMessages((current) =>
-      new Map(current).set(message.buffer_id, message.messages),
-    );
-    setMemberships((current) =>
-      new Map(current).set(message.buffer_id, message.memberships),
-    );
-  } else if (message.type === "membership_changed") {
-    setMemberships((current) => {
-      const next = new Map(current);
-      const existing = current.get(message.buffer_id) ?? [];
-      const found = existing.some((item) => item.id === message.membership.id);
-      next.set(
-        message.buffer_id,
-        found
-          ? existing.map((item) =>
-              item.id === message.membership.id ? message.membership : item,
-            )
-          : [...existing, message.membership],
-      );
-      return next;
-    });
-  } else if (message.type === "message_confirmed") {
-    setMessages((current) => {
-      const next = new Map(current);
-      const messages = current.get(message.buffer_id) ?? [];
-      const hasPending = messages.some(
-        (item) => item.local_send_id === message.local_send_id,
-      );
-      next.set(
-        message.buffer_id,
-        hasPending
-          ? messages.map((item) =>
-              item.local_send_id === message.local_send_id
-                ? message.message
-                : item,
-            )
-          : [...messages, message.message],
-      );
-      return next;
-    });
-  } else if (message.type === "message_failed") {
-    setMessages((current) => {
-      const next = new Map(current);
-      next.set(
-        message.buffer_id,
-        (current.get(message.buffer_id) ?? []).map((item) =>
-          item.local_send_id === message.local_send_id
-            ? { ...item, delivery: "failed" }
-            : item,
-        ),
-      );
-      return next;
-    });
-  } else if (message.type === "message_retrying") {
-    setMessages((current) => {
-      const next = new Map(current);
-      next.set(
-        message.buffer_id,
-        (current.get(message.buffer_id) ?? []).map((item) =>
-          item.local_send_id === message.local_send_id
-            ? { ...item, delivery: "optimistic" }
-            : item,
-        ),
-      );
-      return next;
-    });
   }
 }
 
