@@ -104,7 +104,11 @@ pub(crate) enum Command {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        fs,
+        path::Path,
+    };
 
     use super::Command;
     use crate::commands::{self, CommandArgumentKind};
@@ -148,6 +152,8 @@ mod tests {
     #[test]
     fn command_names_have_no_second_source_list() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let specs = Command::specs();
+        let command_names = specs.iter().map(|spec| spec.name.clone()).collect();
         let mut files = Vec::new();
         source_files(&root.join("crates"), &mut files);
         source_files(&root.join("app/src"), &mut files);
@@ -159,21 +165,95 @@ mod tests {
             }
             let source = fs::read_to_string(&path).expect("source is readable");
             let production = source.split("\n#[cfg(test)]").next().unwrap_or_default();
-            for spec in Command::specs() {
-                if allowed_incidental(relative, &spec.name) {
-                    continue;
-                }
-                let quoted = format!("\"{}\"", spec.name);
-                let single_quoted = format!("'{}'", spec.name);
-                if production.contains(&quoted) || production.contains(&single_quoted) {
-                    stray.push(format!("{}: {}", relative.display(), spec.name));
-                }
+            for name in command_list_names(production, &command_names) {
+                stray.push(format!("{}: {name}", relative.display()));
             }
         }
         assert!(
             stray.is_empty(),
-            "command-name literals outside declaration.rs: {stray:#?}"
+            "command-name lists outside declaration.rs: {stray:#?}"
         );
+    }
+
+    #[test]
+    fn command_list_detector_rejects_a_real_second_source() {
+        let command_names =
+            HashSet::from(["join".to_owned(), "part".to_owned(), "quit".to_owned()]);
+        let duplicate = r#"const commands = new Set(["join", "part", "quit"]);"#;
+        assert_eq!(
+            command_list_names(duplicate, &command_names),
+            BTreeSet::from(["join".to_owned(), "part".to_owned(), "quit".to_owned()])
+        );
+
+        let protocol_discriminants =
+            r#"switch (event.type) { case "join": break; case "part": break; }"#;
+        assert!(command_list_names(protocol_discriminants, &command_names).is_empty());
+    }
+
+    fn command_list_names(source: &str, command_names: &HashSet<String>) -> BTreeSet<String> {
+        let bytes = source.as_bytes();
+        let mut delimiters = Vec::<(u8, BTreeSet<String>)>::new();
+        let mut duplicates = BTreeSet::new();
+        let mut index = 0;
+
+        while index < bytes.len() {
+            if bytes[index] == b'/' && bytes.get(index + 1) == Some(&b'/') {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+                continue;
+            }
+            if bytes[index] == b'/' && bytes.get(index + 1) == Some(&b'*') {
+                index += 2;
+                while index + 1 < bytes.len() && (bytes[index] != b'*' || bytes[index + 1] != b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+                continue;
+            }
+            if matches!(bytes[index], b'"' | b'\'' | b'`') {
+                let quote = bytes[index];
+                let start = index + 1;
+                index = start;
+                while index < bytes.len() && bytes[index] != quote {
+                    if bytes[index] == b'\\' {
+                        index = (index + 2).min(bytes.len());
+                    } else if bytes[index] == b'\n' && quote == b'\'' {
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+                if index < bytes.len() && bytes[index] == quote {
+                    if quote != b'`'
+                        && let Some((b'[', names)) = delimiters.last_mut()
+                    {
+                        let literal = &source[start..index];
+                        let name = literal.strip_prefix('/').unwrap_or(literal);
+                        if command_names.contains(name) {
+                            names.insert(name.to_owned());
+                        }
+                    }
+                    index += 1;
+                }
+                continue;
+            }
+            if matches!(bytes[index], b'(' | b'[' | b'{') {
+                delimiters.push((bytes[index], BTreeSet::new()));
+            } else if matches!(bytes[index], b')' | b']' | b'}')
+                && let Some((open, names)) = delimiters.pop()
+                && open == b'['
+                && bytes[index] == b']'
+                && names.len() >= 2
+            {
+                duplicates.extend(names);
+            }
+            index += 1;
+        }
+
+        duplicates
     }
 
     fn source_files(directory: &Path, files: &mut Vec<std::path::PathBuf>) {
@@ -202,43 +282,6 @@ mod tests {
             || path.contains("/generated/")
             || path.contains(".test.")
             || path.ends_with("app/src/strings.ts")
-    }
-
-    fn allowed_incidental(path: &Path, name: &str) -> bool {
-        let path = path.to_string_lossy();
-        matches!(
-            (path.as_ref(), name),
-            (
-                "app/src/App.tsx"
-                    | "app/src/engine/createEngineClient.ts"
-                    | "app/src/engine/worker-runtime.ts"
-                    | "app/src/push-worker.ts",
-                "notice",
-            ) | ("app/src/actions/action-registry.ts", "help")
-                | ("app/src/platform/push/push-delivery-log.ts", "version",)
-                | (
-                    "app/src/engine/EngineClient.ts",
-                    "notice" | "part" | "quit" | "topic",
-                )
-                | (
-                    "app/src/engine/decodeTimelineSystem.ts",
-                    "nick" | "quit" | "topic",
-                )
-                | ("app/src/engine/protocol.ts", "quit")
-                | (
-                    "app/src/features/conversation/message-size-estimate.ts",
-                    "notice" | "topic",
-                )
-                | (
-                    "app/src/features/conversation/MessageList.tsx",
-                    "notice" | "quit" | "topic",
-                )
-                | (
-                    "app/src/features/conversation/MessageText.tsx"
-                        | "app/src/features/conversation/message-tokenizer.ts",
-                    "nick",
-                )
-        )
     }
 
     #[test]
