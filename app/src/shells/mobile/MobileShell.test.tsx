@@ -130,7 +130,7 @@ it("projects the active buffer's engine timeline into a deep-linked chat", () =>
     />
   ));
 
-  expect(screen.getByText("→ pat joined")).toBeVisible();
+  expect(screen.getByLabelText("pat joined")).toBeVisible();
 });
 
 it("projects the active buffer's typers into a deep-linked chat", () => {

@@ -30,6 +30,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: aligned the mobile deep-link timeline test with the signed system-line accessible
+  wording instead of the removed temporary arrow-row text.
 - 2026-11-11: made the command-registry second-source check recognize hand-written command lists
   instead of incidental protocol discriminants, removing its growing per-file exception table.
 - 2026-11-11: buffer events 3.1b; replaced the temporary membership presentation with typed
