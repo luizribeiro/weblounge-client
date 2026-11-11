@@ -8,14 +8,15 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 3: system lines for nick and mode changes.
-2. Buffer events 7: missing-history gap and divider rows.
-3. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-4. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-5. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-6. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-7. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-8. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 3.2: route nick changes into system-line runs.
+2. Buffer events 3.3: project channel mode changes through typed system-line wording.
+3. Buffer events 7: missing-history gap and divider rows.
+4. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+5. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+6. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+7. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+8. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+9. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -29,6 +30,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 3.1b; replaced the temporary membership presentation with typed
+  system lines, signed desktop/phone visuals and density spacing, collapsible run details, and an
+  own-kick warning whose newest kicked row can rejoin the channel.
 - 2026-11-11: buffer events 3.1a; folded same-day membership records once per engine turn into
   stable semantic runs, kept split/merge and silent-eviction parity, and removed the app's
   temporary adjacency collapse without changing plain join, part or quit presentation.
@@ -73,6 +77,14 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Render typed system lines for buffer-events batch 3.1b. A single wording model now feeds
+  visible rows, accessible names, transcript copy and row estimates without storing IRC keys;
+  membership runs show three names plus an expandable remainder and reason-bearing per-person
+  details. Signed event icons, responsive grids and density-owned spacing replace the temporary
+  arrow rows. The newest own-kick row becomes a warning with Rejoin only while the channel is
+  kicked. Focused units cover every wording clause, key redaction, copy and estimation; built-app
+  local-Ergo journeys cover desktop and touch-primary phone layouts in both themes, including
+  collapse, expansion, PART/QUIT runs, kick and live rejoin.
 - [x] Fold buffer-event runs in the engine. Same-day foldable records now collapse once per turn;
   chats, standalone lines, gaps and day changes close the run. Membership clauses derive from
   each casemapped person's first and last event, nick chains collapse, modes and invites group by
