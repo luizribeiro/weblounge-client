@@ -184,6 +184,18 @@ struct MsgidReference {
     location: Option<(BufferId, MessageId)>,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum SystemDedupReference {
+    Msgid(BufferId, String),
+    Fallback {
+        buffer_id: BufferId,
+        server_time_ms: i64,
+        kind: &'static str,
+        nick: String,
+        subject: Option<String>,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StateError {
     MissingBuffer(BufferId),
@@ -200,7 +212,7 @@ struct BufferState {
     timeline: Vec<TimelineRecord>,
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
-    system_msgids: HashMap<MessageId, String>,
+    system_dedup: HashMap<MessageId, SystemDedupReference>,
     emitted_timeline: Vec<TimelineItem>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
@@ -459,7 +471,7 @@ pub(crate) struct NetworkModel {
     names: HashMap<NameKey, BufferId>,
     directs: HashMap<DirectKey, BufferId>,
     msgids: HashMap<String, MsgidReference>,
-    system_msgids: HashSet<(BufferId, String)>,
+    system_dedup: HashSet<SystemDedupReference>,
     reactions: ReactionIndex,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     dirty_timelines: HashSet<BufferId>,
@@ -525,7 +537,7 @@ impl NetworkModel {
             timeline: Vec::new(),
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
-            system_msgids: HashMap::new(),
+            system_dedup: HashMap::new(),
             emitted_timeline: Vec::new(),
             direct: None,
             direct_pin: None,
@@ -559,7 +571,7 @@ impl NetworkModel {
             names: HashMap::new(),
             directs: HashMap::new(),
             msgids: HashMap::new(),
-            system_msgids: HashSet::new(),
+            system_dedup: HashSet::new(),
             reactions: ReactionIndex::with_preload_limit(window_limit),
             fallbacks: HashMap::new(),
             dirty_timelines: HashSet::new(),
@@ -1527,16 +1539,25 @@ impl NetworkModel {
         received_at_ms: i64,
     ) -> Option<()> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
-        if msgid
+        let who_msgid = msgid.clone();
+        let dedup = system_dedup_reference(
+            buffer_id,
+            msgid,
+            server_time_ms,
+            membership_kind_name(kind),
+            nick.clone(),
+            None,
+        );
+        if dedup
             .as_ref()
-            .is_some_and(|msgid| !self.system_msgids.insert((buffer_id, msgid.clone())))
+            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
         {
             return None;
         }
         let who = crate::timeline::Who {
             nick,
             own: false,
-            msgid: msgid.clone(),
+            msgid: who_msgid,
         };
         let event = match kind {
             MembershipKind::Joined => FoldEvent::Joined(who),
@@ -1554,8 +1575,8 @@ impl NetworkModel {
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
-        if let Some(msgid) = msgid {
-            buffer.system_msgids.insert(id, msgid);
+        if let Some(dedup) = dedup {
+            buffer.system_dedup.insert(id, dedup);
         }
         self.dirty_timelines.insert(buffer_id);
         Some(())
@@ -2170,8 +2191,8 @@ impl NetworkModel {
         for metadata in buffer.chat_metadata.into_values() {
             self.release_dedup(metadata.dedup);
         }
-        for msgid in buffer.system_msgids.into_values() {
-            self.system_msgids.remove(&(buffer_id, msgid));
+        for reference in buffer.system_dedup.into_values() {
+            self.system_dedup.remove(&reference);
         }
         self.reactions.clear_buffer(buffer_id);
         Some(EngineToUi::BufferRemoved { buffer_id })
@@ -3274,7 +3295,7 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
-                system_msgids: HashMap::new(),
+                system_dedup: HashMap::new(),
                 emitted_timeline: Vec::new(),
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
@@ -3446,18 +3467,18 @@ impl NetworkModel {
                     removed: change.removed,
                 });
             }
-            let (dedup, system_msgids, evicted) = evict_over_budget(buffer, self.window_limit);
+            let (dedup, system_dedup, evicted) = evict_over_budget(buffer, self.window_limit);
             buffer
                 .emitted_timeline
                 .retain(|item| !evicted.contains(&item.id));
             released.extend(dedup);
-            released_system.extend(system_msgids.into_iter().map(|msgid| (buffer_id, msgid)));
+            released_system.extend(system_dedup);
         }
         for dedup in released {
             self.release_dedup(dedup);
         }
         for key in released_system {
-            self.system_msgids.remove(&key);
+            self.system_dedup.remove(&key);
         }
         output
     }
@@ -3796,7 +3817,11 @@ fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
 fn evict_over_budget(
     buffer: &mut BufferState,
     limit: usize,
-) -> (Vec<DedupReferences>, Vec<String>, HashSet<MessageId>) {
+) -> (
+    Vec<DedupReferences>,
+    Vec<SystemDedupReference>,
+    HashSet<MessageId>,
+) {
     let Ok(items) = fold(&buffer.timeline) else {
         return (Vec::new(), Vec::new(), HashSet::new());
     };
@@ -3834,17 +3859,17 @@ fn evict_over_budget(
         .timeline
         .retain(|record| !evicted_records.contains(&record.id));
     let mut released = Vec::new();
-    let mut system_msgids = Vec::new();
+    let mut system_dedup = Vec::new();
     for id in evicted_records {
         if let Some(metadata) = buffer.chat_metadata.remove(&id) {
             released.push(metadata.dedup);
         }
         buffer.system_server_times.remove(&id);
-        if let Some(msgid) = buffer.system_msgids.remove(&id) {
-            system_msgids.push(msgid);
+        if let Some(reference) = buffer.system_dedup.remove(&id) {
+            system_dedup.push(reference);
         }
     }
-    (released, system_msgids, evicted_items)
+    (released, system_dedup, evicted_items)
 }
 
 fn next_message_id_after_stub(msgid: &str) -> u64 {
@@ -4107,6 +4132,34 @@ fn message_primary_time(message: &MessageProjection) -> Option<i64> {
     (!matches!(&message.kind, MessageKind::Notice(_)))
         .then_some(message.server_time_ms)
         .flatten()
+}
+
+const fn membership_kind_name(kind: MembershipKind) -> &'static str {
+    match kind {
+        MembershipKind::Joined => "join",
+        MembershipKind::Parted => "part",
+        MembershipKind::Quit => "quit",
+    }
+}
+
+fn system_dedup_reference(
+    buffer_id: BufferId,
+    msgid: Option<String>,
+    server_time_ms: Option<i64>,
+    kind: &'static str,
+    nick: String,
+    subject: Option<String>,
+) -> Option<SystemDedupReference> {
+    if let Some(msgid) = msgid {
+        return Some(SystemDedupReference::Msgid(buffer_id, msgid));
+    }
+    Some(SystemDedupReference::Fallback {
+        buffer_id,
+        server_time_ms: server_time_ms?,
+        kind,
+        nick,
+        subject,
+    })
 }
 
 fn message_order(message: &MessageProjection, sequence: u64) -> OrderKey {
@@ -6076,6 +6129,26 @@ mod tests {
         }
 
         assert_eq!(take_changed_items(&mut model).len(), 1);
+    }
+
+    #[test]
+    fn timed_system_fallback_deduplicates_but_untimed_events_do_not() {
+        let (mut model, state) = model(10);
+        let room = channel_name(&state, "#room");
+        model.ensure_buffer(NameKey::Channel(room.clone()), None, None);
+        for server_time_ms in [Some(10), Some(10), None, None] {
+            model.receive_membership_event(
+                &room,
+                MembershipKind::Joined,
+                "mel".into(),
+                None,
+                None,
+                server_time_ms,
+                20,
+            );
+        }
+
+        assert_eq!(take_changed_items(&mut model).len(), 3);
     }
 
     #[test]
