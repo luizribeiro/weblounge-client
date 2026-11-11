@@ -1045,9 +1045,8 @@ impl NetworkModel {
         }) {
             return Vec::new();
         }
-        self.append_notice(id, format!("{old} is now {new}"), NoticeKind::Info)
-            .into_iter()
-            .collect()
+        let _ = self.append_notice(id, format!("{old} is now {new}"), NoticeKind::Info);
+        Vec::new()
     }
 
     #[cfg(test)]
@@ -1333,7 +1332,7 @@ impl NetworkModel {
         buffer_id: BufferId,
         text: String,
         notice: NoticeKind,
-    ) -> Option<EngineToUi> {
+    ) -> Option<()> {
         let message = MessageProjection {
             id: self.allocate_message_id(),
             author: String::new(),
@@ -1353,13 +1352,10 @@ impl NetworkModel {
         };
         self.insert(buffer_id, message.clone(), None, DedupReferences::default())
             .ok()?;
-        Some(EngineToUi::MessagesAppended {
-            buffer_id,
-            messages: vec![message],
-        })
+        Some(())
     }
 
-    pub(crate) fn append_history_gap(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+    pub(crate) fn append_history_gap(&mut self, buffer_id: BufferId) -> Option<()> {
         let received_at_ms = self.buffers.get(&buffer_id)?.newest.as_ref().map_or_else(
             || time_millis(papo::time::now()),
             |cursor| time_millis(cursor.server_time),
@@ -1383,10 +1379,7 @@ impl NetworkModel {
         };
         self.insert(buffer_id, message.clone(), None, DedupReferences::default())
             .ok()?;
-        Some(EngineToUi::MessagesAppended {
-            buffer_id,
-            messages: vec![message],
-        })
+        Some(())
     }
 
     fn begin_send_kind(

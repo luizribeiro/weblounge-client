@@ -858,16 +858,14 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let Some(event) = running
+        if running
             .model
             .append_notice(buffer_id, text, NoticeKind::Info)
-        else {
+            .is_none()
+        {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
-        };
-        finish_timeline_turn(
-            state,
-            vec![event, EngineToUi::CommandResult { id: command_id }],
-        )
+        }
+        finish_timeline_turn(state, vec![EngineToUi::CommandResult { id: command_id }])
     }
 
     fn identify(&self, command_id: String, password: &str) -> Vec<EngineToUi> {
@@ -1921,7 +1919,7 @@ impl Runtime {
         let Some(buffer_id) = running.model.buffer_id_for_channel(channel.name()) else {
             return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
-        let mut output = running
+        if running
             .model
             .append_notice(
                 buffer_id,
@@ -1931,10 +1929,11 @@ impl Runtime {
                     set_at: channel.topic_set_at().map(time_millis),
                 },
             )
-            .into_iter()
-            .collect::<Vec<_>>();
-        output.push(EngineToUi::CommandResult { id: command_id });
-        finish_timeline_turn(state, output)
+            .is_none()
+        {
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
+        }
+        finish_timeline_turn(state, vec![EngineToUi::CommandResult { id: command_id }])
     }
 
     fn mark_read(
@@ -4815,7 +4814,7 @@ fn finish_history_page(
     }) else {
         return Vec::new();
     };
-    let mut output = model
+    let output = model
         .buffer_updated(completion.buffer_id)
         .into_iter()
         .chain(
@@ -4828,10 +4827,8 @@ fn finish_history_page(
                 }),
         )
         .collect::<Vec<_>>();
-    if completion.gap
-        && let Some(event) = model.append_history_gap(completion.buffer_id)
-    {
-        output.push(event);
+    if completion.gap {
+        let _ = model.append_history_gap(completion.buffer_id);
     }
     output
 }
@@ -5190,10 +5187,8 @@ fn state_limit_events(
         StateLimitOutcome::SharedNotice(key) => vec![EngineToUi::error_notice(key)],
         StateLimitOutcome::ChannelNotice(text) => {
             if let Some((model, buffer_id)) = channel {
-                model
-                    .append_notice(buffer_id, text.into(), NoticeKind::Info)
-                    .into_iter()
-                    .collect()
+                let _ = model.append_notice(buffer_id, text.into(), NoticeKind::Info);
+                Vec::new()
             } else {
                 log_state_limit(context, *limit);
                 Vec::new()
