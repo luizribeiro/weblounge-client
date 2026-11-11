@@ -26,6 +26,7 @@ import type {
   VisibilityState,
   WorkerHostError,
 } from "./protocol";
+import { type AppliedTimeline, TimelineStore } from "./timeline-store";
 
 export interface EngineClient {
   start(hello: Hello): Promise<void>;
@@ -109,6 +110,7 @@ export class WorkerEngineClient implements EngineClient {
   readonly #listeners = new Set<(message: EngineClientMessage) => void>();
   readonly #requests = new Map<string, RequestWaiter>();
   readonly #renderQueue: EngineToUi[] = [];
+  readonly #timelines = new TimelineStore();
   readonly #initialMessages: EngineClientMessage[];
   #startWaiter: StartWaiter | undefined;
   #framePending = false;
@@ -183,6 +185,14 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
     }
     return () => this.#listeners.delete(listener);
+  }
+
+  timeline(bufferId: number): AppliedTimeline | undefined {
+    return this.#timelines.get(bufferId);
+  }
+
+  setFocusedTimelineBuffer(bufferId: number | undefined): void {
+    this.#timelines.focus(bufferId);
   }
 
   async close(): Promise<void> {
@@ -340,14 +350,24 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   #publish(message: EngineClientMessage): void {
+    if (message.type === "timeline_changed") {
+      this.#timelines.apply(message.buffer_id, message);
+    } else if (message.type === "buffer_removed") {
+      this.#timelines.remove(message.buffer_id);
+    }
     for (const listener of this.#listeners) listener(message);
   }
 }
 
 function containsOptimisticMessage(message: EngineToUi): boolean {
+  if (message.type === "messages_appended")
+    return message.messages.some((item) => item.delivery === "optimistic");
   return (
-    message.type === "messages_appended" &&
-    message.messages.some((item) => item.delivery === "optimistic")
+    message.type === "timeline_changed" &&
+    message.upserted.some(
+      (item) =>
+        item.body.family === "message" && item.body.delivery === "optimistic",
+    )
   );
 }
 

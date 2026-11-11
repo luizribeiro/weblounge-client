@@ -657,6 +657,39 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(snapshot);
   });
 
+  it("applies timeline patches by buffer before publishing them", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn((message) => {
+      if (message.type === "timeline_changed")
+        expect(client.timeline(2)?.items).toEqual([
+          timelineGap(1, 10),
+          timelineRun(2, 20),
+        ]);
+    });
+    client.subscribe(listener);
+    const patch = {
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [timelineGap(1, 10), timelineRun(2, 20)],
+      removed: [],
+    };
+
+    port.emit(patch);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(patch);
+    expect(client.timeline(2)).toEqual({
+      items: [timelineGap(1, 10), timelineRun(2, 20)],
+      geometry: "suffix",
+    });
+    expect(client.timeline(3)).toBeUndefined();
+
+    port.emit({ type: "buffer_removed", buffer_id: 2 });
+    frames[1]?.(0);
+    expect(client.timeline(2)).toBeUndefined();
+  });
+
   it("decodes engine-owned stable draft keys", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
@@ -894,6 +927,54 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("flushes a timeline patch carrying an optimistic row immediately", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const optimistic = {
+      id: 1,
+      author: "weblounge",
+      text: "hello",
+      kind: "text" as const,
+      bot: false,
+      authorship: "own" as const,
+      nick_color_index: 0,
+      highlighted: false,
+      delivery: "optimistic" as const,
+      local_send_id: 1,
+      server_ids: [],
+      server_time_ms: null,
+      received_at_ms: 1,
+    };
+
+    port.emit(notice("already-queued"));
+    port.emit({
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [
+        {
+          id: 1,
+          order: [1, 1, 1],
+          day: 1,
+          content_version: 0,
+          body: { family: "message", ...optimistic },
+        },
+      ],
+      removed: [],
+    });
+
+    expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
+      "notice",
+      "timeline_changed",
+    ]);
+    expect(client.timeline(2)?.items[0]?.body).toEqual({
+      family: "message",
+      ...optimistic,
+    });
+    expect(frames).toHaveLength(1);
+  });
+
   it("closes only its worker connection and rejects later requests", async () => {
     const { client, close } = fixture();
 
@@ -916,3 +997,35 @@ describe("WorkerEngineClient", () => {
     await expect(restarted).rejects.toThrow("closed");
   });
 });
+
+function timelineGap(id: number, time: number) {
+  return {
+    id,
+    order: [time, time, id],
+    day: 1,
+    content_version: 0,
+    body: { family: "gap", from_ms: time, to_ms: time + 1 },
+  };
+}
+
+function timelineRun(id: number, time: number) {
+  return {
+    id,
+    order: [time, time, id],
+    day: 1,
+    content_version: 0,
+    body: {
+      family: "system",
+      time_ms: time,
+      line: {
+        type: "run",
+        clauses: [
+          {
+            type: "joined",
+            people: [{ nick: "mel", nick_color_index: 2, me: false }],
+          },
+        ],
+      },
+    },
+  };
+}
