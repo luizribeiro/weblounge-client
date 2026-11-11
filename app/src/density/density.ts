@@ -27,8 +27,8 @@ export interface DensityPreset {
   readonly mobileAvatar: string;
   readonly mobileDividerBottomPadding: string;
   readonly mobileDividerTopPadding: string;
-  readonly mobileLineAfterMessagePadding: string;
-  readonly mobileLinePadding: string;
+  readonly mobileLineGapPadding: string;
+  readonly mobileLineTopPadding: string;
   readonly mobileContinuationPadding: string;
   readonly mobileGroupTopPadding: string;
   readonly mobileHeaderGap: string;
@@ -64,8 +64,8 @@ export function densityStyleSheet(): string {
         mobileGroupTopPadding: preset.mobileGroupTopPadding,
         mobileGroupHighlightInset: halfPixels(preset.mobileGroupTopPadding),
         mobileHeaderGap: preset.mobileHeaderGap,
-        mobileLineAfterMessagePadding: preset.mobileLineAfterMessagePadding,
-        mobileLinePadding: preset.mobileLinePadding,
+        mobileLineGapPadding: preset.mobileLineGapPadding,
+        mobileLineTopPadding: preset.mobileLineTopPadding,
         oneLineRowPadding: preset.oneLineRowPadding,
       }),
       densityRule("sidebar-density", "sidebar", id, {

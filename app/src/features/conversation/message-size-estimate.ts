@@ -4,13 +4,14 @@ import {
   densityPresets,
 } from "../../density/density";
 import type { MessageProjection } from "../../engine/protocol";
+import type { RowSpacing as LineSpacing } from "./timeline/row-spacing";
 
 type EstimatedMessage = Pick<
   MessageProjection,
   "delivery" | "kind" | "reactions" | "text"
 >;
 
-export type LineSpacing = "after-divider" | "after-line" | "after-message";
+export type { RowSpacing as LineSpacing } from "./timeline/row-spacing";
 
 const baseFontSize = 14;
 export const systemLineHeight = 18;
@@ -126,8 +127,8 @@ function mobileLineTopPadding(
   if (spacing === "after-divider") return 0;
   return Number.parseFloat(
     spacing === "after-line"
-      ? preset.mobileLinePadding
-      : preset.mobileLineAfterMessagePadding,
+      ? preset.mobileLineGapPadding
+      : preset.mobileLineTopPadding,
   );
 }
 

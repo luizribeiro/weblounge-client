@@ -398,13 +398,13 @@
 .list[data-presentation="mobile"]
   .virtualRow[data-line-spacing="after-line"]
   :is(.membership, .notice) {
-  padding-block-start: var(--wl-density-message-mobile-line-padding);
+  padding-block-start: var(--wl-density-message-mobile-line-gap-padding);
 }
 .list[data-presentation="mobile"]
   .virtualRow[data-line-spacing="after-message"]
   :is(.membership, .notice) {
   padding-block-start: var(
-    --wl-density-message-mobile-line-after-message-padding
+    --wl-density-message-mobile-line-top-padding
   );
 }
 .virtualRow[data-line-spacing="after-divider"] :is(.row, .membership, .notice) {

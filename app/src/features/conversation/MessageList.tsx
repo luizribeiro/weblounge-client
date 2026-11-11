@@ -1759,8 +1759,8 @@ function estimateDecorationHeight(
           ? 0
           : Number.parseFloat(
               spacing === "after-line"
-                ? preset.mobileLinePadding
-                : preset.mobileLineAfterMessagePadding,
+                ? preset.mobileLineGapPadding
+                : preset.mobileLineTopPadding,
             )
         : (spacing === "after-divider" ? 1 : 2) *
           Number.parseFloat(preset.oneLineRowPadding);

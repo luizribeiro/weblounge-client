@@ -15,7 +15,7 @@ describe("density presets", () => {
     expect(densityPresets.cozy.dividerBottomPadding).toBe("6px");
     expect(densityPresets.cozy.mobileDividerTopPadding).toBe("20px");
     expect(densityPresets.cozy.mobileDividerBottomPadding).toBe("8px");
-    expect(densityPresets.cozy.mobileLineAfterMessagePadding).toBe("12px");
+    expect(densityPresets.cozy.mobileLineTopPadding).toBe("12px");
     expect(densityPresets.compact.dividerTopPadding).toBe("10px");
     expect(densityPresets.compact.dividerBottomPadding).toBe("4px");
     expect(densityPresets.comfortable.dividerTopPadding).toBe("18px");
@@ -24,21 +24,12 @@ describe("density presets", () => {
     expect(densityPresets.compact.mobileDividerBottomPadding).toBe("6px");
     expect(densityPresets.comfortable.mobileDividerTopPadding).toBe("24px");
     expect(densityPresets.comfortable.mobileDividerBottomPadding).toBe("10px");
-    expect(densityPresets.cozy.mobileLinePadding).toBe("4px");
+    expect(densityPresets.cozy.mobileLineGapPadding).toBe("4px");
     expect(densityPresets.comfortable.mobileAvatar).toBe("48px");
-    for (const token of [
-      "mobileLineAfterMessagePadding",
-      "mobileLinePadding",
-    ] as const) {
-      expect(
-        Number.parseFloat(densityPresets.compact[token]) /
-          Number.parseFloat(densityPresets.cozy[token]),
-      ).toBe(0.75);
-      expect(
-        Number.parseFloat(densityPresets.comfortable[token]) /
-          Number.parseFloat(densityPresets.cozy[token]),
-      ).toBe(1.25);
-    }
+    expect(densityPresets.compact.mobileLineTopPadding).toBe("8px");
+    expect(densityPresets.comfortable.mobileLineTopPadding).toBe("16px");
+    expect(densityPresets.compact.mobileLineGapPadding).toBe("2px");
+    expect(densityPresets.comfortable.mobileLineGapPadding).toBe("6px");
     expect(densityDefaults).toEqual({
       messageLayout: "oneLine",
       message: "cozy",
