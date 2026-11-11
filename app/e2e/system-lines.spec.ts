@@ -105,9 +105,7 @@ for (const [layout, viewport] of [
         const modeBreaker = `mode breaker ${suffix}`;
         await operator.privmsgConfirmed(channel, modeBreaker);
         const banMask = `blocked-${suffix}!*@*`;
-        await operator.mode(channel, "+o", opTarget);
-        await operator.mode(channel, "+v", voiceTarget);
-        await operator.mode(channel, "+b", banMask);
+        await operator.mode(channel, "+ovb", opTarget, voiceTarget, banMask);
         const modes = systemLine(page, "gave op", [
           renamedNick,
           opTarget,
@@ -117,13 +115,11 @@ for (const [layout, viewport] of [
         await expect(modes).toContainText("voice to");
         await expect(modes).toContainText("banned");
         if (layout === "desktop") {
-          await expect(modes).toContainText(`+o ${opTarget}`);
-          await expect(modes).toContainText(`+v ${voiceTarget}`);
-          await expect(modes).toContainText(`+b ${banMask}`);
+          await expect(modes).toContainText(
+            `+ovb ${opTarget} ${voiceTarget} ${banMask}`,
+          );
         } else {
-          await expect(modes).not.toContainText("+o");
-          await expect(modes).not.toContainText("+v");
-          await expect(modes).not.toContainText("+b");
+          await expect(modes).not.toContainText("+ovb");
         }
         await capture(page, layout, "modes-alone");
 

@@ -250,6 +250,7 @@ pub struct ModeProjection {
     pub added: bool,
     pub meaning: ModeMeaning,
     pub raw: String,
+    pub raw_group_start: bool,
 }
 
 /// A server-advertised member rank, kept dynamic for arbitrary PREFIX tokens.

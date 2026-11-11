@@ -358,11 +358,16 @@ export class IrcClient {
     return state;
   }
 
-  async mode(target: string, change: string, nick?: string): Promise<void> {
-    const argument = nick === undefined ? "" : ` ${nick}`;
-    this.send(`MODE ${target} ${change}${argument}`);
+  async mode(
+    target: string,
+    change: string,
+    ...parameters: string[]
+  ): Promise<void> {
+    const arguments_ =
+      parameters.length === 0 ? "" : ` ${parameters.join(" ")}`;
+    this.send(`MODE ${target} ${change}${arguments_}`);
     await this.waitFor(`MODE confirmation for ${target}`, (line) =>
-      line.includes(` MODE ${target} ${change}${argument}`),
+      line.includes(` MODE ${target} ${change}${arguments_}`),
     );
   }
 

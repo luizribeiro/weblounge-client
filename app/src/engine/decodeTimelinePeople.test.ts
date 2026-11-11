@@ -24,6 +24,7 @@ it("decodes rank modes through the one person decoder", () => {
       member: person("mel"),
     },
     raw: "+o mel",
+    raw_group_start: true,
   };
 
   expect(decodeMode(value)).toEqual(value);

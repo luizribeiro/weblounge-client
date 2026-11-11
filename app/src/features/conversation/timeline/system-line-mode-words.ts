@@ -125,14 +125,41 @@ export function modeWords(
   });
   const words = [...actorWords(actor), text(" "), ...naturalList(descriptions)];
   if (options.includeRawModes !== true || changes.length === 0) return words;
-  const raw = changes.map(safeRawMode).filter(Boolean).join(" ");
+  const raw = compactRawModes(changes);
   return raw === "" ? words : [...words, mono(`   ${raw}`)];
 }
 
 function safeRawMode(change: ModeProjection): string {
-  return change.meaning.type === "key"
-    ? (change.raw.trim().split(/\s+/u)[0] ?? "")
-    : change.raw;
+  if (change.meaning.type !== "key") return change.raw;
+  const [mode, parameter] = change.raw.trim().split(/\s+/u);
+  return mode === undefined ? "" : parameter === undefined ? mode : `${mode} *`;
+}
+
+function compactRawModes(changes: readonly ModeProjection[]): string {
+  const groups: string[] = [];
+  let modes = "";
+  let parameters: string[] = [];
+  let added: boolean | undefined;
+  const flush = () => {
+    if (modes !== "") groups.push([modes, ...parameters].join(" "));
+    modes = "";
+    parameters = [];
+    added = undefined;
+  };
+  for (const change of changes) {
+    if (change.raw_group_start) flush();
+    const [token, ...rawParameters] = safeRawMode(change).trim().split(/\s+/u);
+    const mode = token?.replace(/^[+-]/u, "");
+    if (mode === undefined || mode === "") continue;
+    if (added !== change.added) {
+      modes += change.added ? "+" : "-";
+      added = change.added;
+    }
+    modes += mode;
+    parameters.push(...rawParameters);
+  }
+  flush();
+  return groups.join(" ");
 }
 
 function rankName(mode: string): string {

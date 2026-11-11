@@ -1093,7 +1093,8 @@ impl NetworkModel {
         let projected = event
             .changes
             .iter()
-            .map(|change| project_mode(change, event, self.casemapping))
+            .enumerate()
+            .map(|(index, change)| project_mode(change, event, self.casemapping, index == 0))
             .collect::<Vec<_>>();
         if projected.is_empty() {
             return None;
@@ -3890,6 +3891,7 @@ fn project_mode(
     change: &papo::ModeChange,
     event: &papo::event::ModeChanged,
     casemapping: papo::Casemapping,
+    raw_group_start: bool,
 ) -> ModeProjection {
     let added = change.action == papo::ModeAction::Add;
     let meaning = match (&change.arg, change.mode) {
@@ -3933,6 +3935,7 @@ fn project_mode(
         added,
         meaning,
         raw: safe_raw_mode(change),
+        raw_group_start,
     }
 }
 
@@ -3946,6 +3949,7 @@ fn safe_raw_mode(change: &papo::ModeChange) -> String {
     let argument = match &change.arg {
         Some(papo::ModeArg::Member { nick, .. }) => Some(nick.as_str()),
         Some(papo::ModeArg::Mask(mask)) => Some(mask.as_str()),
+        Some(papo::ModeArg::Key(_)) => Some("*"),
         Some(papo::ModeArg::Value(value)) => Some(value.as_str()),
         _ => None,
     };
@@ -4455,7 +4459,7 @@ mod tests {
                     matches!(&change.meaning, ModeMeaning::Key).then_some(&change.raw)
                 })
                 .collect::<Vec<_>>(),
-            ["+k", "-k"]
+            ["+k *", "-k *"]
         );
     }
 

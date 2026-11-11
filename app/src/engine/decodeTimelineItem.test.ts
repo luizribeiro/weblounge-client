@@ -77,6 +77,7 @@ it("decodes a mode run through the shared person shape", () => {
               member: person("mel"),
             },
             raw: "+o mel",
+            raw_group_start: true,
           },
         ],
       },

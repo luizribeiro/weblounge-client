@@ -245,8 +245,45 @@ describe("systemLineWords", () => {
       { includeRawModes: true },
     );
 
-    expect(systemLineText(words.segments)).toBe("mel set a key   +k");
+    expect(systemLineText(words.segments)).toBe("mel set a key   +k *");
     expect(systemLineText(words.segments)).not.toContain("swordfish");
+  });
+
+  it("keeps each server mode line as one compact raw group", () => {
+    const changes = [
+      mode(rank("o"), "+o iris", true),
+      mode(rank("v"), "+v rafa", false),
+      mode(
+        { type: "ban", mask: "*!*@spam.example" },
+        "+b *!*@spam.example",
+        false,
+      ),
+    ];
+    const words = systemLineWords(
+      { type: "run", clauses: [{ type: "modes", actor, changes }] },
+      { includeRawModes: true },
+    );
+
+    expect(systemLineText(words.segments)).toContain(
+      "+ovb iris rafa *!*@spam.example",
+    );
+  });
+
+  it("masks a key inside a compact multi-mode raw group", () => {
+    const changes = [
+      mode({ type: "moderated" }, "+m", true),
+      mode({ type: "topic_locked" }, "+t", false),
+      mode({ type: "key" }, "+k swordfish", false),
+      mode({ type: "limit", limit: "50" }, "+l 50", false),
+    ];
+    const words = systemLineWords(
+      { type: "run", clauses: [{ type: "modes", actor, changes }] },
+      { includeRawModes: true },
+    );
+    const rendered = systemLineText(words.segments);
+
+    expect(rendered).toContain("+mtkl * 50");
+    expect(rendered).not.toContain("swordfish");
   });
 });
 
@@ -262,7 +299,11 @@ function modeWordsResult(meaning: ModeMeaning, added: boolean) {
   return systemLineWords({
     type: "run",
     clauses: [
-      { type: "modes", actor, changes: [{ added, meaning, raw: "+x" }] },
+      {
+        type: "modes",
+        actor,
+        changes: [{ added, meaning, raw: "+x", raw_group_start: true }],
+      },
     ],
   });
 }
@@ -271,8 +312,8 @@ function rank(mode: string): ModeMeaning {
   return { type: "rank", rank: { mode, symbol: "@" }, member: iris };
 }
 
-function mode(meaning: ModeMeaning, raw: string) {
-  return { added: true, meaning, raw };
+function mode(meaning: ModeMeaning, raw: string, rawGroupStart = true) {
+  return { added: true, meaning, raw, raw_group_start: rawGroupStart };
 }
 
 function person(nick: string, nickColorIndex: number): Person {

@@ -4,4 +4,4 @@ import type { ModeMeaning } from "./ModeMeaning";
 /**
  * One channel mode transition.
  */
-export type ModeProjection = { added: boolean, meaning: ModeMeaning, raw: string, };
+export type ModeProjection = { added: boolean, meaning: ModeMeaning, raw: string, raw_group_start: boolean, };

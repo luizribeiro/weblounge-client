@@ -440,6 +440,7 @@ mod tests {
                 added: true,
                 meaning: ModeMeaning::Other,
                 raw: raw.into(),
+                raw_group_start: true,
             }],
         };
         let clauses = collapse(&[

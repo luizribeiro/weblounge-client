@@ -60,13 +60,19 @@ export function decodeMode(value: unknown): ModeProjection | undefined {
   if (
     !isRecord(value) ||
     typeof value.added !== "boolean" ||
-    typeof value.raw !== "string"
+    typeof value.raw !== "string" ||
+    typeof value.raw_group_start !== "boolean"
   )
     return undefined;
   const meaning = decodeModeMeaning(value.meaning);
   return meaning === undefined
     ? undefined
-    : { added: value.added, meaning, raw: value.raw };
+    : {
+        added: value.added,
+        meaning,
+        raw: value.raw,
+        raw_group_start: value.raw_group_start,
+      };
 }
 
 function decodeModeMeaning(value: unknown): ModeMeaning | undefined {
