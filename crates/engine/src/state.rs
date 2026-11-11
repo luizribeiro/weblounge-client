@@ -1461,15 +1461,9 @@ impl NetworkModel {
                 DedupReferences::default(),
             )
             .ok()?;
-        let mut events = vec![
-            EngineToUi::MessagesAppended {
-                buffer_id,
-                messages: vec![message],
-            },
-            EngineToUi::BufferUpdated {
-                buffer: self.buffers[&buffer_id].projection.clone(),
-            },
-        ];
+        let mut events = vec![EngineToUi::BufferUpdated {
+            buffer: self.buffers[&buffer_id].projection.clone(),
+        }];
         if order_changed {
             events.push(self.buffers_event());
         }
@@ -1671,17 +1665,7 @@ impl NetworkModel {
                 )
                 .ok()?;
         }
-        let mut events = vec![EngineToUi::MessageConfirmed {
-            buffer_id: pending.buffer_id,
-            local_send_id: pending.local_send_id,
-            message: messages[0].clone(),
-        }];
-        if messages.len() > 1 {
-            events.push(EngineToUi::MessagesAppended {
-                buffer_id: pending.buffer_id,
-                messages: messages[1..].to_vec(),
-            });
-        }
+        let mut events = Vec::new();
         if order_changed {
             events.push(self.buffers_event());
         }
@@ -1689,6 +1673,18 @@ impl NetworkModel {
             buffer: self.buffers[&pending.buffer_id].projection.clone(),
         });
         Some(events)
+    }
+
+    pub(crate) fn pending_message_id(&self, pending: &PendingSend) -> Option<MessageId> {
+        self.buffers
+            .get(&pending.buffer_id)?
+            .timeline
+            .iter()
+            .find_map(|record| {
+                chat_projection(record)
+                    .is_some_and(|message| message.local_send_id == Some(pending.local_send_id))
+                    .then_some(record.id)
+            })
     }
 
     pub(crate) fn fail_send(
@@ -1748,7 +1744,7 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         local_send_id: LocalSendId,
-    ) -> Option<(PendingSend, EngineToUi)> {
+    ) -> Option<PendingSend> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let target = SendTarget::from_buffer(
             buffer.key.clone()?,
@@ -1779,13 +1775,7 @@ impl NetworkModel {
         };
         self.dirty_timelines.insert(buffer_id);
         self.reconcilable_failed_sends.remove(&local_send_id);
-        Some((
-            pending,
-            EngineToUi::MessageRetrying {
-                buffer_id,
-                local_send_id,
-            },
-        ))
+        Some(pending)
     }
 
     pub(crate) fn history_targets(&self) -> Vec<HistoryTarget> {
@@ -6747,8 +6737,8 @@ mod tests {
             .retry_send(buffer.id, pending.local_send_id)
             .expect("failed send retries");
 
-        assert_eq!(retried.0.text, "try\n\n\nagain");
-        assert_eq!(retried.0.local_send_id, pending.local_send_id);
+        assert_eq!(retried.text, "try\n\n\nagain");
+        assert_eq!(retried.local_send_id, pending.local_send_id);
         assert_eq!(
             chat_projection(&model.buffers[&buffer.id].timeline[0])
                 .expect("chat record")

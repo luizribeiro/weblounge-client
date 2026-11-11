@@ -1535,12 +1535,12 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let Some((pending, event)) = running.model.retry_send(buffer_id, local_send_id) else {
+        let Some(pending) = running.model.retry_send(buffer_id, local_send_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         let client = running.client.clone();
         let instance = running.instance;
-        let output = finish_timeline_turn(state, vec![event]);
+        let output = finish_timeline_turn(state, Vec::new());
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
@@ -2744,15 +2744,9 @@ fn confirm_send_with_read(
     pending: &PendingSend,
     sent: &papo::Sent,
 ) -> (Option<Vec<EngineToUi>>, Option<ReadAdvance>) {
+    let message_id = model.pending_message_id(pending);
     let events = model.confirm_send(pending, sent);
-    let advance = events.as_ref().and_then(|events| {
-        events.iter().find_map(|event| match event {
-            EngineToUi::MessageConfirmed {
-                buffer_id, message, ..
-            } => model.prepare_mark_read(*buffer_id, message.id),
-            _ => None,
-        })
-    });
+    let advance = message_id.and_then(|id| model.prepare_mark_read(pending.buffer_id, id));
     (events, advance)
 }
 
