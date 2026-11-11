@@ -685,15 +685,6 @@ pub enum MembershipProjection {
     },
 }
 
-impl MembershipProjection {
-    #[cfg(test)]
-    pub(crate) const fn id(&self) -> MessageId {
-        match self {
-            Self::Change { id, .. } | Self::Kicked { id, .. } => *id,
-        }
-    }
-}
-
 /// Exclusive presentation group for one channel member.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]

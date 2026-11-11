@@ -4257,12 +4257,12 @@ mod tests {
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
         IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
-        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, message_order,
-        nick_color_index, reaction_actor_key, system_time_from_millis, time_millis,
+        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
+        reaction_actor_key, system_time_from_millis, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
-        MembershipProjection, MessageAuthorship, NetworkConnectionState, NetworkId,
+        MessageAuthorship, NetworkConnectionState, NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow},
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
@@ -4443,40 +4443,38 @@ mod tests {
         )
     }
 
-    fn apply_legacy_rows(rows: &mut Vec<crate::MessageProjection>, events: &[EngineToUi]) {
-        for event in events {
-            match event {
-                EngineToUi::MessagesAppended { messages, .. }
-                | EngineToUi::MessagesPrepended { messages, .. } => {
-                    for message in messages {
-                        if let Some(current) = rows.iter_mut().find(|row| row.id == message.id) {
-                            current.clone_from(message);
-                        } else {
-                            rows.push(message.clone());
-                        }
-                    }
-                }
-                EngineToUi::MessageUpdated { message, .. }
-                | EngineToUi::MessageConfirmed { message, .. } => {
-                    if let Some(current) = rows.iter_mut().find(|row| row.id == message.id) {
-                        current.clone_from(message);
-                    } else {
-                        rows.push(message.clone());
-                    }
-                }
-                EngineToUi::MessageFailed { local_send_id, .. } => {
-                    if let Some(message) = rows
-                        .iter_mut()
-                        .find(|message| message.local_send_id == Some(*local_send_id))
-                    {
-                        message.delivery = crate::MessageDelivery::Failed;
-                    }
-                }
-                EngineToUi::BufferSnapshot { messages, .. } => rows.clone_from(messages),
-                _ => {}
-            }
-        }
-        rows.sort_by_key(|message| message_order(message, message.id.0));
+    fn take_changed_messages(
+        model: &mut NetworkModel,
+    ) -> Vec<(BufferId, crate::MessageProjection)> {
+        model
+            .take_timeline_changes(false)
+            .into_iter()
+            .flat_map(|event| match event {
+                EngineToUi::TimelineChanged {
+                    buffer_id,
+                    upserted,
+                    ..
+                } => upserted
+                    .into_iter()
+                    .filter_map(|item| match item.body {
+                        ItemBody::Message(message) => Some((buffer_id, message)),
+                        ItemBody::System(_) | ItemBody::Gap(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    fn take_changed_items(model: &mut NetworkModel) -> Vec<TimelineItem> {
+        model
+            .take_timeline_changes(false)
+            .into_iter()
+            .flat_map(|event| match event {
+                EngineToUi::TimelineChanged { upserted, .. } => upserted,
+                _ => Vec::new(),
+            })
+            .collect()
     }
 
     fn apply_new_rows(rows: &mut Vec<TimelineItem>, events: &[EngineToUi]) {
@@ -4502,17 +4500,6 @@ mod tests {
         }
     }
 
-    fn assert_chat_parity(legacy: &[crate::MessageProjection], current: &[TimelineItem]) {
-        let projected = current
-            .iter()
-            .filter_map(|item| match &item.body {
-                ItemBody::Message(message) => Some(message),
-                ItemBody::System(_) | ItemBody::Gap(_) => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(legacy.iter().collect::<Vec<_>>(), projected);
-    }
-
     fn finish_timeline_turn(model: &mut NetworkModel, mut old: Vec<EngineToUi>) -> Vec<EngineToUi> {
         let patches = model.take_timeline_changes(false);
         assert!(
@@ -4524,169 +4511,6 @@ mod tests {
         );
         old.extend(patches);
         old
-    }
-
-    fn apply_parity_turn(
-        model: &mut NetworkModel,
-        legacy: &mut Vec<crate::MessageProjection>,
-        current: &mut Vec<TimelineItem>,
-        events: Vec<EngineToUi>,
-    ) {
-        let events = finish_timeline_turn(model, events);
-        apply_legacy_rows(legacy, &events);
-        apply_new_rows(current, &events);
-        assert_chat_parity(legacy, current);
-    }
-
-    #[tokio::test]
-    async fn old_events_and_new_patches_keep_chat_parity_across_every_ingest_path() {
-        let (mut model, state) = model(20);
-        let mut legacy = Vec::new();
-        let mut current = Vec::new();
-
-        let live = model.receive_incoming(
-            incoming(
-                &state,
-                "live",
-                Some("live"),
-                Some(300),
-                301,
-                TimelineOrigin::Live,
-            ),
-            &state,
-        );
-        apply_parity_turn(&mut model, &mut legacy, &mut current, live);
-
-        let mut history = Vec::new();
-        for (text, time) in [("history-newer", 200), ("history-older", 100)] {
-            history.extend(model.receive_incoming(
-                incoming(
-                    &state,
-                    text,
-                    Some(text),
-                    Some(time),
-                    time + 1,
-                    TimelineOrigin::History,
-                ),
-                &state,
-            ));
-        }
-        apply_parity_turn(&mut model, &mut legacy, &mut current, history);
-
-        let mut catch_up = model.receive_incoming(
-            incoming(
-                &state,
-                "catch-up",
-                Some("catch-up"),
-                Some(400),
-                401,
-                TimelineOrigin::History,
-            ),
-            &state,
-        );
-        catch_up.extend(model.receive_incoming(
-            incoming(
-                &state,
-                "live",
-                Some("live"),
-                Some(300),
-                999,
-                TimelineOrigin::History,
-            ),
-            &state,
-        ));
-        apply_parity_turn(&mut model, &mut legacy, &mut current, catch_up);
-
-        let pushed = serde_json::from_value(serde_json::json!({
-            "schema": 1,
-            "network_label": "Test",
-            "nickname": "weblounge",
-            "sender": "alice",
-            "target": "#room",
-            "msgid": "pushed",
-            "time": "2026-11-03T12:34:56.789Z",
-            "text": "pushed",
-            "kind": "message"
-        }))
-        .expect("valid pushed message");
-        let pushed = model.restore_pushed_messages(vec![pushed], &state);
-        apply_parity_turn(&mut model, &mut legacy, &mut current, pushed);
-
-        let authoritative = model.receive_incoming(
-            incoming(
-                &state,
-                "pushed",
-                Some("pushed"),
-                Some(1_793_704_496_789),
-                1_793_704_496_999,
-                TimelineOrigin::History,
-            ),
-            &state,
-        );
-        apply_parity_turn(&mut model, &mut legacy, &mut current, authoritative);
-
-        assert_send_parity(&mut model, &state, &mut legacy, &mut current).await;
-    }
-
-    async fn assert_send_parity(
-        model: &mut NetworkModel,
-        state: &papo::State,
-        legacy: &mut Vec<crate::MessageProjection>,
-        current: &mut Vec<TimelineItem>,
-    ) {
-        let buffer_id = model.names[&NameKey::Channel(channel_name(state, "#room"))];
-        let (pending, optimistic) = model
-            .begin_send(buffer_id, "own confirmed".into(), state)
-            .expect("channel is sendable");
-        apply_parity_turn(model, legacy, current, optimistic);
-        let optimistic_id = legacy.last().expect("optimistic row sorts last").id;
-
-        let (client, _events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&[
-            "echo-message",
-            "labeled-response",
-            "message-tags",
-            "server-time",
-        ])
-        .await;
-        let SendTarget::Channel(channel) = pending.target.clone() else {
-            panic!("send targets the room")
-        };
-        let sender = client.clone();
-        let send_task = tokio::spawn(async move { sender.privmsg(channel, "own confirmed").await });
-        assert_eq!(
-            wire.next_sent().await,
-            "@label=0 PRIVMSG #room :own confirmed"
-        );
-        wire.server("@label=0;msgid=own-confirmed;time=1970-01-01T00:00:00.250Z :weblounge!u@host PRIVMSG #room :own confirmed").await;
-        let receipt = send_task
-            .await
-            .expect("send task completes")
-            .expect("echo confirms the send");
-        let confirmed = model
-            .confirm_send(&pending, &receipt)
-            .expect("optimistic row remains available");
-        apply_parity_turn(model, legacy, current, confirmed);
-        assert_eq!(
-            legacy
-                .iter()
-                .filter(|message| message.id == optimistic_id)
-                .count(),
-            1
-        );
-        assert_ne!(
-            legacy.last().expect("timeline stays populated").id,
-            optimistic_id
-        );
-
-        let (failed, optimistic) = model
-            .begin_send(buffer_id, "own failed".into(), state)
-            .expect("channel is sendable");
-        apply_parity_turn(model, legacy, current, optimistic);
-
-        let failed_events = model.fail_send(&failed, EngineMessageKey::SendFailed);
-        apply_parity_turn(model, legacy, current, failed_events);
     }
 
     #[test]
@@ -4792,7 +4616,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_after_eviction_matches_the_buffer_snapshot() {
+    fn reset_after_eviction_keeps_engine_order() {
         let (mut model, state) = model(4);
         for index in 0..12 {
             let text = format!("message-{index}");
@@ -4812,23 +4636,11 @@ mod tests {
 
         let channel = channel_name(&state, "#room");
         let buffer_id = model.names[&NameKey::Channel(channel)];
-        let snapshot_ids = model
-            .snapshot_events()
+        let projected_ids = model
+            .projected_messages(buffer_id)
             .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::BufferSnapshot {
-                    buffer_id: current,
-                    messages,
-                    ..
-                } if current == buffer_id => Some(
-                    messages
-                        .into_iter()
-                        .map(|message| message.id)
-                        .collect::<Vec<_>>(),
-                ),
-                _ => None,
-            })
-            .expect("channel snapshot");
+            .map(|message| message.id)
+            .collect::<Vec<_>>();
         let reset_ids = model
             .take_timeline_changes(true)
             .into_iter()
@@ -4845,7 +4657,7 @@ mod tests {
             })
             .expect("channel reset");
 
-        assert_eq!(reset_ids, snapshot_ids);
+        assert_eq!(reset_ids, projected_ids);
     }
 
     #[test]
@@ -4982,7 +4794,7 @@ mod tests {
     fn received_message_projection_collapses_blank_lines() {
         let (mut model, state) = model(10);
 
-        let events = model.receive_incoming(
+        model.receive_incoming(
             incoming(
                 &state,
                 "first\n\n\n\nsecond",
@@ -4993,12 +4805,10 @@ mod tests {
             ),
             &state,
         );
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].text == "first\n\nsecond"
-        )));
+        assert_eq!(
+            take_changed_messages(&mut model)[0].1.text,
+            "first\n\nsecond"
+        );
         assert_eq!(timeline(&model), ["first\n\nsecond"]);
     }
 
@@ -5018,19 +4828,17 @@ mod tests {
         }))
         .expect("pushed message");
 
-        let restored = model.restore_pushed_messages(vec![pushed], &state);
-
-        assert!(restored.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].text == "arrived while closed"
-        )));
+        model.restore_pushed_messages(vec![pushed], &state);
+        assert_eq!(
+            take_changed_messages(&mut model)[0].1.text,
+            "arrived while closed"
+        );
         let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
         assert_eq!(
             model.buffers[&buffer_id].projection.last_activity_ms,
             Some(1_793_709_296_789)
         );
-        let history = model.receive_incoming(
+        model.receive_incoming(
             incoming(
                 &state,
                 "arrived while closed",
@@ -5041,11 +4849,10 @@ mod tests {
             ),
             &state,
         );
-        assert!(history.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageUpdated { message, .. }
-                if message.text == "arrived while closed"
-        )));
+        assert_eq!(
+            take_changed_messages(&mut model)[0].1.text,
+            "arrived while closed"
+        );
         assert_eq!(
             model.buffers[&buffer_id].projection.last_activity_ms,
             Some(1_793_708_096_789)
@@ -5225,12 +5032,9 @@ mod tests {
         }))
         .expect("pushed direct message");
 
-        let restored = model.restore_pushed_messages(vec![pushed], &client.state());
-        let restored_message = restored.iter().find_map(|event| match event {
-            EngineToUi::MessagesAppended { messages, .. } => messages.first(),
-            _ => None,
-        });
-        assert!(restored_message.is_some_and(|message| message.unverified_sender.is_none()));
+        model.restore_pushed_messages(vec![pushed], &client.state());
+        let restored = take_changed_messages(&mut model);
+        assert!(restored[0].1.unverified_sender.is_none());
 
         wire.server("@account=louro;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :louro-pi!l@example.test PRIVMSG weblounge :push test from louro-pi")
             .await;
@@ -5239,12 +5043,9 @@ mod tests {
                 break message;
             }
         };
-        let reconciled = model.receive(&history, true, &client.state(), None);
-        let updated = reconciled.iter().find_map(|event| match event {
-            EngineToUi::MessageUpdated { message, .. } => Some(message),
-            _ => None,
-        });
-        assert!(updated.is_some_and(|message| {
+        model.receive(&history, true, &client.state(), None);
+        let updated = take_changed_messages(&mut model);
+        assert!(updated.first().is_some_and(|(_, message)| {
             message.author == "louro-pi" && message.unverified_sender.is_none()
         }));
         let direct = model
@@ -5298,10 +5099,6 @@ mod tests {
         read_at: SystemTime,
         received: &[EngineToUi],
     ) {
-        assert!(received.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { buffer_id: received, .. } if *received == buffer_id
-        )));
         assert!(received.iter().any(|event| matches!(
             event,
             EngineToUi::BufferAdded { buffer } if buffer.id == buffer_id
@@ -6259,7 +6056,7 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_membership_changes_collapse_until_a_message() {
+    fn consecutive_membership_changes_remain_ordered_for_app_collapse() {
         let (mut model, state) = model(10);
         model.receive_incoming(
             incoming(
@@ -6272,30 +6069,37 @@ mod tests {
             ),
             &state,
         );
+        _ = take_changed_items(&mut model);
         let channel = channel_name(&state, "#room");
-        let first = model
+        model
             .receive_membership(&channel, MembershipKind::Joined, "mel".into(), Some(2), 2)
             .expect("membership row");
-        let second = model
+        let first = take_changed_items(&mut model)[0].clone();
+        model
             .receive_membership(&channel, MembershipKind::Joined, "rafa".into(), Some(3), 3)
             .expect("collapsed row");
-        let (
-            EngineToUi::MembershipChanged {
-                membership: first, ..
-            },
-            EngineToUi::MembershipChanged {
-                membership: second, ..
-            },
-        ) = (first, second)
-        else {
-            panic!("membership projections expected");
-        };
-        assert_eq!(first.id(), second.id());
+        let second = take_changed_items(&mut model)[0].clone();
+        assert_ne!(first.id, second.id);
         assert!(matches!(
-            &second,
-            MembershipProjection::Change { nicks, .. } if nicks == &["mel", "rafa"]
+            (&first.body, &second.body),
+            (
+                ItemBody::System(crate::timeline::SystemProjection {
+                    line: crate::timeline::SystemLine::Run { clauses: first },
+                    ..
+                }),
+                ItemBody::System(crate::timeline::SystemProjection {
+                    line: crate::timeline::SystemLine::Run { clauses: second },
+                    ..
+                })
+            )
+                if matches!(
+                    (first.as_slice(), second.as_slice()),
+                    (
+                        [crate::timeline::RunClause::Joined { people: first }],
+                        [crate::timeline::RunClause::Joined { people: second }]
+                    ) if first[0].nick == "mel" && second[0].nick == "rafa"
+                )
         ));
-
         model.receive_incoming(
             incoming(
                 &state,
@@ -6307,15 +6111,12 @@ mod tests {
             ),
             &state,
         );
-        let EngineToUi::MembershipChanged {
-            membership: third, ..
-        } = model
+        _ = take_changed_items(&mut model);
+        model
             .receive_membership(&channel, MembershipKind::Joined, "cyd".into(), Some(5), 5)
-            .expect("new membership row")
-        else {
-            panic!("membership projection expected");
-        };
-        assert_ne!(second.id(), third.id());
+            .expect("new membership row");
+        let third = take_changed_items(&mut model)[0].clone();
+        assert_ne!(second.id, third.id);
     }
 
     #[test]
@@ -6332,14 +6133,11 @@ mod tests {
         message.kind = crate::MessageKind::Action;
         message.bot = Some(true);
 
-        let projection = model
-            .receive_incoming(message, &state)
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended { mut messages, .. } => messages.pop(),
-                _ => None,
-            })
-            .expect("message projection");
+        model.receive_incoming(message, &state);
+        let projection = take_changed_messages(&mut model)
+            .pop()
+            .expect("message projection")
+            .1;
         assert_eq!(projection.kind, crate::MessageKind::Action);
         assert_eq!(projection.bot, Some(true));
     }
@@ -6361,16 +6159,18 @@ mod tests {
         );
         let unread_before = model.buffers[&buffer.id].projection.unread;
         let activity_before = model.buffers[&buffer.id].projection.last_activity_ms;
-        let event = model
+        model
             .append_notice(buffer.id, "A quiet room".into(), crate::NoticeKind::Info)
             .expect("notice row");
-
+        let notice = take_changed_messages(&mut model)
+            .pop()
+            .expect("notice projection")
+            .1;
         assert!(matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
-                    && messages[0].author.is_empty()
+            notice.kind,
+            crate::MessageKind::Notice(crate::NoticeKind::Info)
         ));
+        assert!(notice.author.is_empty());
         assert_eq!(
             model.buffers[&buffer.id]
                 .projection
@@ -6509,16 +6309,11 @@ mod tests {
             "kind": "message",
         }))
         .expect("pushed message");
-        let restored = model.restore_pushed_messages(vec![pushed], &state);
-        let (buffer_id, pushed_id) = restored
+        model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, pushed_id) = take_changed_messages(&mut model)
             .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+            .find(|(_, message)| message.text == "arrived while closed")
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("pushed row is restored");
         let advance = model
             .request_mark_read(buffer_id, pushed_id)
@@ -6625,16 +6420,10 @@ mod tests {
             "kind": "message",
         }))
         .expect("pushed message");
-        let restored = model.restore_pushed_messages(vec![pushed], &state);
-        let (buffer_id, pushed_id) = restored
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, pushed_id) = take_changed_messages(&mut model)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("pushed row is restored");
         let advance = model
             .request_mark_read(buffer_id, pushed_id)
@@ -6650,15 +6439,10 @@ mod tests {
         );
         elsewhere.destination =
             IncomingDestination::Conversation(NameKey::Channel(channel_name(&state, "#elsewhere")));
-        let elsewhere_id = model
-            .receive_incoming(elsewhere, &state)
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended { messages, .. } => {
-                    messages.first().map(|message| message.id)
-                }
-                _ => None,
-            })
+        model.receive_incoming(elsewhere, &state);
+        let elsewhere_id = take_changed_messages(&mut model)
+            .first()
+            .map(|(_, message)| message.id)
             .expect("other buffer row is appended");
         let elsewhere_buffer = model.names[&NameKey::Channel(channel_name(&state, "#elsewhere"))];
         assert!(
@@ -6798,7 +6582,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_replay_each_buffers_retained_rows_in_order() {
+    fn reset_replays_each_buffers_retained_rows_in_order() {
         let (mut model, state) = model(2);
         for (index, text) in ["one", "two", "three"].into_iter().enumerate() {
             model.receive_incoming(
@@ -6815,21 +6599,21 @@ mod tests {
         }
         _ = model.take_timeline_changes(false);
 
-        let snapshots = model
-            .snapshot_events()
+        let resets = model
+            .take_timeline_changes(true)
             .into_iter()
             .map(|event| match event {
-                crate::EngineToUi::BufferSnapshot { messages, .. } => messages
+                crate::EngineToUi::TimelineChanged { upserted, .. } => upserted
                     .into_iter()
-                    .map(|message| message.text)
+                    .filter_map(|item| match item.body {
+                        ItemBody::Message(message) => Some(message.text),
+                        ItemBody::System(_) | ItemBody::Gap(_) => None,
+                    })
                     .collect::<Vec<_>>(),
-                other => panic!("unexpected snapshot event {other:?}"),
+                other => panic!("unexpected reset event {other:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(
-            snapshots,
-            [vec![], vec!["two".to_owned(), "three".to_owned()]]
-        );
+        assert_eq!(resets, [vec![], vec!["two".to_owned(), "three".to_owned()]]);
     }
 
     #[test]
@@ -6917,7 +6701,7 @@ mod tests {
         authoritative.author = "weblounge".into();
         authoritative.authorship = MessageAuthorship::Own;
 
-        let events = model.receive_incoming(authoritative, &state);
+        model.receive_incoming(authoritative, &state);
 
         let timeline = &model.buffers[&buffer.id].timeline;
         assert_eq!(timeline.len(), 1);
@@ -6931,14 +6715,9 @@ mod tests {
                 .server_ids,
             ["server-id"]
         );
-        assert!(matches!(
-            events.first(),
-            Some(EngineToUi::MessageConfirmed {
-                buffer_id,
-                local_send_id,
-                ..
-            }) if *buffer_id == buffer.id && *local_send_id == pending.local_send_id
-        ));
+        let changed = take_changed_messages(&mut model);
+        assert_eq!(changed[0].0, buffer.id);
+        assert_eq!(changed[0].1.delivery, crate::MessageDelivery::Confirmed);
     }
 
     #[test]
@@ -6947,18 +6726,16 @@ mod tests {
         let key = NameKey::Channel(channel_name(&state, "#room"));
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None, None);
 
-        let (_, events) = model
+        model
             .begin_action(buffer.id, "hides".into(), &state)
             .expect("channel is sendable");
-
-        assert!(matches!(
-            events.first(),
-            Some(EngineToUi::MessagesAppended { messages, .. })
-                if matches!(messages.as_slice(), [message]
-                    if message.kind == crate::MessageKind::Action
-                        && message.text == "hides"
-                        && message.delivery == crate::MessageDelivery::Optimistic)
-        ));
+        let message = take_changed_messages(&mut model)
+            .pop()
+            .expect("optimistic action")
+            .1;
+        assert_eq!(message.kind, crate::MessageKind::Action);
+        assert_eq!(message.text, "hides");
+        assert_eq!(message.delivery, crate::MessageDelivery::Optimistic);
     }
 
     #[test]
@@ -6973,25 +6750,22 @@ mod tests {
         assert_eq!(timeline(&model), ["try\n\nagain"]);
         model.fail_send(&pending, EngineMessageKey::SendFailed);
 
-        let (retried, event) = model
+        let retried = model
             .retry_send(buffer.id, pending.local_send_id)
             .expect("failed send retries");
 
-        assert_eq!(retried.text, "try\n\n\nagain");
-        assert_eq!(retried.local_send_id, pending.local_send_id);
+        assert_eq!(retried.0.text, "try\n\n\nagain");
+        assert_eq!(retried.0.local_send_id, pending.local_send_id);
         assert_eq!(
             chat_projection(&model.buffers[&buffer.id].timeline[0])
                 .expect("chat record")
                 .delivery,
             crate::MessageDelivery::Optimistic
         );
-        assert!(matches!(
-            event,
-            EngineToUi::MessageRetrying {
-                buffer_id,
-                local_send_id,
-            } if buffer_id == buffer.id && local_send_id == pending.local_send_id
-        ));
+        assert_eq!(
+            take_changed_messages(&mut model)[0].1.delivery,
+            crate::MessageDelivery::Optimistic
+        );
     }
 
     #[test]
@@ -7001,16 +6775,16 @@ mod tests {
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None, None);
         let before = time_millis(papo::time::now());
 
-        let (_, events) = model
+        model
             .begin_send(buffer.id, "timestamped".into(), &state)
             .expect("channel is sendable");
         let after = time_millis(papo::time::now());
-        let crate::EngineToUi::MessagesAppended { messages, .. } = &events[0] else {
-            panic!("send appends its optimistic message");
-        };
-
-        assert!(messages[0].received_at_ms >= before);
-        assert!(messages[0].received_at_ms <= after);
+        let message = take_changed_messages(&mut model)
+            .pop()
+            .expect("optimistic message")
+            .1;
+        assert!(message.received_at_ms >= before);
+        assert!(message.received_at_ms <= after);
     }
 
     #[test]
@@ -7184,13 +6958,18 @@ mod tests {
             }
         };
         let note = model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key());
-
+        assert!(note.iter().all(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { buffer_id, .. } if *buffer_id == old_buffer
+        )));
+        let message = take_changed_messages(&mut model)
+            .pop()
+            .expect("rename note")
+            .1;
+        assert_eq!(message.text, "alice is now alicia");
         assert!(matches!(
-            note.as_slice(),
-            [EngineToUi::MessagesAppended { buffer_id, messages }]
-                if *buffer_id == old_buffer
-                    && messages[0].text == "alice is now alicia"
-                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
+            message.kind,
+            crate::MessageKind::Notice(crate::NoticeKind::Info)
         ));
         assert_eq!(model.buffers[&old_buffer].projection.title, "alice");
         assert!(!model.directs.contains_key(&DirectKey("alicia".into())));
@@ -7264,14 +7043,8 @@ mod tests {
         model.receive_incoming(first, &state);
         let mut second = incoming(&state, "second", Some("two"), None, 2, TimelineOrigin::Live);
         second.author = "bob".into();
-        let events = model.receive_incoming(second, &state);
-        let buffer_id = events
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended { buffer_id, .. } => Some(*buffer_id),
-                _ => None,
-            })
-            .expect("message buffer exists");
+        model.receive_incoming(second, &state);
+        let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
 
         assert_eq!(
             model.recent_speakers(buffer_id, "", &state),
@@ -8079,16 +7852,10 @@ mod tests {
             "kind": "message",
         }))
         .expect("pushed message");
-        let restored = model.restore_pushed_messages(vec![pushed], &state);
-        let (buffer_id, message_id) = restored
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
+        model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, message_id) = take_changed_messages(&mut model)
+            .first()
+            .map(|(buffer_id, message)| (*buffer_id, message.id))
             .expect("pushed row is restored");
         let advance = model
             .request_mark_read(buffer_id, message_id)
