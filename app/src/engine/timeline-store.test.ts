@@ -4,6 +4,7 @@ import { decodeArray, decodeNumber, isRecord } from "./decode-primitives";
 import type { TimelineItem } from "./generated/TimelineItem";
 import {
   applyTimelineChange,
+  deriveJumpCount,
   type TimelineChange,
   type TimelineGeometry,
   TimelineStore,
@@ -70,6 +71,25 @@ it("retains full focus history and bounds every unfocused family", () => {
   store.focus(2);
   expect(store.get(1)?.items).toHaveLength(1_000);
   expect(store.get(2)?.items).toHaveLength(1_000);
+});
+
+it("counts only newly appended peer message rows while away", () => {
+  let count = 2;
+  count = deriveJumpCount(count, false, change([message(1, 10)]), "prefix");
+  expect(count).toBe(2);
+
+  const ownSend = change([{ ...message(3, 30), body: ownBody(3, 30) }]);
+  count = deriveJumpCount(count, false, ownSend, "suffix");
+  expect(count).toBe(2);
+
+  const catchUp = change([
+    message(4, 40),
+    { ...message(5, 50), body: ownBody(5, 50) },
+    message(6, 60),
+  ]);
+  count = deriveJumpCount(count, false, catchUp, "suffix");
+  expect(count).toBe(4);
+  expect(deriveJumpCount(count, true, catchUp, "suffix")).toBe(0);
 });
 
 interface FixtureFile {
@@ -185,6 +205,12 @@ function message(id: number, time: number): TimelineItem {
 
 function change(upserted: readonly TimelineItem[]): TimelineChange {
   return { reset: false, upserted, removed: [] };
+}
+
+function ownBody(id: number, time: number) {
+  const body = message(id, time).body;
+  if (body.family !== "message") throw new Error("message fixture expected");
+  return { ...body, authorship: "own" as const };
 }
 
 function isOrder(value: unknown): value is [number, number, number] {

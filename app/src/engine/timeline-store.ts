@@ -71,6 +71,23 @@ export function applyTimelineChange(
   return { items, geometry };
 }
 
+export function deriveJumpCount(
+  current: number,
+  atLiveEdge: boolean,
+  change: TimelineChange,
+  geometry: TimelineGeometry,
+): number {
+  if (atLiveEdge) return 0;
+  if (geometry !== "suffix") return current;
+  return (
+    current +
+    change.upserted.filter(
+      (item) =>
+        item.body.family === "message" && item.body.authorship !== "own",
+    ).length
+  );
+}
+
 function geometryClass(
   current: readonly TimelineItem[],
   change: TimelineChange,
