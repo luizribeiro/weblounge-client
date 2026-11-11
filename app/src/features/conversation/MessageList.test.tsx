@@ -1309,6 +1309,36 @@ it("renders engine membership runs with the legacy wording and breakers", async 
   expect(document.querySelectorAll("[data-membership-row]")).toHaveLength(5);
 });
 
+it("keeps semantic membership clauses visible with the legacy wording", () => {
+  const item = membershipItem({
+    type: "change",
+    id: 20,
+    kind: "joined",
+    nicks: ["mel"],
+    server_time_ms: 20,
+    received_at_ms: 20,
+  });
+  if (item.body.family !== "system" || item.body.line.type !== "run")
+    throw new Error("membership fixture must be a system run");
+  item.body.line.clauses.splice(
+    0,
+    1,
+    {
+      type: "reconnected",
+      people: [{ nick: "mel", nick_color_index: 0, me: false }],
+    },
+    {
+      type: "joined_and_left",
+      people: [{ nick: "rafa", nick_color_index: 0, me: false }],
+    },
+  );
+
+  render(() => <MessageList messages={[]} timeline={timelineView([item])} />);
+
+  expect(screen.getByText("→ mel joined")).toBeVisible();
+  expect(screen.getByText("← rafa left")).toBeVisible();
+});
+
 it("remeasures collapsed membership content on its first revised frame", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(

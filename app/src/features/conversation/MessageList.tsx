@@ -132,6 +132,7 @@ type DisplayTimelineItem =
     }
   | {
       readonly kind: "membership";
+      readonly key: string;
       readonly membership: MembershipProjection;
       readonly order: TimelineItem["order"];
       readonly day: TimelineItem["day"];
@@ -1413,10 +1414,10 @@ function timelineRows(
         ),
       });
       previousGroupMessage = message.kind === "text" ? message : undefined;
-    } else if (membership !== undefined) {
+    } else if (item.kind === "membership" && membership !== undefined) {
       rows.push({
         kind: "membership",
-        key: `membership-${membership.id}`,
+        key: item.key,
         membership,
         engineOrder: item.order,
       });
@@ -1431,14 +1432,19 @@ function projectDisplayItems(
 ): DisplayTimelineItem[] {
   const displayItems: DisplayTimelineItem[] = [];
   for (const item of items) {
-    const membership = timelineMembership(item);
-    if (membership !== undefined) {
+    const memberships = timelineMemberships(item);
+    for (const [index, membership] of memberships.entries())
       displayItems.push({
         kind: "membership",
+        key:
+          memberships.length === 1
+            ? `membership-${item.id}`
+            : `membership-${item.id}-${index}`,
         membership,
         order: item.order,
         day: item.day,
       });
+    if (memberships.length > 0) {
       continue;
     }
     if (item.body.family === "message")
@@ -1452,40 +1458,64 @@ function projectDisplayItems(
   return displayItems;
 }
 
-function timelineMembership(
-  item: TimelineItem,
-): MembershipProjection | undefined {
-  if (item.body.family !== "system") return undefined;
+function timelineMemberships(item: TimelineItem): MembershipProjection[] {
+  if (item.body.family !== "system") return [];
   const line = item.body.line;
   if (line.type === "event") {
     const event = line.event;
-    if (event.type !== "kick" || event.subject.type !== "you") return undefined;
-    return {
-      type: "kicked",
-      id: item.id,
-      actor: event.actor.type === "user" ? event.actor.nick : event.actor.name,
-      reason: event.reason,
-      server_time_ms: item.body.time_ms,
-      received_at_ms: item.order[1],
-    };
+    if (event.type !== "kick" || event.subject.type !== "you") return [];
+    return [
+      {
+        type: "kicked",
+        id: item.id,
+        actor:
+          event.actor.type === "user" ? event.actor.nick : event.actor.name,
+        reason: event.reason,
+        server_time_ms: item.body.time_ms,
+        received_at_ms: item.order[1],
+      },
+    ];
   }
-  const clause = line.clauses.length === 1 ? line.clauses[0] : undefined;
-  if (clause === undefined) return undefined;
-  if (clause.type === "joined")
-    return membershipChange(
-      item,
-      item.body.time_ms,
-      "joined",
-      clause.people.map((person) => person.nick),
-    );
-  if (clause.type === "left" || clause.type === "quit")
-    return membershipChange(
-      item,
-      item.body.time_ms,
-      clause.type === "left" ? "parted" : "quit",
-      clause.people.map(({ person }) => person.nick),
-    );
-  return undefined;
+  const timeMs = item.body.time_ms;
+  return line.clauses.flatMap((clause) => {
+    if (clause.type === "joined")
+      return [
+        membershipChange(
+          item,
+          timeMs,
+          "joined",
+          clause.people.map((person) => person.nick),
+        ),
+      ];
+    if (clause.type === "reconnected" || clause.type === "rejoined")
+      return [
+        membershipChange(
+          item,
+          timeMs,
+          "joined",
+          clause.people.map((person) => person.nick),
+        ),
+      ];
+    if (clause.type === "joined_and_left")
+      return [
+        membershipChange(
+          item,
+          timeMs,
+          "parted",
+          clause.people.map((person) => person.nick),
+        ),
+      ];
+    if (clause.type === "left" || clause.type === "quit")
+      return [
+        membershipChange(
+          item,
+          timeMs,
+          clause.type === "left" ? "parted" : "quit",
+          clause.people.map(({ person }) => person.nick),
+        ),
+      ];
+    return [];
+  });
 }
 
 function membershipChange(
