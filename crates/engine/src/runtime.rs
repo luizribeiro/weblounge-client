@@ -4475,10 +4475,12 @@ fn process_part(
             output.push(event);
         }
     } else {
-        let _ = model.receive_membership(
+        let _ = model.receive_membership_event(
             &parted.channel,
             MembershipKind::Parted,
             parted.actor.nick().to_string(),
+            parted.reason.clone(),
+            parted.msgid.as_ref().map(ToString::to_string),
             parted.server_time.map(time_millis),
             time_millis(parted.received_at),
         );
@@ -4557,10 +4559,12 @@ fn process_kick(
 
 fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit) {
     for channel in &quit.channels {
-        let _ = model.receive_membership(
+        let _ = model.receive_membership_event(
             channel,
             MembershipKind::Quit,
             quit.actor.nick().to_string(),
+            quit.reason.clone(),
+            quit.msgid.as_ref().map(ToString::to_string),
             quit.server_time.map(time_millis),
             time_millis(quit.received_at),
         );
@@ -4593,10 +4597,12 @@ fn process_join(
         }
         target.into_iter().collect()
     } else {
-        let _ = running.model.receive_membership(
+        let _ = running.model.receive_membership_event(
             &joined.channel,
             MembershipKind::Joined,
             joined.actor.nick().to_string(),
+            None,
+            joined.msgid.as_ref().map(ToString::to_string),
             joined.server_time.map(time_millis),
             time_millis(joined.received_at),
         );
@@ -4653,29 +4659,35 @@ fn process_history(
                 let _ = running.model.receive_reaction(&reaction);
             }
             papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
-                let _ = running.model.receive_membership(
+                let _ = running.model.receive_membership_event(
                     &joined.channel,
                     MembershipKind::Joined,
                     joined.actor.nick().to_string(),
+                    None,
+                    joined.msgid.as_ref().map(ToString::to_string),
                     joined.server_time.map(time_millis),
                     time_millis(joined.received_at),
                 );
             }
             papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
-                let _ = running.model.receive_membership(
+                let _ = running.model.receive_membership_event(
                     &parted.channel,
                     MembershipKind::Parted,
                     parted.actor.nick().to_string(),
+                    parted.reason.clone(),
+                    parted.msgid.as_ref().map(ToString::to_string),
                     parted.server_time.map(time_millis),
                     time_millis(parted.received_at),
                 );
             }
             papo::Event::Quit(quit) => {
                 for channel in &quit.channels {
-                    let _ = running.model.receive_membership(
+                    let _ = running.model.receive_membership_event(
                         channel,
                         MembershipKind::Quit,
                         quit.actor.nick().to_string(),
+                        quit.reason.clone(),
+                        quit.msgid.as_ref().map(ToString::to_string),
                         quit.server_time.map(time_millis),
                         time_millis(quit.received_at),
                     );

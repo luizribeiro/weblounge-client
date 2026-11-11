@@ -1491,6 +1491,7 @@ impl NetworkModel {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn receive_membership(
         &mut self,
         channel: &papo::ChannelName,
@@ -1499,16 +1500,38 @@ impl NetworkModel {
         server_time_ms: Option<i64>,
         received_at_ms: i64,
     ) -> Option<()> {
+        self.receive_membership_event(
+            channel,
+            kind,
+            nick,
+            None,
+            None,
+            server_time_ms,
+            received_at_ms,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn receive_membership_event(
+        &mut self,
+        channel: &papo::ChannelName,
+        kind: MembershipKind,
+        nick: String,
+        reason: Option<String>,
+        msgid: Option<String>,
+        server_time_ms: Option<i64>,
+        received_at_ms: i64,
+    ) -> Option<()> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
         let who = crate::timeline::Who {
             nick,
             own: false,
-            msgid: None,
+            msgid,
         };
         let event = match kind {
             MembershipKind::Joined => FoldEvent::Joined(who),
-            MembershipKind::Parted => FoldEvent::Parted(who, None),
-            MembershipKind::Quit => FoldEvent::Quit(who, None, None),
+            MembershipKind::Parted => FoldEvent::Parted(who, reason),
+            MembershipKind::Quit => FoldEvent::Quit(who, reason, None),
         };
         let id = self.allocate_message_id();
         let order = self.allocate_order(server_time_ms, received_at_ms);
@@ -5977,6 +6000,36 @@ mod tests {
             .expect("new membership row");
         let third = take_changed_items(&mut model)[0].clone();
         assert_ne!(second.id, third.id);
+    }
+
+    #[test]
+    fn one_quit_msgid_is_retained_in_each_channel_with_its_reason() {
+        let (mut model, state) = model(10);
+        for name in ["#room", "#other"] {
+            let channel = channel_name(&state, name);
+            model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+            model.receive_membership_event(
+                &channel,
+                MembershipKind::Quit,
+                "mel".into(),
+                Some("gone".into()),
+                Some("shared-quit".into()),
+                Some(10),
+                10,
+            );
+        }
+
+        let items = take_changed_items(&mut model);
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|item| matches!(
+            &item.body,
+            ItemBody::System(system) if matches!(
+                system.line,
+                crate::timeline::SystemLine::Run { ref clauses }
+                    if matches!(clauses.as_slice(), [crate::timeline::RunClause::Quit { people }]
+                        if people[0].reason.as_deref() == Some("gone"))
+            )
+        )));
     }
 
     #[test]
