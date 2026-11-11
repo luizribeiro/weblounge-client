@@ -192,6 +192,10 @@ prepend is derivable. Batch 1b updates design 02's sketch in the same commit.
 - It returns a geometry class derived from the diff: `suffix` (every insert sorts after the old
   last row and nothing earlier changed), `prefix`, `in-place` (same rows, some replaced) or
   `mixed`.
+- The focused buffer retains every row it has received, including rows the engine silently evicted.
+  Every unfocused buffer mirrors the engine window: its oldest excess Message-family rows and its
+  oldest excess non-message items are trimmed independently to the two 500-item budgets in §3.5.
+  Losing focus applies that bound immediately. Removing a buffer removes its app mirror.
 
 `MessageList` receives ordered items and never sorts.
 
@@ -298,7 +302,8 @@ items. A join flood is one item, so it cannot evict chat history.
 - When either budget is exceeded, the engine removes whole leading items until both fit. No run
   loses part of its members, so no surviving id changes.
 - The diff and the patch are computed before eviction. Eviction then emits nothing, so an older
-  page beyond the window still reaches the UI, which retains the rows (design 05).
+  page beyond the window still reaches the UI. The focused buffer retains it; §2.3 bounds dormant
+  buffers to the same two engine budgets.
 - Dedup references are released as today, and the audit's Batch 5 owns that lifetime.
 
 **Dedup.** Chat keeps the network-global msgid map. System records use a separate set keyed by

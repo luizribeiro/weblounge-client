@@ -127,6 +127,16 @@ The single place a fresh session reads to know where the project stands. Update 
   nicks and person completions use that same weight and the shared theme-aware nick-colour helper;
   command and channel completions remain unchanged. Built-app local-Ergo journeys cover both
   layouts and themes, with Lounge Night before/after captures at the reference viewports.
+- [x] Land the non-rendering half of buffer-events batch 1c. The app now keeps one engine-ordered
+  timeline mirror per buffer, applies atomic resets, removals and binary-positioned upserts without
+  sorting or merging streams, and classifies suffix, prefix, in-place and mixed geometry. Focused
+  buffers retain silently-evicted history; dormant buffers independently cap their oldest chat and
+  non-chat items to the engine's two 500-item budgets, and removed buffers release their mirror.
+  The same shared fixtures exercise the Rust and TypeScript reducers, including silent eviction.
+  A pure jump-count derivation admits only newly appended peer message-family rows while the reader
+  is away. Workers broadcast `TimelineChanged` alongside the legacy stream, and `EngineClient`
+  validates each item, applies the patch before publishing it, and immediately flushes optimistic
+  timeline rows. `MessageList` remains on the legacy stream for batch 1c part ii.
 - [x] Land buffer-events batch 1b behind the unchanged app timeline. Every buffer now owns one
   engine-ordered record vector for chat and system records; delivery and dedup facts are keyed
   metadata rather than a second ordering source. Independent chat-record and whole-system-item
