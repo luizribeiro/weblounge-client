@@ -56,9 +56,12 @@ test.describe("channel departure against local Ergo", () => {
 
       await operator.kick(channel, "weblounge", "too loud");
 
-      await expect(
-        page.getByText(`operator-${suffix} kicked you: too loud`),
-      ).toBeVisible();
+      const kickLine = page
+        .locator("[data-system-line]")
+        .filter({ hasText: `operator-${suffix} kicked you` });
+      await expect(kickLine).toHaveAccessibleName(
+        `operator-${suffix} kicked you: “too loud” · Rejoin`,
+      );
       const kickedComposer = page.getByRole("textbox", {
         name: `Message ${channel}`,
       });
@@ -69,7 +72,7 @@ test.describe("channel departure against local Ergo", () => {
         }),
       ).toBeVisible();
 
-      await page.getByRole("button", { name: "Rejoin" }).click();
+      await kickLine.getByRole("button", { name: "Rejoin channel" }).click();
       await expect(kickedComposer).toBeEnabled();
       await kickedComposer.fill("back again");
       await kickedComposer.press("Enter");

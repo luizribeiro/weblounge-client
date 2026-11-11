@@ -30,6 +30,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: aligned the kicked-channel journey with the signed own-kick warning while preserving
+  its read-only composer, reachable Rejoin action, and successful post-rejoin send coverage.
 - 2026-11-11: aligned the mobile deep-link timeline test with the signed system-line accessible
   wording instead of the removed temporary arrow-row text.
 - 2026-11-11: made the command-registry second-source check recognize hand-written command lists
