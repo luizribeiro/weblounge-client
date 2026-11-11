@@ -1,10 +1,12 @@
 .line {
   align-items: start;
   color: var(--wl-color-muted);
-  column-gap: 12px;
+  column-gap: 10px;
   display: grid;
-  font-size: 13px;
-  grid-template-columns: 6ch 120px minmax(0, 1fr) auto;
+  font-size: calc(var(--wl-font-base) + var(--wl-density-message-font-delta));
+  grid-template-columns:
+    var(--wl-message-time-column, 9ch) 112px minmax(0, 1fr)
+    auto;
   line-height: 21px;
   overflow-wrap: anywhere;
   padding: var(--wl-density-message-one-line-row-padding) 22px;
@@ -17,6 +19,7 @@
   font-family: var(--wl-font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .iconColumn {
   align-items: center;
@@ -38,6 +41,9 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+.line[data-presentation="desktop"] .content {
+  font-size: 13px;
 }
 .nick {
   font-weight: 600;

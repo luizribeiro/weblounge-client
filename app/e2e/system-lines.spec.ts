@@ -54,6 +54,8 @@ for (const [layout, viewport] of [
         const collapsed = systemLine(page, "joined", joinerNicks.slice(0, 3));
         await expect(collapsed).toContainText("3 others");
         await expectSystemGeometry(collapsed, layout);
+        if (layout === "desktop")
+          await expectDesktopColumnAlignment(page, collapsed, joinBreaker);
         await capture(page, layout, "collapsed");
 
         await collapsed.getByRole("button", { name: "Show 3 others" }).click();
@@ -78,12 +80,9 @@ for (const [layout, viewport] of [
         ).toBeVisible();
         await operator.privmsgConfirmed(channel, `quit breaker ${suffix}`);
         for (const joiner of joiners.slice(2)) joiner.close();
-        await expect(
-          page
-            .locator("[data-system-line]")
-            .filter({ hasText: "quit" })
-            .filter({ hasText: "1 others" }),
-        ).toContainText("1 others");
+        const quit = systemLine(page, "quit", joinerNicks.slice(2));
+        await expect(quit).toBeVisible();
+        await expect(quit).not.toContainText("others");
 
         await operator.kick(channel, account, "testing rejoin");
         const warning = page
@@ -153,15 +152,51 @@ async function expectSystemGeometry(
     await expect(row).toHaveCSS("column-gap", "10px");
   } else {
     await expect(row.locator("time")).toBeVisible();
-    await expect(row).toHaveCSS("font-size", "13px");
+    await expect(row.locator("[data-system-summary]")).toHaveCSS(
+      "font-size",
+      "13px",
+    );
     await expect(row).toHaveCSS("line-height", "21px");
     await expect(icon).toHaveCSS("width", "15px");
-    await expect(row).toHaveCSS("grid-template-columns", /.+ 120px .+/u);
+    await expect(row).toHaveCSS("grid-template-columns", /.+ 112px .+/u);
+    await expect(row).toHaveCSS("column-gap", "10px");
   }
   await expect(row.locator("[data-own]").first()).toHaveCSS(
     "font-weight",
     "600",
   );
+}
+
+async function expectDesktopColumnAlignment(
+  page: Page,
+  system: ReturnType<typeof systemLine>,
+  message: string,
+): Promise<void> {
+  const messageRow = page.locator("[data-message-row]").filter({
+    has: page.getByText(message, { exact: true }),
+  });
+  const messageText = messageRow.locator("[data-selectable]");
+  const systemText = system.locator("[data-system-summary]");
+
+  await expect
+    .poll(async () => {
+      const [messageBox, systemBox] = await Promise.all([
+        messageText.boundingBox(),
+        systemText.boundingBox(),
+      ]);
+      if (messageBox === null || systemBox === null) return null;
+      return Math.abs(messageBox.x - systemBox.x);
+    })
+    .toBeLessThanOrEqual(0.5);
+
+  const [messageTime, systemTime] = await Promise.all([
+    messageRow.locator("time").boundingBox(),
+    system.locator("time").boundingBox(),
+  ]);
+  if (messageTime === null || systemTime === null)
+    throw new Error("desktop time geometry is missing");
+  expect(systemTime.width).toBeCloseTo(messageTime.width, 1);
+  expect(systemTime.height).toBeLessThanOrEqual(21);
 }
 
 async function capture(

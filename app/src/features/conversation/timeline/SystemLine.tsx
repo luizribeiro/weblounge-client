@@ -54,7 +54,7 @@ export function SystemLine(props: {
         />
       </span>
       <div class={styles.content}>
-        <div>
+        <div data-system-summary="true">
           <Segments onAction={props.onAction} segments={words().segments} />
         </div>
         <For each={words().details}>
