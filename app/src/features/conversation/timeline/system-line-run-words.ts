@@ -66,6 +66,7 @@ function runIcon(clauses: RunClauses): SystemLineIcon {
       return "invite";
     case "modes": {
       const type = clause.changes[0]?.meaning.type;
+      if (type === "rank") return "op";
       return type === "ban" || type === "ban_exception" || type === "quiet"
         ? "ban"
         : "mode";

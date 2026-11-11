@@ -10,6 +10,7 @@ export type SystemLineIcon =
   | "kick"
   | "mode"
   | "nick"
+  | "op"
   | "part"
   | "people"
   | "quit"

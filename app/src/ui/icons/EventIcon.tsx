@@ -1,5 +1,8 @@
 import type { SystemLineIcon } from "../../features/conversation/timeline/system-line-words";
 
+const shield =
+  "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z";
+
 const paths: Readonly<Record<SystemLineIcon, string>> = {
   ban: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M4.9 4.9l14.2 14.2",
   info: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M12 16v-4M12 8h.01",
@@ -9,6 +12,7 @@ const paths: Readonly<Record<SystemLineIcon, string>> = {
   kick: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M17 8l5 5M22 8l-5 5",
   mode: "M20 7h-9M14 17H5M14 17a3 3 0 1 0 6 0a3 3 0 1 0-6 0M4 7a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
   nick: "M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16",
+  op: shield,
   part: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   people:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
