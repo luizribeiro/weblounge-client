@@ -5,8 +5,8 @@ use proptest::prelude::*;
 use crate::MessageId;
 
 use super::{
-    FoldEvent, GapProjection, ItemBody, LocalDay, OrderKey, RecordBody, TimelineItem,
-    TimelineRecord, Who, apply_timeline_change, diff, fold,
+    FoldEvent, FoldedBody, ItemBody, LocalDay, OrderKey, RecordBody, SystemLine, SystemProjection,
+    TimelineItem, TimelineRecord, Who, apply_timeline_change, diff, fold,
 };
 
 type Scenario = (Vec<i64>, Vec<Vec<usize>>, usize);
@@ -39,6 +39,8 @@ fn ingest_page(
                 day: LocalDay(1),
                 body: RecordBody::Fold(FoldEvent::Joined(Who {
                     nick: format!("nick-{event}"),
+                    key: format!("nick-{event}"),
+                    nick_color_index: 0,
                     own: false,
                     msgid: Some(format!("msgid-{event}")),
                 })),
@@ -54,15 +56,22 @@ fn folded_items(records: &HashMap<usize, TimelineRecord>) -> Vec<TimelineItem> {
     fold(&records)
         .expect("generated records are valid")
         .into_iter()
-        .map(|item| TimelineItem {
-            id: item.id,
-            order: item.order,
-            day: item.day,
-            content_version: 0,
-            body: ItemBody::Gap(GapProjection {
-                from_ms: item.order.primary_ms(),
-                to_ms: item.order.primary_ms() + 1,
-            }),
+        .map(|item| {
+            let FoldedBody::Run(run) = item.body else {
+                unreachable!("generated records are fold events");
+            };
+            TimelineItem {
+                id: item.id,
+                order: item.order,
+                day: item.day,
+                content_version: 0,
+                body: ItemBody::System(SystemProjection {
+                    time_ms: run.newest_time_ms(),
+                    line: SystemLine::Run {
+                        clauses: run.clauses().clone(),
+                    },
+                }),
+            }
         })
         .collect()
 }
@@ -74,6 +83,35 @@ fn with_final_page(times: &[i64], pages: &[Vec<usize>]) -> Vec<Vec<usize>> {
 }
 
 proptest! {
+    #[test]
+    fn live_and_shuffled_history_have_the_same_folded_rows(
+        (times, _, _) in scenario(),
+    ) {
+        let mut live_allocated = HashMap::new();
+        let mut live = HashMap::new();
+        ingest_page(
+            &times,
+            &(0..times.len()).collect::<Vec<_>>(),
+            &mut live_allocated,
+            &mut live,
+        );
+        let mut history_allocated = HashMap::new();
+        let mut history = HashMap::new();
+        ingest_page(
+            &times,
+            &(0..times.len()).rev().collect::<Vec<_>>(),
+            &mut history_allocated,
+            &mut history,
+        );
+        let normalize = |records: &HashMap<usize, TimelineRecord>| {
+            folded_items(records)
+                .into_iter()
+                .map(|item| (item.day, item.body))
+                .collect::<Vec<_>>()
+        };
+        prop_assert_eq!(normalize(&live), normalize(&history));
+    }
+
     #[test]
     fn emitted_patches_keep_the_mirror_equal_to_engine_plus_silent_evictions(
         (times, pages, window) in scenario(),

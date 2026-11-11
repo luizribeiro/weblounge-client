@@ -21,8 +21,8 @@ use crate::{
     },
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalCalendar, OrderKey,
-        Person, RecordBody, RunClause, RunClauses, Subject, SystemLine, SystemProjection,
-        TimelineItem, TimelineRecord, diff, fold,
+        Person, RecordBody, Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord,
+        diff, fold,
     },
 };
 
@@ -1555,6 +1555,8 @@ impl NetworkModel {
             return None;
         }
         let who = crate::timeline::Who {
+            key: self.casemapping.fold(&nick).into_owned(),
+            nick_color_index: nick_color_index(self.casemapping, &nick),
             nick,
             own: false,
             msgid: who_msgid,
@@ -3463,7 +3465,7 @@ impl NetworkModel {
             let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
                 continue;
             };
-            let Ok(desired) = project_timeline(buffer, self.casemapping) else {
+            let Ok(desired) = project_timeline(buffer) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
                 ));
@@ -3766,21 +3768,19 @@ fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
 
 fn project_timeline(
     buffer: &BufferState,
-    casemapping: papo::Casemapping,
 ) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
     fold(&buffer.timeline).map(|items| {
         items
             .into_iter()
-            .filter_map(|item| {
+            .map(|item| {
                 let body = match item.body {
                     FoldedBody::Chat(chat) => ItemBody::Message(chat.projection),
                     FoldedBody::Run(run) => {
-                        let mut clauses = run.events().map(|event| fold_clause(event, casemapping));
-                        let first = clauses.next()?;
+                        let time_ms = run.newest_time_ms();
                         ItemBody::System(SystemProjection {
-                            time_ms: item.order.primary_ms(),
+                            time_ms,
                             line: SystemLine::Run {
-                                clauses: RunClauses::new(first, clauses.collect()),
+                                clauses: run.clauses().clone(),
                             },
                         })
                     }
@@ -3790,51 +3790,16 @@ fn project_timeline(
                     }),
                     FoldedBody::Gap(gap) => ItemBody::Gap(gap),
                 };
-                Some(TimelineItem {
+                TimelineItem {
                     id: item.id,
                     order: item.order,
                     day: item.day,
                     content_version: 0,
                     body,
-                })
+                }
             })
             .collect()
     })
-}
-
-fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
-    let who = |who: &crate::timeline::Who| person(casemapping, who.nick.clone(), who.own);
-    match event {
-        FoldEvent::Joined(joined) => RunClause::Joined {
-            people: vec![who(joined)],
-        },
-        FoldEvent::Parted(parted, reason) => RunClause::Left {
-            people: vec![crate::timeline::Departure {
-                person: who(parted),
-                reason: reason.clone(),
-            }],
-        },
-        FoldEvent::Quit(quit, reason, _) => RunClause::Quit {
-            people: vec![crate::timeline::Departure {
-                person: who(quit),
-                reason: reason.clone(),
-            }],
-        },
-        FoldEvent::Nick { old, new } => RunClause::Nick {
-            changes: vec![crate::timeline::NickChange {
-                old: who(old),
-                new: who(new),
-            }],
-        },
-        FoldEvent::Modes { actor, changes } => RunClause::Modes {
-            actor: actor.clone(),
-            changes: changes.clone(),
-        },
-        FoldEvent::Invited { actor, subject } => RunClause::Invited {
-            actor: actor.clone(),
-            people: vec![who(subject)],
-        },
-    }
 }
 
 fn evict_over_budget(
@@ -4515,7 +4480,7 @@ mod tests {
                 .iter()
                 .filter(|record| !matches!(record.body, RecordBody::Chat(_)))
                 .count(),
-            2
+            20
         );
         let next = model.receive_incoming(
             incoming(
@@ -4535,8 +4500,8 @@ mod tests {
         apply_new_rows(&mut mirror, &initial);
         apply_new_rows(&mut mirror, &flood);
         apply_new_rows(&mut mirror, &next);
-        assert_eq!(mirror.len(), 2 + 20 + 1);
-        assert_eq!(model.buffers[&buffer_id].emitted_timeline.len(), 4);
+        assert_eq!(mirror.len(), 4);
+        assert_eq!(model.buffers[&buffer_id].emitted_timeline.len(), 3);
     }
 
     #[test]
@@ -6041,7 +6006,7 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_membership_changes_remain_ordered_for_app_collapse() {
+    fn consecutive_membership_changes_update_one_engine_run() {
         let (mut model, state) = model(10);
         model.receive_incoming(
             incoming(
@@ -6064,7 +6029,7 @@ mod tests {
             .receive_membership(&channel, MembershipKind::Joined, "rafa".into(), Some(3), 3)
             .expect("collapsed row");
         let second = take_changed_items(&mut model)[0].clone();
-        assert_ne!(first.id, second.id);
+        assert_eq!(first.id, second.id);
         assert!(matches!(
             (&first.body, &second.body),
             (
@@ -6082,7 +6047,8 @@ mod tests {
                     (
                         [crate::timeline::RunClause::Joined { people: first }],
                         [crate::timeline::RunClause::Joined { people: second }]
-                    ) if first[0].nick == "mel" && second[0].nick == "rafa"
+                    ) if first[0].nick == "mel"
+                        && second.iter().map(|person| person.nick.as_str()).eq(["mel", "rafa"])
                 )
         ));
         model.receive_incoming(
@@ -6101,7 +6067,38 @@ mod tests {
             .receive_membership(&channel, MembershipKind::Joined, "cyd".into(), Some(5), 5)
             .expect("new membership row");
         let third = take_changed_items(&mut model)[0].clone();
-        assert_ne!(second.id, third.id);
+        assert_ne!(first.id, third.id);
+    }
+
+    #[test]
+    fn one_turn_emits_one_complete_membership_run_patch() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        for (index, nick) in ["mel", "rafa", "cyd"].into_iter().enumerate() {
+            let time = i64::try_from(index + 1).expect("small fixture");
+            model
+                .receive_membership(
+                    &channel,
+                    MembershipKind::Joined,
+                    nick.into(),
+                    Some(time),
+                    time,
+                )
+                .expect("membership row");
+        }
+
+        let patches = model.take_timeline_changes(false);
+        assert_eq!(patches.len(), 1);
+        assert!(
+            matches!(&patches[0], EngineToUi::TimelineChanged { upserted, .. }
+            if matches!(&upserted[..], [TimelineItem {
+                body: ItemBody::System(crate::timeline::SystemProjection {
+                    line: crate::timeline::SystemLine::Run { clauses }, ..
+                }), ..
+            }] if matches!(clauses.as_slice(), [crate::timeline::RunClause::Joined { people }]
+                if people.len() == 3)))
+        );
     }
 
     #[test]
@@ -6171,7 +6168,9 @@ mod tests {
             );
         }
 
-        assert_eq!(take_changed_items(&mut model).len(), 3);
+        assert_eq!(take_changed_items(&mut model).len(), 1);
+        let buffer_id = model.names[&NameKey::Channel(room)];
+        assert_eq!(model.buffers[&buffer_id].timeline.len(), 3);
     }
 
     #[test]

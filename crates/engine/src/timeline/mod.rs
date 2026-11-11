@@ -5,6 +5,7 @@ mod error;
 mod fold;
 mod patch;
 mod projection;
+mod run;
 
 #[cfg(test)]
 mod fixture_tests;
@@ -14,8 +15,8 @@ mod property_tests;
 pub use calendar::{FixedOffsetCalendar, LocalCalendar};
 pub use error::TimelineError;
 pub use fold::{
-    ChatRecord, FoldEvent, FoldRun, FoldedBody, FoldedItem, RecordBody, SplitServers,
-    TimelineRecord, Who, fold,
+    ChatRecord, FoldEvent, FoldedBody, FoldedItem, RecordBody, SplitServers, TimelineRecord, Who,
+    fold,
 };
 pub use patch::{
     AppliedTimeline, GeometryClass, TimelineChange, TimelineDiff, apply_timeline_change, diff,
@@ -25,3 +26,5 @@ pub use projection::{
     ModeProjection, NickChange, OrderKey, Person, ReplySeverity, RunClause, RunClauses, Subject,
     SystemLine, SystemProjection, TimelineItem,
 };
+pub use run::FoldRun;
+pub(crate) use run::collapse_run;
