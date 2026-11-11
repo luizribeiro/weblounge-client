@@ -4309,7 +4309,7 @@ fn process_nick_change(
     if changed.authorship == papo::Authorship::Own {
         output.push(model.set_nickname(changed.new.to_string()));
     }
-    output.extend(model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key()));
+    model.receive_nick_change(changed);
 }
 
 fn process_account_change(
@@ -4694,6 +4694,7 @@ fn process_history(
                     );
                 }
             }
+            papo::Event::NickChanged(changed) => history_nick(&mut running.model, &changed),
             papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
                 receive_history_kick(&mut running.model, &kicked);
             }
@@ -4731,6 +4732,12 @@ fn receive_history_kick(model: &mut NetworkModel, kicked: &papo::event::Kicked) 
         time_millis(kicked.received_at),
         false,
     );
+}
+
+fn history_nick(model: &mut NetworkModel, changed: &papo::event::NickChanged) {
+    if changed.authorship != papo::Authorship::Own {
+        model.receive_nick_change(changed);
+    }
 }
 
 fn finish_history_page(

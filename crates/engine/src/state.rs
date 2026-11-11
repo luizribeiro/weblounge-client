@@ -1000,31 +1000,89 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
-    pub(crate) fn note_direct_rename(
+    pub(crate) fn receive_nick_change(&mut self, changed: &papo::event::NickChanged) {
+        let old = changed.actor.nick();
+        let mut buffer_ids = changed
+            .channels
+            .iter()
+            .filter_map(|channel| self.names.get(&NameKey::Channel(channel.clone())).copied())
+            .collect::<Vec<_>>();
+        if changed.authorship == papo::Authorship::Own {
+            buffer_ids.push(self.server_buffer_id());
+        } else if let Some(id) = self.names.get(&NameKey::Direct(old.clone())).copied()
+            && self.buffers.get(&id).is_some_and(|buffer| {
+                buffer.direct_pin.as_ref().is_some_and(|stored| {
+                    changed.peer_key().is_some_and(|current| {
+                        matches!(
+                            stored.check(current),
+                            papo::PeerKeyCheck::Match | papo::PeerKeyCheck::Upgrade(_)
+                        )
+                    })
+                })
+            })
+        {
+            buffer_ids.push(id);
+        }
+        for buffer_id in buffer_ids {
+            self.receive_nick_change_in_buffer(buffer_id, old, &changed.new, changed);
+        }
+    }
+
+    fn receive_nick_change_in_buffer(
         &mut self,
+        buffer_id: BufferId,
         old: &papo::Nick,
         new: &papo::Nick,
-        current: Option<&papo::PeerKey>,
-    ) -> Vec<EngineToUi> {
-        let Some(id) = self.names.get(&NameKey::Direct(old.clone())).copied() else {
-            return Vec::new();
-        };
-        let Some(buffer) = self.buffers.get(&id) else {
-            return Vec::new();
-        };
-        let Some(stored) = buffer.direct_pin.as_ref() else {
-            return Vec::new();
-        };
-        if !current.is_some_and(|current| {
-            matches!(
-                stored.check(current),
-                papo::PeerKeyCheck::Match | papo::PeerKeyCheck::Upgrade(_)
-            )
-        }) {
-            return Vec::new();
+        changed: &papo::event::NickChanged,
+    ) {
+        let msgid = changed.msgid.as_ref().map(ToString::to_string);
+        let server_time_ms = changed.server_time.map(time_millis);
+        let dedup = system_dedup_reference(
+            buffer_id,
+            msgid.clone(),
+            server_time_ms,
+            "nick",
+            old.to_string(),
+            Some(new.to_string()),
+        );
+        if dedup
+            .as_ref()
+            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
+        {
+            return;
         }
-        let _ = self.append_notice(id, format!("{old} is now {new}"), NoticeKind::Info);
-        Vec::new()
+        let casemapping = self.casemapping;
+        let own = changed.authorship == papo::Authorship::Own;
+        let who = |nick: &papo::Nick| {
+            let nick = nick.to_string();
+            crate::timeline::Who {
+                key: casemapping.fold(&nick).into_owned(),
+                nick_color_index: nick_color_index(casemapping, &nick),
+                nick,
+                own,
+                msgid: msgid.clone(),
+            }
+        };
+        let id = self.allocate_message_id();
+        let order = self.allocate_order(server_time_ms, time_millis(changed.received_at));
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        buffer.timeline.push(TimelineRecord {
+            id,
+            order,
+            day: self.calendar.day(order.primary_ms()),
+            body: RecordBody::Fold(FoldEvent::Nick {
+                old: who(old),
+                new: who(new),
+            }),
+        });
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer.system_server_times.insert(id, server_time_ms);
+        if let Some(dedup) = dedup {
+            buffer.system_dedup.insert(id, dedup);
+        }
+        self.dirty_timelines.insert(buffer_id);
     }
 
     #[cfg(test)]
@@ -7022,7 +7080,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn matching_continuity_pin_adds_a_note_without_rekeying_the_thread() {
+    async fn nick_change_routes_to_shared_channels_and_matching_direct() {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["extended-join"]).await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
@@ -7031,6 +7089,11 @@ mod tests {
         while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #room * :Alice").await;
         while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":weblounge!u@host JOIN #other * :WebLounge")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice!a@host JOIN #other * :Alice").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
         let direct = client.direct("alice").await.expect("direct opens");
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let (old_buffer, _) = model.open_direct(
@@ -7038,26 +7101,105 @@ mod tests {
             super::DirectAvailability::Guarded(direct),
             &client.state(),
         );
-
         wire.server(":alice!a@host NICK alicia").await;
         let changed = loop {
             if let Some(papo::Event::NickChanged(changed)) = events.next().await {
                 break changed;
             }
         };
-        let note = model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key());
-        assert!(note.is_empty());
-        let message = take_changed_messages(&mut model)
-            .pop()
-            .expect("rename note")
-            .1;
-        assert_eq!(message.text, "alice is now alicia");
-        assert!(matches!(
-            message.kind,
-            crate::MessageKind::Notice(crate::NoticeKind::Info)
-        ));
+        let rooms = changed
+            .channels
+            .iter()
+            .map(|channel| {
+                model
+                    .ensure_buffer(NameKey::Channel(channel.clone()), None, None)
+                    .0
+            })
+            .collect::<Vec<_>>();
+        model.receive_nick_change(&changed);
+        let patches = model.take_timeline_changes(false);
+        let destinations = patches
+            .iter()
+            .filter_map(|event| match event {
+                EngineToUi::TimelineChanged { buffer_id, .. } => Some(*buffer_id),
+                _ => None,
+            })
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(destinations.len(), 3);
+        assert!(destinations.contains(&old_buffer));
+        assert!(rooms.iter().all(|room| destinations.contains(room)));
+        assert!(patches.iter().all(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { upserted, .. }
+                if matches!(&upserted[0].body, ItemBody::System(system)
+                    if matches!(&system.line, crate::timeline::SystemLine::Run { clauses }
+                        if matches!(clauses.as_slice(), [crate::timeline::RunClause::Nick { changes }]
+                            if changes[0].old.nick == "alice" && changes[0].new.nick == "alicia")))
+        )));
         assert_eq!(model.buffers[&old_buffer].projection.title, "alice");
         assert!(!model.directs.contains_key(&DirectKey("alicia".into())));
+        assert!(
+            model
+                .buffers
+                .values()
+                .all(|buffer| { buffer.projection.unread == 0 && buffer.projection.mentions == 0 })
+        );
+    }
+
+    #[tokio::test]
+    async fn own_nick_change_routes_to_channels_and_server_only() {
+        let (_client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        wire.server(":weblounge!u@host NICK WebLounge").await;
+        let changed = loop {
+            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+                break changed;
+            }
+        };
+        model.ensure_buffer(NameKey::Channel(changed.channels[0].clone()), None, None);
+        model.receive_nick_change(&changed);
+        let patches = model.take_timeline_changes(false);
+
+        assert_eq!(patches.len(), 2);
+        assert!(patches.iter().any(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { buffer_id, .. } if *buffer_id == model.server_buffer_id()
+        )));
+        assert!(patches.iter().all(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { upserted, .. }
+                if matches!(&upserted[0].body, ItemBody::System(system)
+                    if matches!(&system.line, crate::timeline::SystemLine::Run { clauses }
+                        if matches!(clauses.as_slice(), [crate::timeline::RunClause::Nick { changes }]
+                            if changes[0].old.me && changes[0].old.nick == "weblounge"
+                                && changes[0].new.nick == "WebLounge")))
+        )));
+    }
+
+    #[tokio::test]
+    async fn nick_change_without_a_projected_shared_buffer_emits_nothing() {
+        let (_client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice!a@host JOIN #room").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice!a@host NICK alicia").await;
+        let changed = loop {
+            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+                break changed;
+            }
+        };
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+
+        model.receive_nick_change(&changed);
+
+        assert!(model.take_timeline_changes(false).is_empty());
     }
 
     #[tokio::test]
