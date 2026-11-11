@@ -65,6 +65,43 @@ test("renders out-of-order arrivals and a moved confirmation in engine order", a
   }
 });
 
+test("renders consecutive joins as one legacy membership line", async ({
+  baseURL,
+  page,
+}) => {
+  const suffix = Date.now().toString(36).slice(-6);
+  const account = `jr-own-${suffix}`;
+  const channel = `#jr-${suffix}`;
+  const keeper = await IrcClient.connectIsolated(account, channel);
+  const writer = await IrcClient.connectIsolated(`jr-w-${suffix}`, channel);
+  const joinerNicks = [0, 1, 2].map((index) => `jr${index}-${suffix}`);
+  const joiners: IrcClient[] = [];
+  try {
+    await useDedicatedWorker(page);
+    await page.goto(accountUrl(baseURL, account, channel));
+    await page.getByRole("button", { name: channel }).click();
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const breaker = `membership breaker ${suffix}`;
+    await writer.privmsgConfirmed(channel, breaker);
+    await expect(messageRow(page, breaker)).toBeVisible();
+
+    for (const nick of joinerNicks)
+      joiners.push(await IrcClient.connectIsolated(nick, channel));
+
+    const row = page.locator("[data-membership-row]").filter({
+      hasText: joinerNicks[0],
+    });
+    await expect(row).toHaveCount(1);
+    await expect(row).toHaveText(
+      `→ ${joinerNicks[0]}, ${joinerNicks[1]} and ${joinerNicks[2]} joined`,
+    );
+  } finally {
+    keeper.close();
+    writer.close();
+    for (const joiner of joiners) joiner.close();
+  }
+});
+
 function accountUrl(
   baseURL: string | undefined,
   account: string,

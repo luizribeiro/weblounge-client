@@ -123,6 +123,18 @@ type TimelineRow =
       readonly engineOrder: TimelineItem["order"];
     };
 
+type DisplayTimelineItem =
+  | {
+      readonly kind: "message";
+      readonly message: MessageProjection;
+      readonly order: TimelineItem["order"];
+    }
+  | {
+      readonly kind: "membership";
+      readonly membership: MembershipProjection;
+      readonly order: TimelineItem["order"];
+    };
+
 type NoticeMessage = MessageProjection & {
   readonly kind: { readonly notice: NoticeKind };
 };
@@ -1364,14 +1376,14 @@ function timelineRows(
   let day = "";
   let newInserted = false;
   let previousGroupMessage: MessageProjection | undefined;
-  const messages = items.flatMap((item) =>
-    item.body.family === "message" ? [item.body] : [],
+  const displayItems = legacyDisplayItems(items);
+  const messages = displayItems.flatMap((item) =>
+    item.kind === "message" ? [item.message] : [],
   );
   const firstUnread = unreadStartId(messages, readAtMs);
-  for (const item of items) {
-    const message = item.body.family === "message" ? item.body : undefined;
-    const membership = timelineMembership(item);
-    if (message === undefined && membership === undefined) continue;
+  for (const item of displayItems) {
+    const message = item.kind === "message" ? item.message : undefined;
+    const membership = item.kind === "membership" ? item.membership : undefined;
     const milliseconds =
       message === undefined
         ? (membership?.server_time_ms ?? membership?.received_at_ms ?? 0)
@@ -1411,6 +1423,60 @@ function timelineRows(
     }
   }
   return rows;
+}
+
+function legacyDisplayItems(
+  items: readonly TimelineItem[],
+): DisplayTimelineItem[] {
+  const displayItems: DisplayTimelineItem[] = [];
+  let openMembershipIndex: number | undefined;
+  for (const item of items) {
+    const membership = timelineMembership(item);
+    if (membership?.type === "change") {
+      const openIndex = openMembershipIndex;
+      const open =
+        openIndex === undefined ? undefined : displayItems[openIndex];
+      if (
+        openIndex !== undefined &&
+        open?.kind === "membership" &&
+        open.membership.type === "change" &&
+        open.membership.kind === membership.kind
+      ) {
+        displayItems[openIndex] = {
+          ...open,
+          membership: mergeMembershipChange(open.membership, membership),
+        };
+        continue;
+      }
+      openMembershipIndex = displayItems.length;
+      displayItems.push({ kind: "membership", membership, order: item.order });
+      continue;
+    }
+    openMembershipIndex = undefined;
+    if (item.body.family === "message")
+      displayItems.push({
+        kind: "message",
+        message: item.body,
+        order: item.order,
+      });
+    else if (membership !== undefined)
+      displayItems.push({ kind: "membership", membership, order: item.order });
+  }
+  return displayItems;
+}
+
+function mergeMembershipChange(
+  first: Extract<MembershipProjection, { type: "change" }>,
+  latest: Extract<MembershipProjection, { type: "change" }>,
+): Extract<MembershipProjection, { type: "change" }> {
+  const nicks = [...first.nicks];
+  for (const nick of latest.nicks) if (!nicks.includes(nick)) nicks.push(nick);
+  return {
+    ...first,
+    nicks,
+    server_time_ms: latest.server_time_ms ?? first.server_time_ms,
+    received_at_ms: latest.received_at_ms,
+  };
 }
 
 function timelineMembership(

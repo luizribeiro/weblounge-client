@@ -1180,6 +1180,62 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
+it("collapses standalone membership runs with the legacy wording and breakers", async () => {
+  const change = (
+    id: number,
+    kind: "joined" | "parted" | "quit",
+    nick: string,
+  ): MembershipProjection => ({
+    type: "change",
+    id,
+    kind,
+    nicks: [nick],
+    server_time_ms: id,
+    received_at_ms: id,
+  });
+  const notice: MessageProjection = {
+    ...message,
+    id: 24,
+    kind: "irc_notice",
+    received_at_ms: 24,
+    text: "membership run breaker",
+  };
+  const kicked: MembershipProjection = {
+    type: "kicked",
+    id: 27,
+    actor: "operator",
+    reason: null,
+    server_time_ms: 27,
+    received_at_ms: 27,
+  };
+  render(() => (
+    <MessageList
+      messages={[]}
+      timeline={timelineView([
+        membershipItem(change(20, "joined", "mel")),
+        membershipItem(change(21, "joined", "rafa")),
+        membershipItem(change(22, "joined", "mel")),
+        messageItem(notice),
+        membershipItem(change(25, "joined", "cyd")),
+        membershipItem(change(26, "joined", "dana")),
+        membershipItem(kicked),
+        membershipItem(change(28, "parted", "mel")),
+        membershipItem(change(29, "parted", "rafa")),
+        membershipItem(change(30, "quit", "cyd")),
+        membershipItem(change(31, "quit", "dana")),
+      ])}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(screen.getByText("→ mel and rafa joined")).toBeVisible();
+  expect(screen.getByText("membership run breaker")).toBeVisible();
+  expect(screen.getByText("→ cyd and dana joined")).toBeVisible();
+  expect(screen.getByText("← mel and rafa left")).toBeVisible();
+  expect(screen.getByText("← cyd and dana quit")).toBeVisible();
+  expect(document.querySelectorAll("[data-membership-row]")).toHaveLength(5);
+});
+
 it("remeasures collapsed membership content on its first revised frame", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
