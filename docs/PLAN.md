@@ -5,7 +5,7 @@ The single place a fresh session reads to know where the project stands. Update 
 ## Roadmap
 
 ### Now
-- Buffer events 1c-ii: MessageList renders the engine's ordered timeline items (design 26 §8 1c).
+- None.
 
 ### Next (in order)
 1. Buffer events 1d: delete the old timeline events (design 26 §8 1d).
@@ -31,6 +31,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 1c-ii; MessageList renders the engine's ordered timeline items and
+  derives geometry and jump counts from their patches while the legacy event stream remains live.
 - 2026-11-10: chat-list snapshot saves immediately, including push-restored rows and own sends in loading DMs; jump pill counts only newer messages; top-of-transcript history race; read-carry anchored to raw markers; buffer events 1b and 1c-i.
 
 ## Known limits
@@ -60,6 +62,14 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Render the engine's ordered timeline items without sorting or merging them in `MessageList`,
+  while retaining the legacy event stream for batch 1d. The app keeps timeline views reactive
+  across desktop and mobile shells, and buffer focus refreshes dormant retention without waiting
+  for another patch. Live-end suffix changes keep the append path; every other geometry class uses
+  the existing anchor-preserving remeasure. The jump pill consumes the store's derived count, so
+  older pages and own sends stay silent while catch-up adds only newly appended peer rows. Built-app
+  local-Ergo coverage pins engine DOM order through out-of-order times and a moved optimistic
+  confirmation, plus older-page, own-send and catch-up jump-count semantics on desktop and phone.
 - [x] Include the shared timeline fixtures in the filtered app source used by Nix checks, so the
   Vitest reducer parity suite reads the same golden JSON as the Rust reducer suite.
 - [x] Keep the command-registry second-source check precise for timeline protocol variants. The
