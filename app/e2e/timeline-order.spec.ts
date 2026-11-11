@@ -1,4 +1,7 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
@@ -65,7 +68,7 @@ test("renders out-of-order arrivals and a moved confirmation in engine order", a
   }
 });
 
-test("renders consecutive joins as one legacy membership line", async ({
+test("renders plain membership runs with legacy wording", async ({
   baseURL,
   page,
 }) => {
@@ -74,7 +77,7 @@ test("renders consecutive joins as one legacy membership line", async ({
   const channel = `#jr-${suffix}`;
   const keeper = await IrcClient.connectIsolated(account, channel);
   const writer = await IrcClient.connectIsolated(`jr-w-${suffix}`, channel);
-  const joinerNicks = [0, 1, 2].map((index) => `jr${index}-${suffix}`);
+  const joinerNicks = [0, 1, 2, 3, 4, 5].map((index) => `jr${index}-${suffix}`);
   const joiners: IrcClient[] = [];
   try {
     await useDedicatedWorker(page);
@@ -88,13 +91,37 @@ test("renders consecutive joins as one legacy membership line", async ({
     for (const nick of joinerNicks)
       joiners.push(await IrcClient.connectIsolated(nick, channel));
 
-    const row = page.locator("[data-membership-row]").filter({
-      hasText: joinerNicks[0],
-    });
-    await expect(row).toHaveCount(1);
-    await expect(row).toHaveText(
-      `→ ${joinerNicks[0]}, ${joinerNicks[1]} and ${joinerNicks[2]} joined`,
-    );
+    await expect(
+      membershipRow(
+        page,
+        `→ ${joinerNicks.slice(0, -1).join(", ")} and ${joinerNicks.at(-1)} joined`,
+      ),
+    ).toBeVisible();
+    await writer.privmsgConfirmed(channel, `part breaker ${suffix}`);
+    for (const joiner of joiners.slice(0, 3)) await joiner.part(channel);
+    await expect(
+      membershipRow(
+        page,
+        `← ${joinerNicks[0]}, ${joinerNicks[1]} and ${joinerNicks[2]} left`,
+      ),
+    ).toBeVisible();
+    await writer.privmsgConfirmed(channel, `quit breaker ${suffix}`);
+    for (const [index, joiner] of joiners.slice(3).entries()) {
+      joiner.close();
+      await expect(
+        page
+          .locator("[data-membership-row]")
+          .filter({ hasText: joinerNicks[3 + index] })
+          .filter({ hasText: "quit" }),
+      ).toBeVisible();
+    }
+    await expect(
+      membershipRow(
+        page,
+        `← ${joinerNicks[3]}, ${joinerNicks[4]} and ${joinerNicks[5]} quit`,
+      ),
+    ).toBeVisible();
+    await captureMembershipScreenshots(page);
   } finally {
     keeper.close();
     writer.close();
@@ -120,6 +147,28 @@ function messageRow(page: import("@playwright/test").Page, text: string) {
   return page.locator("[data-message-row]").filter({
     has: page.getByText(text, { exact: true }),
   });
+}
+
+function membershipRow(page: import("@playwright/test").Page, text: string) {
+  return page.locator("[data-membership-row]").filter({ hasText: text });
+}
+
+async function captureMembershipScreenshots(
+  page: import("@playwright/test").Page,
+) {
+  const directory = process.env.WEBLOUNGE_MEMBERSHIP_SCREENSHOT_DIR;
+  const phase = process.env.WEBLOUNGE_MEMBERSHIP_SCREENSHOT_PHASE;
+  if (directory === undefined || phase === undefined) return;
+  await mkdir(directory, { recursive: true });
+  for (const [shell, viewport] of [
+    ["desktop", { width: 1280, height: 800 }],
+    ["phone", { width: 390, height: 844 }],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await screenshotWithInter(page.locator("[data-app-root]"), {
+      path: path.join(directory, `${phase}-${shell}.png`),
+    });
+  }
 }
 
 async function rowIndex(row: import("@playwright/test").Locator) {
