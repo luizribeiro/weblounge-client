@@ -289,7 +289,7 @@ fn append_nicks(clauses: &mut Vec<PositionedClause>, chains: Vec<NickChain>) {
     let mut changes = Vec::new();
     let mut position = usize::MAX;
     for chain in chains {
-        if chain.old.key == chain.new.key {
+        if chain.old.nick == chain.new.nick {
             continue;
         }
         position = position.min(chain.position);
@@ -417,6 +417,17 @@ mod tests {
             },
         ]);
         assert!(round_trip.is_empty());
+    }
+
+    #[test]
+    fn case_only_nick_changes_remain_visible() {
+        let changes = collapse(&[FoldEvent::Nick {
+            old: who("alice"),
+            new: who("Alice"),
+        }]);
+
+        assert!(matches!(&changes[..], [RunClause::Nick { changes }]
+            if changes[0].old.nick == "alice" && changes[0].new.nick == "Alice"));
     }
 
     #[test]
