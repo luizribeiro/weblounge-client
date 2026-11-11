@@ -223,6 +223,7 @@
             ./.gitignore
             ./app
             ./biome.json
+            ./fixtures/timeline
             ./package.json
             ./pnpm-lock.yaml
             ./pnpm-workspace.yaml

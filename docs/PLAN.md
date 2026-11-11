@@ -60,6 +60,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Include the shared timeline fixtures in the filtered app source used by Nix checks, so the
+  Vitest reducer parity suite reads the same golden JSON as the Rust reducer suite.
 - [x] Keep the command-registry second-source check precise for timeline protocol variants. The
   system decoder's `nick`, `quit` and `topic` discriminants now have an exact per-file incidental
   allowance without admitting command-name literals elsewhere.
