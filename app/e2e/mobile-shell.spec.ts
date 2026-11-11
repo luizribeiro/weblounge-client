@@ -207,6 +207,11 @@ test.describe("mobile shell against local Ergo", () => {
           }),
         );
         await expect(target).toContainText(`preview from ${targetNick}`);
+        await expect(
+          page.locator("[data-mobile-chat-list] button").filter({
+            hasText: new RegExp(`preview from mobile\\d{2}${suffix}`),
+          }),
+        ).toHaveCount(11);
       });
 
       await test.step("audit the member drawer and return to chats", async () => {
@@ -217,6 +222,11 @@ test.describe("mobile shell against local Ergo", () => {
         });
         await expect(drawerMember).toBeVisible();
         const drawer = page.getByRole("dialog", { name: "Members" });
+        await expect(
+          drawer.getByRole("button", {
+            name: new RegExp(`Open direct message with mobile\\d{2}${suffix}`),
+          }),
+        ).toHaveCount(11);
         const mobileBoxes = await drawer
           .locator("li:visible")
           .evaluateAll((rows) =>
