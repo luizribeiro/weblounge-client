@@ -41,6 +41,7 @@ it("projects engine-owned typing state into the active composer", async () => {
     buffer: bufferProjection(2, "channel", "#room"),
   });
   expect(await screen.findByRole("heading", { name: "#room" })).toBeVisible();
+  expect(client.focusedTimelineBuffers).toContain(2);
 
   client.emit({
     type: "typing_changed",
@@ -1780,6 +1781,7 @@ function bufferProjection(
 
 class FakeEngineClient implements EngineClient {
   readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];
+  readonly focusedTimelineBuffers: Array<number | undefined> = [];
   readonly requests: EngineRequestEnvelope[] = [];
   livenessChecks = 0;
   #listener: ((message: EngineClientMessage) => void) | undefined;
@@ -1839,6 +1841,10 @@ class FakeEngineClient implements EngineClient {
 
   setVisibility(state: Parameters<EngineClient["setVisibility"]>[0]): void {
     this.visibility.push(state);
+  }
+
+  setFocusedTimelineBuffer(bufferId: number | undefined): void {
+    this.focusedTimelineBuffers.push(bufferId);
   }
 
   subscribe(listener: (message: EngineClientMessage) => void) {

@@ -76,6 +76,9 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly memberViewScope?: string | undefined;
   readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
+  readonly onFocusedBufferChange?:
+    | ((bufferId: number | undefined) => void)
+    | undefined;
   readonly bufferRemoval?:
     | {
         readonly bufferId: number;
@@ -137,6 +140,7 @@ export function DesktopShell(props: DesktopShellProps) {
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
   const activeBufferId = createMemo(() => activeBuffer()?.id);
+  createEffect(() => props.onFocusedBufferChange?.(activeBufferId()));
   const activeComposerNotice = createMemo(
     () =>
       props.messageFailureNotices?.get(activeBufferId() ?? -1) ??

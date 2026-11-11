@@ -49,6 +49,9 @@ interface MobileShellProps extends MobileShellData {
     | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
+  readonly onFocusedBufferChange?:
+    | ((bufferId: number | undefined) => void)
+    | undefined;
   readonly pathForBuffer?:
     | ((bufferId: number) => string | undefined)
     | undefined;
@@ -110,6 +113,12 @@ export function MobileShell(props: MobileShellProps) {
   let chatsStable = true;
   let returnScrollTop = 0;
   const requestedHistory = new Set<number>();
+  createEffect(() => {
+    const active = stack().active;
+    props.onFocusedBufferChange?.(
+      active.kind === "chat" ? active.bufferId : undefined,
+    );
+  });
   const requestHistoryOnce = (
     bufferId: number,
     direction: HistoryDirection,

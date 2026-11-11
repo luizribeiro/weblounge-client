@@ -34,6 +34,7 @@ export interface EngineClient {
   checkLiveness(): void;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
+  setFocusedTimelineBuffer(bufferId: number | undefined): void;
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe;
   close(): Promise<void>;
 }

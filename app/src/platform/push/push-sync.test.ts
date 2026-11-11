@@ -66,6 +66,7 @@ class FakeEngine implements EngineClient {
   checkLiveness(): void {}
   requestSnapshot(_reason: ResyncReason): void {}
   setVisibility(_state: VisibilityState): void {}
+  setFocusedTimelineBuffer(): void {}
 
   emit(message: EngineClientMessage): void {
     for (const listener of this.#listeners) listener(message);

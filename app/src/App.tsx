@@ -1448,6 +1448,9 @@ export function App(props: AppProps) {
             const path = pathForBuffer(bufferId);
             if (path !== undefined) writeLastViewedPath(path);
           }}
+          onFocusedBufferChange={(bufferId) =>
+            client?.setFocusedTimelineBuffer(bufferId)
+          }
           onTurnOnNotifications={turnOnNotifications}
           pathForBuffer={pathForBuffer}
           onSend={(bufferId, text) => {
