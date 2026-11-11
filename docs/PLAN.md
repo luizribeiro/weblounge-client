@@ -60,6 +60,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the command-registry second-source check precise for timeline protocol variants. The
+  system decoder's `nick`, `quit` and `topic` discriminants now have an exact per-file incidental
+  allowance without admitting command-name literals elsewhere.
 - [x] Keep confirmed own sends newer than a provisional cached row in the launch snapshot. A DM
   whose latest history is still loading now retains its safe cached facts while the newer committed
   preview and activity determine the next launch's first-paint content and order.

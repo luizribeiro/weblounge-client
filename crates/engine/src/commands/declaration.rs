@@ -221,6 +221,10 @@ mod tests {
                     "notice" | "part" | "quit" | "topic",
                 )
                 | (
+                    "app/src/engine/decodeTimelineSystem.ts",
+                    "nick" | "quit" | "topic",
+                )
+                | (
                     "app/src/features/conversation/message-size-estimate.ts",
                     "notice" | "topic",
                 )
