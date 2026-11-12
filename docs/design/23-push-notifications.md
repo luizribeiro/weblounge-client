@@ -928,7 +928,8 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
   definite outcome (no Web Push, no config, subscription unavailable, `Unsupported`, `Failed`,
   `RegisteredButNoDelivery`) means the page posts. While the outcome is still pending (subscription
   or registration in flight) the page doesn't post: a missed alert during startup beats a
-  duplicate.
+  duplicate. A push setup that throws counts as unavailable; one that never settles (a service
+  worker that never becomes ready) keeps the page quiet.
 - **Which messages.** The engine emits `NotifiableMessageReceived { buffer, message }` for a
   message that arrived live (not history, chathistory catch-up or a service-worker pushed
   message), was not a duplicate `msgid`, isn't own, counts as a mention (every DM, or a channel
@@ -937,7 +938,8 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
   lands, this follows the engine's nick rule, while Ergo's push follows its account rule.
 - **Not visible.** The page posts unless it is foreground (the `pageIsForeground` value behind
   `setVisibility` and the lease, with no new listener) and the buffer is one the shell shows. The
-  shell reports shown buffers as a set, so split view will report both panes. The event bypasses
+  page holds shown buffers as a set; today both shells report one buffer, and split view must
+  report every pane's buffer when it lands. The event bypasses
   the hidden page's render queue, which otherwise holds engine events until the page is visible.
 - **Dedupe and presentation.** One notification per `msgid` (a bounded per-tab set, on top of the
   engine's own `msgid` dedupe) and one per conversation: a new message closes the conversation's
@@ -951,8 +953,8 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
   for its conversation covers its server time, using the push path's read-marker rule. A read
   elsewhere while the page is hidden closes it once the page is visible again. Push notifications
   are unchanged.
-- **Permission prompt.** The prompt also shows when page notifications are possible but Web Push
-  isn't. Turning on then only calls `Notification.requestPermission()`; it never subscribes. The
+- **Permission prompt.** On a deployment with push configured, the prompt also shows when page
+  notifications are possible but Web Push isn't. Turning on then only calls `Notification.requestPermission()`; it never subscribes. The
   iOS standalone rule still applies when the prompt is for Web Push.
 - **Out of scope.** Invites, badge changes, notification settings beyond the engine defaults, and
   native Tauri notifications (decision 5).
