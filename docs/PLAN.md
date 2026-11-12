@@ -9,12 +9,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-2. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+2. Close conversations on phone: swipe-left plus a long-press sheet; Leave in the details sheet.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
-- Closing a DM doesn't persist the chat-list snapshot.
 - Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
 - 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
 
@@ -23,6 +22,12 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: shipped desktop conversation closing across the DM-row ×, context menu, command
+  palette and `/close`; channel menus confirm before sending PART, while DM closing marks read,
+  clears notifications, offers a six-second Undo and moves focus to the next surviving row. Closed
+  DMs now persist per device and reopen with an unread badge on new peer traffic. Focused engine/UI
+  coverage and the local-Ergo browser journey protect restart persistence, split-view-compatible
+  selection, keyboard access, native feel and the accepted light/dark presentation.
 - 2026-11-12: matched the desktop sidebar's compact rows, section typography, aligned sigils,
   badges and interaction states to the accepted close-conversations mockup, and added a reusable
   accessible context menu opened by right-click, Shift+F10 or Menu. Its registry-derived actions
@@ -156,6 +161,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Ship desktop conversation closing. Direct-message rows expose a hover/focus × and the
+  destructive context-menu action; channels expose a confirmed Leave action that sends PART.
+  Registry-derived command-palette and typed `/close` paths share the same close flow, and Menu or
+  Shift+F10 retain the sidebar's keyboard route. Closing a DM advances its read marker through the
+  newest message, closes covered notifications, retains its timeline for a six-second Undo and
+  selects the row below (or above when last). Snapshot tombstones survive restart, reject stale
+  discovery and yield to later peer traffic so the DM returns with its badge. Unit, engine and
+  local-Ergo browser coverage exercise every surface, PART, restart/reopen, native-feel checks and
+  light/dark captures under `screenshots/close/`.
 - [x] Restyle the desktop sidebar and add its first custom context menu. Compact row geometry,
   section-label typography, channel sigils, direct-message alignment, count/mention badges and
   hover, focus, active, unread and muted states now follow the accepted light/dark mockup while
