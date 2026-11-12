@@ -44,6 +44,7 @@ import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
+import { BufferSwitcher } from "../../features/switcher/BufferSwitcher";
 import {
   createReadDwell,
   newestCommittedMessageId,
@@ -131,6 +132,10 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
   const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
+  const [switcherOpen, setSwitcherOpen] = createSignal(false);
+  const [recentBufferIds, setRecentBufferIds] = createSignal<readonly number[]>(
+    [],
+  );
   const [drawer, setDrawer] = createSignal<"sidebar" | "members" | null>(null);
   const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
@@ -144,6 +149,15 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   const activeBufferId = createMemo(() => activeBuffer()?.id);
   createEffect(() => props.onFocusedBufferChange?.(activeBufferId()));
+  createEffect(() => {
+    const bufferId = activeBufferId();
+    if (bufferId === undefined) return;
+    setRecentBufferIds((current) =>
+      current[0] === bufferId
+        ? current
+        : [bufferId, ...current.filter((id) => id !== bufferId)],
+    );
+  });
   const activeComposerNotice = createMemo(
     () =>
       props.messageFailureNotices?.get(activeBufferId() ?? -1) ??
@@ -259,6 +273,7 @@ export function DesktopShell(props: DesktopShellProps) {
         if (drawer() === "sidebar") closeDrawer();
         else setDrawer("sidebar");
       },
+      "switcher.open": () => setSwitcherOpen(true),
     },
     platform.shortcutPlatform,
     props.commandSpecs ?? [],
@@ -543,6 +558,18 @@ export function DesktopShell(props: DesktopShellProps) {
             />
           );
         }}
+      </Show>
+      <Show when={switcherOpen()}>
+        <BufferSwitcher
+          buffers={props.buffers}
+          networks={props.networks}
+          onDismiss={() => setSwitcherOpen(false)}
+          onOpen={(bufferId) => {
+            setSwitcherOpen(false);
+            showBuffer(bufferId);
+          }}
+          recentBufferIds={recentBufferIds()}
+        />
       </Show>
       {drawer() === "sidebar" && !sidebarInline() && (
         <OverlayDrawer

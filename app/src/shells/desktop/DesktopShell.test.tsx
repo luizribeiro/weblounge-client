@@ -528,6 +528,48 @@ it("focuses the composer after buffer navigation and engine focus requests", asy
   );
 });
 
+it("opens, dismisses, and navigates with the buffer switcher", async () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel, otherChannel, direct]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #room" }),
+    ).toHaveFocus(),
+  );
+  const launcher = screen.getByRole("button", { name: "Jump to" });
+  launcher.focus();
+  fireEvent.click(launcher);
+  const firstInput = await screen.findByRole("combobox", { name: "Jump to" });
+  expect(firstInput).toHaveFocus();
+  fireEvent.keyDown(firstInput, { key: "Escape" });
+  await waitFor(() => expect(launcher).toHaveFocus());
+
+  fireEvent.keyDown(document, { ctrlKey: true, key: "k" });
+  const input = await screen.findByRole("combobox", { name: "Jump to" });
+  fireEvent.input(input, { target: { value: "oth" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #other" }),
+    ).toHaveFocus(),
+  );
+});
+
 it("routes printable chrome keys to the composer without hijacking controls", () => {
   render(() => (
     <DesktopShell
