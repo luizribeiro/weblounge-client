@@ -20,6 +20,7 @@ import { t } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
+import { MobileChannelDetails } from "./MobileChannelDetails";
 import { MobileChatActionSheet } from "./MobileChatActionSheet";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
@@ -105,13 +106,14 @@ export function MobileShell(props: MobileShellProps) {
     readonly invoker: HTMLButtonElement;
     readonly rowTop: number;
   }>();
-  const [closedConversation, setClosedConversation] = createSignal<{
-    readonly networkId: number;
-    readonly title: string;
-  }>();
+  const [detailsBufferId, setDetailsBufferId] = createSignal<number>();
   const [leaveConfirmation, setLeaveConfirmation] = createSignal<{
     readonly bufferId: number;
     readonly invoker?: HTMLElement | undefined;
+  }>();
+  const [closedConversation, setClosedConversation] = createSignal<{
+    readonly networkId: number;
+    readonly title: string;
   }>();
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
@@ -122,6 +124,9 @@ export function MobileShell(props: MobileShellProps) {
   });
   const actionSheetBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === chatActions()?.bufferId),
+  );
+  const detailsBuffer = createMemo(() =>
+    props.buffers.find((buffer) => buffer.id === detailsBufferId()),
   );
   const confirmationBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === leaveConfirmation()?.bufferId),
@@ -239,15 +244,6 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
-  const markRead = (buffer: BufferProjection) => {
-    const through = newestMessageIds().get(buffer.id);
-    if (through !== undefined) props.onMarkRead(buffer.id, through);
-  };
-  const dismissChatActions = () => {
-    const invoker = chatActions()?.invoker;
-    setChatActions(undefined);
-    queueMicrotask(() => invoker?.focus({ preventScroll: true }));
-  };
   const dismissCloseUndo = () => {
     if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
     closeUndoTimer = undefined;
@@ -274,6 +270,15 @@ export function MobileShell(props: MobileShellProps) {
     }
     return closeDirect(buffer);
   };
+  const markRead = (buffer: BufferProjection) => {
+    const through = newestMessageIds().get(buffer.id);
+    if (through !== undefined) props.onMarkRead(buffer.id, through);
+  };
+  const dismissChatActions = () => {
+    const invoker = chatActions()?.invoker;
+    setChatActions(undefined);
+    queueMicrotask(() => invoker?.focus({ preventScroll: true }));
+  };
   const undoClose = () => {
     const closed = closedConversation();
     if (closed === undefined) return;
@@ -289,6 +294,7 @@ export function MobileShell(props: MobileShellProps) {
     if (removal === undefined || removal === handledBufferRemoval) return;
     handledBufferRemoval = removal;
     if (chatActions()?.bufferId === removal.bufferId) setChatActions(undefined);
+    if (detailsBufferId() === removal.bufferId) setDetailsBufferId(undefined);
     if (leaveConfirmation()?.bufferId === removal.bufferId)
       setLeaveConfirmation(undefined);
     const active = stack().active;
@@ -350,6 +356,10 @@ export function MobileShell(props: MobileShellProps) {
   const requestBack = () => {
     if (chatActions() !== undefined) {
       dismissChatActions();
+      return;
+    }
+    if (detailsBufferId() !== undefined) {
+      setDetailsBufferId(undefined);
       return;
     }
     if (leaveConfirmation() !== undefined) {
@@ -712,9 +722,11 @@ export function MobileShell(props: MobileShellProps) {
               open(bufferId, false, currentScrollTop)
             }
             onOpenMembers={openMembers}
+            onOpenDetails={(bufferId) => setDetailsBufferId(bufferId)}
             onOpenDirect={props.onOpenDirect}
             onQuery={setQuery}
             onRequestChatActions={(buffer, rect, invoker) => {
+              setDetailsBufferId(undefined);
               setChatActions({
                 bufferId: buffer.id,
                 invoker,
@@ -755,6 +767,18 @@ export function MobileShell(props: MobileShellProps) {
             void requestClose(actionSheetBuffer() as BufferProjection);
           }}
           rowTop={chatActions()?.rowTop ?? 0}
+        />
+      )}
+      {detailsBuffer()?.kind === "channel" && (
+        <MobileChannelDetails
+          onDismiss={() => setDetailsBufferId(undefined)}
+          onLeave={() =>
+            setLeaveConfirmation({
+              bufferId: detailsBuffer()?.id ?? 0,
+            })
+          }
+          onMembers={() => openMembers(detailsBuffer()?.id ?? 0)}
+          title={detailsBuffer()?.title ?? ""}
         />
       )}
       {closedConversation() !== undefined && (

@@ -275,6 +275,20 @@ it("confirms channel Leave from the row sheet and chat details", async () => {
   ).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(send).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "#room" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show details for #room" }),
+  );
+  expect(
+    screen.getByRole("dialog", { name: "Details for #room" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Leave channel" }));
+  expect(
+    screen.getByRole("alertdialog", { name: "Leave #room?" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+  await waitFor(() => expect(send).toHaveBeenCalledWith(3, "/part"));
 });
 
 it("opens a deep link when its buffer resolves after mount", () => {
