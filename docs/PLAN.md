@@ -31,7 +31,8 @@ The single place a fresh session reads to know where the project stands. Update 
   one notification per `msgid` and conversation for the engine's live DMs and mentions in buffers
   that aren't on screen, opens the buffer on click and closes it once read. The prompt now asks for
   permission without Web Push. The local-Ergo journey stubs only the `Notification` members the
-  macOS wrapper's shim must provide.
+  macOS wrapper's shim must provide. Review fixes: a refused Web Lock falls back to posting from
+  every tab, and pending push delivery ends after 15 s so the page posts.
 - 2026-11-12: built phase 1 of the temporary macOS desktop wrapper (design 27): a Tauri 2 window
   on beta.weblounge.org with the macOS menu, close-to-hide, persisted geometry, a URL-based
   navigation policy (app hosts stay; other http/https/mailto open externally; other schemes are
