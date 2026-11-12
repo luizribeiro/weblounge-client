@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   BufferProjection,
   MessageProjection,
@@ -13,6 +13,7 @@ import type {
   PageNotification,
   PageNotificationOptions,
 } from "./page-notifier";
+import type { PostingTabLocks } from "./posting-tab-lock";
 
 const directBuffer: BufferProjection = {
   id: 7,
@@ -53,6 +54,7 @@ function harness(
     foreground: boolean;
     shown: ReadonlySet<number>;
     supported: boolean;
+    locks: PostingTabLocks;
   }> = {},
 ) {
   const shown: Shown[] = [];
@@ -65,7 +67,7 @@ function harness(
     openRoute: (route) => opened.push(route),
   };
   const notifications = new PageNotifications(context, {
-    locks: undefined,
+    locks: overrides.locks,
     notifications:
       overrides.supported === false
         ? undefined
@@ -116,6 +118,20 @@ describe("PageNotifications", () => {
     notifications.handle({ buffer: directBuffer, message: peerMessage });
 
     expect(shown).toEqual([]);
+  });
+
+  it("still posts when the platform refuses the posting-tab lock", async () => {
+    const { notifications, shown } = harness({
+      locks: {
+        request: () =>
+          Promise.reject(new DOMException("blocked", "SecurityError")),
+      },
+    });
+
+    await vi.waitFor(() => {
+      notifications.handle({ buffer: directBuffer, message: peerMessage });
+      expect(shown).toHaveLength(1);
+    });
   });
 
   it("ignores buffers of networks the page no longer knows", () => {

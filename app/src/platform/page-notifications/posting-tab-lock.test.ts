@@ -104,16 +104,14 @@ describe("PostingTabLock", () => {
     await vi.waitFor(() => expect(first.held).toBe(true));
   });
 
-  it("stops asking for the lock when the platform refuses it", async () => {
+  it("posts without an election when the platform refuses the lock", async () => {
     const request = vi.fn(() =>
       Promise.reject(new DOMException("blocked", "SecurityError")),
     );
     const tab = new PostingTabLock("page-notifier", { request });
 
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(tab.held).toBe(true));
+    tab.claim();
     expect(request).toHaveBeenCalledTimes(1);
-    expect(tab.held).toBe(false);
   });
 });

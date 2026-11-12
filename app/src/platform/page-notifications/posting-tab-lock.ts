@@ -17,7 +17,7 @@ interface LockRequest {
  */
 export class PostingTabLock {
   readonly #name: string;
-  readonly #locks: PostingTabLocks | undefined;
+  #locks: PostingTabLocks | undefined;
   #holder: LockRequest | undefined;
   #release: (() => void) | undefined;
   #queued: AbortController | undefined;
@@ -61,8 +61,11 @@ export class PostingTabLock {
       ?.request(this.#name, request, () => this.#hold(request))
       .then(
         () => true,
-        (error: unknown) =>
-          error instanceof DOMException && error.name === "AbortError",
+        (error: unknown) => {
+          if (isAbort(error)) return true;
+          this.#locks = undefined;
+          return false;
+        },
       )
       .then((released) => {
         if (request.steal === true) this.#claiming = false;
@@ -83,4 +86,8 @@ export class PostingTabLock {
       this.#release = resolve;
     });
   }
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
