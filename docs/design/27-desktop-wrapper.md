@@ -91,24 +91,42 @@ app's existing suites, and the wrapper gets:
   while hidden and relaunch to a visible window in its saved place, and confirm text editing
   shortcuts.
 
-## Phase 2: notifications while running
+## Phase 2: badge and notifications while running
 
-Luiz wants notifications while the app runs and none while it is quit (2026-11-12).
+Luiz wants notifications while the app runs and none while it is quit (2026-11-12). The work splits
+by where it can be built and tested: wrapper parts on the Mac, which alone runs the window; the web
+part on a Linux host, which alone runs the local-Ergo Playwright journeys.
 
-1. The web app ships design 23's page-posted path, which is designed but not built: with push
-   unavailable or denied and the app open, the page posts a `Notification` for buffers that are
-   not visible, deduplicated by `msgid`. It is a web feature with its own Playwright coverage and
-   also serves browsers without push.
-2. The wrapper supplies `window.Notification`, which WKWebView lacks, through the Tauri
-   notification plugin's Web Notification shim, delivering macOS notifications. A capability
-   grants `https://beta.weblounge.org` the notification plugin and nothing else; this is the only
-   exception to the page not reaching Tauri. Whether the shim forwards clicks (to open the
-   buffer) is verified before building; if not, a click only activates the app.
-3. Background throttling is disabled for the window so the engine worker keeps its connection
-   while hidden.
-4. The app menu gains an “Open at Login” toggle (design 23 decision 5).
+### Wrapper, no web deploy
 
-Close-to-hide plus Open at Login keep the app running, which covers what Luiz asked for.
+1. **Dock badge.** The page already calls `navigator.setAppBadge`/`clearAppBadge` with the mention
+   count (`app/src/platform/push/app-badge.ts`), guarded by existence; WKWebView lacks the Badging
+   API, so the call is a no-op today. The wrapper's initialization script defines both functions on
+   `navigator`, forwarding to the window's `set_badge_count` over IPC. A capability scoped to
+   `remote.urls: ["https://beta.weblounge.org/*"]` and the main window grants only
+   `core:window:allow-set-badge-count`. The badge is correct while the app runs and keeps its last
+   value when quit.
+2. **No background throttling.** The window uses `BackgroundThrottlingPolicy::Disabled` so the
+   engine worker keeps its connection while hidden.
+3. **Open at Login.** A checked item in the app menu, off by default, backed by the autostart
+   plugin from Rust only (design 23 decision 5).
+
+### Web app, deployed to beta
+
+4. Design 23's page-posted path, which is designed but not built: with push unavailable or denied
+   and the app open, the page posts a `Notification` for buffers that are not visible,
+   deduplicated by `msgid`. It is a web feature with its own Playwright coverage and also serves
+   browsers without push. The wrapper sees it only after a beta deploy.
+
+### Wrapper, after the deploy
+
+5. The wrapper supplies `window.Notification`, which WKWebView lacks, delivering macOS
+   notifications through the Tauri notification plugin, and the remote capability gains only the
+   permissions that needs. Whether a click can open the buffer is verified before building; if
+   not, a click only activates the app.
+
+The remote capability is the only path from the page to Tauri, and it grows one named permission
+at a time. Close-to-hide plus Open at Login keep the app running, which covers what Luiz asked for.
 
 ## Phase 3: seamless title bar
 
