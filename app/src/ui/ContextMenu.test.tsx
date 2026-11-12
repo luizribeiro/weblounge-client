@@ -31,7 +31,8 @@ describe("ContextMenu", () => {
     await waitFor(() => expect(items[0]).toHaveFocus());
     fireEvent.keyDown(items[0] as HTMLElement, { key: "ArrowUp" });
     expect(items[1]).toHaveFocus();
-    fireEvent.keyDown(items[1] as HTMLElement, { key: "Escape" });
+    invoker.focus();
+    fireEvent.keyDown(invoker, { key: "Escape" });
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(invoker).toHaveFocus();

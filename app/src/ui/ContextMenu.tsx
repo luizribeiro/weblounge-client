@@ -20,12 +20,24 @@ export function ContextMenu(props: ContextMenuProps) {
   let menu: HTMLDivElement | undefined;
 
   createEffect(() => {
-    if (props.request === undefined) return;
+    const request = props.request;
+    if (request === undefined) return;
     const dismiss = (event: PointerEvent) => {
       if (menu?.contains(event.target as Node) !== true) props.onDismiss();
     };
+    const dismissFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      props.onDismiss();
+      request.invoker.focus({ preventScroll: true });
+    };
     document.addEventListener("pointerdown", dismiss);
-    onCleanup(() => document.removeEventListener("pointerdown", dismiss));
+    document.addEventListener("keydown", dismissFromKeyboard, true);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", dismissFromKeyboard, true);
+    });
   });
 
   const dismiss = (restoreFocus: boolean) => {
@@ -63,9 +75,6 @@ export function ContextMenu(props: ContextMenuProps) {
               );
               const item = items()[index];
               if (item !== undefined) select(item);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              dismiss(true);
             }
           }}
           ref={(element) => {
