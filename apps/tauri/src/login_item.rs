@@ -2,6 +2,8 @@
 
 use tauri_plugin_autostart::{AutoLaunchManager, MacosLauncher};
 
+use crate::launch::HIDDEN_ARG;
+
 #[derive(Debug, thiserror::Error)]
 #[error("could not change Open at Login: {0}")]
 pub struct LoginItemError(#[from] tauri_plugin_autostart::Error);
@@ -28,6 +30,7 @@ impl LoginItem for AutoLaunchManager {
 pub fn plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri_plugin_autostart::Builder::new()
         .macos_launcher(MacosLauncher::LaunchAgent)
+        .arg(HIDDEN_ARG)
         .build()
 }
 

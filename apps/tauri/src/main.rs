@@ -1,5 +1,6 @@
 //! Temporary macOS shell around the hosted weblounge web app.
 
+mod launch;
 mod login_item;
 mod menu;
 mod navigation;
@@ -41,7 +42,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn install(app: &App) -> Result<(), SetupError> {
     app.set_menu(menu::build(app.handle())?)?;
-    window::create(app.handle())?;
+    window::create(app.handle(), !launch::starts_hidden(std::env::args()))?;
     Ok(())
 }
 

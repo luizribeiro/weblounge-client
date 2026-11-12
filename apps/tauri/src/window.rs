@@ -32,7 +32,7 @@ pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
-pub fn create(app: &AppHandle) -> Result<(), WindowError> {
+pub fn create(app: &AppHandle, show_on_launch: bool) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
@@ -56,7 +56,9 @@ pub fn create(app: &AppHandle) -> Result<(), WindowError> {
         })
         .build()?;
     hide_instead_of_closing(&window);
-    show(app);
+    if show_on_launch {
+        show(app);
+    }
     Ok(())
 }
 
