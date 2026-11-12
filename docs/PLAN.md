@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: packaged the desktop app as a drag-to-install DMG (`nix build .#desktop-dmg`), an
+  HFS+ hybrid built in the sandbox around the unchanged signed bundle; strict codesign passes on a
+  copy taken out of the mounted image.
 - 2026-11-13: built desktop wrapper phase 2 (design 27): a Dock badge through an injected
   `navigator.setAppBadge`, an unthrottled hidden window, Open at Login (starting hidden), and a
   native `window.Notification` over `UNUserNotificationCenter` (tag replacement, ordered
