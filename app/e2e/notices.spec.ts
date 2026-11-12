@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { screenshotWithInter } from "./inter-font";
+import { expectInterFont } from "./inter-font";
 import { IrcClient } from "./irc-client";
 
 test.skip(
@@ -90,6 +90,7 @@ test("routes server notices, services, and WALLOPS into the server buffer", asyn
     process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
     "requires the controllable socket forwarder",
   );
+  const phone = testInfo.project.name.includes("phone");
   const suffix = Date.now().toString(36).slice(-6);
   const account = `ntserver${suffix}`;
   const channel = `#notice-server-${suffix}`;
@@ -100,9 +101,10 @@ test("routes server notices, services, and WALLOPS into the server buffer", asyn
   const serverNotice = `Global notice: services restart ${suffix}`;
   const serviceNotice = `You are now identified ${suffix}`;
   const wallops = `WALLOPS: rotating the TLS certificate ${suffix}`;
-  await inject(`:offline.test NOTICE ${account} :${serverNotice}`);
+  const serverName = "long-server-name.offline.test";
+  await inject(`:${serverName} NOTICE ${account} :${serverNotice}`);
   await inject(`:NickServ!service@services.test NOTICE $* :${serviceNotice}`);
-  await inject(`:offline.test WALLOPS :${wallops}`);
+  await inject(`:${serverName} WALLOPS :${wallops}`);
 
   const service = noticeRow(page, serviceNotice);
   const server = noticeRow(page, serverNotice);
@@ -112,9 +114,20 @@ test("routes server notices, services, and WALLOPS into the server buffer", asyn
   for (const row of [server, wallopsRow]) {
     await expect(row).toHaveAttribute("data-notice-source", "server");
     await expect(row.getByRole("img", { name: "Server notice" })).toBeVisible();
+    if (!phone) {
+      const sender = row.locator(`[title="${serverName}"]`);
+      await expect(sender).toHaveCSS("text-overflow", "ellipsis");
+      await expect
+        .poll(() =>
+          sender.evaluate(
+            (element) => element.scrollWidth > element.clientWidth,
+          ),
+        )
+        .toBe(true);
+    }
   }
   await expect(bufferRow(page, "NickServ")).toHaveCount(0);
-  await captureScreenshots(page, testInfo.project.name.includes("phone"));
+  await captureScreenshots(page, phone);
 });
 
 async function isolatedStartUrl(
@@ -193,11 +206,27 @@ async function captureScreenshots(page: Page, phone: boolean): Promise<void> {
     await page.setViewportSize(
       phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
     );
-    await expect(page.getByText(/rotating the TLS certificate/u)).toBeVisible();
-    await screenshotWithInter(page.locator("[data-app-root]"), {
+    await expectInterFont(page.locator("[data-app-root]"));
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expectNoticeTranscriptReady(page);
+    await page.screenshot({
       path: path.join(directory, `notice-${name}-${scheme}.png`),
     });
   }
+}
+
+async function expectNoticeTranscriptReady(page: Page): Promise<void> {
+  const transcript = page.getByRole("list", { name: "Messages" });
+  await expect(transcript).toBeVisible();
+  const notices = transcript.locator(
+    '[data-message-row][data-irc-notice="true"]',
+  );
+  await expect(notices).toHaveCount(3);
+  await expect(notices.filter({ hasText: "Global notice" })).toBeVisible();
+  await expect(
+    notices.filter({ hasText: "You are now identified" }),
+  ).toBeVisible();
+  await expect(notices.filter({ hasText: "WALLOPS" })).toBeVisible();
 }
 
 async function inject(line: string): Promise<void> {
