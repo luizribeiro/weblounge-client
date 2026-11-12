@@ -1,12 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
+import { injectedIrcFrame } from "./socket-forwarder-inject.mjs";
 import {
   IrcTimeRewriter,
   WebSocketIrcTimeRewriter,
 } from "./socket-forwarder-rewrite.mjs";
 
 const rules = [{ contains: "armed message", time: "2026-01-02T03:04:05.678Z" }];
+
+test("encodes injected IRC lines as unmasked WebSocket text frames", () => {
+  const frame = injectedIrcFrame(":irc.test WALLOPS :maintenance");
+
+  assert.equal(frame[0], 0x81);
+  assert.equal(frame[1] & 0x80, 0);
+  assert.equal(frameText(frame), ":irc.test WALLOPS :maintenance");
+});
+
+test("encodes injected lines for a negotiated binary IRC connection", () => {
+  const frame = injectedIrcFrame(":irc.test WALLOPS :maintenance", 0x82);
+
+  assert.equal(frame[0], 0x82);
+  assert.equal(frame[1] & 0x80, 0);
+  assert.equal(frameText(frame), ":irc.test WALLOPS :maintenance");
+});
 
 test("passes traffic through while no rewrite is armed", () => {
   const rewriter = new IrcTimeRewriter([]);

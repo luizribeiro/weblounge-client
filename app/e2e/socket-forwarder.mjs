@@ -1,5 +1,6 @@
 import http from "node:http";
 import net from "node:net";
+import { injectedIrcFrame } from "./socket-forwarder-inject.mjs";
 import { WebSocketIrcTimeRewriter } from "./socket-forwarder-rewrite.mjs";
 
 const listenPort = Number(process.env.WEBLOUNGE_FORWARDER_PORT ?? "8066");
@@ -26,6 +27,8 @@ const server = net.createServer((client) => {
     upstream: undefined,
     silent: false,
     dropIncomingContaining: undefined,
+    incomingHandshake: Buffer.alloc(0),
+    injectedOpcode: 0x81,
     incomingTimeRewriter: new WebSocketIrcTimeRewriter(incomingTimeRewrites),
     recentIncoming: Buffer.alloc(0),
   };
@@ -38,6 +41,7 @@ const server = net.createServer((client) => {
     if (!connection.silent) connection.upstream?.write(data);
   });
   upstream.on("data", (data) => {
+    observeIncomingProtocol(connection, data);
     const target = connection.dropIncomingContaining;
     if (target !== undefined) {
       const candidate = Buffer.concat([connection.recentIncoming, data]);
@@ -96,6 +100,25 @@ const control = http.createServer((request, response) => {
     response.end("resumed");
     return;
   }
+  if (request.method === "POST" && request.url === "/inject") {
+    readRequestBody(request, response, (line) => {
+      if (line.length === 0) {
+        response.writeHead(400).end("missing IRC line");
+        return;
+      }
+      try {
+        for (const connection of connections)
+          connection.client.write(
+            injectedIrcFrame(line, connection.injectedOpcode),
+          );
+      } catch (error) {
+        response.writeHead(413).end(String(error));
+        return;
+      }
+      response.end(`injected into ${connections.size} connection(s)`);
+    });
+    return;
+  }
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   if (request.method === "POST" && url.pathname === "/drop-incoming") {
     const contains = url.searchParams.get("contains");
@@ -138,6 +161,36 @@ function closeConnection(connection) {
   if (!connections.delete(connection)) return;
   connection.client.destroy();
   connection.upstream?.destroy();
+}
+
+function observeIncomingProtocol(connection, data) {
+  if (connection.incomingHandshake === undefined) return;
+  const handshake = Buffer.concat([connection.incomingHandshake, data]);
+  const end = handshake.indexOf("\r\n\r\n");
+  if (end < 0) {
+    connection.incomingHandshake = handshake;
+    return;
+  }
+  const headers = handshake.subarray(0, end).toString().toLowerCase();
+  if (headers.includes("sec-websocket-protocol: binary.ircv3.net"))
+    connection.injectedOpcode = 0x82;
+  connection.incomingHandshake = undefined;
+}
+
+function readRequestBody(request, response, receive) {
+  const chunks = [];
+  let length = 0;
+  request.on("data", (chunk) => {
+    length += chunk.length;
+    if (length <= 65_535) chunks.push(chunk);
+  });
+  request.on("end", () => {
+    if (length > 65_535) {
+      response.writeHead(413).end("IRC line is too long");
+      return;
+    }
+    receive(Buffer.concat(chunks).toString());
+  });
 }
 
 server.listen(listenPort, "127.0.0.1");
