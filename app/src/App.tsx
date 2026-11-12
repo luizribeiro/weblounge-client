@@ -1051,6 +1051,8 @@ export function App(props: AppProps) {
       }
     } catch (error: unknown) {
       if (pushStartup === attempt) pushStartup = undefined;
+      if (generation === pushSetupGeneration)
+        setPushSubscription("unavailable");
       throw error;
     }
   }
@@ -1065,6 +1067,7 @@ export function App(props: AppProps) {
       setPushSubscription("unavailable");
       return;
     }
+    setPushSubscription("pending");
     await waitForProductionServiceWorkerUpdate();
     const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
