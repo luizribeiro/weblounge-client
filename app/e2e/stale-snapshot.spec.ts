@@ -85,6 +85,46 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("drops a beta transcript gap that has no restored timeline range", async ({
+    baseURL,
+    page,
+  }) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const nick = `stuck-gap-${Date.now().toString(36)}`;
+    let forwarderDropped = false;
+    try {
+      await page.goto("/config.json");
+      await seedUnreadDirectSnapshot(
+        page,
+        baseURL,
+        nick,
+        `${nick}: cached message`,
+        [],
+        [],
+        1,
+        1_800_000_000_000,
+        7,
+        100,
+      );
+      await useDedicatedWorker(page);
+      await controlForwarder("drop");
+      forwarderDropped = true;
+
+      await page.goto(startUrl());
+
+      await expect(bufferRow(page, nick)).toHaveAccessibleName(
+        new RegExp(`^${nick}(?:$|, 1 unread, including mentions$)`, "u"),
+      );
+    } finally {
+      if (forwarderDropped) await controlForwarder("restore");
+    }
+  });
+
   test("first paint retains an own send after immediate relaunch", async ({
     baseURL,
     browser,
@@ -1308,6 +1348,8 @@ async function seedUnreadDirectSnapshot(
   backgroundDirects: readonly string[],
   count = 1,
   lastActivityMs = 1_800_000_000_000,
+  schema = 6,
+  gapUntil?: number,
 ): Promise<void> {
   const endpoint = new URL("/socket", baseURL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
@@ -1330,7 +1372,7 @@ async function seedUnreadDirectSnapshot(
         });
       },
       {
-        schema: 6,
+        schema,
         fingerprint,
         rows: [
           {
@@ -1342,7 +1384,11 @@ async function seedUnreadDirectSnapshot(
               msgid: `cached-${nick}-${index}`,
               time: index + 1,
             })),
-            ...(count > 100 ? { gap_until: 100 } : {}),
+            ...(gapUntil !== undefined
+              ? { gap_until: gapUntil }
+              : count > 100
+                ? { gap_until: 100 }
+                : {}),
             preview,
           },
           ...backgroundDirects.map((backgroundNick, index) => ({

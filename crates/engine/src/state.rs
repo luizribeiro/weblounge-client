@@ -1524,9 +1524,6 @@ impl NetworkModel {
             }),
         });
         buffer.timeline.sort_by_key(|record| record.order);
-        buffer
-            .read_facts
-            .merge_gap_until(ServerTimeMs::new(merged_to));
         derive_read_projection(buffer);
         self.dirty_timelines.insert(buffer_id);
         Some(())
@@ -1646,6 +1643,7 @@ impl NetworkModel {
             )
         });
         if buffer.timeline.len() != previous {
+            derive_read_projection(buffer);
             self.dirty_timelines.insert(buffer_id);
         }
     }
@@ -3791,6 +3789,13 @@ impl NetworkModel {
             buffer
                 .emitted_timeline
                 .retain(|item| !evicted.contains(&item.id));
+            let previous_unread = buffer.projection.unread;
+            derive_read_projection(buffer);
+            if buffer.projection.unread != previous_unread {
+                output.push(EngineToUi::BufferUpdated {
+                    buffer: buffer.projection.clone(),
+                });
+            }
             released.extend(dedup);
             released_system.extend(system_dedup);
         }
@@ -4022,13 +4027,43 @@ fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.read_at_ms = mark;
     derive_chat_projection(buffer);
     let unread = unread_count(&buffer.read_facts);
-    buffer.projection.unread = if has_unread_gap(&buffer.read_facts) {
-        u64::try_from(unread.max(100)).unwrap_or(u64::MAX)
-    } else {
-        u64::try_from(unread).unwrap_or(u64::MAX)
-    };
+    buffer.projection.unread =
+        if has_unread_gap(&buffer.read_facts) || has_unread_transcript_gap(buffer) {
+            u64::try_from(unread.max(100)).unwrap_or(u64::MAX)
+        } else {
+            u64::try_from(unread).unwrap_or(u64::MAX)
+        };
     buffer.projection.mentions =
         u64::try_from(mention_count(&buffer.read_facts, false)).unwrap_or(u64::MAX);
+}
+
+fn has_unread_transcript_gap(buffer: &BufferState) -> bool {
+    let newest = latest_real_message(buffer)
+        .map(message_time)
+        .into_iter()
+        .chain(
+            buffer
+                .newest
+                .as_ref()
+                .map(|cursor| time_millis(cursor.server_time)),
+        )
+        .max();
+    let Some(newest) = newest else {
+        return false;
+    };
+    buffer
+        .timeline
+        .iter()
+        .filter_map(|record| match &record.body {
+            RecordBody::Gap(gap) => Some(gap.to_ms.min(newest)),
+            RecordBody::Chat(_) | RecordBody::Fold(_) | RecordBody::Line(_) => None,
+        })
+        .any(|gap_until| {
+            buffer
+                .read_facts
+                .mark()
+                .is_none_or(|mark| gap_until > mark.value())
+        })
 }
 
 fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStub> {
@@ -4567,8 +4602,8 @@ mod tests {
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{
-            AppBadgeConversation, BadgeCount, ConversationKind, Divider, MessageStub, ServerTimeMs,
-            app_badge_count, conversation_badge, divider,
+            AppBadgeConversation, BadgeCount, ConversationKind, MessageStub, ServerTimeMs,
+            app_badge_count, conversation_badge,
         },
         timeline::{
             FixedOffsetCalendar, ItemBody, LocalDay, ModeMeaning, ModeProjection, RecordBody,
@@ -4973,11 +5008,13 @@ mod tests {
         );
         for buffer_id in [channel_id, direct_id] {
             let facts = &model.buffers[&buffer_id].read_facts;
-            assert_eq!(
-                conversation_badge(facts, false).map(|badge| badge.count),
-                Some(BadgeCount::MoreThan99)
+            assert_eq!(facts.gap_until(), None);
+            assert!(
+                model.buffers[&buffer_id]
+                    .timeline
+                    .iter()
+                    .any(|record| matches!(record.body, RecordBody::Gap(_)))
             );
-            assert_eq!(divider(facts, facts.mark()), Some(Divider::AtTop));
         }
     }
 
@@ -5027,6 +5064,107 @@ mod tests {
     }
 
     #[test]
+    fn covering_history_clears_the_gap_badge_and_restores_the_exact_count() {
+        let (mut model, state, _channel_id, direct_id) = model_with_gap_badges();
+        let conversation = papo::Conversation::Private(nick_name(&state, "alice"));
+        model.record_gap(direct_id, 15, 35).expect("gap");
+        assert_eq!(model.buffers[&direct_id].projection.unread, 100);
+        model.buffers.get_mut(&direct_id).expect("direct").history = HistoryState::LoadingOlder {
+            oldest: papo::HistoryReference::from(system_time_from_millis(40)),
+        };
+
+        model
+            .finish_history(
+                &conversation,
+                Some(papo::HistoryReference::from(system_time_from_millis(10))),
+                Some(10),
+                Some(HistoryCursor::new(Some("covered-gap".into()), 40)),
+                2,
+                true,
+            )
+            .expect("covering page finishes");
+
+        let buffer = &model.buffers[&direct_id];
+        assert!(
+            buffer
+                .timeline
+                .iter()
+                .all(|record| !matches!(record.body, RecordBody::Gap(_)))
+        );
+        assert_eq!(buffer.projection.unread, 2);
+    }
+
+    #[test]
+    fn reading_the_newest_message_clears_a_reconnect_gap_ending_later() {
+        let (mut model, _state, _channel_id, direct_id) = model_with_gap_badges();
+        model
+            .record_gap(direct_id, 100, 200)
+            .expect("reconnect gap");
+        assert_eq!(model.buffers[&direct_id].projection.unread, 100);
+        let newest_id = model.buffers[&direct_id]
+            .timeline
+            .iter()
+            .rev()
+            .find_map(chat_projection)
+            .expect("newest message")
+            .id;
+        let advance = model
+            .request_mark_read(direct_id, newest_id)
+            .expect("newest message can be read");
+
+        model.advance_read(direct_id, advance.time, false);
+
+        assert_eq!(model.buffers[&direct_id].projection.unread, 0);
+    }
+
+    #[test]
+    fn beta_snapshot_gap_without_a_timeline_range_does_not_pin_the_badge() {
+        let snapshot = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(20),
+                preview: Some("alice: hello".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("alice-20".into()),
+                    server_time_ms: 20,
+                }),
+                read_at_ms: Some(10),
+                raw_read_at_ms: Some(10),
+                pending_read_at_ms: None,
+                stubs: vec![MessageStub {
+                    msgid: "alice-20".into(),
+                    time: ServerTimeMs::new(20),
+                    provisional_time: None,
+                    mention: true,
+                }],
+                gap_until: Some(ServerTimeMs::new(200)),
+                peer_pin: None,
+            }],
+        );
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&snapshot.encode().expect("snapshot encodes"))
+                .expect("snapshot json");
+        value["schema"] = 7.into();
+        let restored = ChatListSnapshot::decode(
+            &serde_json::to_vec(&value).expect("beta snapshot encodes"),
+            "network",
+        )
+        .expect("beta snapshot migrates");
+        let (mut model, state) = model(10);
+
+        model.restore_chat_list(restored);
+
+        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        let buffer = &model.buffers[&buffer_id];
+        assert_eq!(buffer.read_facts.gap_until(), None);
+        assert_eq!(buffer.projection.unread, 1);
+    }
+
+    #[test]
     fn covered_lag_refetch_leaves_badges_exact() {
         let (mut model, state, channel_id, direct_id) = model_with_gap_badges();
         let conversation = papo::Conversation::Channel(channel_name(&state, "#room"));
@@ -5047,7 +5185,7 @@ mod tests {
     }
 
     #[test]
-    fn record_gap_merges_touching_ranges_and_updates_read_facts() {
+    fn record_gap_merges_touching_ranges_without_duplicating_read_facts() {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel), None, None);
@@ -5066,11 +5204,8 @@ mod tests {
         assert_eq!(gaps.len(), 2);
         assert_eq!((gaps[0].from_ms, gaps[0].to_ms), (10, 30));
         assert_eq!((gaps[1].from_ms, gaps[1].to_ms), (40, 50));
-        assert_eq!(
-            model.buffers[&buffer_id].read_facts.gap_until(),
-            Some(ServerTimeMs::new(50))
-        );
-        assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
+        assert_eq!(model.buffers[&buffer_id].read_facts.gap_until(), None);
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 0);
     }
 
     #[test]
@@ -6428,7 +6563,7 @@ mod tests {
             .expect("capped refresh finishes");
         assert_eq!(
             model.buffers[&buffer_id].read_facts.gap_until(),
-            Some(ServerTimeMs::new(299))
+            Some(ServerTimeMs::new(103))
         );
         assert!(take_changed_items(&mut model).iter().any(|item| matches!(
             item.body,
