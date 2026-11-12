@@ -913,6 +913,56 @@ and close only messages at or before each engine marker, even when the same conv
 unread messages. Opening or foregrounding the app explicitly repeats that serialized replacement.
 This is the correction path on iOS, where production intentionally drops normal-urgency controls.
 
+### Page-posted notifications (addendum, 2026-11-12)
+
+The table in "One notification source per device" gives the page a role when push can't deliver.
+This addendum fixes how. It also serves the macOS wrapper (design 27, phase 2), whose WKWebView
+has no service worker or `PushManager` and will gain a `window.Notification` shim.
+
+- **Capability, not user agent.** Page notifications are possible when `window.Notification`
+  exists and `Notification.permission === "granted"`. Web Push is possible when `PushManager` and
+  `navigator.serviceWorker` also exist (`supportsWebPush`).
+- **Post or not, per network.** Push delivers for a network when Web Push is possible, push is
+  configured, this device's subscription is ready, and the engine reports `Registered` for that
+  network. Then the page never posts: the relay lease already suppresses duplicates. Any other
+  definite outcome (no Web Push, no config, subscription unavailable, `Unsupported`, `Failed`,
+  `RegisteredButNoDelivery`) means the page posts. While the outcome is still pending (subscription
+  or registration in flight) the page doesn't post: a missed alert during startup beats a
+  duplicate.
+- **Which messages.** The engine emits `NotifiableMessageReceived { buffer, message }` for a
+  message that arrived live (not history, chathistory catch-up or a service-worker pushed
+  message), was not a duplicate `msgid`, isn't own, counts as a mention (every DM, or a channel
+  line matching the engine's highlight rule: the same fact behind mention badges and the app
+  badge) and is unread on insert. The page never matches mentions itself. Until `notify-rules`
+  lands, this follows the engine's nick rule, while Ergo's push follows its account rule.
+- **Not visible.** The page posts unless it is foreground (the `pageIsForeground` value behind
+  `setVisibility` and the lease, with no new listener) and the buffer is one the shell shows. The
+  shell reports shown buffers as a set, so split view will report both panes. The event bypasses
+  the hidden page's render queue, which otherwise holds engine events until the page is visible.
+- **Dedupe and presentation.** One notification per `msgid` (a bounded per-tab set, on top of the
+  engine's own `msgid` dedupe) and one per conversation: a new message closes the conversation's
+  previous page notification. Title, body, tag and the `· N new messages` suffix come from the
+  push path's formatter; the count is the engine's buffer `mentions`. Across tabs, only the most
+  recently foregrounded tab posts: it takes a Web Lock with `steal`, and other tabs queue for it.
+- **Click.** `onclick` on the page's own `Notification` focuses the window and feeds the existing
+  `open-route` handling. A shim can only forward clicks to the instance, so the service worker is
+  not involved.
+- **Close on read.** The page keeps its notifications and closes one when the engine's read marker
+  for its conversation covers its server time, using the push path's read-marker rule. A read
+  elsewhere while the page is hidden closes it once the page is visible again. Push notifications
+  are unchanged.
+- **Permission prompt.** The prompt also shows when page notifications are possible but Web Push
+  isn't. Turning on then only calls `Notification.requestPermission()`; it never subscribes. The
+  iOS standalone rule still applies when the prompt is for Web Push.
+- **Out of scope.** Invites, badge changes, notification settings beyond the engine defaults, and
+  native Tauri notifications (decision 5).
+- **Testing.** Unit tests cover the post decision, dedupe, the tab election and close-on-read.
+  Engine tests cover which messages emit the event. A Playwright journey against local Ergo
+  removes `serviceWorker` and `PushManager` and stubs `Notification` with only the members the
+  page uses: a DM and a mention in a hidden buffer notify once; the shown buffer, own messages,
+  plain chatter and history don't; a click opens the buffer; reading closes it; the prompt grants
+  without a service worker. With push enabled the page posts nothing.
+
 ## Rollout
 
 - **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups
@@ -954,7 +1004,8 @@ migration remain a v1 prerequisite above.
 
 | Failure | Behaviour |
 |---|---|
-| permission denied or dismissed | No push; the page notifies while open; status says "off in system settings". Never re-prompt automatically. |
+| permission denied or prompt dismissed | Neither push nor page notifications: on the web they share one permission. Status says "off in system settings". Never re-prompt automatically. |
+| push unavailable, permission granted | No push; the page notifies while open (see "Page-posted notifications"). |
 | iOS subscription revoked | Detected at launch (`getSubscription()` null or changed). Re-subscribe silently if still permitted and re-register every home with new routes; else show the status. |
 | home refuses (`MAX_REGISTRATIONS`, `FORBIDDEN`, no account, Tor) | `PushRegistration::Failed` in network status. Limit drains relay-known dead endpoints once; invalid parameters rotate once; forbidden retires the route; temporary failures keep it for backoff. |
 | soju's 25-subscription cap | soju sends it as `INTERNAL_ERROR`, indistinguishable from other errors, so the engine counts its own registrations and reports `RegistrationLimit` at 25. |
