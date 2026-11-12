@@ -7,17 +7,22 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import type { HistoryDirection } from "../../engine/protocol";
+import type { BufferProjection, HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import {
+  newestCommittedMessageId,
+  newestCommittedTimelineMessageId,
+} from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
 import { recordGestureNotStarted } from "../../platform/gesture-debug";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
+import { MobileChatActionSheet } from "./MobileChatActionSheet";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
-import type { ChatFilter } from "./mobile-chats";
+import { type ChatFilter, networkLabel } from "./mobile-chats";
 import {
   createMobileStack,
   finishTransition,
@@ -93,6 +98,11 @@ export function MobileShell(props: MobileShellProps) {
   const [memberOpenProgress, setMemberOpenProgress] = createSignal<number>();
   const [memberOpenReturning, setMemberOpenReturning] = createSignal(false);
   const [drawerHistoryClosing, setDrawerHistoryClosing] = createSignal(false);
+  const [chatActions, setChatActions] = createSignal<{
+    readonly bufferId: number;
+    readonly invoker: HTMLButtonElement;
+    readonly rowTop: number;
+  }>();
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
@@ -100,6 +110,9 @@ export function MobileShell(props: MobileShellProps) {
     const current = props.memberWindows?.get(memberViewId);
     return current?.buffer_id === drawerBufferId() ? current : undefined;
   });
+  const actionSheetBuffer = createMemo(() =>
+    props.buffers.find((buffer) => buffer.id === chatActions()?.bufferId),
+  );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let acceptedInitialBuffer = initialBufferId !== undefined;
   let memberOpenBufferId: number | undefined;
@@ -113,6 +126,19 @@ export function MobileShell(props: MobileShellProps) {
   let chatsStable = true;
   let returnScrollTop = 0;
   const requestedHistory = new Set<number>();
+  const newestMessageIds = createMemo(
+    () =>
+      new Map(
+        props.buffers.map((buffer) => {
+          const timeline = props.timelines?.get(buffer.id);
+          const newest =
+            timeline === undefined
+              ? newestCommittedMessageId(props.messages.get(buffer.id) ?? [])
+              : newestCommittedTimelineMessageId(timeline.items);
+          return [buffer.id, newest] as const;
+        }),
+      ),
+  );
   createEffect(() => {
     const active = stack().active;
     props.onFocusedBufferChange?.(
@@ -199,11 +225,21 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
+  const markRead = (buffer: BufferProjection) => {
+    const through = newestMessageIds().get(buffer.id);
+    if (through !== undefined) props.onMarkRead(buffer.id, through);
+  };
+  const dismissChatActions = () => {
+    const invoker = chatActions()?.invoker;
+    setChatActions(undefined);
+    queueMicrotask(() => invoker?.focus({ preventScroll: true }));
+  };
   let handledBufferRemoval: MobileShellProps["bufferRemoval"];
   createEffect(() => {
     const removal = props.bufferRemoval;
     if (removal === undefined || removal === handledBufferRemoval) return;
     handledBufferRemoval = removal;
+    if (chatActions()?.bufferId === removal.bufferId) setChatActions(undefined);
     const active = stack().active;
     if (active.kind === "chat" && active.bufferId === removal.bufferId) {
       setDrawerBufferId(undefined);
@@ -261,6 +297,10 @@ export function MobileShell(props: MobileShellProps) {
     }
   };
   const requestBack = () => {
+    if (chatActions() !== undefined) {
+      dismissChatActions();
+      return;
+    }
     if (drawerBufferId() !== undefined) {
       setDrawerHistoryClosing(true);
       return;
@@ -331,7 +371,9 @@ export function MobileShell(props: MobileShellProps) {
     const selection = window.getSelection();
     const excluded =
       (selection !== null && !selection.isCollapsed) ||
-      target.closest("input, textarea, [data-horizontal-scroll]") !== null;
+      target.closest(
+        "input, textarea, [data-horizontal-scroll], [data-mobile-sheet]",
+      ) !== null;
     const currentSwipe = swipe();
     const canStartSwipe =
       event.clientX <= swipeBackActivationWidth &&
@@ -609,6 +651,7 @@ export function MobileShell(props: MobileShellProps) {
             onBack={requestBack}
             onFilter={setFilter}
             onLoadHistory={requestHistoryOnce}
+            onMarkChatRead={markRead}
             onMarkRead={props.onMarkRead}
             onOpen={(bufferId, currentScrollTop) =>
               open(bufferId, false, currentScrollTop)
@@ -616,6 +659,13 @@ export function MobileShell(props: MobileShellProps) {
             onOpenMembers={openMembers}
             onOpenDirect={props.onOpenDirect}
             onQuery={setQuery}
+            onRequestChatActions={(buffer, rect, invoker) => {
+              setChatActions({
+                bufferId: buffer.id,
+                invoker,
+                rowTop: rect.top,
+              });
+            }}
             onRequestCompletion={props.onRequestCompletion}
             onRetryNetwork={props.onRetryNetwork}
             onRetry={props.onRetry}
@@ -636,6 +686,19 @@ export function MobileShell(props: MobileShellProps) {
           />
         )}
       </For>
+      {actionSheetBuffer() !== undefined && chatActions() !== undefined && (
+        <MobileChatActionSheet
+          buffer={actionSheetBuffer() as BufferProjection}
+          networkLabel={networkLabel(
+            props.networks,
+            actionSheetBuffer()?.network_id ?? 0,
+          )}
+          onDismiss={dismissChatActions}
+          onMarkRead={() => markRead(actionSheetBuffer() as BufferProjection)}
+          onRequestClose={dismissChatActions}
+          rowTop={chatActions()?.rowTop ?? 0}
+        />
+      )}
       {drawerBuffer() !== undefined && (
         <MobileMemberDrawer
           bufferTitle={drawerBuffer()?.title ?? ""}

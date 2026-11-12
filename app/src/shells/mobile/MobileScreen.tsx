@@ -76,6 +76,14 @@ interface MobileScreenProps extends MobileShellData {
   readonly onBack: () => void;
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
+  readonly onMarkChatRead?: ((buffer: BufferProjection) => void) | undefined;
+  readonly onRequestChatActions?:
+    | ((
+        buffer: BufferProjection,
+        rect: DOMRect,
+        invoker: HTMLButtonElement,
+      ) => void)
+    | undefined;
   readonly onOpenDetails?: ((bufferId: number) => void) | undefined;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
@@ -136,8 +144,10 @@ export function MobileScreen(props: MobileScreenProps) {
           notificationPromptVisible={props.notificationPromptVisible}
           onDismissNotificationPrompt={props.onDismissNotificationPrompt}
           onFilter={props.onFilter}
+          onMarkRead={props.onMarkChatRead}
           onOpen={props.onOpen}
           onQuery={props.onQuery}
+          onRequestActions={props.onRequestChatActions}
           onRetryNetwork={props.onRetryNetwork}
           onTurnOnNotifications={props.onTurnOnNotifications}
           showConnectionError={!props.retained}
