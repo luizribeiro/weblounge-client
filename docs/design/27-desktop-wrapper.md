@@ -37,8 +37,9 @@ with its own lockfile, so the root workspace and Linux CI never resolve Tauri's 
 - A macOS app icon: the existing felt-and-paper mark that `app/scripts/generate-icons.mjs`
   renders for the PWA, drawn on Apple's rounded-square icon grid and bundled as `.icns`. The
   generator stays the single source for every platform icon.
-- One window titled “weblounge”, with a native title bar, a sensible default size and a minimum size above the 760 px
-  desktop panel boundary. Window size and position persist across launches.
+- One window titled “weblounge”, with a native title bar, a sensible default size and a 400 px
+  minimum width: design 09's narrow desktop, where the sidebar and member list become drawers.
+  Window size and position persist across launches.
 - The standard macOS menu: app (About, Hide, Quit), Edit (Undo, Redo, Cut, Copy, Paste, Select
   All, so text editing shortcuts work), View (Reload, Enter Full Screen) and Window.
 - Closing the window hides the app instead of quitting, as macOS chat apps do; ⌘Q quits.

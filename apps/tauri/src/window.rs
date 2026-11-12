@@ -39,7 +39,7 @@ pub fn create(app: &AppHandle) -> Result<(), WindowError> {
         .title("weblounge")
         .visible(false)
         .inner_size(1280.0, 840.0)
-        .min_inner_size(900.0, 600.0)
+        .min_inner_size(400.0, 480.0)
         .on_navigation(move |url| {
             let decision = route(RequestKind::Navigation, url);
             follow(decision, url, |url| open_externally(&navigating, url));
