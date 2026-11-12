@@ -59,7 +59,6 @@ test.describe("desktop conversation closing against local Ergo", () => {
         page.getByRole("complementary", { name: "Channel list" }),
         "dm-hover",
       );
-      await nativeFeelAudit(page);
 
       await closeButton.click();
       await expect(directRow()).toHaveCount(0);
@@ -69,6 +68,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
       await expect(toast).toBeVisible();
       await captureThemes(page, toast, "undo-toast");
       await page.getByRole("button", { name: "Undo" }).click();
+      await expect(toast).toBeHidden();
       await expect(directRow()).toBeVisible();
 
       await directRow().click({ button: "right" });
@@ -84,6 +84,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
         .click();
       await expect(directRow()).toHaveCount(0);
       await page.getByRole("button", { name: "Undo" }).click();
+      await expect(toast).toBeHidden();
       await expect(directRow()).toBeVisible();
       await directRow().click();
 

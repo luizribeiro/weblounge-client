@@ -22,6 +22,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: made the close-conversation browser journey audit native feel only at its truly idle
+  confirmation screen and wait for each Undo toast to disappear, avoiding expected close timers
+  and engine work in the idle-waste window.
 - 2026-11-12: made rejected `/close` commands side-effect-free for unavailable channel buffers;
   they no longer advance read state, clear notifications, send MARKREAD or strand the read-flush
   guard, while successful direct-message closes still mark through their newest message.
