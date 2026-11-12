@@ -759,6 +759,7 @@
             pkgs.biome
           ]
           ++ appRuntimeInputs
+          ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.cargo-tauri ]
           ++ hooks.enabledPackages;
           inherit (hooks) shellHook;
         };
