@@ -451,9 +451,9 @@ export function MessageList(props: MessageListProps) {
       top: anchor.getBoundingClientRect().top - listTop,
     };
   };
-  const requestOlder = () => {
+  const requestOlder = (captureAnchor = true) => {
     if (!olderPageArmed || !canLoadOlder()) return;
-    captureOlderAnchor();
+    if (captureAnchor) captureOlderAnchor();
     props.onLoadOlder?.();
     olderPageArmed = false;
   };
@@ -487,6 +487,34 @@ export function MessageList(props: MessageListProps) {
     };
     olderPageRequestFrame = window.requestAnimationFrame(requestWhenTracked);
   };
+  const requestShortHistoryWhenTracked = () => {
+    if (
+      props.foreground === false ||
+      !olderPageArmed ||
+      !canLoadOlder() ||
+      olderPageRequestFrame !== undefined
+    )
+      return;
+    olderPageRequestFrame = window.requestAnimationFrame(() => {
+      olderPageRequestFrame = undefined;
+      const scroller = list;
+      if (
+        props.foreground === false ||
+        scroller === undefined ||
+        scroller.clientHeight <= 0 ||
+        !olderPageArmed ||
+        !canLoadOlder()
+      )
+        return;
+      const overflow = Math.max(
+        scroller.scrollHeight - scroller.clientHeight,
+        0,
+      );
+      const threshold =
+        scroller.clientHeight * olderHistoryPrefetchViewportCount;
+      if (overflow <= threshold) requestOlder(false);
+    });
+  };
   createEffect(() => {
     const history = props.historyState;
     if (historyWasLoading && history?.loading === false) {
@@ -494,6 +522,7 @@ export function MessageList(props: MessageListProps) {
       olderPageLanded = true;
       readerAtHistoryTop = false;
       cancelLoadingEdgePin();
+      requestShortHistoryWhenTracked();
     }
     historyWasLoading = history?.loading === true;
   });
@@ -539,6 +568,7 @@ export function MessageList(props: MessageListProps) {
         callback(next);
         if (widthChanged) remeasureAll();
         if (followEnd) scrollToLiveEdge();
+        requestShortHistoryWhenTracked();
         return followEnd;
       };
       const updateCurrentRect = () => {
@@ -970,6 +1000,7 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     if (props.foreground === false) {
       cancelLoadingEdgePin();
+      cancelOlderPageRequest();
       if (foregroundRefreshFrame !== undefined) {
         window.cancelAnimationFrame(foregroundRefreshFrame);
         foregroundRefreshFrame = undefined;
@@ -989,6 +1020,7 @@ export function MessageList(props: MessageListProps) {
         foregroundRefreshArmed = false;
         refreshRenderedMeasurements(true);
         if (logicallyAtLiveEdge) scrollToLiveEdge();
+        requestShortHistoryWhenTracked();
       });
     });
   });
@@ -1105,7 +1137,10 @@ export function MessageList(props: MessageListProps) {
       cancelOlderPageRequest();
       userScrollIntent.dispose();
     });
-    queueMicrotask(jumpToBottom);
+    queueMicrotask(() => {
+      jumpToBottom();
+      requestShortHistoryWhenTracked();
+    });
   });
 
   return (

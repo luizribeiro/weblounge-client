@@ -2042,6 +2042,91 @@ it("does not load older history for programmatic scrolls into the threshold", as
   expect(onLoadOlder).not.toHaveBeenCalled();
 });
 
+it("automatically pages short history until the boundary lands", async () => {
+  const onLoadOlder = vi.fn();
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: false,
+  });
+  const { container } = render(() => (
+    <MessageList
+      historyState={historyState()}
+      messages={[message]}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 700 },
+  });
+
+  await twoAnimationFrames();
+  expect(onLoadOlder).toHaveBeenCalledOnce();
+
+  setHistoryState({ at_start: false, loading: true });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  setHistoryState({ at_start: false, loading: false });
+  await twoAnimationFrames();
+  expect(onLoadOlder).toHaveBeenCalledTimes(2);
+
+  setHistoryState({ at_start: false, loading: true });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  setHistoryState({ at_start: true, loading: false });
+  await twoAnimationFrames();
+  expect(onLoadOlder).toHaveBeenCalledTimes(2);
+});
+
+it("does not automatically page history that overflows the prefetch range", async () => {
+  const onLoadOlder = vi.fn();
+  const { container } = render(() => (
+    <MessageList
+      historyState={{ at_start: false, loading: false }}
+      messages={[message]}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, value: 251 },
+  });
+
+  await twoAnimationFrames();
+
+  expect(onLoadOlder).not.toHaveBeenCalled();
+});
+
+it("waits to page short history until the transcript is foregrounded", async () => {
+  const onLoadOlder = vi.fn();
+  const [foreground, setForeground] = createSignal(false);
+  const { container } = render(() => (
+    <MessageList
+      foreground={foreground()}
+      historyState={{ at_start: false, loading: false }}
+      messages={[message]}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 700 },
+  });
+
+  await twoAnimationFrames();
+  expect(onLoadOlder).not.toHaveBeenCalled();
+
+  setForeground(true);
+  await twoAnimationFrames();
+  await twoAnimationFrames();
+
+  expect(onLoadOlder).toHaveBeenCalledOnce();
+});
+
 it("loads older history when an upward wheel cannot move past the top", async () => {
   const onLoadOlder = vi.fn();
   const { container } = render(() => (

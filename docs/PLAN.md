@@ -32,6 +32,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-11: made the production older-history fixture establish and persist unread traffic before
   relaunching into history paging. The previous fresh-device launch correctly seeded its local read
   boundary after the already-stored messages, so its desktop unread readiness check could never hold.
+- 2026-11-11: made short transcripts page older history without input until they exceed the
+  prefetch range or reach their signed Beginning edge, with one visible-only request in flight.
 - 2026-11-11: animated the mounted older-history loader with the signed motion duration, leaving
   reduced-motion static and pausing the animation whenever the transcript is hidden.
 - 2026-11-11: kept the in-flight older-history edge visible when a reader reached the transcript
@@ -116,6 +118,10 @@ The single place a fresh session reads to know where the project stands. Update 
   Its loader rotates with the global connection-motion token only while that edge exists, pauses
   through the shared foreground contract, and becomes static through the global reduced-motion
   token override without component timers or media queries.
+  Short transcripts now apply the same 1.5-viewport threshold after mount, viewport settlement,
+  foreground return and every nonterminal page landing. They request one unanchored older page at
+  a time until content leaves that range or history start arrives, and schedule no request while
+  hidden.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
   update read facts, disappear when older history covers them, and leave with their buffer. The UI
