@@ -1,0 +1,77 @@
+.overlay {
+  align-items: flex-start;
+  background: var(--wl-color-overlay-scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding-top: 88px;
+  position: absolute;
+  z-index: 10;
+}
+
+.backdrop {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  inset: 0;
+  padding: 0;
+  position: absolute;
+}
+
+.dialog {
+  background: var(--wl-color-surface);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-palette);
+  box-shadow: var(--wl-effect-overlay-shadow);
+  color: var(--wl-color-fg);
+  max-height: calc(100% - 120px);
+  max-width: calc(100% - 32px);
+  overflow: hidden;
+  position: relative;
+  width: 560px;
+}
+
+.search {
+  align-items: center;
+  border-bottom: 1px solid var(--wl-color-border);
+  color: var(--wl-color-muted);
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.icon {
+  fill: none;
+  flex: 0 0 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 18px;
+}
+
+.search input {
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-fg);
+  flex: 1;
+  font: inherit;
+  font-size: 15px;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+}
+
+.search input:focus-visible {
+  border: 0;
+}
+
+.search input::placeholder {
+  color: var(--wl-color-muted);
+}
+
+.search kbd {
+  font-family: var(--wl-font-mono);
+  font-size: 11px;
+}
