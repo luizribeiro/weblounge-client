@@ -9,7 +9,7 @@ use tauri::{App, AppHandle, RunEvent};
 fn main() -> tauri::Result<()> {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(window::state_plugin())
         .setup(setup)
         .on_menu_event(|app, event| menu::handle_event(app, &event))
         .build(tauri::generate_context!())?;

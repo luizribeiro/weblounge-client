@@ -5,11 +5,23 @@ use tauri::{
     webview::NewWindowResponse,
 };
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
 
 use crate::navigation::{RequestKind, Route, route};
 
 pub const MAIN_LABEL: &str = "main";
 const APP_URL: &str = "https://beta.weblounge.org";
+
+// Persisting visibility would restore a window hidden by close-to-hide as hidden at the next launch.
+fn persisted_state() -> StateFlags {
+    StateFlags::all() - StateFlags::VISIBLE
+}
+
+pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    WindowStateBuilder::default()
+        .with_state_flags(persisted_state())
+        .build()
+}
 
 pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let url = APP_URL.parse()?;
@@ -17,6 +29,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let opening = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
         .title("weblounge")
+        .visible(false)
         .inner_size(1280.0, 840.0)
         .min_inner_size(900.0, 600.0)
         .on_navigation(move |url| {
@@ -32,6 +45,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         })
         .build()?;
     hide_instead_of_closing(&window);
+    show(app);
     Ok(())
 }
 
@@ -83,6 +97,12 @@ mod tests {
             opened.borrow_mut().push(url.to_string());
         });
         opened.into_inner()
+    }
+
+    #[test]
+    fn window_visibility_is_not_persisted() {
+        assert!(!persisted_state().contains(StateFlags::VISIBLE));
+        assert!(persisted_state().contains(StateFlags::SIZE | StateFlags::POSITION));
     }
 
     #[test]
