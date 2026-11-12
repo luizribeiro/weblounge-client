@@ -16,6 +16,38 @@ const buffer: BufferProjection = {
 };
 
 describe("SidebarRow", () => {
+  it("offers close only for direct-message rows", () => {
+    const close = vi.fn();
+    const { unmount } = render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{ ...buffer, kind: "direct", title: "alice" }}
+        onClick={() => {}}
+        onClose={close}
+        tabIndex={0}
+      />
+    ));
+
+    screen
+      .getByRole("button", { name: "Close conversation with alice" })
+      .click();
+    expect(close).toHaveBeenCalledOnce();
+    unmount();
+
+    render(() => (
+      <SidebarRow
+        active={false}
+        buffer={buffer}
+        onClick={() => {}}
+        onClose={close}
+        tabIndex={0}
+      />
+    ));
+    expect(
+      screen.queryByRole("button", { name: /Close conversation/u }),
+    ).not.toBeInTheDocument();
+  });
+
   it("suppresses badges for a buffer rendered in a visible pane", () => {
     const onClick = vi.fn();
     render(() => (

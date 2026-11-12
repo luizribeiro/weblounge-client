@@ -78,3 +78,37 @@
   background: var(--wl-color-mention-badge);
   color: var(--wl-color-mention-badge-fg);
 }
+
+.close {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: inherit;
+  display: none;
+  justify-content: center;
+  margin: 3px;
+  padding: 0;
+  width: 22px;
+}
+
+.row:hover .close,
+.row:focus-within .close {
+  display: flex;
+}
+
+.close:hover,
+.close:focus-visible {
+  background: var(--wl-color-panel-border);
+  outline: 0;
+}
+
+.close svg {
+  fill: none;
+  height: 12px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+  width: 12px;
+}

@@ -256,6 +256,11 @@ export const messages = {
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "sidebar.channel_list": "Channel list",
   "sidebar.context_menu": "Actions for {title}",
+  "sidebar.close_conversation": "Close conversation with {title}",
+  "sidebar.closed_conversation": "Closed chat with {title}",
+  "sidebar.leave_explanation":
+    "You’ll stop receiving messages until you rejoin.",
+  "sidebar.undo": "Undo",
   "sidebar.navigation": "Networks and buffers",
   "sidebar.network.many": "{count} networks",
   "sidebar.network.one": "{count} network",

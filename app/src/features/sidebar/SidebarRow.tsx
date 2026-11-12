@@ -17,6 +17,7 @@ export interface SidebarRowProps {
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onFocus?: JSX.EventHandler<HTMLButtonElement, FocusEvent>;
+  readonly onClose?: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onOpenMenu?: (request: ContextMenuRequest) => void;
   readonly ref?: (element: HTMLButtonElement) => void;
 }
@@ -92,6 +93,22 @@ export function SidebarRow(props: SidebarRowProps) {
           </Line>
         )}
       </button>
+      {props.buffer.kind === "direct" && props.onClose !== undefined && (
+        <button
+          aria-label={t("sidebar.close_conversation", {
+            title: props.buffer.title,
+          })}
+          class={styles.close}
+          onClick={props.onClose}
+          tabIndex={-1}
+          title={t("cmd.close.menu")}
+          type="button"
+        >
+          <svg aria-hidden="true" viewBox="0 0 12 12">
+            <path d="m3 3 6 6M9 3 3 9" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
