@@ -51,7 +51,7 @@ test("captures the transcript spacing review fixture", async ({
       await page.getByRole("button", { name: "Back to chats" }).click();
     else
       await page.getByRole("button", { name: /Local Ergo, online/u }).click();
-    await scenario.sendUnread();
+    await scenario.sendUnread(page);
     await page.getByRole("button", { name: scenario.channel }).click();
     await expect(page.locator("[data-new-line]")).toBeVisible();
     if (phone) await expect(page.locator("[data-motion]")).toHaveCount(0);

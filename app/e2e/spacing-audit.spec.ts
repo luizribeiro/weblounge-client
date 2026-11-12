@@ -57,7 +57,7 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
       "Server history starts",
     );
     await leaveConversation(page, phone);
-    await scenario.sendUnread();
+    await scenario.sendUnread(page);
     await page.getByRole("button", { name: scenario.channel }).click();
     await expect(messageRow(page, scenario.unreadMessage)).toBeVisible();
     await expect(page.locator("[data-new-line]")).toBeVisible();

@@ -26,6 +26,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: made New-divider browser journeys wait for app-observed hidden or unread traffic
+  before foregrounding or opening its conversation, instead of treating the peer's server echo as
+  proof that the app had received the message.
 - 2026-11-11: removed the desktop sidebar's no-op Jump to, Add network and settings controls,
   while retaining the own-nick footer; their unfinished actions remain typed but are absent from
   keyboard and discovery surfaces until implemented.

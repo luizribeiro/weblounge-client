@@ -1,4 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
+import {
+  captureHistoryWire,
+  historyMessageUpdateCount,
+} from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
@@ -10,6 +14,7 @@ test.describe("New divider ownership", () => {
   );
 
   test.beforeEach(async ({ isMobile, page }) => {
+    await captureHistoryWire(page);
     await installNativeFeelInstrumentation(page);
     if (!isMobile) return;
     await page.addInitScript(() => {
@@ -33,6 +38,9 @@ test.describe("New divider ownership", () => {
       await setVisibility(page, true);
       const text = `hidden DM arrival ${Date.now()}`;
       await peer.privmsgConfirmed("weblounge", text);
+      await expect
+        .poll(() => historyMessageUpdateCount(page, text))
+        .toBeGreaterThan(0);
 
       await setVisibility(page, false);
       await expect(messageText(page, text)).toBeVisible();

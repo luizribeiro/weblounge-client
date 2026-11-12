@@ -1,3 +1,4 @@
+import { expect, type Page } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { armMessageTime } from "./time-rewrite";
 
@@ -15,7 +16,7 @@ export interface MixedConversation {
   readonly unreadMessage: string;
   readonly wrappedLink: string;
   readonly close: () => void;
-  readonly sendUnread: () => Promise<void>;
+  readonly sendUnread: (page: Page) => Promise<void>;
 }
 
 export async function seedMixedConversation(
@@ -110,14 +111,28 @@ export async function seedMixedConversation(
     systemFence,
     unreadMessage,
     wrappedLink,
-    sendUnread: async () => {
+    sendUnread: async (page) => {
       await first.privmsgConfirmed(channel, unreadMessage);
+      await expect
+        .poll(() => bufferUnreadCount(page, channel))
+        .toBeGreaterThan(0);
     },
     close: () => {
       second.close();
       first.close();
     },
   };
+}
+
+function bufferUnreadCount(page: Page, title: string): Promise<number> {
+  return page
+    .locator("[data-buffer-id]")
+    .filter({ hasText: title })
+    .evaluate((row) => {
+      const desktopCount = row.getAttribute("data-unread");
+      if (desktopCount !== null) return Number(desktopCount);
+      return Number(row.querySelector('[role="status"]')?.textContent ?? 0);
+    });
 }
 
 async function isolatedStartUrl(
