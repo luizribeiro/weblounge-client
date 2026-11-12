@@ -178,14 +178,23 @@ export function DesktopShell(props: DesktopShellProps) {
           props.networks.find((network) => network.id === buffer.network_id),
         );
   });
-  const newestMessageId = createMemo(() => {
-    const timeline = props.timelines?.get(activeBufferId() ?? -1);
-    return timeline === undefined
-      ? newestCommittedMessageId(
-          props.messages.get(activeBufferId() ?? -1) ?? [],
-        )
-      : newestCommittedTimelineMessageId(timeline.items);
+  const newestMessageIds = createMemo(() => {
+    const messages = props.messages;
+    const timelines = props.timelines;
+    return new Map(
+      props.buffers.map((buffer) => {
+        const timeline = timelines?.get(buffer.id);
+        const newest =
+          timeline === undefined
+            ? newestCommittedMessageId(messages.get(buffer.id) ?? [])
+            : newestCommittedTimelineMessageId(timeline.items);
+        return [buffer.id, newest] as const;
+      }),
+    );
   });
+  const newestMessageId = createMemo(() =>
+    newestMessageIds().get(activeBufferId() ?? -1),
+  );
   const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
     const buffer = activeBuffer();
     return new Set(buffer === undefined ? [] : [buffer.id]);
@@ -246,6 +255,12 @@ export function DesktopShell(props: DesktopShellProps) {
   };
   const registry = new ActionRegistry(
     {
+      "buffer.mark-read": (command) => {
+        const bufferId = command.targetBufferId;
+        const through = newestMessageIds().get(bufferId ?? -1);
+        if (bufferId !== undefined && through !== undefined)
+          props.onMarkRead(bufferId, through);
+      },
       "buffer.next": () => moveBuffer(1),
       "buffer.open": () => {},
       "buffer.open-direct": (command) => {
@@ -293,8 +308,8 @@ export function DesktopShell(props: DesktopShellProps) {
     },
     platform.shortcutPlatform,
     props.commandSpecs ?? [],
-    (command) => {
-      const bufferId = activeBufferId();
+    (command, commandContext) => {
+      const bufferId = commandContext.targetBufferId ?? activeBufferId();
       if (bufferId !== undefined)
         void props.onSend(bufferId, `/${command.name}`);
     },

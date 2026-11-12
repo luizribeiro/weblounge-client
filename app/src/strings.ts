@@ -251,6 +251,7 @@ export const messages = {
   "notifications.new_messages": "· {count} new messages",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "sidebar.channel_list": "Channel list",
+  "sidebar.context_menu": "Actions for {title}",
   "sidebar.navigation": "Networks and buffers",
   "sidebar.network.many": "{count} networks",
   "sidebar.network.one": "{count} network",

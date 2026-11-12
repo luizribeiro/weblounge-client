@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { ActionRegistry } from "../../actions/action-registry";
+import type { CommandSpec } from "../../engine/protocol";
+import { installContextMenuHandler } from "../../ui/context-menu";
 import type { SidebarListController } from "./Sidebar";
 import { Sidebar } from "./Sidebar";
 
@@ -149,3 +151,92 @@ it("moves roving focus through real list commands", () => {
   fireEvent.keyDown(channel, { key: "ArrowUp" });
   expect(server).toHaveFocus();
 });
+
+it("shows only runnable row-menu items and dispatches against its target", async () => {
+  const markRead = vi.fn();
+  const runCommand = vi.fn();
+  const registry = new ActionRegistry(
+    { "buffer.mark-read": markRead },
+    "other",
+    [channelCommand("cycle"), channelCommand("topic")],
+    runCommand,
+  );
+  const removeContextMenuHandler = installContextMenuHandler(document);
+  render(() => (
+    <Sidebar
+      buffers={[
+        buffer(2, "channel", "#lounge", 3),
+        buffer(3, "direct", "alice", 0),
+      ]}
+      commandContext={{ bufferCount: 2, connected: true, listActive: true }}
+      networks={[
+        {
+          id: 7,
+          label: "Local Ergo",
+          nickname: "weblounge",
+          state: "online",
+        },
+      ]}
+      registerListController={() => {}}
+      registry={registry}
+      visibleBufferIds={new Set()}
+    />
+  ));
+  const channel = screen.getByRole("button", {
+    name: "#lounge, 3 unread",
+  });
+
+  fireEvent.contextMenu(channel);
+  expect(await screen.findByRole("menu")).toHaveAccessibleName(
+    "Actions for #lounge",
+  );
+  expect(
+    screen.getAllByRole("menuitem").map((item) => item.textContent),
+  ).toEqual([
+    "Mark as read",
+    "Leave and rejoin a channel",
+    "Show or change the channel topic",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
+  expect(markRead).toHaveBeenCalledWith(
+    expect.objectContaining({ targetBufferId: 2, targetUnread: true }),
+  );
+
+  fireEvent.contextMenu(screen.getByRole("button", { name: "alice" }));
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  removeContextMenuHandler();
+});
+
+function buffer(
+  id: number,
+  kind: "channel" | "direct",
+  title: string,
+  unread: number,
+) {
+  return {
+    id,
+    network_id: 7,
+    sync_state: "synced" as const,
+    kind,
+    title,
+    draft_key: `test:${title}`,
+    topic: null,
+    unread,
+    mentions: 0,
+  };
+}
+
+function channelCommand(name: "cycle" | "topic"): CommandSpec {
+  return {
+    name,
+    aliases: [],
+    arguments: [{ name: "channel", kind: "channel", required: false }],
+    usage: `cmd.${name}.usage`,
+    description: `cmd.${name}.description`,
+    requirements: [{ type: "connected" }],
+    permission: "anyone",
+    surfaces: ["channel_menu"],
+    confirm: "none",
+    secret_arguments: false,
+  };
+}

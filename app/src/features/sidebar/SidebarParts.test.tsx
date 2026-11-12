@@ -44,6 +44,7 @@ it("keeps network rows and account chrome in focused components", () => {
         network={network}
         onFocus={() => {}}
         onOpenBuffer={openBuffer}
+        onOpenMenu={() => {}}
         onOpenServer={openServer}
         registerElement={() => {}}
         rovingId={2}

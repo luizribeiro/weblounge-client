@@ -9,10 +9,12 @@ import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
+import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu";
 import {
   connectionSweepAtRest,
   createConnectionProgress,
 } from "../../ui/connection-progress";
+import type { ContextMenuRequest } from "../../ui/context-menu";
 import { Line } from "../../ui/Line";
 import {
   NotificationPrompt,
@@ -49,6 +51,11 @@ export function Sidebar(props: SidebarProps) {
   const platform = platformEnvironment();
   let brand: HTMLDivElement | undefined;
   const [rovingId, setRovingId] = createSignal<number>();
+  const [menu, setMenu] = createSignal<{
+    readonly context: ActionContext;
+    readonly request: ContextMenuRequest;
+    readonly title: string;
+  }>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
   const connection = () => connectionPresentation(props.networks);
@@ -78,6 +85,32 @@ export function Sidebar(props: SidebarProps) {
             targetNetworkId: target.network_id,
           }),
     });
+  const targetContext = (target: SidebarBuffer): ActionContext => ({
+    ...props.commandContext,
+    connected: props.networks.some(
+      (network) =>
+        network.id === target.network_id && network.state === "online",
+    ),
+    currentBufferKind: target.kind,
+    targetBufferId: target.id,
+    targetNetworkId: target.network_id,
+    targetUnread: target.unread > 0,
+  });
+  const openMenu = (target: SidebarBuffer, request: ContextMenuRequest) => {
+    const context = targetContext(target);
+    if (props.registry.channelMenu(context).length === 0) return;
+    setMenu({ context, request, title: target.title });
+  };
+  const menuItems = (): readonly ContextMenuItem[] => {
+    const current = menu();
+    return current === undefined
+      ? []
+      : props.registry.channelMenu(current.context).map((entry) => ({
+          id: entry.id,
+          label: entry.title,
+          onSelect: () => props.registry.run(entry.id, current.context, "menu"),
+        }));
+  };
   const move = (offset: -1 | 1) => {
     const ids = orderedIds();
     if (ids.length === 0) return;
@@ -198,6 +231,7 @@ export function Sidebar(props: SidebarProps) {
               network={network}
               onFocus={setRovingId}
               onOpenBuffer={(buffer) => run("pane.show-buffer", buffer)}
+              onOpenMenu={openMenu}
               onOpenServer={(buffer) => run("network.open-server", buffer)}
               registerElement={(id, element) => {
                 if (id !== undefined) elements.set(id, element);
@@ -210,6 +244,13 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       <SidebarFooter networks={props.networks} />
+      <ContextMenu
+        destructiveItems={[]}
+        items={menuItems()}
+        label={t("sidebar.context_menu", { title: menu()?.title ?? "" })}
+        onDismiss={() => setMenu(undefined)}
+        request={menu()?.request}
+      />
     </aside>
   );
 }

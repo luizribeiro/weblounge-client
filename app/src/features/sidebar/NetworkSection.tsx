@@ -5,6 +5,7 @@ import type {
   NetworkProjection,
 } from "../../engine/protocol";
 import { t } from "../../strings";
+import type { ContextMenuRequest } from "../../ui/context-menu";
 import { Line } from "../../ui/Line";
 import styles from "./Sidebar.module.css";
 import { SidebarRow } from "./SidebarRow";
@@ -19,6 +20,10 @@ interface NetworkSectionProps {
   readonly visibleBufferIds: ReadonlySet<number>;
   readonly onFocus: (bufferId: number | undefined) => void;
   readonly onOpenBuffer: (buffer: SidebarBuffer) => void;
+  readonly onOpenMenu: (
+    buffer: SidebarBuffer,
+    request: ContextMenuRequest,
+  ) => void;
   readonly onOpenServer: (buffer: SidebarBuffer) => void;
   readonly registerElement: (
     bufferId: number | undefined,
@@ -78,6 +83,9 @@ export function NetworkSection(props: NetworkSectionProps) {
                     muted={current().muted === true}
                     onClick={() => props.onOpenBuffer(current())}
                     onFocus={() => props.onFocus(current().id)}
+                    onOpenMenu={(request) =>
+                      props.onOpenMenu(current(), request)
+                    }
                     ref={(element) =>
                       props.registerElement(current().id, element)
                     }

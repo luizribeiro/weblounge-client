@@ -1,6 +1,10 @@
-import type { JSX } from "solid-js";
+import { type JSX, onCleanup } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
+import {
+  type ContextMenuRequest,
+  contextMenuRegistry,
+} from "../../ui/context-menu";
 import { Line } from "../../ui/Line";
 import { unreadBadge } from "../unread/unread-badge";
 import styles from "./SidebarRow.module.css";
@@ -13,10 +17,13 @@ export interface SidebarRowProps {
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onFocus?: JSX.EventHandler<HTMLButtonElement, FocusEvent>;
+  readonly onOpenMenu?: (request: ContextMenuRequest) => void;
   readonly ref?: (element: HTMLButtonElement) => void;
 }
 
 export function SidebarRow(props: SidebarRowProps) {
+  let unregisterContextSurface = () => {};
+  onCleanup(() => unregisterContextSurface());
   const showBadges = () => props.badgesSuppressed !== true;
   const badge = () => (showBadges() ? unreadBadge(props.buffer) : undefined);
   const visibleUnread = () => (showBadges() ? props.buffer.unread : 0);
@@ -40,7 +47,17 @@ export function SidebarRow(props: SidebarRowProps) {
       data-unread={visibleUnread()}
       onClick={props.onClick}
       onFocus={props.onFocus}
-      ref={props.ref}
+      ref={(element) => {
+        props.ref?.(element);
+        unregisterContextSurface();
+        unregisterContextSurface = contextMenuRegistry.register(element, {
+          id: `sidebar-buffer-${props.buffer.id}`,
+          kind: "chrome",
+          ...(props.onOpenMenu === undefined
+            ? {}
+            : { openMenu: props.onOpenMenu }),
+        });
+      }}
       tabIndex={props.tabIndex}
       type="button"
     >
