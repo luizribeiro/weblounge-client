@@ -89,10 +89,12 @@ const needsList = (context: ActionContext): ActionAvailability => ({
 });
 
 const specs: readonly ActionSpec[] = [
-  {
-    ...command("switcher.open", t("action.switcher"), alwaysAvailable),
-    discoverable: false,
-  },
+  command(
+    "switcher.open",
+    t("action.switcher"),
+    alwaysAvailable,
+    mod("k", "⌘K", "Ctrl+K"),
+  ),
   {
     ...command("debug.overlay", t("action.debug"), alwaysAvailable),
     discoverable: false,

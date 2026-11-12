@@ -36,21 +36,29 @@ describe("ActionRegistry", () => {
   });
 
   it("does not advertise or bind placeholder actions", () => {
-    const switcher = vi.fn();
     const settings = vi.fn();
     const registry = new ActionRegistry(
       {
         "network.add": vi.fn(),
         "settings.open": settings,
-        "switcher.open": switcher,
       },
       "macos",
     );
 
-    expect(registry.bindingLabel("switcher.open")).toBeUndefined();
     expect(registry.bindingLabel("settings.open")).toBeUndefined();
     expect(registry.help(context).map(({ id }) => id)).not.toEqual(
-      expect.arrayContaining(["network.add", "settings.open", "switcher.open"]),
+      expect.arrayContaining(["network.add", "settings.open"]),
+    );
+    expect(settings).not.toHaveBeenCalled();
+  });
+
+  it("opens the discoverable switcher from the platform chord", () => {
+    const switcher = vi.fn();
+    const registry = new ActionRegistry({ "switcher.open": switcher }, "macos");
+
+    expect(registry.bindingLabel("switcher.open")).toBe("⌘K");
+    expect(registry.help(context).map(({ id }) => id)).toContain(
+      "switcher.open",
     );
     expect(
       registry.handleKeydown(
@@ -61,9 +69,8 @@ describe("ActionRegistry", () => {
         }),
         context,
       ),
-    ).toBe(false);
-    expect(switcher).not.toHaveBeenCalled();
-    expect(settings).not.toHaveBeenCalled();
+    ).toBe(true);
+    expect(switcher).toHaveBeenCalledOnce();
   });
 
   it("resolves list bindings only inside the list scope", () => {
