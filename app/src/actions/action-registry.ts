@@ -3,6 +3,7 @@ import type { CommandSpec, CompletionResult } from "../engine/protocol";
 import { t, translate } from "../strings";
 
 export type UiActionId =
+  | "buffer.mark-read"
   | "buffer.next"
   | "buffer.open"
   | "buffer.open-direct"
@@ -32,7 +33,7 @@ export type ActionGroup =
   | "Navigation"
   | "Network"
   | "View";
-type ActionSurface = "help" | "palette";
+type ActionSurface = "channelMenu" | "help" | "palette";
 
 export interface ActionContext {
   readonly bufferCount: number;
@@ -51,6 +52,7 @@ export interface ActionContext {
   readonly targetBufferId?: number;
   readonly targetNetworkId?: number;
   readonly targetNick?: string;
+  readonly targetUnread?: boolean;
 }
 
 export interface ActionAvailability {
@@ -101,11 +103,18 @@ const needsBuffers = (context: ActionContext): ActionAvailability => ({
 const needsList = (context: ActionContext): ActionAvailability => ({
   state: context.listActive ? "available" : "unavailable",
 });
+const needsUnread = (context: ActionContext): ActionAvailability => ({
+  state: context.targetUnread === true ? "available" : "unavailable",
+});
 const needsChannel = (context: ActionContext): ActionAvailability => ({
   state: context.currentBufferKind === "channel" ? "available" : "unavailable",
 });
 
 const specs: readonly ActionSpec[] = [
+  {
+    ...command("buffer.mark-read", t("action.mark_read"), needsUnread),
+    surfaces: ["channelMenu"],
+  },
   command(
     "switcher.open",
     t("action.switcher"),
@@ -311,6 +320,10 @@ export class ActionRegistry {
     return this.#entries(context, "palette");
   }
 
+  channelMenu(context: ActionContext): readonly ActionEntry[] {
+    return this.#entries(context, "channelMenu");
+  }
+
   help(context: ActionContext): readonly ActionEntry[] {
     return this.#entries(context, "help");
   }
@@ -365,7 +378,7 @@ export class ActionRegistry {
 
   #entries(
     context: ActionContext,
-    surface: "palette" | "help",
+    surface: ActionSurface,
   ): readonly ActionEntry[] {
     const ui = specs
       .filter(
@@ -388,8 +401,11 @@ export class ActionRegistry {
         (command) =>
           allowed(command, context) &&
           (surface === "help" ||
-            (command.surfaces.includes("palette") &&
-              canInvokeFromPalette(command, context))),
+            (command.surfaces.includes(
+              surface === "palette" ? "palette" : "channel_menu",
+            ) &&
+              (surface !== "channelMenu" || command.confirm === "none") &&
+              canInvokeWithoutArguments(command, context))),
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
@@ -427,7 +443,7 @@ function allowed(command: CommandSpec, context: ActionContext): boolean {
   );
 }
 
-function canInvokeFromPalette(
+function canInvokeWithoutArguments(
   command: CommandSpec,
   context: ActionContext,
 ): boolean {
@@ -487,6 +503,7 @@ function command(
 }
 
 function groupFor(id: UiActionId): ActionGroup {
+  if (id === "buffer.mark-read") return "Messages";
   if (id.startsWith("network.")) return "Network";
   if (id.startsWith("message.")) return "Messages";
   if (id === "members.toggle" || id === "sidebar.toggle") return "View";

@@ -6,6 +6,7 @@ export const messages = {
   "action.list_next": "Next item",
   "action.list_open": "Open item",
   "action.list_previous": "Previous item",
+  "action.mark_read": "Mark as read",
   "action.members_toggle": "Toggle member list",
   "action.network_server": "Open server messages",
   "action.next_buffer": "Next buffer",

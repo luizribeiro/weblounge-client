@@ -269,6 +269,35 @@ describe("ActionRegistry", () => {
     expect(registry.palette(noBuffer)).toEqual([]);
   });
 
+  it("gates the channel menu by target state and command metadata", () => {
+    const markRead = vi.fn();
+    const leave = {
+      ...command("part", ["channel_menu"]),
+      confirm: "menu" as const,
+    };
+    const cycle = implicitChannelCommand("cycle");
+    const topic = implicitChannelCommand("topic");
+    const registry = new ActionRegistry(
+      { "buffer.mark-read": markRead },
+      "other",
+      [cycle, topic, leave, command("join", ["network_menu"])],
+      vi.fn(),
+    );
+
+    expect(
+      registry
+        .channelMenu({ ...context, targetUnread: true })
+        .map(({ id }) => id),
+    ).toEqual(["buffer.mark-read", "command.cycle", "command.topic"]);
+    expect(registry.channelMenu(context).map(({ id }) => id)).toEqual([
+      "command.cycle",
+      "command.topic",
+    ]);
+    expect(
+      registry.channelMenu({ ...context, currentBufferKind: "direct" }),
+    ).toEqual([]);
+  });
+
   it("gates and runs commands through derived policy", () => {
     const run = vi.fn();
     const oper = {
@@ -361,7 +390,7 @@ function modifiedKeydown(key: string, target: Element): KeyboardEvent {
 
 function command(
   name: string,
-  surfaces: ("slash" | "palette")[],
+  surfaces: import("../engine/protocol").CommandSpec["surfaces"],
 ): import("../engine/protocol").CommandSpec {
   return {
     name,
@@ -374,5 +403,14 @@ function command(
     surfaces,
     confirm: "none",
     secret_arguments: false,
+  };
+}
+
+function implicitChannelCommand(
+  name: string,
+): import("../engine/protocol").CommandSpec {
+  return {
+    ...command(name, ["channel_menu"]),
+    arguments: [{ name: "channel", kind: "channel", required: false }],
   };
 }
