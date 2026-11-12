@@ -121,10 +121,30 @@ part on a Linux host, which alone runs the local-Ergo Playwright journeys.
 
 ### Wrapper, after the deploy
 
-5. The wrapper supplies `window.Notification`, which WKWebView lacks, delivering macOS
-   notifications through the Tauri notification plugin, and the remote capability gains only the
-   permissions that needs. Whether a click can open the buffer is verified before building; if
-   not, a click only activates the app.
+5. The wrapper supplies its own `window.Notification`. The Tauri notification plugin's shim has no
+   `close()` or click support and its macOS backend cannot report clicks or remove notifications,
+   so it cannot serve the page (2026-11-13). The shim implements exactly the surface the page uses,
+   with `app/e2e/page-notification-stub.ts` as the reference: `"Notification" in window`, static
+   `permission`, `requestPermission()` returning a promise, `new Notification(title, { body, tag })`,
+   instance `onclick` (assigned; the event is ignored) and instance `close()`.
+
+   Natively, `UNUserNotificationCenter` (through `objc2-user-notifications`) backs it:
+
+   | Page call | Native behaviour |
+   |---|---|
+   | `requestPermission()` | `requestAuthorization` for alert, sound and badge; `permission` follows the result and the current settings at launch. |
+   | `new Notification(title, { body, tag })` | Posts a request whose identifier is the tag, so a newer notification for a conversation replaces the older one; without a tag the shim generates one. |
+   | click | The delegate shows and focuses the window (unhiding it after ⌘W) and runs that instance's `onclick` in the page. |
+   | `close()` | Removes the delivered and pending request with that identifier. |
+
+   The delegate presents notifications while the app is frontmost, because the page already
+   decides when a notification is warranted. Commands for posting, closing and permission are
+   app-defined, and the remote capability grants exactly those.
+
+   A spike on 2026-11-13 confirmed that authorization, posting, click identity, removal and
+   same-identifier replacement work from an ad-hoc-signed bundle, but only when the signature binds
+   the Info.plist (identifier `org.weblounge.desktop`). The stock Tauri and Nix bundles are not
+   signed that way, and every call fails with `UNErrorDomain` 1, so the build re-signs the bundle.
 
 The remote capability is the only path from the page to Tauri, and it grows one named permission
 at a time. Close-to-hide plus Open at Login keep the app running, which covers what Luiz asked for.
