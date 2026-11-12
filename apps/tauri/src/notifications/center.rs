@@ -197,3 +197,22 @@ pub fn install_delegate(on_click: ClickHandler) {
     });
     std::mem::forget(delegate);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_statuses_map_to_the_pages_permission() {
+        let cases = [
+            (UNAuthorizationStatus::NotDetermined, Permission::Default),
+            (UNAuthorizationStatus::Denied, Permission::Denied),
+            (UNAuthorizationStatus::Authorized, Permission::Granted),
+            (UNAuthorizationStatus::Provisional, Permission::Granted),
+            (UNAuthorizationStatus::Ephemeral, Permission::Granted),
+        ];
+        for (status, expected) in cases {
+            assert_eq!(permission_for(status), expected);
+        }
+    }
+}
