@@ -155,7 +155,7 @@ it("renders the empty shell after the engine handshake before revealing it", asy
   );
 });
 
-it("reports document visibility to the engine", () => {
+it("reports document visibility, not focus, to the engine", () => {
   const client = new FakeEngineClient();
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -165,10 +165,17 @@ it("reports document visibility to the engine", () => {
   window.dispatchEvent(new Event("blur"));
   focused.mockReturnValue(true);
   window.dispatchEvent(new Event("focus"));
+
+  expect(client.visibility).toEqual(["visible"]);
   hidden.mockReturnValue(true);
   document.dispatchEvent(new Event("visibilitychange"));
 
-  expect(client.visibility).toEqual(["visible", "hidden", "visible", "hidden"]);
+  expect(client.visibility).toEqual(["visible", "hidden"]);
+  focused.mockReturnValue(false);
+  hidden.mockReturnValue(false);
+  document.dispatchEvent(new Event("visibilitychange"));
+
+  expect(client.visibility).toEqual(["visible", "hidden", "visible"]);
   hidden.mockRestore();
   focused.mockRestore();
 });

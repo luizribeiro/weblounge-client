@@ -282,6 +282,17 @@ export async function releaseHeldHistoryRequest(page: Page): Promise<void> {
   });
 }
 
+export function sentWireLines(page: Page): Promise<WireTrace[]> {
+  return page.evaluate(() => {
+    const timeline: unknown = Reflect.get(globalThis, "historyWireTimeline");
+    if (!Array.isArray(timeline)) return [];
+    return timeline.filter(
+      (entry): entry is WireTrace =>
+        entry?.direction === "sent" && typeof entry.line === "string",
+    );
+  });
+}
+
 export function historyMessageUpdateCount(
   page: Page,
   text: string,

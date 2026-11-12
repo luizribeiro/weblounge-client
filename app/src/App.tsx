@@ -31,6 +31,7 @@ import type {
   MessageProjection,
   NetworkProjection,
   TypingProjection,
+  VisibilityState,
 } from "./engine/protocol";
 import type { TimelineView } from "./engine/timeline-store";
 import { migrateDraft } from "./features/composer/draft-storage";
@@ -238,15 +239,18 @@ export function App(props: AppProps) {
   );
   let pageNotifications: PageNotifications | undefined;
   let client: EngineClient | undefined;
-  let reportedForeground: boolean | undefined;
-  const reportEngineForeground = (next: boolean) => {
-    if (client === undefined || next === reportedForeground) return;
-    reportedForeground = next;
-    client.setVisibility(next ? "visible" : "hidden");
+  let reportedVisibility: VisibilityState | undefined;
+  // Render visibility follows document.hidden alone: an unfocused window
+  // is still on screen and must keep drawing.
+  const reportEngineVisibility = () => {
+    const next = document.hidden ? "hidden" : "visible";
+    if (client === undefined || next === reportedVisibility) return;
+    reportedVisibility = next;
+    client.setVisibility(next);
   };
   // Events held while hidden must reach the panes before they count as
   // foreground, or a DM that arrived in the background reads as watched.
-  const foreground = createForegroundSignal(() => reportEngineForeground(true));
+  const foreground = createForegroundSignal(reportEngineVisibility);
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushOwner: PushSyncOwner | undefined;
   let pushLeaseOwner: PushSyncOwner | undefined;
@@ -870,7 +874,6 @@ export function App(props: AppProps) {
     const setAppForeground = (foreground: boolean) => {
       foregroundRecorder.recordForegroundTransition(foreground);
       appIsForeground = foreground;
-      reportEngineForeground(foreground);
       if (foreground) {
         notifications.claimPosting();
         if (foregroundLeaseHandoffTimer !== undefined) {
@@ -896,6 +899,7 @@ export function App(props: AppProps) {
     const updateVisibility = () => {
       if ("Notification" in window)
         setNotificationPermission(Notification.permission);
+      reportEngineVisibility();
       setAppForeground(pageIsForeground(document, navigator));
     };
     const reconnectNetworks = () => {

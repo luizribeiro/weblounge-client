@@ -2,10 +2,15 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   captureHistoryWire,
   historyMessageUpdateCount,
+  sentWireLines,
 } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import {
+  installPageNotificationStub,
+  postedPageNotifications,
+} from "./page-notification-stub";
 
 test.describe("New divider ownership", () => {
   test.skip(
@@ -70,6 +75,38 @@ test.describe("New divider ownership", () => {
       await setPageHidden(page, false);
       await expect(messageText(page, text)).toBeVisible();
       await expect(page.locator("[data-new-line]")).toBeVisible();
+    } finally {
+      peer.close();
+    }
+  });
+
+  test("renders a DM in a visible unfocused window and shows New on return", async ({
+    isMobile,
+    page,
+  }) => {
+    test.skip(isMobile, "installed phone apps are foreground without focus");
+    await installFocusControl(page);
+    await installPageNotificationStub(page, {
+      permission: "granted",
+      requestResult: "granted",
+    });
+    const peer = await openDirect(page, "unfocused", isMobile);
+    try {
+      await setPageFocused(page, false);
+      const text = `unfocused DM arrival ${Date.now()}`;
+      const line = await peer.privmsgConfirmed("weblounge", text);
+      await expect(messageText(page, text)).toBeVisible();
+      await expect
+        .poll(async () =>
+          (await postedPageNotifications(page)).map(({ body }) => body),
+        )
+        .toContain(text);
+
+      const refocusedAt = await setPageFocused(page, true);
+      await expect(page.locator("[data-new-line]")).toBeVisible();
+      await expect
+        .poll(() => markReadSentAt(page, peer.nickname, serverTime(line)))
+        .toBeGreaterThan(refocusedAt);
     } finally {
       peer.close();
     }
@@ -199,6 +236,46 @@ async function setPageHidden(page: Page, hidden: boolean): Promise<void> {
       throw new Error("visibility control is missing");
     setter(nextHidden);
   }, hidden);
+}
+
+async function installFocusControl(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    let focused = true;
+    Object.defineProperty(document, "hasFocus", {
+      configurable: true,
+      value: () => focused,
+    });
+    Reflect.set(globalThis, "__setPageFocused", (next: boolean) => {
+      focused = next;
+      window.dispatchEvent(new Event(next ? "focus" : "blur"));
+    });
+  });
+}
+
+async function setPageFocused(page: Page, focused: boolean): Promise<number> {
+  return page.evaluate((next) => {
+    const setter = Reflect.get(globalThis, "__setPageFocused");
+    if (typeof setter !== "function")
+      throw new Error("focus control is missing");
+    const at = performance.timeOrigin + performance.now();
+    setter(next);
+    return at;
+  }, focused);
+}
+
+async function markReadSentAt(
+  page: Page,
+  target: string,
+  throughMs: number,
+): Promise<number | undefined> {
+  const sent = await sentWireLines(page);
+  return sent.find(({ line }) => {
+    const marker = /(?:^| )MARKREAD (\S+) timestamp=(\S+)$/u.exec(line);
+    return (
+      marker?.[1]?.toLowerCase() === target.toLowerCase() &&
+      Date.parse(marker[2] ?? "") >= throughMs
+    );
+  })?.at;
 }
 
 function scrollRange(
