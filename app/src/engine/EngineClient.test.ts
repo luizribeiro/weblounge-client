@@ -906,7 +906,7 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(event);
   });
 
-  it("applies one catch-up frame after becoming visible", () => {
+  it("publishes held events as soon as it becomes visible", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
@@ -919,8 +919,7 @@ describe("WorkerEngineClient", () => {
     expect(listener).not.toHaveBeenCalled();
 
     client.setVisibility("visible");
-    expect(frames).toHaveLength(1);
-    frames[0]?.(0);
+    expect(frames).toHaveLength(0);
     expect(listener.mock.calls.map(([message]) => message.key)).toEqual([
       "first",
       "second",

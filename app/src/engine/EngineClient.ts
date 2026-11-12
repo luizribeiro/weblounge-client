@@ -174,10 +174,10 @@ export class WorkerEngineClient implements EngineClient {
   setVisibility(state: VisibilityState): void {
     const resumed = this.#visibility === "hidden" && state === "visible";
     this.#visibility = state;
-    if (state === "visible" && this.#renderQueue.length > 0) {
-      this.#scheduleRenderFrame();
+    if (resumed) {
+      this.#drainRenderQueue();
+      this.#probeWorker();
     }
-    if (resumed) this.#probeWorker();
   }
 
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe {
