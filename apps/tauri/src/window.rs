@@ -62,7 +62,7 @@ pub fn create(app: &AppHandle, show_on_launch: bool) -> Result<(), WindowError> 
     Ok(())
 }
 
-fn log_failure(action: &str, result: tauri::Result<()>) {
+pub fn log_failure(action: &str, result: Result<(), impl std::fmt::Display>) {
     if let Err(error) = result {
         eprintln!("could not {action}: {error}");
     }
