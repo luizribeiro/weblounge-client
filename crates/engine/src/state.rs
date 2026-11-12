@@ -2522,18 +2522,6 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
-        for record in &mut buffer.timeline {
-            if let Some(message) = chat_projection_mut(record) {
-                message.reactions = None;
-            }
-        }
-        buffer
-            .timeline
-            .retain(|record| !matches!(record.body, RecordBody::Gap(_)));
-        buffer.pending_lag_gap = None;
-        buffer.pending_reconnect_gap = None;
-        self.dirty_timelines.insert(buffer_id);
-        self.reactions.clear_buffer(buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
@@ -5575,7 +5563,7 @@ mod tests {
             false,
         );
         model.close_direct(direct_id).expect("direct is closed");
-        assert!(!model.reactions.contains_target("closed"));
+        assert!(model.reactions.contains_target("closed"));
     }
 
     fn snapshot_stubs(count: usize, mentions: usize, latest: i64) -> Vec<MessageStub> {
@@ -8182,10 +8170,31 @@ mod tests {
         let (mut model, state) = model(10);
         let key = NameKey::Direct(nick_name(&state, "alice"));
         let (buffer_id, _) = model.ensure_buffer(key.clone(), None, None);
+        let mut message = incoming(
+            &state,
+            "kept history",
+            Some("kept"),
+            Some(100),
+            100,
+            TimelineOrigin::Live,
+        );
+        message.destination = IncomingDestination::Conversation(key.clone());
+        model.receive_incoming(message, &state);
         assert!(model.close_direct(buffer_id).is_some());
         assert!(!model.buffer_order.contains(&buffer_id));
         assert!(model.buffers.contains_key(&buffer_id));
         assert_eq!(model.names.get(&key), Some(&buffer_id));
+
+        assert!(model.reveal_buffer(buffer_id).is_some());
+        assert_eq!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .filter_map(chat_projection)
+                .map(|message| message.text.as_str())
+                .collect::<Vec<_>>(),
+            ["kept history"]
+        );
     }
 
     #[test]
