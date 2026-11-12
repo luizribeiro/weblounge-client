@@ -77,7 +77,8 @@ the feature:
 
 `nix build .#desktop` on `aarch64-darwin` produces `Weblounge.app`. The bundle needs no frontend
 assets. The dev shell gains the Tauri CLI on darwin only. The darwin package build runs the
-crate's clippy and unit tests; Linux CI is unaffected.
+crate's clippy and unit tests; Linux CI is unaffected. `nix build .#desktop-dmg` wraps that exact
+signed bundle in a drag-to-install `Weblounge.dmg`, an HFS+ hybrid image built in the sandbox.
 
 ## Testing
 
