@@ -124,7 +124,7 @@ function menuItem(
       tabIndex={-1}
       type="button"
     >
-      {item.label}
+      <span class={styles.label}>{item.label}</span>
     </button>
   );
 }

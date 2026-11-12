@@ -50,6 +50,13 @@
   color: var(--wl-color-accent-fg);
 }
 
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .separator {
   background: var(--wl-color-panel-border);
   border: 0;
