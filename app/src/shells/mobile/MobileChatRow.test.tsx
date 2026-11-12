@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import type {
   BufferProjection,
@@ -191,4 +191,28 @@ it("keeps a long message's full text unique to the conversation", () => {
   expect(
     screen.getByText(/A deliberately long mobile message.*…/u),
   ).toBeVisible();
+});
+
+it("reveals row actions and runs Mark as read", () => {
+  const markRead = vi.fn();
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={buffer()}
+      onMarkRead={markRead}
+      onOpen={vi.fn()}
+      previews={true}
+      revealed={true}
+    />
+  ));
+
+  expect(container.querySelector("[data-mobile-row-wrapper]")).toHaveAttribute(
+    "data-swipe-state",
+    "revealed",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Read" }));
+  expect(markRead).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-mobile-row-wrapper]")).toHaveAttribute(
+    "data-swipe-state",
+    "closed",
+  );
 });

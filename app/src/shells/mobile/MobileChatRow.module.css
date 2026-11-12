@@ -1,5 +1,44 @@
 .wrapper {
   border-bottom: 1px solid var(--wl-color-border);
+  overflow: hidden;
+  position: relative;
+}
+
+.actions {
+  bottom: 0;
+  display: flex;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.actions button {
+  align-items: center;
+  appearance: none;
+  border: 0;
+  color: var(--wl-color-accent-fg);
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  gap: 3px;
+  justify-content: center;
+  padding: 0;
+  width: 74px;
+}
+
+.actions button > span {
+  font-size: 20px;
+  line-height: 20px;
+}
+
+.readAction {
+  background: var(--wl-color-accent);
+}
+
+.closeAction {
+  background: var(--wl-color-error);
 }
 
 .row {
@@ -13,6 +52,8 @@
   height: var(--wl-density-mobile-row-height);
   padding: 8px 14px;
   text-align: start;
+  transform: translate3d(calc(-1 * var(--wl-mobile-row-offset)), 0, 0);
+  transition: transform var(--wl-motion-pop) var(--wl-motion-pop-curve);
   width: 100%;
 }
 

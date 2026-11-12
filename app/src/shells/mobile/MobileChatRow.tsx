@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import { createEffect, createSignal, type JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { nickColor } from "../../features/conversation/nick-color";
 import { unreadBadge } from "../../features/unread/unread-badge";
@@ -15,9 +15,29 @@ interface MobileChatRowProps {
   readonly onPressStart?:
     | JSX.EventHandler<HTMLDivElement, PointerEvent>
     | undefined;
+  readonly revealed?: boolean | undefined;
+  readonly onReveal?: (() => void) | undefined;
+  readonly onReset?: (() => void) | undefined;
+  readonly onMarkRead?: (() => void) | undefined;
+  readonly onRequestClose?:
+    | (() => boolean | Promise<boolean> | void)
+    | undefined;
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {
+  const [offset, setOffset] = createSignal(0);
+  const [revealed, setRevealed] = createSignal(false);
+  const settle = (endpoint: "reveal" | "reset") => {
+    setRevealed(endpoint === "reveal");
+    setOffset(endpoint === "reveal" ? 148 : 0);
+    if (endpoint === "reveal") props.onReveal?.();
+    else props.onReset?.();
+  };
+  createEffect(() => {
+    const next = props.revealed === true;
+    setRevealed(next);
+    setOffset(next ? 148 : 0);
+  });
   const badge = () => unreadBadge(props.buffer);
   const message = () => props.buffer.last_message;
   const activityTime = () =>
@@ -29,8 +49,43 @@ export function MobileChatRow(props: MobileChatRowProps) {
     <div
       class={styles.wrapper}
       data-mobile-row-wrapper={props.buffer.id}
+      data-swipe-state={revealed() ? "revealed" : "closed"}
       onPointerDown={props.onPressStart}
+      style={{ "--wl-mobile-row-offset": `${offset()}px` }}
     >
+      <span
+        aria-hidden={!revealed() || undefined}
+        class={styles.actions}
+        data-mobile-row-actions="true"
+        inert={!revealed()}
+      >
+        <button
+          class={styles.readAction}
+          onClick={() => {
+            settle("reset");
+            props.onMarkRead?.();
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">✓</span>
+          {t("mobile.action.read")}
+        </button>
+        <button
+          class={styles.closeAction}
+          onClick={() => {
+            settle("reset");
+            props.onRequestClose?.();
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">
+            {props.buffer.kind === "channel" ? "↤" : "×"}
+          </span>
+          {props.buffer.kind === "channel"
+            ? t("mobile.action.leave")
+            : t("mobile.action.close")}
+        </button>
+      </span>
       <button
         aria-label={
           badge() === undefined
