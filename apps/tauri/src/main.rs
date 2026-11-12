@@ -4,6 +4,7 @@ mod launch;
 mod login_item;
 mod menu;
 mod navigation;
+mod security;
 mod window;
 
 use tauri::{App, AppHandle, RunEvent, Wry, plugin::Plugin};

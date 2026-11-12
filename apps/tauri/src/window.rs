@@ -19,7 +19,7 @@ pub enum WindowError {
 
 pub const MAIN_LABEL: &str = "main";
 const BADGE_SCRIPT: &str = include_str!("badge.js");
-const APP_URL: &str = "https://beta.weblounge.org";
+pub const APP_URL: &str = "https://beta.weblounge.org";
 
 // Persisting visibility would restore a window hidden by close-to-hide as hidden at the next launch.
 fn persisted_state() -> StateFlags {
@@ -108,26 +108,6 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
-
-    #[test]
-    fn remote_page_may_only_set_the_badge() {
-        let config: serde_json::Value =
-            serde_json::from_str(include_str!("../tauri.conf.json")).expect("config is JSON");
-        let capabilities = config["app"]["security"]["capabilities"]
-            .as_array()
-            .expect("capabilities are declared inline");
-        assert_eq!(capabilities.len(), 1);
-        let capability = &capabilities[0];
-        assert_eq!(capability["windows"], serde_json::json!(["main"]));
-        assert_eq!(
-            capability["remote"]["urls"],
-            serde_json::json!([APP_URL.to_owned() + "/*"])
-        );
-        assert_eq!(
-            capability["permissions"],
-            serde_json::json!(["core:window:allow-set-badge-count"])
-        );
-    }
 
     fn opened_by(decision: Route, url: &str) -> Vec<String> {
         let opened = RefCell::new(Vec::new());
