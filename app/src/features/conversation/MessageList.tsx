@@ -849,13 +849,16 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readAtMs ?? null;
     const foregroundExitEpoch = props.foregroundExitEpoch;
-    if (foregroundExitEpoch !== observedForegroundExitEpoch) {
+    const foregroundExited =
+      foregroundExitEpoch !== observedForegroundExitEpoch;
+    if (foregroundExited) {
       if (dividerTracksMark) setDividerMark(maximumMark(dividerMark(), marker));
       dividerTracksMark = false;
       watchedThrough = undefined;
       observedForegroundExitEpoch = foregroundExitEpoch;
     }
     if (
+      !foregroundExited &&
       orderedMessages().length === 0 &&
       props.syncState !== "syncing" &&
       (props.unread ?? 0) === 0
@@ -871,24 +874,28 @@ export function MessageList(props: MessageListProps) {
       const ownMark = Math.max(marker ?? ownTime, ownTime);
       setDividerMark(ownMark);
       dividerTracksMark =
-        !hasUnreadAfter(messages, ownMark) ||
-        (peerTime !== undefined &&
-          (observedPeerTime === undefined || peerTime > observedPeerTime));
+        !foregroundExited &&
+        (!hasUnreadAfter(messages, ownMark) ||
+          (peerTime !== undefined &&
+            (observedPeerTime === undefined || peerTime > observedPeerTime)));
       watchedThrough = undefined;
     }
     observedOwnTime = ownTime;
     observedPeerTime = peerTime;
     if (dividerMark() === null && marker !== null) {
       setDividerMark(marker);
-      dividerTracksMark = !openingBoundaryPending(
-        messages,
-        marker,
-        props.syncState,
-        props.unread,
-      );
+      dividerTracksMark =
+        !foregroundExited &&
+        !openingBoundaryPending(
+          messages,
+          marker,
+          props.syncState,
+          props.unread,
+        );
       watchedThrough = undefined;
       return;
     }
+    if (foregroundExited) return;
     const reading =
       props.foreground !== false &&
       publishedAtLiveEdge() &&

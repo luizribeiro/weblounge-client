@@ -2404,6 +2404,55 @@ it("keeps New when a hidden arrival is delivered after foregrounding", async () 
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("keeps New when an own confirmation lands with a hidden arrival", async () => {
+  const [foreground, setForeground] = createSignal(true);
+  const [foregroundExitEpoch, setForegroundExitEpoch] = createSignal(0);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    {
+      ...message,
+      authorship: "own",
+      delivery: "optimistic",
+      text: "query seed",
+    },
+  ]);
+  const { container } = render(() => (
+    <MessageList
+      foreground={foreground()}
+      foregroundExitEpoch={foregroundExitEpoch()}
+      messages={messages()}
+      readAtMs={1}
+    />
+  ));
+
+  batch(() => {
+    setForeground(false);
+    setForegroundExitEpoch((epoch) => epoch + 1);
+    setForeground(true);
+    setMessages([
+      {
+        ...message,
+        authorship: "own",
+        delivery: "confirmed",
+        received_at_ms: 2,
+        text: "query seed",
+      },
+      {
+        ...message,
+        id: 2,
+        delivery: "received",
+        received_at_ms: 3,
+        text: "hidden peer arrival",
+      },
+    ]);
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "hidden peer arrival",
+  );
+});
+
 it("publishes its initial live edge before observer delivery", () => {
   const onLiveEdgeChange = vi.fn();
 

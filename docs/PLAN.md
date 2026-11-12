@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: kept a hidden-page New divider frozen when a delayed own-message confirmation and
+  the hidden peer arrival reach the UI together; observing a foreground exit now wins over the
+  own-confirmation branch that normally resumes live-edge divider tracking.
 - 2026-11-11: made the timeline jump-count journey wait for a confirmed final seed and completed
   initial sync, then drive an explicit top-to-bottom-to-top gesture so older-history re-arming does
   not depend on the virtualizer's previously observed live-edge offset.
