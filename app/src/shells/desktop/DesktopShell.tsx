@@ -350,8 +350,12 @@ export function DesktopShell(props: DesktopShellProps) {
     props.commandSpecs ?? [],
     (command, commandContext) => {
       const bufferId = commandContext.targetBufferId ?? activeBufferId();
-      if (bufferId !== undefined)
+      const buffer = props.buffers.find((item) => item.id === bufferId);
+      if (command.name === "close" && buffer?.kind === "direct") {
+        void closeDirect(buffer);
+      } else if (bufferId !== undefined) {
         void props.onSend(bufferId, `/${command.name}`);
+      }
     },
     platform.environment().display === "tauri" ? "tauri" : "web",
   );
@@ -633,7 +637,13 @@ export function DesktopShell(props: DesktopShellProps) {
                       onSelectLast={() =>
                         messageListController?.selectLastOwn()
                       }
-                      onSend={(text) => props.onSend(bufferId, text)}
+                      onSend={(text) => {
+                        const current = buffer();
+                        return current?.kind === "direct" &&
+                          /^\/(?:close|wc)\s*$/iu.test(text)
+                          ? closeDirect(current)
+                          : props.onSend(bufferId, text);
+                      }}
                     />
                   );
                 }}
