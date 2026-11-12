@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: made the interrupted launch-catchup journey wait for the seeded snapshot schema to
+  migrate instead of duplicating the engine's current schema version, so later migrations cannot
+  leave this persistence readiness check stale.
 - 2026-11-11: derived transcript-gap 99+ badges from the actual unfilled ranges, cleared them with
   covering history or a read through the newest known message, and migrated the beta's orphaned
   persisted gap scalar so a restart cannot leave a conversation stuck at 99+.

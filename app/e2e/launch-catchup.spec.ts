@@ -15,6 +15,7 @@ test.use({
 
 const channelCount = 7;
 const directCount = 9;
+const snapshotFixtureSchema = 6;
 
 test("launch reconciles sixteen cached buffers within stock fakelag budgets", async ({
   baseURL,
@@ -259,7 +260,9 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
         ),
       )
       .toBe(true);
-    await expect.poll(() => snapshotSchema(current)).toBe(7);
+    await expect
+      .poll(() => snapshotSchema(current))
+      .toBeGreaterThan(snapshotFixtureSchema);
 
     await current.close();
     current = await context.newPage();
@@ -568,7 +571,7 @@ async function seedSnapshot(
         });
       },
       {
-        schema: 6,
+        schema: snapshotFixtureSchema,
         fingerprint,
         rows: rows.map((row) => ({
           conversation: { kind: row.kind, key: row.title },
