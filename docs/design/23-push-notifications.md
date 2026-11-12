@@ -206,8 +206,8 @@ iOS NSE in the background (fact 4), so duplicates are suppressed at the relay:
   is eligible while it is visible **and** focused. An installed iOS home-screen app uses visibility
   alone: iOS can report `document.hasFocus() === false` or emit `blur` while the app, its current
   conversation and its keyboard remain on screen. Every lease renews with
-  `POST /v1/devices/:id/lease` every 30 s (TTL 75 s). The signal is the engine's existing
-  `setVisibility`, not a second lifecycle listener.
+  `POST /v1/devices/:id/lease` every 30 s (TTL 75 s). The signal is the page's one foreground
+  listener, not a second lifecycle listener.
 - An ordinary focus or visibility loss retains the current owner for one 30-second heartbeat. A
   return within that window changes nothing; after it, the next eligible page inherits the shared
   renewal deadline without releasing the device lease. Brief blur/focus and tab switches therefore
@@ -753,8 +753,9 @@ delivery drainer; upstream death still marks all routes on the target device dea
 the ordinary authenticated JSON request and a form-encoded POST carrying the device secret, which
 lets a cross-origin `sendBeacon` release without a preflight or custom headers.
 
-The page derives foreground from visibility and focus once, feeds that result to the existing
-engine `setVisibility` boundary, and uses the same result for its per-tab relay lease. It renews
+The page derives foreground from visibility and focus once and uses that result for its per-tab
+relay lease. The engine `setVisibility` boundary follows `document.hidden` alone, because a
+visible but unfocused window must keep rendering. It renews
 every 30 seconds while foreground and clears the heartbeat before release on blur, hide,
 `pagehide`, or disposal. A renewal that finishes after hiding cannot recreate the timer. Relay
 credentials flow directly from existing durable storage or device creation into the lease, so the
@@ -940,7 +941,7 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
   badge) and is unread on insert. The page never matches mentions itself. Until `notify-rules`
   lands, this follows the engine's nick rule, while Ergo's push follows its account rule.
 - **Not visible.** The page posts unless it is foreground (the `pageIsForeground` value behind
-  `setVisibility` and the lease, with no new listener) and the buffer is one the shell shows. The
+  the lease, with no new listener) and the buffer is one the shell shows. The
   page holds shown buffers as a set; today both shells report one buffer, and split view must
   report every pane's buffer when it lands. The event bypasses
   the hidden page's render queue, which otherwise holds engine events until the page is visible.
