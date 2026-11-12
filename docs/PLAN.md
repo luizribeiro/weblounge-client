@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: made every live-edge jump release older-history anchoring and loading-edge pinning,
+  so a completed or in-flight prepend cannot pull phone readers back to the transcript top. The
+  spacing mutation audit now returns with the same user-visible End gesture.
 - 2026-11-11: made the interrupted launch-catchup journey wait for the seeded snapshot schema to
   migrate instead of duplicating the engine's current schema version, so later migrations cannot
   leave this persistence readiness check stale.

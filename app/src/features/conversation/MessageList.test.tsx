@@ -522,6 +522,36 @@ it("keeps a newly inserted loading edge visible at the transcript top", async ()
   ).toBeVisible();
 });
 
+it("releases history-top pinning when jumping to the live edge", async () => {
+  let controller: MessageListController | undefined;
+  const { container } = render(() => (
+    <MessageList
+      historyState={{ at_start: false, loading: true }}
+      messages={[message]}
+      onLoadOlder={() => {}}
+      registerController={(value) => {
+        controller = value;
+      }}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 5 },
+    scrollHeight: { configurable: true, value: 100 },
+  });
+  await twoAnimationFrames();
+  fireEvent.wheel(list, { deltaY: -100 });
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+
+  controller?.jumpBottom();
+  expect(list.scrollTop).toBe(95);
+  await twoAnimationFrames();
+
+  expect(list.scrollTop).toBe(95);
+});
+
 it("caches mounted row heights on the first frame after ordered inserts", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   const heightForKey = (key: string) => {

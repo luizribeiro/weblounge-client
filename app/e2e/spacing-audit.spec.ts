@@ -206,10 +206,7 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     });
     await expectContiguousRows(page, 2);
     await throttleCpu(page, testInfo.project.name);
-    await list.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-      element.dispatchEvent(new Event("scroll"));
-    });
+    await list.press("End");
     await expect(messageRow(page, seedFence)).toBeVisible();
     await expectContiguousRows(page, 2);
 

@@ -385,9 +385,13 @@ export function MessageList(props: MessageListProps) {
     cancel: (handle) => window.cancelAnimationFrame(handle),
   });
   const cancelOlderAnchorCorrection = () => {
-    if (olderAnchorFrame === undefined) return;
-    window.cancelAnimationFrame(olderAnchorFrame);
-    olderAnchorFrame = undefined;
+    if (olderAnchorFrame !== undefined) {
+      window.cancelAnimationFrame(olderAnchorFrame);
+      olderAnchorFrame = undefined;
+    }
+    pendingOlderAnchor = undefined;
+    olderPageLanded = false;
+    olderPageTimelineRestored = false;
   };
   const cancelLoadingEdgePin = () => {
     if (loadingEdgePinFrame === undefined) return;
@@ -551,7 +555,7 @@ export function MessageList(props: MessageListProps) {
     const history = props.historyState;
     if (previousHistoryLoading !== false && history?.loading === false) {
       if (history.at_start === false) olderPageArmed = true;
-      olderPageLanded = true;
+      olderPageLanded = pendingOlderAnchor !== undefined;
       readerAtHistoryTop = false;
       cancelLoadingEdgePin();
       requestShortHistoryWhenTracked();
@@ -803,6 +807,10 @@ export function MessageList(props: MessageListProps) {
   };
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
+    cancelOlderAnchorCorrection();
+    readerAtHistoryTop = false;
+    cancelLoadingEdgePin();
+    cancelOlderPageRequest();
     setLiveEdge(true);
     scrollToLiveEdge();
   };
