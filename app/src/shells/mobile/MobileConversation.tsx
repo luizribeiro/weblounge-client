@@ -245,6 +245,7 @@ export function MobileConversation(props: MobileConversationProps) {
           )}
           <Composer
             bufferId={props.buffer.id}
+            bufferKind={props.buffer.kind}
             bufferTitle={props.buffer.title}
             commandSpecs={props.commandSpecs}
             draftKey={props.buffer.draft_key}

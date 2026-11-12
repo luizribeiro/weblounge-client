@@ -37,6 +37,16 @@ const quit = {
   secret_arguments: false,
 };
 
+const close = {
+  ...identify,
+  name: "close",
+  aliases: ["wc"],
+  confirm: "menu" as const,
+  confirmation_prompt: "cmd.close.confirmation_prompt",
+  confirmation_action: "cmd.close.confirmation_action",
+  secret_arguments: false,
+};
+
 const person = (nick: string): CompletionCandidate => ({
   type: "person",
   nick,
@@ -201,6 +211,42 @@ it("confirms always-policy commands typed by name or alias", async () => {
   expect(screen.getByRole("button", { name: "Disconnect" })).toHaveFocus();
   fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
   expect(onSend).toHaveBeenCalledWith("  /EXIT later");
+});
+
+it("confirms channel /close but closes a direct message immediately", async () => {
+  const onSend = vi.fn(() => true);
+  const { unmount } = render(() => (
+    <Composer
+      bufferId={1}
+      bufferKind="channel"
+      bufferTitle="#lounge"
+      commandSpecs={[close]}
+      draftKey="test:channel-close"
+      onSend={onSend}
+    />
+  ));
+  let input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/close" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(screen.getByText("Leave #lounge?")).toBeVisible();
+  expect(onSend).not.toHaveBeenCalled();
+  unmount();
+
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferKind="direct"
+      bufferTitle="alice"
+      commandSpecs={[close]}
+      draftKey="test:direct-close"
+      onSend={onSend}
+    />
+  ));
+  input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/wc" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(onSend).toHaveBeenCalledWith("/wc"));
+  expect(screen.queryByText("Leave alice?")).not.toBeInTheDocument();
 });
 
 it("cancels inline confirmation with Escape and keeps the draft", async () => {

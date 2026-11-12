@@ -552,6 +552,7 @@ export function DesktopShell(props: DesktopShellProps) {
                   return (
                     <Composer
                       bufferId={bufferId}
+                      bufferKind={buffer()?.kind}
                       bufferTitle={buffer()?.title ?? ""}
                       commandSpecs={props.commandSpecs}
                       draftKey={buffer()?.draft_key ?? ""}

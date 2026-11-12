@@ -31,6 +31,7 @@ import { TypingIndicator } from "./TypingIndicator";
 
 interface ComposerProps {
   readonly bufferId: number;
+  readonly bufferKind?: "channel" | "direct" | "server" | undefined;
   readonly draftKey: string;
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
@@ -194,7 +195,11 @@ export function Composer(props: ComposerProps) {
     const submittedDraftKey = currentDraftKey;
     if (submitted.trim() === "") return;
     const command = commandForInput(submitted, props.commandSpecs ?? []);
-    if (!confirmed && command?.confirm === "always") {
+    if (
+      !confirmed &&
+      (command?.confirm === "always" ||
+        (command?.name === "close" && props.bufferKind === "channel"))
+    ) {
       setPendingConfirmation(command);
       if (platform.environment().input !== "touch")
         queueMicrotask(() => confirmButton?.focus());
