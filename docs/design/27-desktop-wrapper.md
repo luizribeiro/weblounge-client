@@ -46,11 +46,15 @@ with its own lockfile, so the root workspace and Linux CI never resolve Tauri's 
 
 ## Navigation policy
 
+WKWebView reports navigations in every frame, not only the main one, so the policy is about
+URLs, not frames.
+
 | Request | Result |
 |---|---|
-| Main-frame navigation to an `https:` URL | Stays in the window. OAuth uses `location.replace` to the concierge and its redirects back. |
-| New-window request (`target="_blank"`, `window.open`) | Opens in the default browser. Chat links use `target="_blank"`. |
-| Main-frame navigation to any other scheme (`mailto:`, `http:`, custom) | Opens with the system handler; the window does not navigate. |
+| Navigation to `https:` on the app or concierge host (`beta.weblounge.org`, `members.weblounge.org`) | Stays in the window. OAuth uses `location.replace` to the concierge and its redirects back. |
+| Navigation to an in-page document (`about:`, `blob:`, `data:`) | Stays; these never leave the web view. |
+| Navigation or new-window request (`target="_blank"`, `window.open`) to any other `http:`, `https:` or `mailto:` URL | Opens in the default browser or mail client; the window does not navigate and no second window opens. Chat links use `target="_blank"`. |
+| Any other scheme (`file:`, `javascript:`, `x-apple.systempreferences:`, custom handlers) | Dropped. Chat content must not launch local files or system handlers. |
 
 Without the new-window rule WKWebView silently ignores chat links.
 
@@ -78,11 +82,12 @@ crate's clippy and unit tests; Linux CI is unaffected.
 Playwright cannot drive WKWebView, so the AGENTS.md browser requirement is met by the unchanged web
 app's existing suites, and the wrapper gets:
 
-- Unit tests for the navigation policy, as a pure function from (request kind, URL) to
-  stay/open-externally.
+- Unit tests for the navigation policy, as a pure function from (request kind, URL) to stay,
+  open externally or drop.
 - A manual check before reporting done: launch the built app, sign in through the concierge, send
-  a message, open a chat link in the default browser, hide with ⌘W and reopen from the dock, and
-  confirm text editing shortcuts.
+  a message, open a chat link in the default browser, hide with ⌘W and reopen from the dock, quit
+  while hidden and relaunch to a visible window in its saved place, and confirm text editing
+  shortcuts.
 
 ## Phase 2: notifications while running
 
