@@ -18,6 +18,7 @@ pub enum WindowError {
 }
 
 pub const MAIN_LABEL: &str = "main";
+const BADGE_SCRIPT: &str = include_str!("badge.js");
 const APP_URL: &str = "https://beta.weblounge.org";
 
 // Persisting visibility would restore a window hidden by close-to-hide as hidden at the next launch.
@@ -38,6 +39,7 @@ pub fn create(app: &AppHandle) -> Result<(), WindowError> {
     let window = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
         .title("weblounge")
         .visible(false)
+        .initialization_script(BADGE_SCRIPT)
         .inner_size(1280.0, 840.0)
         .min_inner_size(400.0, 480.0)
         .on_navigation(move |url| {
@@ -103,6 +105,26 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+
+    #[test]
+    fn remote_page_may_only_set_the_badge() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("config is JSON");
+        let capabilities = config["app"]["security"]["capabilities"]
+            .as_array()
+            .expect("capabilities are declared inline");
+        assert_eq!(capabilities.len(), 1);
+        let capability = &capabilities[0];
+        assert_eq!(capability["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            capability["remote"]["urls"],
+            serde_json::json!([APP_URL.to_owned() + "/*"])
+        );
+        assert_eq!(
+            capability["permissions"],
+            serde_json::json!(["core:window:allow-set-badge-count"])
+        );
+    }
 
     fn opened_by(decision: Route, url: &str) -> Vec<String> {
         let opened = RefCell::new(Vec::new());

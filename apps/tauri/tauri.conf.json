@@ -8,12 +8,31 @@
     "withGlobalTauri": false,
     "windows": [],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "remote-badge",
+          "description": "Lets the hosted app set the Dock badge and nothing else.",
+          "windows": [
+            "main"
+          ],
+          "remote": {
+            "urls": [
+              "https://beta.weblounge.org/*"
+            ]
+          },
+          "permissions": [
+            "core:window:allow-set-badge-count"
+          ]
+        }
+      ]
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "SocialNetworking",
     "icon": [
       "icons/32x32.png",
