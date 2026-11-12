@@ -35,14 +35,12 @@ test.describe("New divider ownership", () => {
   }) => {
     const peer = await openDirect(page, "hidden", isMobile);
     try {
-      await setVisibility(page, true);
+      await setPageHidden(page, true);
       const text = `hidden DM arrival ${Date.now()}`;
       await peer.privmsgConfirmed("weblounge", text);
-      await expect
-        .poll(() => historyMessageUpdateCount(page, text))
-        .toBeGreaterThan(0);
+      await expectDeliveredToPage(page, text);
 
-      await setVisibility(page, false);
+      await setPageHidden(page, false);
       await expect(messageText(page, text)).toBeVisible();
       await expect(page.locator("[data-new-line]")).toBeVisible();
     } finally {
@@ -112,9 +110,7 @@ async function openDirect(
       );
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
     const seed = `open focused DM ${suffix}`;
-    const composer = page.getByRole("textbox", { name: /Message/ });
-    await composer.fill(`/query ${peer.nickname} ${seed}`);
-    await composer.press("Enter");
+    await submitComposer(page, `/query ${peer.nickname} ${seed}`);
     await expect(
       page.getByRole("heading", { name: peer.nickname }),
     ).toBeVisible();
@@ -127,6 +123,18 @@ async function openDirect(
     peer.close();
     throw error;
   }
+}
+
+async function submitComposer(page: Page, text: string): Promise<void> {
+  const composer = page.getByRole("textbox", { name: /Message/ });
+  await composer.fill(text);
+  await composer.press("Enter");
+}
+
+async function expectDeliveredToPage(page: Page, text: string): Promise<void> {
+  await expect
+    .poll(() => historyMessageUpdateCount(page, text))
+    .toBeGreaterThan(0);
 }
 
 function bufferRow(page: Page, title: string) {
@@ -145,7 +153,7 @@ function bufferUnreadCount(page: Page, title: string): Promise<number> {
   });
 }
 
-async function setVisibility(page: Page, hidden: boolean): Promise<void> {
+async function setPageHidden(page: Page, hidden: boolean): Promise<void> {
   await page.evaluate((nextHidden) => {
     const setter = Reflect.get(globalThis, "__setNativeVisibility");
     if (typeof setter !== "function")
