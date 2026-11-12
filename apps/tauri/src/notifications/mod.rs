@@ -2,3 +2,5 @@
 
 #[allow(dead_code)]
 mod model;
+#[allow(dead_code)]
+mod service;
