@@ -8,7 +8,8 @@ import type {
 import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
-import { t } from "../../strings";
+import { t, translate } from "../../strings";
+import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu";
 import {
@@ -65,6 +66,12 @@ export function Sidebar(props: SidebarProps) {
     readonly target: SidebarBuffer;
     readonly title: string;
   }>();
+  const [confirmation, setConfirmation] = createSignal<{
+    readonly entry: ActionEntry;
+    readonly context: ActionContext;
+    readonly invoker: HTMLElement;
+    readonly title: string;
+  }>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
   const connection = () => connectionPresentation(props.networks);
@@ -118,7 +125,14 @@ export function Sidebar(props: SidebarProps) {
       void closeDirect(current.target);
       return;
     }
-    props.registry.run(entry.id, current.context, "menu");
+    const result = props.registry.run(entry.id, current.context, "menu");
+    if (result === "confirmation_required")
+      setConfirmation({
+        entry,
+        context: current.context,
+        invoker: current.request.invoker,
+        title: current.title,
+      });
   };
   const menuItems = (destructive: boolean): readonly ContextMenuItem[] => {
     const current = menu();
@@ -281,6 +295,37 @@ export function Sidebar(props: SidebarProps) {
         onDismiss={() => setMenu(undefined)}
         request={menu()?.request}
       />
+      <Show when={confirmation()} keyed>
+        {(pending) => (
+          <ConfirmationDialog
+            action={translate(pending.entry.command?.confirmation_action ?? "")}
+            label={translate(pending.entry.command?.confirmation_prompt ?? "", {
+              text: pending.title,
+            })}
+            message={translate(
+              pending.entry.command?.confirmation_prompt ?? "",
+              {
+                text: pending.title,
+              },
+            )}
+            onCancel={() => {
+              setConfirmation(undefined);
+              queueMicrotask(() =>
+                pending.invoker.focus({ preventScroll: true }),
+              );
+            }}
+            onConfirm={() => {
+              props.registry.run(
+                pending.entry.id,
+                pending.context,
+                "menu",
+                true,
+              );
+              setConfirmation(undefined);
+            }}
+          />
+        )}
+      </Show>
     </aside>
   );
 }

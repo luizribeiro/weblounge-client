@@ -205,6 +205,17 @@ it("shows only runnable row-menu items and dispatches against its target", async
     expect.objectContaining({ targetBufferId: 2, targetUnread: true }),
   );
 
+  fireEvent.contextMenu(channel);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel" }));
+  expect(
+    screen.getByRole("alertdialog", { name: "Leave #lounge?" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+  expect(runCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "part" }),
+    expect.objectContaining({ targetBufferId: 2 }),
+  );
+
   fireEvent.contextMenu(screen.getByRole("button", { name: "alice" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Close conversation" }));
   expect(closeDirect).toHaveBeenCalledWith(

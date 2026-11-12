@@ -1,0 +1,52 @@
+.backdrop {
+  align-items: center;
+  background: var(--wl-color-overlay-scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 30;
+}
+
+.dialog {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-palette);
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-fg);
+  padding: 18px;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.dialog h2 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.dialog p {
+  color: var(--wl-color-panel-muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.actions button {
+  appearance: none;
+  background: var(--wl-color-chip);
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: inherit;
+  font: inherit;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.actions .confirm {
+  background: var(--wl-color-error);
+  color: var(--wl-color-accent-fg);
+}
