@@ -959,6 +959,10 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
 - **Permission prompt.** On a deployment with push configured, the prompt also shows when page
   notifications are possible but Web Push isn't. Turning on then only calls `Notification.requestPermission()`; it never subscribes. The
   iOS standalone rule still applies when the prompt is for Web Push.
+- **Known limits.** `Failed` counts as unavailable at once, but while a reconnect re-registers,
+  the home may still deliver to the relay route, so Web Push and the page can both alert for one
+  message. Both use the `net/buffer` tag, which usually but not reliably replaces one with the
+  other.
 - **Out of scope.** Invites, badge changes, notification settings beyond the engine defaults, and
   native Tauri notifications (decision 5).
 - **Testing.** Unit tests cover the post decision, dedupe, the tab election and close-on-read.
