@@ -5,6 +5,7 @@ let
     rustc = rustToolchain;
   };
   root = ../apps/tauri;
+  rcodesign = pkgs.lib.getExe pkgs.rcodesign;
 in
 rustPlatform.buildRustPackage {
   pname = "weblounge-desktop";
@@ -25,6 +26,16 @@ rustPlatform.buildRustPackage {
   preCheck = ''
     cargo clippy --offline --release --all-targets -- -D warnings
     ${pkgs.lib.getExe pkgs.nodejs} --test 'src/*.test.mjs'
+  '';
+  # UNUserNotificationCenter rejects every call unless the signature binds the Info.plist, which the
+  # linker's ad-hoc signature does not. A post phase runs after darwin's own fixup re-signing.
+  postPhases = [ "signBundlePhase" ];
+  signBundlePhase = ''
+    bundle="$out/Applications/Weblounge.app"
+    ${rcodesign} sign "$bundle"
+    signature="$(${rcodesign} print-signature-info "$bundle/Contents/MacOS/weblounge-desktop")"
+    grep -q "identifier: org.weblounge.desktop" <<<"$signature"
+    grep -q "'Info (1):" <<<"$signature"
   '';
   meta.platforms = pkgs.lib.platforms.darwin;
 }
