@@ -1,0 +1,51 @@
+.lifted {
+  border-radius: 12px;
+  box-shadow: var(--wl-effect-overlay-shadow);
+  left: calc(var(--wl-safe-left) + 8px);
+  overflow: hidden;
+  position: absolute;
+  right: calc(var(--wl-safe-right) + 8px);
+  top: var(--wl-mobile-lifted-top);
+  z-index: 1;
+}
+
+.lifted > div {
+  border: 0;
+}
+
+.group,
+.cancel {
+  background: var(--wl-color-panel-alt);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.group button,
+.cancel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--wl-color-border);
+  color: var(--wl-color-fg);
+  font: inherit;
+  font-size: 15px;
+  min-height: 50px;
+  padding: 0 16px;
+  text-align: center;
+  width: 100%;
+}
+
+.group button:first-child {
+  border-top: 0;
+}
+
+.group .danger {
+  color: var(--wl-color-error);
+  font-weight: 650;
+}
+
+.cancel {
+  border: 0;
+  font-weight: 650;
+  margin-top: 8px;
+}
