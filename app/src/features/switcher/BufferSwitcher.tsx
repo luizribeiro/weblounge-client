@@ -83,6 +83,8 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
       activeDescendant={
         active() === undefined ? undefined : optionId(active()?.buffer.id ?? 0)
       }
+      closeLabel={t("switcher.close")}
+      escapeHint={t("switcher.escape")}
       inputLabel={t("switcher.input")}
       label={t("switcher.dialog")}
       listboxId={listboxId}

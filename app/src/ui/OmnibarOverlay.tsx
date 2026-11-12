@@ -4,6 +4,8 @@ import styles from "./OmnibarOverlay.module.css";
 interface OmnibarOverlayProps {
   readonly activeDescendant?: string | undefined;
   readonly children: JSX.Element;
+  readonly closeLabel: string;
+  readonly escapeHint: string;
   readonly inputLabel: string;
   readonly label: string;
   readonly listboxId: string;
@@ -72,7 +74,7 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
   return (
     <div class={styles.overlay} data-omnibar-overlay="true">
       <button
-        aria-label={`Close ${props.label}`}
+        aria-label={props.closeLabel}
         class={styles.backdrop}
         onClick={props.onDismiss}
         tabIndex={-1}
@@ -110,7 +112,7 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
             type="text"
             value={props.query}
           />
-          <kbd>esc</kbd>
+          <kbd>{props.escapeHint}</kbd>
         </div>
         {props.children}
       </div>

@@ -13,6 +13,8 @@ it("exposes combobox semantics, traps focus, and restores the invoker", async ()
       <Show when={open()}>
         <OmnibarOverlay
           activeDescendant="buffer-option-1"
+          closeLabel="Close quick switcher"
+          escapeHint="esc"
           inputLabel="Jump to"
           label="Quick switcher"
           listboxId="buffer-results"
