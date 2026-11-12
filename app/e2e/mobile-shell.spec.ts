@@ -306,7 +306,7 @@ test.describe("mobile shell against local Ergo", () => {
           await page.getByRole("searchbox", { name: "Search chats" }).fill("");
 
           const savedScrollTop = await target.evaluate((row) => {
-            const list = row.parentElement;
+            const list = row.closest("[data-mobile-chat-list]");
             if (!(list instanceof HTMLElement))
               throw new Error("chat list missing");
             list.dispatchEvent(
@@ -455,7 +455,12 @@ test.describe("mobile shell against local Ergo", () => {
           page.getByRole("button", { name: "Direct" }),
         ).toHaveAttribute("aria-pressed", "true");
         await expect
-          .poll(() => target.evaluate((row) => row.parentElement?.scrollTop))
+          .poll(() =>
+            target.evaluate(
+              (row) =>
+                row.closest<HTMLElement>("[data-mobile-chat-list]")?.scrollTop,
+            ),
+          )
           .toBe(scrollTop);
 
         await target.click();
