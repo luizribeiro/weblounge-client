@@ -336,6 +336,41 @@ it("does not reconcile the live edge when the transcript cannot scroll", () => {
   expect(scrollTo).not.toHaveBeenCalled();
 });
 
+it("keeps the live-edge command while DOM scroll geometry settles", async () => {
+  let controller: MessageListController | undefined;
+  let scrollHeight = 100;
+  render(() => (
+    <MessageList
+      messages={Array.from({ length: 30 }, (_, index) => ({
+        ...message,
+        id: index + 1,
+        received_at_ms: index + 1,
+      }))}
+      registerController={(value) => {
+        controller = value;
+      }}
+    />
+  ));
+  const list = screen.getByRole("list", { name: "Messages" });
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, get: () => scrollHeight },
+  });
+  const scrollTo = vi.spyOn(list, "scrollTo");
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await twoAnimationFrames();
+  scrollTo.mockClear();
+
+  controller?.jumpBottom();
+  expect(scrollTo).toHaveBeenCalledOnce();
+
+  fireEvent.wheel(list, { deltaY: -100 });
+  scrollHeight = 1_000;
+  await twoAnimationFrames();
+
+  expect(scrollTo).toHaveBeenCalledOnce();
+});
+
 it("anchors composer height changes before viewport resize delivery", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(

@@ -423,6 +423,7 @@ export function MessageList(props: MessageListProps) {
   const markPointerScrollIntent = (event: PointerEvent) => {
     if (event.isPrimary && event.button === 0) {
       cancelOlderAnchorCorrection();
+      virtualizer.cancelScroll();
       userScrollIntent.beginPointer();
     }
   };
@@ -433,6 +434,7 @@ export function MessageList(props: MessageListProps) {
   };
   const markTouchScrollIntent = () => {
     cancelOlderAnchorCorrection();
+    virtualizer.cancelScroll();
     userScrollIntent.beginTouch();
   };
   const endTouchScrollIntent = (event: TouchEvent) => {
@@ -565,6 +567,7 @@ export function MessageList(props: MessageListProps) {
   });
   const markWheelScrollIntent = (event: WheelEvent) => {
     cancelOlderAnchorCorrection();
+    virtualizer.cancelScroll();
     userScrollIntent.beginDiscrete();
     if (event.deltaY < 0) requestOlderWhenTracked();
     else if (event.deltaY > 0) {
@@ -576,6 +579,7 @@ export function MessageList(props: MessageListProps) {
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) {
       cancelOlderAnchorCorrection();
+      virtualizer.cancelScroll();
       userScrollIntent.beginDiscrete();
     }
   };
@@ -700,7 +704,11 @@ export function MessageList(props: MessageListProps) {
   });
   const scrollToLiveEdge = () => {
     if (list === undefined) return;
-    if (list.scrollHeight <= list.clientHeight + liveEdgeTolerance) {
+    const contentHeight = Math.max(
+      list.scrollHeight,
+      virtualizer.getTotalSize(),
+    );
+    if (contentHeight <= list.clientHeight + liveEdgeTolerance) {
       virtualizer.cancelScroll();
       return;
     }

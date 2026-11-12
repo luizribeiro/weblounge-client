@@ -24,6 +24,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: kept initial live-edge placement armed while virtual transcript geometry settles,
+  using the virtualizer's known extent before the DOM publishes its scroll height; explicit wheel,
+  touch, pointer and keyboard intent cancels that command so later measurements cannot reclaim a
+  reader-owned position.
 - 2026-11-12: added a VS Code-style command mode to the quick-switcher omnibar, filtering and
   recency-ranking available registry actions with group and chord hints; Tauri uses ⇧⌘P /
   Ctrl+Shift+P, web uses ⇧⌘. / Ctrl+Shift+., and a leading `>` switches modes in every shell.
