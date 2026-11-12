@@ -7,8 +7,13 @@ import { Sidebar } from "./Sidebar";
 it("groups projected buffers and routes sidebar actions through commands", () => {
   const show = vi.fn();
   const server = vi.fn();
+  const switcher = vi.fn();
   const registry = new ActionRegistry(
-    { "pane.show-buffer": show, "network.open-server": server },
+    {
+      "network.open-server": server,
+      "pane.show-buffer": show,
+      "switcher.open": switcher,
+    },
     "other",
   );
   render(() => (
@@ -60,9 +65,8 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
       selector: "footer [data-line]",
     }),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: /Jump to/u }),
-  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Jump to" }));
+  expect(switcher).toHaveBeenCalledOnce();
   expect(
     screen.queryByRole("button", { name: "Add network" }),
   ).not.toBeInTheDocument();

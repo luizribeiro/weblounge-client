@@ -21,6 +21,10 @@ import {
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
 import { SidebarFooter } from "./SidebarFooter";
+import {
+  SWITCHER_LAUNCHER_VARIANT,
+  SwitcherLauncher,
+} from "./SwitcherLauncher";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -48,6 +52,16 @@ export function Sidebar(props: SidebarProps) {
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
   const connection = () => connectionPresentation(props.networks);
+  const switcherAvailable = () =>
+    props.registry.availability("switcher.open", props.commandContext).state ===
+    "available";
+  const switcherLauncher = () => (
+    <SwitcherLauncher
+      label={props.registry.title("switcher.open")}
+      onClick={() => run("switcher.open")}
+      shortcut={props.registry.bindingLabel("switcher.open")}
+    />
+  );
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(brand),
     interrupted: () => connection().error !== undefined,
@@ -138,7 +152,18 @@ export function Sidebar(props: SidebarProps) {
           </h1>
           <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
         </div>
+        <Show
+          when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "icon"}
+        >
+          {switcherLauncher()}
+        </Show>
       </div>
+
+      <Show
+        when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "button"}
+      >
+        {switcherLauncher()}
+      </Show>
 
       <Show when={connection().error} keyed>
         {(error) => (
