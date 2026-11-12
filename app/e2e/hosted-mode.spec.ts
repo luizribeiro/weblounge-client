@@ -5,7 +5,9 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import {
+  installPageNotificationCounter,
   installPageNotificationStub,
+  pageNotificationConstructions,
   pageNotificationPermissionRequests,
 } from "./page-notification-stub";
 
@@ -754,6 +756,7 @@ async function exerciseNotificationPromptRegistration(
   }
   if (surface.name === "mobile") await installStandaloneDisplay(page);
   await installPushManagerStub(page, "default", "granted");
+  await installPageNotificationCounter(page);
   await installAppBadgeSpy(page);
   await installFakeEngine(page);
   await installFakeOAuth(page);
@@ -958,6 +961,8 @@ async function exerciseNotificationPromptRegistration(
   await expect(debug).toContainText(
     "engine=Registered (route-12) / relay=active (route-12) / last error=none",
   );
+  await emitNotifiableDirectMessage(page, "msg-push-active");
+  expect(await pageNotificationConstructions(page)).toBe(0);
   await page.evaluate(() => {
     const fail = Reflect.get(globalThis, "failPushRegistration");
     if (typeof fail !== "function")
@@ -965,6 +970,8 @@ async function exerciseNotificationPromptRegistration(
     fail();
   });
   await expect(debug).toContainText("engine=Failed(invalid_parameters)");
+  await emitNotifiableDirectMessage(page, "msg-push-failed");
+  expect(await pageNotificationConstructions(page)).toBe(1);
   await expect(debug).toContainText(
     "relay=probing (route-re) / last error=none",
   );
@@ -993,6 +1000,8 @@ async function exerciseNotificationPromptRegistration(
   await expect(debug).toContainText(
     "engine=Registered (route-re) / relay=active (route-re) / last error=none",
   );
+  await emitNotifiableDirectMessage(page, "msg-push-recovered");
+  expect(await pageNotificationConstructions(page)).toBe(1);
   await page.evaluate(() => {
     const setUnread = Reflect.get(globalThis, "setHostedUnread");
     if (typeof setUnread !== "function")
@@ -1800,6 +1809,9 @@ async function installFakeEngine(
             revision: 0,
           });
           this.emit({ type: "command_specs_changed", specs: [] });
+          Reflect.set(globalThis, "emitHostedEngineEvent", (event: unknown) =>
+            this.emit(event),
+          );
           return;
         }
         const request = envelope.payload?.request;
@@ -2212,6 +2224,46 @@ async function emitPushRegistration(page: Page): Promise<void> {
       throw new Error("push registration release is missing");
     complete();
   });
+}
+
+async function emitNotifiableDirectMessage(
+  page: Page,
+  msgid: string,
+): Promise<void> {
+  await page.evaluate((serverId) => {
+    const emit = Reflect.get(globalThis, "emitHostedEngineEvent");
+    if (typeof emit !== "function")
+      throw new Error("hosted engine event control is missing");
+    emit({
+      type: "notifiable_message_received",
+      buffer: {
+        id: 99,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "direct",
+        title: "mel",
+        draft_key: "9:weblounge:rfc1459:mel",
+        topic: null,
+        unread: 1,
+        mentions: 1,
+      },
+      message: {
+        id: 990,
+        author: "mel",
+        text: "are you around?",
+        kind: "text",
+        bot: false,
+        authorship: "other",
+        nick_color_index: 2,
+        highlighted: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: [serverId],
+        server_time_ms: 1_700_000_000_000,
+        received_at_ms: 1_700_000_000_000,
+      },
+    });
+  }, msgid);
 }
 
 async function installStandaloneDisplay(page: Page): Promise<void> {

@@ -33,20 +33,24 @@ export async function installPageNotificationStub(
       instance: { onclick: (() => void) | null };
     }[] = [];
     let permissionRequests = 0;
+    const records = new WeakMap<object, (typeof posted)[number]>();
+    // Playwright transpiles init scripts without class-field helpers, so the
+    // stub sets its fields in the constructor.
     class StubNotification {
-      onclick: (() => void) | null = null;
-      readonly #record: (typeof posted)[number];
+      declare onclick: (() => void) | null;
 
       constructor(title: string, init?: { body?: string; tag?: string }) {
         if (current !== "granted") throw new TypeError("permission denied");
-        this.#record = {
+        this.onclick = null;
+        const record = {
           title,
           body: init?.body,
           tag: init?.tag,
           closed: false,
           instance: this,
         };
-        posted.push(this.#record);
+        records.set(this, record);
+        posted.push(record);
       }
 
       static get permission(): NotificationPermission {
@@ -60,7 +64,8 @@ export async function installPageNotificationStub(
       }
 
       close(): void {
-        this.#record.closed = true;
+        const record = records.get(this);
+        if (record !== undefined) record.closed = true;
       }
     }
     Object.defineProperty(globalThis, "Notification", {
@@ -76,7 +81,10 @@ export async function installPageNotificationStub(
           tag,
           closed,
         })),
-      click: (index: number) => posted[index]?.instance.onclick?.(),
+      click: (title: string) =>
+        posted
+          .findLast((notification) => notification.title === title)
+          ?.instance.onclick?.(),
       permissionRequests: () => permissionRequests,
     });
   }, options);
@@ -106,5 +114,35 @@ export function pageNotificationPermissionRequests(
 ): Promise<number> {
   return page.evaluate(() =>
     Reflect.get(globalThis, "__pageNotifications").permissionRequests(),
+  );
+}
+
+export async function installPageNotificationCounter(
+  page: Page,
+): Promise<void> {
+  await page.addInitScript(() => {
+    let constructed = 0;
+    const counting = new Proxy(globalThis.Notification, {
+      construct: () => {
+        constructed += 1;
+        return { onclick: null, close: () => undefined };
+      },
+    });
+    Object.defineProperty(globalThis, "Notification", {
+      configurable: true,
+      writable: true,
+      value: counting,
+    });
+    Reflect.set(
+      globalThis,
+      "__pageNotificationConstructions",
+      () => constructed,
+    );
+  });
+}
+
+export function pageNotificationConstructions(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    Reflect.get(globalThis, "__pageNotificationConstructions")(),
   );
 }

@@ -65,7 +65,16 @@ import {
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
-import { syncAppPushState } from "./platform/push/app-badge";
+import {
+  type PushDelivery,
+  type PushSubscriptionStatus,
+  pushDeliveryFor,
+} from "./platform/page-notifications/page-notification-policy";
+import { PageNotifications } from "./platform/page-notifications/page-notifications";
+import {
+  conversationReadMarkers,
+  syncAppPushState,
+} from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
@@ -222,6 +231,12 @@ export function App(props: AppProps) {
     ReadonlyMap<number, PushRouteDiagnostic>
   >(new Map());
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
+  const [pushSubscription, setPushSubscription] =
+    createSignal<PushSubscriptionStatus>("pending");
+  const [shownBufferIds, setShownBufferIds] = createSignal<ReadonlySet<number>>(
+    new Set(),
+  );
+  let pageNotifications: PageNotifications | undefined;
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushOwner: PushSyncOwner | undefined;
@@ -321,6 +336,23 @@ export function App(props: AppProps) {
       .catch(() => undefined);
   };
   createEffect(syncEnginePushState);
+  createEffect(() => {
+    const networkLabels = new Map(
+      networks().map((network) => [network.id, network.label]),
+    );
+    pageNotifications?.closeRead(
+      conversationReadMarkers(buffers(), networkLabels),
+    );
+  });
+  const pushDelivery = (networkId: number): PushDelivery =>
+    pushDeliveryFor({
+      webPushSupported: supportsWebPush(window, navigator),
+      pushConfigured:
+        props.pushConfig !== undefined && props.hostedSession !== undefined,
+      permission: notificationPermission(),
+      subscription: pushSubscription(),
+      registration: enginePushStates().get(networkId),
+    });
   createEffect(() => {
     const config = props.pushConfig;
     const mountedClient = client;
@@ -466,6 +498,19 @@ export function App(props: AppProps) {
           });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
+    const notifications = new PageNotifications({
+      networkLabel: (networkId) =>
+        networks().find((network) => network.id === networkId)?.label,
+      pushDelivery,
+      pageForeground: () => appIsForeground,
+      shownBufferIds,
+      openRoute: (route) => {
+        window.focus();
+        const message = decodeOpenRouteMessage({ kind: "open-route", route });
+        if (message !== undefined) applyOpenRoute(message);
+      },
+    });
+    pageNotifications = notifications;
     const handledOpenRouteIntents = new Set<string>();
     const applyOpenRoute = (message: OpenRouteMessage) => {
       if (message.intentId !== undefined) {
@@ -514,6 +559,10 @@ export function App(props: AppProps) {
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (message.type === "notifiable_message_received") {
+        notifications.handle(message);
+        return;
+      }
       if (message.type === "push_route_required") {
         rememberPushSyncEvent(message);
       }
@@ -811,6 +860,7 @@ export function App(props: AppProps) {
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       if (foreground) {
+        notifications.claimPosting();
         if (foregroundLeaseHandoffTimer !== undefined) {
           window.clearTimeout(foregroundLeaseHandoffTimer);
           foregroundLeaseHandoffTimer = undefined;
@@ -937,6 +987,8 @@ export function App(props: AppProps) {
         handleServiceWorkerMessage,
       );
       unsubscribe();
+      notifications.dispose();
+      pageNotifications = undefined;
       unsubscribeUpdateReady();
       foregroundLease?.release();
       pushLeaseOwner?.dispose();
@@ -1009,7 +1061,10 @@ export function App(props: AppProps) {
     session: HostedSession,
     generation: number,
   ): Promise<void> {
-    if (!webPushPermitted()) return;
+    if (!webPushPermitted()) {
+      setPushSubscription("unavailable");
+      return;
+    }
     await waitForProductionServiceWorkerUpdate();
     const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
@@ -1017,12 +1072,11 @@ export function App(props: AppProps) {
       registration,
       config.relay_vapid,
     );
-    if (
-      subscription.status !== "ready" ||
-      disposed ||
-      generation !== pushSetupGeneration
-    )
-      return;
+    if (disposed || generation !== pushSetupGeneration) return;
+    setPushSubscription(
+      subscription.status === "ready" ? "ready" : "unavailable",
+    );
+    if (subscription.status !== "ready") return;
     pushTarget = subscription.target;
     const relay = new RelayClient(config.relay);
     const devices = new EnginePushDeviceStore(mountedClient);
@@ -1466,6 +1520,9 @@ export function App(props: AppProps) {
             if (path !== undefined) writeLastViewedPath(path);
           }}
           onFocusedBufferChange={(bufferId) => {
+            setShownBufferIds(
+              new Set(bufferId === undefined ? [] : [bufferId]),
+            );
             client?.setFocusedTimelineBuffer(bufferId);
             setTimelines(
               (current) =>

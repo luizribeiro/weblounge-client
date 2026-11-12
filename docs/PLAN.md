@@ -7,8 +7,8 @@ The single place a fresh session reads to know where the project stands. Update 
 ### Now
 - Desktop wrapper (design 27) phase 2, wrapper steps 1–3 (dock badge, no background throttling,
   Open at Login): on the Mac.
-- Desktop wrapper phase 2 step 4: design 23's page-posted notifications in the web app, then a beta
-  deploy. Linux host (local-Ergo Playwright journeys). Wrapper step 5 follows on the Mac.
+- Desktop wrapper phase 2 step 4: beta deploy of the page-posted notifications. Wrapper step 5
+  follows on the Mac.
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
@@ -25,6 +25,13 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: built design 23's page-posted notifications (addendum "Page-posted notifications").
+  When this device has no Web Push delivery (no service worker or `PushManager`, push not
+  configured, or the home can't deliver) and `Notification` permission is granted, the page posts
+  one notification per `msgid` and conversation for the engine's live DMs and mentions in buffers
+  that aren't on screen, opens the buffer on click and closes it once read. The prompt now asks for
+  permission without Web Push. The local-Ergo journey stubs only the `Notification` members the
+  macOS wrapper's shim must provide.
 - 2026-11-12: built phase 1 of the temporary macOS desktop wrapper (design 27): a Tauri 2 window
   on beta.weblounge.org with the macOS menu, close-to-hide, persisted geometry, a URL-based
   navigation policy (app hosts stay; other http/https/mailto open externally; other schemes are
