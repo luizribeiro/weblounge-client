@@ -841,10 +841,21 @@ impl NetworkModel {
         ChatListSnapshot::new(fingerprint, rows).with_cursor_ms(self.cursor.map(time_millis))
     }
 
+    #[cfg(test)]
     pub(crate) fn merge_chat_list_snapshot(
         &self,
         fingerprint: String,
         previous: &ChatListSnapshot,
+    ) -> ChatListSnapshot {
+        self.merge_chat_list_snapshot_with_changes(fingerprint, previous, &[], &[])
+    }
+
+    pub(crate) fn merge_chat_list_snapshot_with_changes(
+        &self,
+        fingerprint: String,
+        previous: &ChatListSnapshot,
+        removed: &[crate::chat_list_snapshot::SnapshotRemoval],
+        joined: &[crate::chat_list_snapshot::SnapshotPresence],
     ) -> ChatListSnapshot {
         let rows = self
             .buffer_order
@@ -882,7 +893,14 @@ impl NetworkModel {
                 Some(row)
             })
             .collect();
-        ChatListSnapshot::new(fingerprint, rows).with_cursor_ms(self.cursor.map(time_millis))
+        ChatListSnapshot::project(
+            previous,
+            fingerprint,
+            rows,
+            self.cursor.map(time_millis),
+            removed,
+            joined,
+        )
     }
 
     #[cfg(test)]
@@ -2446,6 +2464,13 @@ impl NetworkModel {
         channel: &papo::ChannelName,
     ) -> Option<SnapshotConversation> {
         let buffer_id = self.buffer_id_for_channel(channel)?;
+        snapshot_conversation(self.buffers.get(&buffer_id)?)
+    }
+
+    pub(crate) fn snapshot_conversation_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Option<SnapshotConversation> {
         snapshot_conversation(self.buffers.get(&buffer_id)?)
     }
 

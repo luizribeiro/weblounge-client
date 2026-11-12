@@ -88,6 +88,15 @@ impl RunningNetwork {
         !self.client.state().is_connected()
             || self.client.state().supports(papo::Feature::ReadMarkers)
     }
+
+    fn record_direct_presence(&mut self, buffer_id: BufferId) {
+        if let Some(conversation) = self.model.snapshot_conversation_for_buffer(buffer_id) {
+            self.chat_list.joined.push(SnapshotPresence {
+                conversation,
+                joined_at_ms: time_millis(papo::time::now()),
+            });
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1769,17 +1778,13 @@ impl Runtime {
                 let snapshot = running.client.state();
                 let (buffer_id, mut output) =
                     open_direct_with_typing(&mut running.model, nick, direct, &snapshot);
+                running.record_direct_presence(buffer_id);
                 if degraded {
                     output.push(EngineToUi::notice(
                         EngineMessageKey::DirectPresenceUnavailable,
                     ));
                 }
-                if focus {
-                    output.push(EngineToUi::FocusBufferRequested {
-                        command_id: command_id.clone(),
-                        buffer_id,
-                    });
-                }
+                request_buffer_focus(&mut output, focus, &command_id, buffer_id);
                 let mut rejection = None;
                 let pending = text.and_then(|text| {
                     let Some((pending, events)) =
@@ -1798,6 +1803,7 @@ impl Runtime {
             for event in output {
                 let _ = outbound.send(event);
             }
+            update_chat_list(&state, &outbound, instance);
             if let Some(pending) = pending {
                 finish_send(&state, &outbound, &client, instance, &pending).await;
             }
@@ -3707,11 +3713,18 @@ fn restore_direct_target_rows(
     let mut output = Vec::new();
     let mut fetches = Vec::new();
     for (nick, latest) in directs {
-        let restored = lock(state)
-            .network
-            .as_mut()
-            .filter(|running| running.instance == instance)
-            .map(|running| running.model.restore_direct(&nick, latest));
+        let restored =
+            lock(state)
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+                .and_then(|running| {
+                    let latest_ms = time_millis(latest);
+                    (!running.chat_list.snapshot.as_ref().is_some_and(|snapshot| {
+                        snapshot.direct_closed_since(nick.key(), latest_ms)
+                    }))
+                    .then(|| running.model.restore_direct(&nick, latest))
+                });
         let (fetch, _buffer_id, added) = restored?;
         if let Some(buffer) = added {
             output.push(EngineToUi::BufferAdded { buffer });
@@ -4509,6 +4522,20 @@ fn process_part(
     Vec::new()
 }
 
+fn request_buffer_focus(
+    output: &mut Vec<EngineToUi>,
+    focus: bool,
+    command_id: &str,
+    buffer_id: BufferId,
+) {
+    if focus {
+        output.push(EngineToUi::FocusBufferRequested {
+            command_id: command_id.to_owned(),
+            buffer_id,
+        });
+    }
+}
+
 fn process_part_event(
     running: &mut RunningNetwork,
     snapshot: &papo::State,
@@ -4853,11 +4880,14 @@ fn update_chat_list(
                 ChatListSnapshot::new(running.chat_list.fingerprint.clone(), Vec::new())
             })
             .clone();
-        let snapshot = running
-            .model
-            .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), &previous);
         let removed = std::mem::take(&mut running.chat_list.removed);
         let joined = std::mem::take(&mut running.chat_list.joined);
+        let snapshot = running.model.merge_chat_list_snapshot_with_changes(
+            running.chat_list.fingerprint.clone(),
+            &previous,
+            &removed,
+            &joined,
+        );
         let changes = SnapshotChanges::between(&previous, &snapshot, removed, joined);
         running.chat_list.snapshot = Some(snapshot);
         (changes, storage, writer)

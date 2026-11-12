@@ -109,6 +109,7 @@ impl ChatListSnapshot {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn with_cursor_ms(mut self, cursor_ms: Option<i64>) -> Self {
         self.cursor_ms = cursor_ms;
         self
@@ -171,12 +172,19 @@ impl ChatListSnapshot {
     }
 
     fn merge_row(&mut self, incoming: SnapshotRow) {
-        if self
+        let removed_at_ms = self
             .tombstones
             .iter()
-            .any(|removed| removed.conversation == incoming.conversation)
+            .find(|removed| removed.conversation == incoming.conversation)
+            .map(|removed| removed.removed_at_ms);
+        if removed_at_ms
+            .is_some_and(|removed| latest_time(&incoming).is_none_or(|latest| latest <= removed))
         {
             return;
+        }
+        if removed_at_ms.is_some() {
+            self.tombstones
+                .retain(|removed| removed.conversation != incoming.conversation);
         }
         if let Some(stored) = self
             .rows
@@ -226,6 +234,40 @@ impl ChatListSnapshot {
             self.tombstones.push(incoming);
         }
         self.rows.retain(|row| row.conversation != conversation);
+    }
+
+    pub(crate) fn direct_closed_since(&self, key: &str, latest_ms: i64) -> bool {
+        self.tombstones.iter().any(|removed| {
+            removed.removed_at_ms >= latest_ms
+                && removed.conversation
+                    == (SnapshotConversation::Direct {
+                        key: key.to_owned(),
+                    })
+        })
+    }
+
+    pub(crate) fn project(
+        previous: &Self,
+        fingerprint: String,
+        rows: Vec<SnapshotRow>,
+        cursor_ms: Option<i64>,
+        removed: &[SnapshotRemoval],
+        joined: &[SnapshotPresence],
+    ) -> Self {
+        let mut next = previous.clone();
+        next.fingerprint = fingerprint;
+        for presence in joined {
+            next.merge_presence(presence.clone());
+        }
+        for removal in removed {
+            next.merge_removal(removal.clone());
+        }
+        next.rows.clear();
+        for row in rows {
+            next.merge_row(row);
+        }
+        next.cursor_ms = cursor_ms;
+        next
     }
 }
 
