@@ -739,8 +739,9 @@
           push-relay = pushRelay;
           push-e2e = pushE2e;
         }
-        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin rec {
           desktop = import ./nix/desktop.nix { inherit pkgs rustToolchain; };
+          desktop-dmg = import ./nix/desktop-dmg.nix { inherit pkgs desktop; };
         };
         apps.ergo = {
           type = "app";
