@@ -15,6 +15,7 @@ export type UiActionId =
   | "message.jump-bottom"
   | "network.add"
   | "network.open-server"
+  | "palette.open"
   | "pane.show-buffer"
   | "settings.open"
   | "sidebar.toggle"
@@ -24,9 +25,18 @@ export type ActionId = UiActionId | EngineActionId;
 
 export type ActionScope = "global" | "desktop" | "list";
 export type Platform = "macos" | "other";
+export type ActionShell = "tauri" | "web";
+export type ActionGroup =
+  | "Commands"
+  | "Messages"
+  | "Navigation"
+  | "Network"
+  | "View";
+type ActionSurface = "help" | "palette";
 
 export interface ActionContext {
   readonly bufferCount: number;
+  readonly currentBufferKind?: "channel" | "direct" | "server";
   readonly connected?: boolean;
   readonly debugOverlay?:
     | "gestures"
@@ -58,6 +68,8 @@ export type EngineActionHandler = (
 export interface ActionEntry {
   readonly id: ActionId;
   readonly title: string;
+  readonly group?: ActionGroup;
+  readonly chord?: string;
   readonly command?: CommandSpec;
 }
 
@@ -70,14 +82,16 @@ interface Binding {
   readonly scope: ActionScope;
   readonly input: "never" | "nonText" | "emptyComposer" | "always";
   readonly label: Readonly<Record<Platform, string>>;
+  readonly shells?: readonly ActionShell[];
 }
 
 interface ActionSpec {
   readonly id: UiActionId;
   readonly title: string;
   readonly availability: (context: ActionContext) => ActionAvailability;
-  readonly binding?: Binding;
-  readonly discoverable?: boolean;
+  readonly bindings?: readonly Binding[];
+  readonly surfaces: readonly ActionSurface[];
+  readonly group: ActionGroup;
 }
 
 const alwaysAvailable = (): ActionAvailability => ({ state: "available" });
@@ -86,6 +100,9 @@ const needsBuffers = (context: ActionContext): ActionAvailability => ({
 });
 const needsList = (context: ActionContext): ActionAvailability => ({
   state: context.listActive ? "available" : "unavailable",
+});
+const needsChannel = (context: ActionContext): ActionAvailability => ({
+  state: context.currentBufferKind === "channel" ? "available" : "unavailable",
 });
 
 const specs: readonly ActionSpec[] = [
@@ -97,11 +114,11 @@ const specs: readonly ActionSpec[] = [
   ),
   {
     ...command("debug.overlay", t("action.debug"), alwaysAvailable),
-    discoverable: false,
+    surfaces: [],
   },
   {
     ...command("settings.open", t("action.settings"), alwaysAvailable),
-    discoverable: false,
+    surfaces: [],
   },
   command("sidebar.toggle", t("action.sidebar_toggle"), alwaysAvailable, {
     ...mod("s", "⌥⌘S", "Ctrl+Alt+S"),
@@ -110,26 +127,46 @@ const specs: readonly ActionSpec[] = [
   command(
     "members.toggle",
     t("action.members_toggle"),
-    alwaysAvailable,
+    needsChannel,
     mod(".", "⌘.", "Ctrl+."),
   ),
-  command("buffer.open", t("action.open_buffer"), alwaysAvailable, {
-    ...mod("k", "⇧⌘K", "Ctrl+Shift+K"),
-    shift: true,
-  }),
-  command("buffer.open-direct", t("action.open_direct"), alwaysAvailable),
+  command("palette.open", t("action.palette"), alwaysAvailable, [
+    { ...mod("p", "⇧⌘P", "Ctrl+Shift+P"), shift: true, shells: ["tauri"] },
+    { ...mod(".", "⇧⌘.", "Ctrl+Shift+."), shift: true, shells: ["web"] },
+  ]),
+  {
+    ...command("buffer.open", t("action.open_buffer"), alwaysAvailable, {
+      ...mod("k", "⇧⌘K", "Ctrl+Shift+K"),
+      shift: true,
+    }),
+    surfaces: ["help"],
+  },
+  {
+    ...command("buffer.open-direct", t("action.open_direct"), alwaysAvailable),
+    surfaces: ["help"],
+  },
   {
     ...command("network.add", t("action.add_network"), alwaysAvailable),
-    discoverable: false,
+    surfaces: [],
   },
-  command("network.open-server", t("action.network_server"), alwaysAvailable),
+  {
+    ...command(
+      "network.open-server",
+      t("action.network_server"),
+      alwaysAvailable,
+    ),
+    surfaces: ["help"],
+  },
   command(
     "message.jump-bottom",
     t("action.jump_bottom"),
     alwaysAvailable,
     key("End", "End", "desktop"),
   ),
-  command("pane.show-buffer", t("action.show_buffer"), alwaysAvailable),
+  {
+    ...command("pane.show-buffer", t("action.show_buffer"), alwaysAvailable),
+    surfaces: ["help"],
+  },
   command(
     "buffer.previous",
     t("action.previous_buffer"),
@@ -142,24 +179,33 @@ const specs: readonly ActionSpec[] = [
     needsBuffers,
     altKey("ArrowDown", "⌥↓", "Alt+↓", "desktop"),
   ),
-  command(
-    "list.previous",
-    t("action.list_previous"),
-    needsList,
-    key("ArrowUp", "↑", "list"),
-  ),
-  command(
-    "list.next",
-    t("action.list_next"),
-    needsList,
-    key("ArrowDown", "↓", "list"),
-  ),
-  command(
-    "list.open",
-    t("action.list_open"),
-    needsList,
-    key("Enter", "↵", "list"),
-  ),
+  {
+    ...command(
+      "list.previous",
+      t("action.list_previous"),
+      needsList,
+      key("ArrowUp", "↑", "list"),
+    ),
+    surfaces: ["help"],
+  },
+  {
+    ...command(
+      "list.next",
+      t("action.list_next"),
+      needsList,
+      key("ArrowDown", "↓", "list"),
+    ),
+    surfaces: ["help"],
+  },
+  {
+    ...command(
+      "list.open",
+      t("action.list_open"),
+      needsList,
+      key("Enter", "↵", "list"),
+    ),
+    surfaces: ["help"],
+  },
 ];
 
 export function isActionId(id: string): id is ActionId {
@@ -169,6 +215,7 @@ export function isActionId(id: string): id is ActionId {
 export class ActionRegistry {
   readonly #handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>;
   readonly #platform: Platform;
+  readonly #shell: ActionShell;
   readonly #engineHandler: EngineActionHandler | undefined;
   #commands: readonly CommandSpec[];
 
@@ -177,9 +224,11 @@ export class ActionRegistry {
     platform: Platform,
     commands: readonly CommandSpec[] = [],
     engineHandler?: EngineActionHandler,
+    shell: ActionShell = "web",
   ) {
     this.#handlers = handlers;
     this.#platform = platform;
+    this.#shell = shell;
     this.#commands = commands;
     this.#engineHandler = engineHandler;
   }
@@ -224,7 +273,7 @@ export class ActionRegistry {
   }
 
   bindingLabel(id: UiActionId): string | undefined {
-    return findSpec(id).binding?.label[this.#platform];
+    return this.#binding(findSpec(id))?.label[this.#platform];
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
@@ -237,17 +286,21 @@ export class ActionRegistry {
       return false;
     }
     const scopes = activeScopes(event.target);
-    const spec = specs.find(
-      (candidate) =>
-        candidate.binding !== undefined &&
-        scopes.includes(candidate.binding.scope) &&
-        matches(event, candidate.binding) &&
-        this.availability(candidate.id, context).state === "available",
-    );
-    if (spec === undefined) return false;
+    const match = specs
+      .flatMap(
+        (spec) => spec.bindings?.map((binding) => ({ binding, spec })) ?? [],
+      )
+      .find(
+        ({ binding, spec }) =>
+          this.#bindingApplies(binding) &&
+          scopes.includes(binding.scope) &&
+          matches(event, binding) &&
+          this.availability(spec.id, context).state === "available",
+      );
+    if (match === undefined) return false;
     event.preventDefault();
     event.stopPropagation();
-    return this.run(spec.id, context) === "ran";
+    return this.run(match.spec.id, context) === "ran";
   }
 
   updateCommands(commands: readonly CommandSpec[]): void {
@@ -317,20 +370,31 @@ export class ActionRegistry {
     const ui = specs
       .filter(
         (spec) =>
-          spec.discoverable !== false &&
+          spec.surfaces.includes(surface) &&
           this.#handlers[spec.id] !== undefined &&
           spec.availability(context).state === "available",
       )
-      .map(({ id, title }) => ({ id, title }));
+      .map((spec) => {
+        const chord = this.#binding(spec)?.label[this.#platform];
+        return {
+          id: spec.id,
+          title: spec.title,
+          group: spec.group,
+          ...(chord === undefined ? {} : { chord }),
+        };
+      });
     const commands = this.#commands
       .filter(
         (command) =>
           allowed(command, context) &&
-          (surface === "help" || command.surfaces.includes("palette")),
+          (surface === "help" ||
+            (command.surfaces.includes("palette") &&
+              command.arguments.every((argument) => !argument.required))),
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
         title: translate(command.description),
+        group: "Commands" as const,
         command,
       }));
     return [...ui, ...commands];
@@ -339,6 +403,14 @@ export class ActionRegistry {
   #command(id: ActionId): CommandSpec | undefined {
     const name = id.slice("command.".length);
     return this.#commands.find((command) => command.name === name);
+  }
+
+  #binding(spec: ActionSpec): Binding | undefined {
+    return spec.bindings?.find((binding) => this.#bindingApplies(binding));
+  }
+
+  #bindingApplies(binding: Binding): boolean {
+    return binding.shells === undefined || binding.shells.includes(this.#shell);
   }
 }
 
@@ -386,11 +458,24 @@ function command(
   id: UiActionId,
   title: string,
   availability: ActionSpec["availability"],
-  binding?: Binding,
+  binding?: Binding | readonly Binding[],
 ): ActionSpec {
-  return binding === undefined
-    ? { id, title, availability }
-    : { id, title, availability, binding };
+  const base = {
+    id,
+    title,
+    availability,
+    group: groupFor(id),
+    surfaces: ["help", "palette"] as const,
+  };
+  if (binding === undefined) return base;
+  return { ...base, bindings: Array.isArray(binding) ? binding : [binding] };
+}
+
+function groupFor(id: UiActionId): ActionGroup {
+  if (id.startsWith("network.")) return "Network";
+  if (id.startsWith("message.")) return "Messages";
+  if (id === "members.toggle" || id === "sidebar.toggle") return "View";
+  return "Navigation";
 }
 
 function mod(keyValue: string, macos: string, other: string): Binding {

@@ -90,7 +90,10 @@ function normalize(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function fuzzyScore(haystack: string, needle: string): number | undefined {
+export function fuzzyScore(
+  haystack: string,
+  needle: string,
+): number | undefined {
   if (needle === "") return 0;
   if (haystack === needle) return 0;
   if (haystack.startsWith(needle)) return 10 + haystack.length - needle.length;

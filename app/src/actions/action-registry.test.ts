@@ -4,6 +4,7 @@ import { ActionRegistry } from "./action-registry";
 const context = {
   bufferCount: 3,
   connected: true,
+  currentBufferKind: "channel" as const,
   features: [] as string[],
   listActive: false,
   permission: "anyone" as const,
@@ -71,6 +72,50 @@ describe("ActionRegistry", () => {
       ),
     ).toBe(true);
     expect(switcher).toHaveBeenCalledOnce();
+  });
+
+  it("uses the native palette chord only in Tauri and the safe web fallback", () => {
+    const nativeOpen = vi.fn();
+    const webOpen = vi.fn();
+    const native = new ActionRegistry(
+      { "palette.open": nativeOpen },
+      "other",
+      [],
+      undefined,
+      "tauri",
+    );
+    const web = new ActionRegistry(
+      { "palette.open": webOpen },
+      "other",
+      [],
+      undefined,
+      "web",
+    );
+
+    expect(native.bindingLabel("palette.open")).toBe("Ctrl+Shift+P");
+    expect(web.bindingLabel("palette.open")).toBe("Ctrl+Shift+.");
+    expect(
+      native.handleKeydown(
+        new KeyboardEvent("keydown", {
+          key: "p",
+          ctrlKey: true,
+          shiftKey: true,
+        }),
+        context,
+      ),
+    ).toBe(true);
+    expect(
+      web.handleKeydown(
+        new KeyboardEvent("keydown", {
+          key: ".",
+          ctrlKey: true,
+          shiftKey: true,
+        }),
+        context,
+      ),
+    ).toBe(true);
+    expect(nativeOpen).toHaveBeenCalledOnce();
+    expect(webOpen).toHaveBeenCalledOnce();
   });
 
   it("resolves list bindings only inside the list scope", () => {
@@ -170,6 +215,37 @@ describe("ActionRegistry", () => {
     ]);
     expect(registry.palette(context)[1]?.title).toBe(
       "Join one or more channels",
+    );
+  });
+
+  it("omits hidden, unavailable, targeted, and argument-taking palette actions", () => {
+    const join = {
+      ...command("join", ["slash", "palette"]),
+      arguments: [
+        { name: "channels", kind: "channel_list" as const, required: true },
+      ],
+    };
+    const registry = new ActionRegistry(
+      {
+        "members.toggle": vi.fn(),
+        "network.add": vi.fn(),
+        "network.open-server": vi.fn(),
+        "settings.open": vi.fn(),
+      },
+      "other",
+      [join],
+      vi.fn(),
+    );
+
+    expect(
+      registry.palette({ ...context, currentBufferKind: "direct" }),
+    ).toEqual([]);
+    expect(registry.help(context).map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        "members.toggle",
+        "network.open-server",
+        "command.join",
+      ]),
     );
   });
 
