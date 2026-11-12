@@ -1,6 +1,6 @@
 # 27 — Desktop wrapper
 
-Status: draft for Luiz's review. A temporary step toward the Tauri desktop shell (brief §3, §5.2,
+Status: draft for Luiz's review; the beta URL and close-to-hide are confirmed (2026-11-12). A temporary step toward the Tauri desktop shell (brief §3, §5.2,
 milestone 7); it does not replace that design.
 
 ## Problem
@@ -58,8 +58,7 @@ the feature:
 
 - Offline launch: WKWebView does not run the app's service worker; design 19 treats a failed
   registration as nonfatal and launches online.
-- Web Push and system notifications: WKWebView exposes neither. Design 23's desktop notifications
-  come from the native engine.
+- Web Push and notifications while the app is quit. Notifications while it runs are phase 2.
 - Tauri-only shortcuts and native menus built from the action registry (design 14): the page sees
   the `web` target, so web-safe chords apply.
 - Raw TCP/TLS networks, native storage, notarization and distribution. The build is ad-hoc signed
@@ -81,6 +80,33 @@ app's existing suites, and the wrapper gets:
 - A manual check before reporting done: launch the built app, sign in through the concierge, send
   a message, open a chat link in the default browser, hide with ⌘W and reopen from the dock, and
   confirm text editing shortcuts.
+
+## Phase 2: notifications while running
+
+Luiz wants notifications while the app runs and none while it is quit (2026-11-12).
+
+1. The web app ships design 23's page-posted path, which is designed but not built: with push
+   unavailable or denied and the app open, the page posts a `Notification` for buffers that are
+   not visible, deduplicated by `msgid`. It is a web feature with its own Playwright coverage and
+   also serves browsers without push.
+2. The wrapper supplies `window.Notification`, which WKWebView lacks, through the Tauri
+   notification plugin's Web Notification shim, delivering macOS notifications. A capability
+   grants `https://beta.weblounge.org` the notification plugin and nothing else; this is the only
+   exception to the page not reaching Tauri. Whether the shim forwards clicks (to open the
+   buffer) is verified before building; if not, a click only activates the app.
+3. Background throttling is disabled for the window so the engine worker keeps its connection
+   while hidden.
+4. The app menu gains an “Open at Login” toggle (design 23 decision 5).
+
+Close-to-hide plus Open at Login keep the app running, which covers what Luiz asked for.
+
+## Phase 3: seamless title bar
+
+The phase 1 window uses the standard macOS title bar. A seamless window, with the traffic lights
+over the sidebar and no title strip, needs an overlay title bar plus web app changes: the desktop
+shell must know it runs in the wrapper, reserve the traffic-light area at the sidebar top, and mark
+drag regions, which in turn need the window-drag permission for the remote origin. The prototype
+has no reference for this, so the layout needs Luiz's sign-off before it is built.
 
 ## Later
 
