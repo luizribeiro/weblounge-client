@@ -708,9 +708,13 @@ test("shows a cold pushed notice before IRC and deduplicates its history copy", 
       `[data-message-row][data-message-text="${text}"]`,
     );
     await expect(notice).toHaveAttribute("data-irc-notice", "true");
+    await expect(notice.getByRole("img", { name: "Notice" })).toBeVisible();
+    const sender = notice.getByText(bot.nickname, { exact: true });
+    await expect(sender).toBeVisible();
+    await expect(sender).toHaveCSS("font-weight", "650");
     await expect(notice.getByText(text, { exact: true })).toHaveCSS(
       "font-style",
-      "italic",
+      "normal",
     );
     await expect.poll(() => notifications(coldPage)).toEqual([]);
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
