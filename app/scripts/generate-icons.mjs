@@ -14,44 +14,40 @@ const mark = favicon.slice(
 
 export const brandColors = { felt: "#1B2A22", paper: "#EFE8D8" };
 
-// Platform icons are full-bleed and opaque because iOS and Android apply
-// their own corner masks; maskable icons keep the mark inside the 80% safe zone.
-await mkdir(iconDirectory, { recursive: true });
+// iOS and Android apply their own corner masks, so the platform icons are
+// full-bleed and opaque; maskable icons keep the mark inside the 80% safe zone.
+// macOS applies no mask, so its icon draws Apple's rounded tile on transparency.
+const macosGrid = { tile: 824, radius: 185, markScale: 0.78 };
+const macosCanvas = 1024;
+
+await Promise.all(
+  [iconDirectory, desktopIconDirectory].map((directory) =>
+    mkdir(directory, { recursive: true }),
+  ),
+);
 await Promise.all([
   copyFile(faviconPath, resolve(iconDirectory, "favicon.svg")),
   renderPng("favicon-32.png", 32, favicon),
-  renderPng("apple-touch-icon.png", 180, appIconSvg(180, 0.78)),
-  renderPng("icon-192.png", 192, appIconSvg(192, 0.78)),
-  renderPng("icon-512.png", 512, appIconSvg(512, 0.78)),
-  renderPng("icon-maskable-192.png", 192, appIconSvg(192, 0.6)),
-  renderPng("icon-maskable-512.png", 512, appIconSvg(512, 0.6)),
-  renderPng("macos-source.png", 1024, macosIconSvg(), desktopIconDirectory),
+  renderPng("apple-touch-icon.png", 180, appIconSvg(180, { markScale: 0.78 })),
+  renderPng("icon-192.png", 192, appIconSvg(192, { markScale: 0.78 })),
+  renderPng("icon-512.png", 512, appIconSvg(512, { markScale: 0.78 })),
+  renderPng("icon-maskable-192.png", 192, appIconSvg(192, { markScale: 0.6 })),
+  renderPng("icon-maskable-512.png", 512, appIconSvg(512, { markScale: 0.6 })),
+  renderPng(
+    "macos-source.png",
+    macosCanvas,
+    appIconSvg(macosCanvas, macosGrid),
+    desktopIconDirectory,
+  ),
 ]);
 
-// Apple's macOS icon grid: an 824px rounded square centred in 1024px with a
-// transparent margin, which macOS does not mask for us.
-function macosIconSvg() {
-  const canvas = 1024;
-  const tile = 824;
-  const radius = 185;
-  const markSize = tile * 0.78;
-  const tileOffset = (canvas - tile) / 2;
-  const markOffset = (canvas - markSize) / 2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas}" height="${canvas}" viewBox="0 0 ${canvas} ${canvas}">
+function appIconSvg(size, { markScale, tile = size, radius = 0 }) {
+  const tileOffset = (size - tile) / 2;
+  const markSize = tile * markScale;
+  const markOffset = (size - markSize) / 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <rect x="${tileOffset}" y="${tileOffset}" width="${tile}" height="${tile}" rx="${radius}" fill="${brandColors.felt}"/>
   <svg x="${markOffset}" y="${markOffset}" width="${markSize}" height="${markSize}" viewBox="0 0 16 16" color="${brandColors.paper}">
-    ${mark}
-  </svg>
-</svg>
-`;
-}
-
-function appIconSvg(size, markScale) {
-  const markSize = size * markScale;
-  const offset = (size - markSize) / 2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <rect width="${size}" height="${size}" fill="${brandColors.felt}"/>
-  <svg x="${offset}" y="${offset}" width="${markSize}" height="${markSize}" viewBox="0 0 16 16" color="${brandColors.paper}">
     ${mark}
   </svg>
 </svg>
@@ -70,6 +66,5 @@ async function renderPng(filename, size, svg, directory = iconDirectory) {
       `rsvg-convert failed for ${filename}${detail ? `: ${detail}` : ""}`,
     );
   }
-  await mkdir(directory, { recursive: true });
   await writeFile(resolve(directory, filename), result.stdout);
 }
