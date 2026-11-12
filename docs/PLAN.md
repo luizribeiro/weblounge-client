@@ -5,10 +5,8 @@ The single place a fresh session reads to know where the project stands. Update 
 ## Roadmap
 
 ### Now
-- Desktop wrapper (design 27) phase 2, wrapper steps 1–3 (dock badge, no background throttling,
-  Open at Login): on the Mac.
-- Desktop wrapper phase 2 step 4: beta deploy of the page-posted notifications. Wrapper step 5
-  follows on the Mac.
+- Desktop wrapper (design 27) phase 2: deploy to beta, then Luiz's end-to-end check in the app
+  (hidden-window DM notification, Dock badge, click opens the DM, reading clears both).
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
@@ -25,6 +23,12 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: built desktop wrapper phase 2 (design 27): a Dock badge through an injected
+  `navigator.setAppBadge`, an unthrottled hidden window, Open at Login (starting hidden), and a
+  native `window.Notification` over `UNUserNotificationCenter` (tag replacement, ordered
+  post/close, click unhides the window and runs the page's handler), exposed to beta through one
+  remote capability. The Nix build re-signs the bundle and asserts the Info.plist binding that
+  notifications require. The page-posted notifications it serves were built on the Linux host.
 - 2026-11-12: built design 23's page-posted notifications (addendum "Page-posted notifications").
   When this device has no Web Push delivery (no service worker or `PushManager`, push not
   configured, or the home can't deliver) and `Notification` permission is granted, the page posts
