@@ -54,6 +54,21 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
   ));
 
   expect(screen.getByText("1 network")).toBeInTheDocument();
+  expect(
+    screen.getByText("weblounge", {
+      exact: true,
+      selector: "footer [data-line]",
+    }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /Jump to/u }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Add network" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Settings" }),
+  ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "#lounge" }));
   fireEvent.click(screen.getByRole("button", { name: "Local Ergo, online" }));
   expect(show).toHaveBeenCalledWith(

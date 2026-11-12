@@ -5,8 +5,6 @@ import styles from "./Sidebar.module.css";
 
 interface SidebarFooterProps {
   readonly networks: readonly NetworkProjection[];
-  readonly onOpenSettings: () => void;
-  readonly settingsTooltip: string;
 }
 
 export function SidebarFooter(props: SidebarFooterProps) {
@@ -17,15 +15,6 @@ export function SidebarFooter(props: SidebarFooterProps) {
           {props.networks[0]?.nickname ?? t("common.weblounge")}
         </Line>
       </div>
-      <button
-        aria-label={t("sidebar.settings")}
-        class={styles.settings}
-        onClick={props.onOpenSettings}
-        title={props.settingsTooltip}
-        type="button"
-      >
-        <span aria-hidden="true">⚙</span>
-      </button>
     </footer>
   );
 }

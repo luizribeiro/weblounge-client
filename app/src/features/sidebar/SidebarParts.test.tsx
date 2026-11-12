@@ -13,7 +13,6 @@ const network = {
 it("keeps network rows and account chrome in focused components", () => {
   const openServer = vi.fn();
   const openBuffer = vi.fn();
-  const settings = vi.fn();
   const { container } = render(() => (
     <>
       <NetworkSection
@@ -50,11 +49,7 @@ it("keeps network rows and account chrome in focused components", () => {
         rovingId={2}
         visibleBufferIds={new Set([2])}
       />
-      <SidebarFooter
-        networks={[network]}
-        onOpenSettings={settings}
-        settingsTooltip="Settings (Ctrl+,)"
-      />
+      <SidebarFooter networks={[network]} />
     </>
   ));
 
@@ -62,10 +57,10 @@ it("keeps network rows and account chrome in focused components", () => {
     screen.getByRole("button", { name: "Local Ergo, connecting" }),
   );
   fireEvent.click(screen.getByRole("button", { name: "#lounge" }));
-  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(openServer).toHaveBeenCalledOnce();
   expect(openBuffer).toHaveBeenCalledOnce();
-  expect(settings).toHaveBeenCalledOnce();
+  expect(screen.getByText("weblounge", { exact: true })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
   expect(container.querySelector("[data-connection-indicator]")).toBeNull();
 });

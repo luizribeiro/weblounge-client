@@ -156,18 +156,6 @@ export function Sidebar(props: SidebarProps) {
         />
       </Show>
 
-      <button
-        class={styles.jump}
-        onClick={() => run("switcher.open")}
-        title={tooltip(props.registry, "switcher.open")}
-        type="button"
-      >
-        <Line>{t("sidebar.jump")}</Line>
-        <Line class={styles.binding}>
-          {props.registry.bindingLabel("switcher.open")}
-        </Line>
-      </button>
-
       <nav
         aria-label={t("sidebar.navigation")}
         class={styles.navigation}
@@ -194,21 +182,9 @@ export function Sidebar(props: SidebarProps) {
             />
           )}
         </For>
-        <button
-          class={styles.addNetwork}
-          onClick={() => run("network.add")}
-          type="button"
-        >
-          <span aria-hidden="true">+</span>
-          <Line>{t("sidebar.add_network")}</Line>
-        </button>
       </nav>
 
-      <SidebarFooter
-        networks={props.networks}
-        onOpenSettings={() => run("settings.open")}
-        settingsTooltip={tooltip(props.registry, "settings.open")}
-      />
+      <SidebarFooter networks={props.networks} />
     </aside>
   );
 }
@@ -239,11 +215,4 @@ function networkSummary(networks: readonly NetworkProjection[]): string {
   return t(count === 1 ? "sidebar.network.one" : "sidebar.network.many", {
     count: String(count),
   });
-}
-
-function tooltip(registry: ActionRegistry, id: UiActionId): string {
-  const binding = registry.bindingLabel(id);
-  return binding === undefined
-    ? registry.title(id)
-    : `${registry.title(id)} (${binding})`;
 }
