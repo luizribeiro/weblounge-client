@@ -31,10 +31,13 @@ remote origin is a security boundary this step does not need.
 ## Shell
 
 The crate lives at `apps/tauri/`, the location the design index reserves for the native shells.
-It contains no product rules and depends on nothing in this workspace.
+It contains no product rules, depends on nothing in this workspace, and is its own Cargo workspace
+with its own lockfile, so the root workspace and Linux CI never resolve Tauri's dependencies.
 
-- One window titled “weblounge”, with a native title bar, the chair icon from
-  `~/weblounge/web/images/chair.svg`, a sensible default size and a minimum size above the 760 px
+- A macOS app icon: the existing felt-and-paper mark that `app/scripts/generate-icons.mjs`
+  renders for the PWA, drawn on Apple's rounded-square icon grid and bundled as `.icns`. The
+  generator stays the single source for every platform icon.
+- One window titled “weblounge”, with a native title bar, a sensible default size and a minimum size above the 760 px
   desktop panel boundary. Window size and position persist across launches.
 - The standard macOS menu: app (About, Hide, Quit), Edit (Undo, Redo, Cut, Copy, Paste, Select
   All, so text editing shortcuts work), View (Reload, Enter Full Screen) and Window.
@@ -67,8 +70,8 @@ the feature:
 ## Build
 
 `nix build .#desktop` on `aarch64-darwin` produces `Weblounge.app`. The bundle needs no frontend
-assets. The dev shell gains the Tauri CLI on darwin only; Linux CI is unaffected beyond formatting,
-clippy and unit tests for the crate.
+assets. The dev shell gains the Tauri CLI on darwin only. The darwin package build runs the
+crate's clippy and unit tests; Linux CI is unaffected.
 
 ## Testing
 
