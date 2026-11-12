@@ -342,6 +342,33 @@ describe("ActionRegistry", () => {
     expect(registry.run("command.join", context, "menu", true)).toBe("ran");
   });
 
+  it("offers Leave for channels and unconfirmed Close for direct messages", () => {
+    const close = {
+      ...command("close", ["palette", "channel_menu"]),
+      menu_label: "cmd.close.menu",
+      confirm: "menu" as const,
+    };
+    const part = {
+      ...command("part", ["palette", "channel_menu"]),
+      menu_label: "cmd.part.menu",
+      confirm: "menu" as const,
+    };
+    const run = vi.fn();
+    const registry = new ActionRegistry({}, "other", [close, part], run);
+
+    expect(registry.channelMenu(context).map(({ title }) => title)).toEqual([
+      "Leave channel",
+    ]);
+    const direct = { ...context, currentBufferKind: "direct" as const };
+    expect(registry.channelMenu(direct).map(({ title }) => title)).toEqual([
+      "Close conversation",
+    ]);
+    expect(registry.run("command.close", direct, "menu")).toBe("ran");
+    expect(registry.run("command.part", context, "menu")).toBe(
+      "confirmation_required",
+    );
+  });
+
   it("keeps viewport diagnostics hidden until the exact slash command", () => {
     const debug = vi.fn();
     const registry = new ActionRegistry({ "debug.overlay": debug }, "other");

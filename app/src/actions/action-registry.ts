@@ -274,7 +274,7 @@ export class ActionRegistry {
     if (id.startsWith("command.")) {
       const command = this.#command(id);
       if (command === undefined) return "unavailable";
-      if (!confirmed && needsConfirmation(command, source))
+      if (!confirmed && needsConfirmation(command, source, context))
         return "confirmation_required";
       this.#engineHandler?.(command, context);
       return "ran";
@@ -410,13 +410,12 @@ export class ActionRegistry {
       .filter(
         (command) =>
           allowed(command, context) &&
+          commandApplies(command, context, surface) &&
           (surface === "help" ||
             (command.surfaces.includes(
               surface === "palette" ? "palette" : "channel_menu",
             ) &&
-              (surface !== "channelMenu" ||
-                (command.confirm === "none" &&
-                  command.menu_label !== undefined)) &&
+              (surface !== "channelMenu" || command.menu_label !== undefined) &&
               canInvokeWithoutArguments(command, context))),
       )
       .map((command) => ({
@@ -494,11 +493,25 @@ function permissionRank(permission: CommandPermission): number {
 function needsConfirmation(
   command: CommandSpec,
   source: CommandSource,
+  context: ActionContext,
 ): boolean {
+  if (command.name === "close" && context.currentBufferKind === "direct")
+    return false;
   return (
     command.confirm === "always" ||
     (command.confirm === "menu" && source === "menu")
   );
+}
+
+function commandApplies(
+  command: CommandSpec,
+  context: ActionContext,
+  surface: ActionSurface,
+): boolean {
+  if (surface === "help") return true;
+  if (command.name === "close") return context.currentBufferKind === "direct";
+  if (command.name === "part") return context.currentBufferKind === "channel";
+  return true;
 }
 
 function command(

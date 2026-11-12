@@ -46,7 +46,7 @@ pub(crate) enum Command {
     #[command(
         name = "part", aliases = ["leave"], usage = "cmd.part.usage",
         description = "cmd.part.description", surfaces = ["Slash", "Palette", "ChannelMenu"],
-        confirm = "Menu", completion = "Everyday"
+        menu_label = "cmd.part.menu", confirm = "Menu", completion = "Everyday"
     )]
     Part {
         channel: Channel,
@@ -55,7 +55,7 @@ pub(crate) enum Command {
     #[command(
         name = "close", aliases = ["wc"], usage = "cmd.close.usage",
         description = "cmd.close.description", surfaces = ["Slash", "Palette", "ChannelMenu"],
-        confirm = "Menu"
+        menu_label = "cmd.close.menu", confirm = "Menu"
     )]
     Close {},
     #[command(
