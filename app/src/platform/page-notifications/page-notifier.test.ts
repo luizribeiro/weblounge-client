@@ -7,7 +7,7 @@ import {
 } from "./page-notifier";
 
 class RecordedNotification implements PageNotification {
-  onclick: (() => void) | null = null;
+  onclick: ((event: Event) => void) | null = null;
   closed = false;
 
   constructor(
@@ -106,7 +106,7 @@ describe("PageNotifier", () => {
     const { notifier, shown, opened } = harness();
     notifier.post(channelMention, 1);
 
-    shown[0]?.onclick?.();
+    shown[0]?.onclick?.(new Event("click"));
 
     expect(opened).toEqual(["/weblounge/lounge"]);
     expect(shown[0]?.closed).toBe(true);

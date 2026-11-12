@@ -8,7 +8,7 @@ import {
 import { notificationDataIsRead } from "../push/push-notification-state";
 
 export interface PageNotification {
-  onclick: (() => void) | null;
+  onclick: ((event: Event) => void) | null;
   close(): void;
 }
 
