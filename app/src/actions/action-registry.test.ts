@@ -11,14 +11,14 @@ const context = {
 
 describe("ActionRegistry", () => {
   it("dispatches platform-aware global and desktop bindings", () => {
-    const switcher = vi.fn();
+    const members = vi.fn();
     const next = vi.fn();
     const registry = new ActionRegistry(
-      { "switcher.open": switcher, "buffer.next": next },
+      { "members.toggle": members, "buffer.next": next },
       "macos",
     );
-    const switcherEvent = new KeyboardEvent("keydown", {
-      key: "k",
+    const membersEvent = new KeyboardEvent("keydown", {
+      key: ".",
       metaKey: true,
       cancelable: true,
     });
@@ -28,11 +28,42 @@ describe("ActionRegistry", () => {
       cancelable: true,
     });
 
-    expect(registry.handleKeydown(switcherEvent, context)).toBe(true);
+    expect(registry.handleKeydown(membersEvent, context)).toBe(true);
     expect(registry.handleKeydown(nextEvent, context)).toBe(true);
-    expect(switcher).toHaveBeenCalledOnce();
+    expect(members).toHaveBeenCalledOnce();
     expect(next).toHaveBeenCalledOnce();
-    expect(registry.bindingLabel("switcher.open")).toBe("⌘K");
+    expect(registry.bindingLabel("members.toggle")).toBe("⌘.");
+  });
+
+  it("does not advertise or bind placeholder actions", () => {
+    const switcher = vi.fn();
+    const settings = vi.fn();
+    const registry = new ActionRegistry(
+      {
+        "network.add": vi.fn(),
+        "settings.open": settings,
+        "switcher.open": switcher,
+      },
+      "macos",
+    );
+
+    expect(registry.bindingLabel("switcher.open")).toBeUndefined();
+    expect(registry.bindingLabel("settings.open")).toBeUndefined();
+    expect(registry.help(context).map(({ id }) => id)).not.toEqual(
+      expect.arrayContaining(["network.add", "settings.open", "switcher.open"]),
+    );
+    expect(
+      registry.handleKeydown(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          metaKey: true,
+          cancelable: true,
+        }),
+        context,
+      ),
+    ).toBe(false);
+    expect(switcher).not.toHaveBeenCalled();
+    expect(settings).not.toHaveBeenCalled();
   });
 
   it("resolves list bindings only inside the list scope", () => {
@@ -115,18 +146,18 @@ describe("ActionRegistry", () => {
 
   it("merges UI actions and runtime commands for palette and help", () => {
     const registry = new ActionRegistry(
-      { "settings.open": vi.fn() },
+      { "members.toggle": vi.fn() },
       "other",
       [command("join", ["slash", "palette"]), command("say", ["slash"])],
       vi.fn(),
     );
 
     expect(registry.palette(context).map(({ id }) => id)).toEqual([
-      "settings.open",
+      "members.toggle",
       "command.join",
     ]);
     expect(registry.help(context).map(({ id }) => id)).toEqual([
-      "settings.open",
+      "members.toggle",
       "command.join",
       "command.say",
     ]);

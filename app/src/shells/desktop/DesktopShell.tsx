@@ -247,10 +247,8 @@ export function DesktopShell(props: DesktopShellProps) {
         else setDrawer("members");
       },
       "message.jump-bottom": () => messageListController?.jumpBottom(),
-      "network.add": () => {},
       "network.open-server": (command) => showBuffer(command.targetBufferId),
       "pane.show-buffer": (command) => showBuffer(command.targetBufferId),
-      "settings.open": () => {},
       "sidebar.toggle": () => {
         if (sidebarInline()) {
           setSidebarShown((shown) => !shown);
@@ -261,7 +259,6 @@ export function DesktopShell(props: DesktopShellProps) {
         if (drawer() === "sidebar") closeDrawer();
         else setDrawer("sidebar");
       },
-      "switcher.open": () => {},
     },
     platform.shortcutPlatform,
     props.commandSpecs ?? [],

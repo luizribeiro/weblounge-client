@@ -211,6 +211,18 @@ test.describe("desktop shell against local Ergo", () => {
     await expect(sidebar).toHaveCSS("width", "256px");
     await expect(network).toBeVisible();
     await expect(channel).toBeVisible();
+    await expect(sidebar.getByRole("button", { name: /Jump to/u })).toHaveCount(
+      0,
+    );
+    await expect(
+      sidebar.getByRole("button", { name: "Add network" }),
+    ).toHaveCount(0);
+    await expect(sidebar.getByRole("button", { name: "Settings" })).toHaveCount(
+      0,
+    );
+    await expect(
+      sidebar.locator("footer").getByText("weblounge", { exact: true }),
+    ).toBeVisible();
 
     await channel.click();
     await expect(

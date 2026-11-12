@@ -89,20 +89,18 @@ const needsList = (context: ActionContext): ActionAvailability => ({
 });
 
 const specs: readonly ActionSpec[] = [
-  command(
-    "switcher.open",
-    t("action.switcher"),
-    alwaysAvailable,
-    mod("k", "⌘K", "Ctrl+K"),
-  ),
+  {
+    ...command("switcher.open", t("action.switcher"), alwaysAvailable),
+    discoverable: false,
+  },
   {
     ...command("debug.overlay", t("action.debug"), alwaysAvailable),
     discoverable: false,
   },
-  command("settings.open", t("action.settings"), alwaysAvailable, {
-    ...mod(",", "⇧⌘,", "Ctrl+Shift+,"),
-    shift: true,
-  }),
+  {
+    ...command("settings.open", t("action.settings"), alwaysAvailable),
+    discoverable: false,
+  },
   command("sidebar.toggle", t("action.sidebar_toggle"), alwaysAvailable, {
     ...mod("s", "⌥⌘S", "Ctrl+Alt+S"),
     alt: true,
@@ -118,7 +116,10 @@ const specs: readonly ActionSpec[] = [
     shift: true,
   }),
   command("buffer.open-direct", t("action.open_direct"), alwaysAvailable),
-  command("network.add", t("action.add_network"), alwaysAvailable),
+  {
+    ...command("network.add", t("action.add_network"), alwaysAvailable),
+    discoverable: false,
+  },
   command("network.open-server", t("action.network_server"), alwaysAvailable),
   command(
     "message.jump-bottom",
