@@ -5,10 +5,10 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import {
-  installPageNotificationCounter,
+  installPageNotificationRecorder,
   installPageNotificationStub,
-  pageNotificationConstructions,
   pageNotificationPermissionRequests,
+  recordedPageNotificationBodies,
 } from "./page-notification-stub";
 
 const engineWasmRequest = /\/engine_bg(?:-[^/?]+)?\.wasm(?:\?.*)?$/u;
@@ -756,7 +756,7 @@ async function exerciseNotificationPromptRegistration(
   }
   if (surface.name === "mobile") await installStandaloneDisplay(page);
   await installPushManagerStub(page, "default", "granted");
-  await installPageNotificationCounter(page);
+  await installPageNotificationRecorder(page);
   await installAppBadgeSpy(page);
   await installFakeEngine(page);
   await installFakeOAuth(page);
@@ -962,7 +962,6 @@ async function exerciseNotificationPromptRegistration(
     "engine=Registered (route-12) / relay=active (route-12) / last error=none",
   );
   await emitNotifiableDirectMessage(page, "msg-push-active");
-  expect(await pageNotificationConstructions(page)).toBe(0);
   await page.evaluate(() => {
     const fail = Reflect.get(globalThis, "failPushRegistration");
     if (typeof fail !== "function")
@@ -971,7 +970,12 @@ async function exerciseNotificationPromptRegistration(
   });
   await expect(debug).toContainText("engine=Failed(invalid_parameters)");
   await emitNotifiableDirectMessage(page, "msg-push-failed");
-  expect(await pageNotificationConstructions(page)).toBe(1);
+  await expect
+    .poll(() => recordedPageNotificationBodies(page))
+    .toContain(directMessageText("msg-push-failed"));
+  expect(await recordedPageNotificationBodies(page)).toEqual([
+    directMessageText("msg-push-failed"),
+  ]);
   await expect(debug).toContainText(
     "relay=probing (route-re) / last error=none",
   );
@@ -1001,7 +1005,6 @@ async function exerciseNotificationPromptRegistration(
     "engine=Registered (route-re) / relay=active (route-re) / last error=none",
   );
   await emitNotifiableDirectMessage(page, "msg-push-recovered");
-  expect(await pageNotificationConstructions(page)).toBe(1);
   await page.evaluate(() => {
     const setUnread = Reflect.get(globalThis, "setHostedUnread");
     if (typeof setUnread !== "function")
@@ -1011,6 +1014,9 @@ async function exerciseNotificationPromptRegistration(
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "appBadgeCalls")))
     .toContainEqual(["set", 2]);
+  expect(await recordedPageNotificationBodies(page)).toEqual([
+    directMessageText("msg-push-failed"),
+  ]);
   await page.evaluate(() => {
     const setUnread = Reflect.get(globalThis, "setHostedUnread");
     if (typeof setUnread === "function") setUnread(0, 0);
@@ -2226,44 +2232,51 @@ async function emitPushRegistration(page: Page): Promise<void> {
   });
 }
 
+function directMessageText(msgid: string): string {
+  return `are you around? (${msgid})`;
+}
+
 async function emitNotifiableDirectMessage(
   page: Page,
   msgid: string,
 ): Promise<void> {
-  await page.evaluate((serverId) => {
-    const emit = Reflect.get(globalThis, "emitHostedEngineEvent");
-    if (typeof emit !== "function")
-      throw new Error("hosted engine event control is missing");
-    emit({
-      type: "notifiable_message_received",
-      buffer: {
-        id: 99,
-        network_id: 1,
-        sync_state: "synced",
-        kind: "direct",
-        title: "mel",
-        draft_key: "9:weblounge:rfc1459:mel",
-        topic: null,
-        unread: 1,
-        mentions: 1,
-      },
-      message: {
-        id: 990,
-        author: "mel",
-        text: "are you around?",
-        kind: "text",
-        bot: false,
-        authorship: "other",
-        nick_color_index: 2,
-        highlighted: false,
-        delivery: "received",
-        local_send_id: null,
-        server_ids: [serverId],
-        server_time_ms: 1_700_000_000_000,
-        received_at_ms: 1_700_000_000_000,
-      },
-    });
-  }, msgid);
+  await page.evaluate(
+    ({ serverId, text }) => {
+      const emit = Reflect.get(globalThis, "emitHostedEngineEvent");
+      if (typeof emit !== "function")
+        throw new Error("hosted engine event control is missing");
+      emit({
+        type: "notifiable_message_received",
+        buffer: {
+          id: 99,
+          network_id: 1,
+          sync_state: "synced",
+          kind: "direct",
+          title: "mel",
+          draft_key: "9:weblounge:rfc1459:mel",
+          topic: null,
+          unread: 1,
+          mentions: 1,
+        },
+        message: {
+          id: 990,
+          author: "mel",
+          text,
+          kind: "text",
+          bot: false,
+          authorship: "other",
+          nick_color_index: 2,
+          highlighted: false,
+          delivery: "received",
+          local_send_id: null,
+          server_ids: [serverId],
+          server_time_ms: 1_700_000_000_000,
+          received_at_ms: 1_700_000_000_000,
+        },
+      });
+    },
+    { serverId: msgid, text: directMessageText(msgid) },
+  );
 }
 
 async function installStandaloneDisplay(page: Page): Promise<void> {

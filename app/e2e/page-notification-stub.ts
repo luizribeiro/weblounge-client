@@ -117,32 +117,30 @@ export function pageNotificationPermissionRequests(
   );
 }
 
-export async function installPageNotificationCounter(
+export async function installPageNotificationRecorder(
   page: Page,
 ): Promise<void> {
   await page.addInitScript(() => {
-    let constructed = 0;
-    const counting = new Proxy(globalThis.Notification, {
-      construct: () => {
-        constructed += 1;
+    const bodies: (string | undefined)[] = [];
+    const recording = new Proxy(globalThis.Notification, {
+      construct: (_target, [, init]: [string, NotificationOptions?]) => {
+        bodies.push(init?.body);
         return { onclick: null, close: () => undefined };
       },
     });
     Object.defineProperty(globalThis, "Notification", {
       configurable: true,
       writable: true,
-      value: counting,
+      value: recording,
     });
-    Reflect.set(
-      globalThis,
-      "__pageNotificationConstructions",
-      () => constructed,
-    );
+    Reflect.set(globalThis, "__pageNotificationBodies", () => [...bodies]);
   });
 }
 
-export function pageNotificationConstructions(page: Page): Promise<number> {
+export function recordedPageNotificationBodies(
+  page: Page,
+): Promise<(string | undefined)[]> {
   return page.evaluate(() =>
-    Reflect.get(globalThis, "__pageNotificationConstructions")(),
+    Reflect.get(globalThis, "__pageNotificationBodies")(),
   );
 }
