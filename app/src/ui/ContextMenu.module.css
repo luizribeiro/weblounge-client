@@ -1,0 +1,55 @@
+.menu {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-palette);
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-fg);
+  font-size: 13px;
+  left: var(--wl-context-menu-left);
+  max-width: calc(100vw - 8px);
+  padding: 4px;
+  position: fixed;
+  top: var(--wl-context-menu-top);
+  width: 210px;
+  z-index: 20;
+}
+
+.item {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: inherit;
+  display: flex;
+  font: inherit;
+  gap: 8px;
+  height: 28px;
+  justify-content: space-between;
+  padding: 0 10px;
+  text-align: start;
+  width: 100%;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--wl-color-chip);
+  outline: 0;
+}
+
+.danger {
+  color: var(--wl-color-error);
+}
+
+.danger:hover,
+.danger:focus-visible {
+  background: var(--wl-color-error);
+  color: var(--wl-color-accent-fg);
+}
+
+.separator {
+  background: var(--wl-color-panel-border);
+  border: 0;
+  height: 1px;
+  margin: 4px 2px;
+}
