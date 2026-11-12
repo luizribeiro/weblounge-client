@@ -1,0 +1,98 @@
+.row {
+  align-items: baseline;
+  display: grid;
+  font-size: 14px;
+  gap: 10px;
+  grid-template-columns: var(--wl-message-time-column, 9ch) 112px minmax(0, 1fr);
+  line-height: 20px;
+  padding: var(--wl-density-message-one-line-row-padding) 22px;
+  position: relative;
+  z-index: 0;
+}
+.highlighted::before {
+  background: var(--wl-color-mention-bg);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+.time,
+.mobileTime {
+  color: var(--wl-color-muted);
+  font-family: var(--wl-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.identity {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.icon {
+  color: var(--wl-color-muted);
+  flex: 0 0 15px;
+  height: 15px;
+  width: 15px;
+}
+.sender {
+  direction: rtl;
+  font-weight: 650;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  unicode-bidi: plaintext;
+  white-space: nowrap;
+}
+.server {
+  color: var(--wl-color-muted);
+}
+.unverified {
+  color: var(--wl-color-error);
+  font-family: var(--wl-font-mono);
+  font-weight: 700;
+}
+.row[data-unverified-sender="true"] {
+  box-shadow: inset 3px 0 var(--wl-color-error);
+}
+.text,
+.mobileText {
+  color: var(--wl-color-fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.gap {
+  white-space: pre;
+}
+.mobileText,
+.mobileTime {
+  display: none;
+}
+.row[data-presentation="mobile"] {
+  grid-template-columns: 16px minmax(0, 1fr);
+  padding-block: 0;
+  padding-inline: var(--wl-space-transcript-inline);
+}
+:global([data-line-spacing="after-line"]) .row[data-presentation="mobile"] {
+  padding-block-start: var(--wl-density-message-mobile-line-gap-padding);
+}
+:global([data-line-spacing="after-message"]) .row[data-presentation="mobile"] {
+  padding-block-start: var(--wl-density-message-mobile-line-top-padding);
+}
+.row[data-presentation="mobile"] .icon {
+  height: 16px;
+  width: 16px;
+}
+.row[data-presentation="mobile"] :is(.mobileText, .mobileTime) {
+  display: inline;
+}
+.row[data-presentation="mobile"] .mobileText .sender {
+  direction: inherit;
+  overflow: visible;
+  white-space: normal;
+}
