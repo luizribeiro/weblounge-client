@@ -256,6 +256,7 @@ export function MessageList(props: MessageListProps) {
   let watchedThrough: number | undefined;
   let observedOwnTime = latestCommittedOwnTime(orderedMessages());
   let observedPeerTime = latestPeerTime(orderedMessages());
+  let pendingOwnPeerTimes = pendingOwnPeerBaselines(orderedMessages());
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
@@ -856,6 +857,7 @@ export function MessageList(props: MessageListProps) {
       watchedThrough = undefined;
       observedOwnTime = latestCommittedOwnTime(orderedMessages());
       observedPeerTime = latestPeerTime(orderedMessages());
+      pendingOwnPeerTimes = pendingOwnPeerBaselines(orderedMessages());
       renderedMessages = [];
       olderPageArmed = true;
       setUnseen(0);
@@ -884,9 +886,20 @@ export function MessageList(props: MessageListProps) {
     const messages = orderedMessages();
     const ownTime = latestCommittedOwnTime(messages);
     const peerTime = latestPeerTime(messages);
+    const latestOwn = latestCommittedOwnMessage(messages);
+    const pendingPeerTime =
+      latestOwn === undefined
+        ? undefined
+        : pendingOwnPeerTimes.get(latestOwn.id);
+    const peerFollowedPendingOwn =
+      latestOwn !== undefined &&
+      pendingOwnPeerTimes.has(latestOwn.id) &&
+      peerTime !== undefined &&
+      (pendingPeerTime === undefined || peerTime > pendingPeerTime);
     if (
       ownTime !== undefined &&
-      (observedOwnTime === undefined || ownTime > observedOwnTime)
+      (observedOwnTime === undefined || ownTime > observedOwnTime) &&
+      !peerFollowedPendingOwn
     ) {
       const ownMark = Math.max(marker ?? ownTime, ownTime);
       setDividerMark(ownMark);
@@ -897,6 +910,11 @@ export function MessageList(props: MessageListProps) {
             (observedPeerTime === undefined || peerTime > observedPeerTime)));
       watchedThrough = undefined;
     }
+    updatePendingOwnPeerBaselines(
+      pendingOwnPeerTimes,
+      messages,
+      observedPeerTime,
+    );
     observedOwnTime = ownTime;
     observedPeerTime = peerTime;
     if (dividerMark() === null && marker !== null) {
@@ -1965,7 +1983,14 @@ function unreadStartId(
 function latestCommittedOwnTime(
   messages: readonly MessageProjection[],
 ): number | undefined {
-  return messages.reduce<number | undefined>((latest, message) => {
+  const latest = latestCommittedOwnMessage(messages);
+  return latest === undefined ? undefined : messageTime(latest);
+}
+
+function latestCommittedOwnMessage(
+  messages: readonly MessageProjection[],
+): MessageProjection | undefined {
+  return messages.reduce<MessageProjection | undefined>((latest, message) => {
     if (
       message.authorship !== "own" ||
       isLocalNoticeMessage(message) ||
@@ -1973,9 +1998,44 @@ function latestCommittedOwnTime(
     ) {
       return latest;
     }
-    const time = messageTime(message);
-    return latest === undefined ? time : Math.max(latest, time);
+    return latest === undefined || messageTime(message) > messageTime(latest)
+      ? message
+      : latest;
   }, undefined);
+}
+
+function pendingOwnPeerBaselines(
+  messages: readonly MessageProjection[],
+): Map<number, number | undefined> {
+  const baselines = new Map<number, number | undefined>();
+  let peerTime: number | undefined;
+  for (const message of messages) {
+    if (message.authorship === "own") {
+      if (message.delivery === "optimistic")
+        baselines.set(message.id, peerTime);
+      continue;
+    }
+    if (isLocalNoticeMessage(message)) continue;
+    const time = messageTime(message);
+    peerTime = peerTime === undefined ? time : Math.max(peerTime, time);
+  }
+  return baselines;
+}
+
+function updatePendingOwnPeerBaselines(
+  baselines: Map<number, number | undefined>,
+  messages: readonly MessageProjection[],
+  peerTime: number | undefined,
+): void {
+  const pendingIds = new Set<number>();
+  for (const message of messages) {
+    if (message.authorship !== "own" || message.delivery !== "optimistic")
+      continue;
+    pendingIds.add(message.id);
+    if (!baselines.has(message.id)) baselines.set(message.id, peerTime);
+  }
+  for (const id of baselines.keys())
+    if (!pendingIds.has(id)) baselines.delete(id);
 }
 
 function latestPeerTime(

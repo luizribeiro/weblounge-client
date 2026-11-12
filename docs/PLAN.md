@@ -28,6 +28,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-12: made rejected `/close` commands side-effect-free for unavailable channel buffers;
   they no longer advance read state, clear notifications, send MARKREAD or strand the read-flush
   guard, while successful direct-message closes still mark through their newest message.
+- 2026-11-12: kept a hidden DM's New divider when an earlier optimistic send confirms after the
+  hidden peer row. Pending own rows now retain the peer boundary from when the send appeared, so a
+  later confirmation cannot reorder read presentation; read-dwell and engine mark advances are
+  unchanged.
 - 2026-11-12: shipped desktop conversation closing across the DM-row ×, context menu, command
   palette and `/close`; channel menus confirm before sending PART, while DM closing marks read,
   clears notifications, offers a six-second Undo and moves focus to the next surviving row. Closed
