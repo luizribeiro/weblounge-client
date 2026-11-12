@@ -5,15 +5,16 @@ The single place a fresh session reads to know where the project stands. Update 
 ## Roadmap
 
 ### Now
-- None.
+- Desktop wrapper (design 27) phase 2, wrapper steps 1–3 (dock badge, no background throttling,
+  Open at Login): on the Mac.
+- Desktop wrapper phase 2 step 4: design 23's page-posted notifications in the web app, then a beta
+  deploy. Linux host (local-Ergo Playwright journeys). Wrapper step 5 follows on the Mac.
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
 
 ### Later
-- Desktop wrapper (design 27) phase 2: page-posted notifications in the web app, then the wrapper's
-  notification shim, unthrottled background and Open at Login. Phase 3: seamless title bar, after
-  Luiz signs off its layout.
+- Desktop wrapper (design 27) phase 3: seamless title bar, after Luiz signs off its layout.
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
 - Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
