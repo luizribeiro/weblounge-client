@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type {
   ActionContext,
+  ActionEntry,
   ActionRegistry,
   UiActionId,
 } from "../../actions/action-registry";
@@ -27,6 +28,7 @@ import {
   SWITCHER_LAUNCHER_VARIANT,
   SwitcherLauncher,
 } from "./SwitcherLauncher";
+import { focusAfterClose } from "./sidebar-close";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -45,6 +47,12 @@ interface SidebarProps extends NotificationPromptControls {
     controller: SidebarListController | undefined,
   ) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
+  readonly onCloseDirect?:
+    | ((
+        buffer: SidebarBuffer,
+        nextBufferId: number | undefined,
+      ) => Promise<boolean>)
+    | undefined;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -54,6 +62,7 @@ export function Sidebar(props: SidebarProps) {
   const [menu, setMenu] = createSignal<{
     readonly context: ActionContext;
     readonly request: ContextMenuRequest;
+    readonly target: SidebarBuffer;
     readonly title: string;
   }>();
   const elements = new Map<number, HTMLButtonElement>();
@@ -99,17 +108,37 @@ export function Sidebar(props: SidebarProps) {
   const openMenu = (target: SidebarBuffer, request: ContextMenuRequest) => {
     const context = targetContext(target);
     if (props.registry.channelMenu(context).length === 0) return;
-    setMenu({ context, request, title: target.title });
+    setMenu({ context, request, target, title: target.title });
   };
-  const menuItems = (): readonly ContextMenuItem[] => {
+  const selectMenuEntry = (
+    entry: ActionEntry,
+    current: NonNullable<ReturnType<typeof menu>>,
+  ) => {
+    if (entry.command?.name === "close" && current.target.kind === "direct") {
+      void closeDirect(current.target);
+      return;
+    }
+    props.registry.run(entry.id, current.context, "menu");
+  };
+  const menuItems = (destructive: boolean): readonly ContextMenuItem[] => {
     const current = menu();
-    return current === undefined
-      ? []
-      : props.registry.channelMenu(current.context).map((entry) => ({
-          id: entry.id,
-          label: entry.title,
-          onSelect: () => props.registry.run(entry.id, current.context, "menu"),
-        }));
+    if (current === undefined) return [];
+    return props.registry
+      .channelMenu(current.context)
+      .filter((entry) => isDestructive(entry) === destructive)
+      .map((entry) => ({
+        id: entry.id,
+        label: entry.title,
+        onSelect: () => selectMenuEntry(entry, current),
+      }));
+  };
+  const closeDirect = async (target: SidebarBuffer) => {
+    const next = focusAfterClose(orderedIds(), target.id);
+    if ((await props.onCloseDirect?.(target, next)) !== true) return;
+    if (next !== undefined) {
+      setRovingId(next);
+      queueMicrotask(() => elements.get(next)?.focus({ preventScroll: true }));
+    }
   };
   const move = (offset: -1 | 1) => {
     const ids = orderedIds();
@@ -230,6 +259,7 @@ export function Sidebar(props: SidebarProps) {
               )}
               network={network}
               onFocus={setRovingId}
+              onCloseBuffer={(buffer) => void closeDirect(buffer)}
               onOpenBuffer={(buffer) => run("pane.show-buffer", buffer)}
               onOpenMenu={openMenu}
               onOpenServer={(buffer) => run("network.open-server", buffer)}
@@ -245,14 +275,18 @@ export function Sidebar(props: SidebarProps) {
 
       <SidebarFooter networks={props.networks} />
       <ContextMenu
-        destructiveItems={[]}
-        items={menuItems()}
+        destructiveItems={menuItems(true)}
+        items={menuItems(false)}
         label={t("sidebar.context_menu", { title: menu()?.title ?? "" })}
         onDismiss={() => setMenu(undefined)}
         request={menu()?.request}
       />
     </aside>
   );
+}
+
+function isDestructive(entry: ActionEntry): boolean {
+  return entry.command?.name === "close" || entry.command?.name === "part";
 }
 
 function orderedBuffers(

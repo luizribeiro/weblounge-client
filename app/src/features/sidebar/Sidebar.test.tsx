@@ -155,10 +155,16 @@ it("moves roving focus through real list commands", () => {
 it("shows only runnable row-menu items and dispatches against its target", async () => {
   const markRead = vi.fn();
   const runCommand = vi.fn();
+  const closeDirect = vi.fn(async () => true);
   const registry = new ActionRegistry(
     { "buffer.mark-read": markRead },
     "other",
-    [channelCommand("cycle"), channelCommand("topic")],
+    [
+      channelCommand("cycle"),
+      channelCommand("topic"),
+      destructiveCommand("part"),
+      destructiveCommand("close"),
+    ],
     runCommand,
   );
   const removeContextMenuHandler = installContextMenuHandler(document);
@@ -177,6 +183,7 @@ it("shows only runnable row-menu items and dispatches against its target", async
           state: "online",
         },
       ]}
+      onCloseDirect={closeDirect}
       registerListController={() => {}}
       registry={registry}
       visibleBufferIds={new Set()}
@@ -192,14 +199,18 @@ it("shows only runnable row-menu items and dispatches against its target", async
   );
   expect(
     screen.getAllByRole("menuitem").map((item) => item.textContent),
-  ).toEqual(["Mark as read"]);
+  ).toEqual(["Mark as read", "Leave channel"]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
   expect(markRead).toHaveBeenCalledWith(
     expect.objectContaining({ targetBufferId: 2, targetUnread: true }),
   );
 
   fireEvent.contextMenu(screen.getByRole("button", { name: "alice" }));
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Close conversation" }));
+  expect(closeDirect).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 3, title: "alice" }),
+    2,
+  );
   removeContextMenuHandler();
 });
 
@@ -233,6 +244,27 @@ function channelCommand(name: "cycle" | "topic"): CommandSpec {
     permission: "anyone",
     surfaces: ["channel_menu"],
     confirm: "none",
+    secret_arguments: false,
+  };
+}
+
+function destructiveCommand(name: "close" | "part"): CommandSpec {
+  return {
+    name,
+    aliases: [],
+    arguments:
+      name === "part"
+        ? [{ name: "channel", kind: "channel", required: false }]
+        : [],
+    usage: `cmd.${name}.usage`,
+    description: `cmd.${name}.description`,
+    menu_label: `cmd.${name}.menu`,
+    requirements: [{ type: "connected" }],
+    permission: "anyone",
+    surfaces: ["channel_menu"],
+    confirm: "menu",
+    confirmation_prompt: `cmd.${name}.confirmation_prompt`,
+    confirmation_action: `cmd.${name}.confirmation_action`,
     secret_arguments: false,
   };
 }
