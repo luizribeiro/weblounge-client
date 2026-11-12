@@ -68,11 +68,11 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 8px 12px;
+  padding: 2px 6px 12px;
 }
 
 .network {
-  margin-block: 4px 12px;
+  margin-block: 4px 8px;
 }
 
 .networkHeader {
@@ -81,22 +81,29 @@
   background: transparent;
   border: 0;
   border-radius: var(--wl-radius-control);
-  color: var(--wl-color-panel-fg);
+  color: var(--wl-color-panel-muted);
   display: grid;
-  font: inherit;
-  font-size: var(--wl-density-sidebar-font-size);
-  font-weight: 700;
-  gap: 7px;
-  grid-template-columns: 22px minmax(0, 1fr);
-  height: var(--wl-density-sidebar-row-height);
-  padding: 0 8px;
+  font-family: var(--wl-font-section-family);
+  font-size: var(--wl-font-section-size);
+  font-weight: 500;
+  gap: var(--wl-space-list-gap);
+  grid-template-columns: 16px minmax(0, 1fr);
+  letter-spacing: var(--wl-font-section-tracking);
+  min-height: var(--wl-density-sidebar-row-height);
+  padding: 10px var(--wl-space-list-inset) 4px;
   text-align: start;
+  text-transform: var(--wl-font-section-transform);
   width: 100%;
 }
 
 .networkHeader:hover,
 .networkHeader[aria-current="page"] {
   background: var(--wl-color-chip);
+  color: var(--wl-color-panel-fg);
+}
+
+.networkHeader:focus-visible {
+  outline-offset: -2px;
 }
 
 .tile {
@@ -105,10 +112,10 @@
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-accent-fg);
   display: flex;
-  font-size: 10px;
-  height: 20px;
+  font-size: 8px;
+  height: 14px;
   justify-content: center;
-  width: 20px;
+  width: 14px;
 }
 
 .networkName {
@@ -116,9 +123,7 @@
 }
 
 .rows {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) auto;
-  padding-left: 6px;
+  display: block;
 }
 
 .footer {

@@ -8,10 +8,11 @@
   display: grid;
   font: inherit;
   font-size: var(--wl-density-sidebar-font-size);
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
+  column-gap: var(--wl-space-list-gap);
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   height: var(--wl-density-sidebar-row-height);
-  padding: 0 8px;
+  padding: 0 calc(var(--wl-space-list-inset) / 2) 0 var(--wl-space-list-inset);
+  position: relative;
   text-align: start;
   width: 100%;
 }
@@ -24,6 +25,10 @@
 .row:hover {
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
 }
 
 .active {
@@ -55,7 +60,6 @@
   height: 17px;
   justify-content: center;
   min-width: 17px;
-  margin-inline-start: var(--wl-space-list-gap);
   padding-inline: 4px;
 }
 

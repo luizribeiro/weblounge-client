@@ -26,8 +26,11 @@
   gap: 8px;
   height: 28px;
   justify-content: space-between;
+  overflow: hidden;
   padding: 0 10px;
   text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   width: 100%;
 }
 
