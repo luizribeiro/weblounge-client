@@ -44,6 +44,48 @@ describe("context menu registry", () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { key: "F10", shiftKey: true },
+    { key: "ContextMenu", shiftKey: false },
+  ])("opens a registered menu from $key", ({ key, shiftKey }) => {
+    const registry = new ContextMenuRegistry();
+    const row = document.createElement("button");
+    document.body.append(row);
+    const openMenu = vi.fn();
+    registry.register(row, { id: "row", kind: "chrome", openMenu });
+    const remove = installContextMenuHandler(document, registry);
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key,
+      shiftKey,
+    });
+
+    row.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ invoker: row }),
+    );
+    remove();
+  });
+
+  it("opens a registered menu from right-click", () => {
+    const registry = new ContextMenuRegistry();
+    const row = document.createElement("button");
+    document.body.append(row);
+    const openMenu = vi.fn();
+    registry.register(row, { id: "row", kind: "chrome", openMenu });
+    const remove = installContextMenuHandler(document, registry);
+
+    contextMenu(row);
+
+    expect(openMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ invoker: row }),
+    );
+    remove();
+  });
 });
 
 function contextMenu(target: Element): MouseEvent {
