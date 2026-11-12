@@ -147,8 +147,8 @@ define_class!(
 
     unsafe impl NSObjectProtocol for Delegate {}
 
-    // The center calls these on the main thread, as `MainThreadOnly` requires, and a panic here
-    // would unwind into Objective-C, so nothing in them may panic.
+    // The center calls these on the main thread, as `MainThreadOnly` requires. Nothing in them may
+    // panic: a panic would unwind into Objective-C, and release builds abort on panic.
     unsafe impl UNUserNotificationCenterDelegate for Delegate {
         #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
         fn will_present(
@@ -171,11 +171,7 @@ define_class!(
         ) {
             let id = response.notification().request().identifier().to_string();
             if let Some(handler) = CLICK_HANDLER.get() {
-                let clicked =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(id)));
-                if clicked.is_err() {
-                    eprintln!("the notification click handler panicked");
-                }
+                handler(id);
             }
             completion.call(());
         }
@@ -185,7 +181,10 @@ define_class!(
 /// The center keeps only a weak reference to its delegate, so the delegate is leaked.
 pub fn install_delegate(on_click: ClickHandler) {
     let Some(main_thread) = MainThreadMarker::new() else {
-        eprintln!("the notification delegate must be installed on the main thread");
+        log_failure(
+            "install the notification delegate",
+            Err::<(), _>("it must be installed on the main thread"),
+        );
         return;
     };
     if !is_bundled() || CLICK_HANDLER.set(on_click).is_err() {
