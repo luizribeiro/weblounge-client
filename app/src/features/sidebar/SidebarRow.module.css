@@ -1,4 +1,6 @@
 .row {
+  --wl-sidebar-prefix-width: 12px;
+
   align-items: center;
   appearance: none;
   background: transparent;
@@ -9,7 +11,7 @@
   font: inherit;
   font-size: var(--wl-density-sidebar-font-size);
   column-gap: var(--wl-space-list-gap);
-  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr) auto;
   height: var(--wl-density-sidebar-row-height);
   padding: 0 calc(var(--wl-space-list-inset) / 2) 0 var(--wl-space-list-inset);
   position: relative;

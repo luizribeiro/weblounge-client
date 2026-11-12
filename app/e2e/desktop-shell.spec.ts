@@ -331,6 +331,10 @@ test.describe("desktop shell against local Ergo", () => {
         screenshotPage.getByRole("complementary", { name: "Channel list" }),
         "[data-sidebar-prefix]",
         "[data-sidebar-name]",
+        {
+          prefixGapProperty: "--wl-space-list-gap",
+          prefixWidthProperty: "--wl-sidebar-prefix-width",
+        },
       );
       await mkdir(screenshotDirectory, { recursive: true });
       const screenshotBody = screenshotPage.locator("body");

@@ -16,6 +16,10 @@ test("aligns real-font sigil and mode columns", async ({ page }) => {
     sidebar,
     "[data-sidebar-prefix]",
     "[data-sidebar-name]",
+    {
+      prefixGapProperty: "--wl-space-list-gap",
+      prefixWidthProperty: "--wl-sidebar-prefix-width",
+    },
   );
 
   const members = page.getByRole("complementary", {

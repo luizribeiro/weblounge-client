@@ -11,11 +11,13 @@ interface PrefixGeometry {
 }
 
 interface PrefixColumnOptions {
-  readonly avatarSelector: string;
-  readonly gapProperty: string;
-  readonly groupSelector: string;
-  readonly insetProperty: string;
-  readonly trailingSelector: string;
+  readonly avatarSelector?: string;
+  readonly gapProperty?: string;
+  readonly groupSelector?: string;
+  readonly insetProperty?: string;
+  readonly prefixGapProperty?: string;
+  readonly prefixWidthProperty?: string;
+  readonly trailingSelector?: string;
 }
 
 export async function expectAlignedPrefixColumn(
@@ -30,12 +32,14 @@ export async function expectAlignedPrefixColumn(
   const geometry: readonly PrefixGeometry[] = await container
     .locator(nameSelector)
     .evaluateAll(
-      (names, prefix) =>
+      (names, settings) =>
         names
           .filter((name) => name.getClientRects().length > 0)
           .map((name) => {
             const row = name.closest("button");
-            const prefixElement = row?.querySelector<HTMLElement>(prefix);
+            const prefixElement = row?.querySelector<HTMLElement>(
+              settings.prefix,
+            );
             if (!(name instanceof HTMLElement) || prefixElement == null)
               throw new Error("prefix-column geometry is missing");
 
@@ -72,11 +76,20 @@ export async function expectAlignedPrefixColumn(
             const referenceName = document.createRange();
             referenceName.setStart(referenceText, symbol.length);
             referenceName.setEnd(referenceText, referenceText.length);
-            const expectedGap =
-              referenceName.getBoundingClientRect().left -
-              referencePrefix.getBoundingClientRect().right;
+            const expectedGap = settings.gapProperty
+              ? Number.parseFloat(
+                  getComputedStyle(row).getPropertyValue(settings.gapProperty),
+                )
+              : referenceName.getBoundingClientRect().left -
+                referencePrefix.getBoundingClientRect().right;
             reference.textContent = symbol;
-            const expectedColumnWidth = reference.getBoundingClientRect().width;
+            const expectedColumnWidth = settings.widthProperty
+              ? Number.parseFloat(
+                  getComputedStyle(row).getPropertyValue(
+                    settings.widthProperty,
+                  ),
+                )
+              : reference.getBoundingClientRect().width;
             reference.remove();
 
             if (symbol === "")
@@ -99,7 +112,11 @@ export async function expectAlignedPrefixColumn(
               prefixRight,
             };
           }),
-      prefixSelector,
+      {
+        gapProperty: options?.prefixGapProperty,
+        prefix: prefixSelector,
+        widthProperty: options?.prefixWidthProperty,
+      },
     );
 
   expect(
@@ -120,7 +137,13 @@ export async function expectAlignedPrefixColumn(
   for (const { columnWidth } of geometry)
     expect(columnWidth).toBeCloseTo(expectedWidth, 0);
 
-  if (options !== undefined) {
+  if (
+    options?.avatarSelector !== undefined &&
+    options.gapProperty !== undefined &&
+    options.groupSelector !== undefined &&
+    options.insetProperty !== undefined &&
+    options.trailingSelector !== undefined
+  ) {
     const avatarGaps = await container.locator(nameSelector).evaluateAll(
       (names, selectors) =>
         names
