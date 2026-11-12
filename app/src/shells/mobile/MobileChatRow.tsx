@@ -13,7 +13,7 @@ interface MobileChatRowProps {
   readonly previews: boolean;
   readonly onOpen: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onPressStart?:
-    | JSX.EventHandler<HTMLButtonElement, PointerEvent>
+    | JSX.EventHandler<HTMLDivElement, PointerEvent>
     | undefined;
 }
 
@@ -26,67 +26,72 @@ export function MobileChatRow(props: MobileChatRowProps) {
     message()?.received_at_ms;
   const visiblePreview = () => props.buffer.preview ?? "";
   return (
-    <button
-      aria-label={
-        badge() === undefined
-          ? props.buffer.title
-          : t("sidebar.row_label", {
-              title: props.buffer.title,
-              badge: badge()?.label ?? "",
-            })
-      }
-      class={styles.row}
-      data-buffer-id={props.buffer.id}
-      onClick={props.onOpen}
+    <div
+      class={styles.wrapper}
+      data-mobile-row-wrapper={props.buffer.id}
       onPointerDown={props.onPressStart}
-      type="button"
     >
-      <span
-        aria-hidden="true"
-        class={styles.avatar}
-        data-nick-color-index={props.buffer.nick_color_index}
-        style={
-          props.buffer.kind === "direct" &&
-          props.buffer.nick_color_index !== undefined
-            ? { color: nickColor(props.buffer.nick_color_index) }
-            : undefined
+      <button
+        aria-label={
+          badge() === undefined
+            ? props.buffer.title
+            : t("sidebar.row_label", {
+                title: props.buffer.title,
+                badge: badge()?.label ?? "",
+              })
         }
+        class={styles.row}
+        data-buffer-id={props.buffer.id}
+        onClick={props.onOpen}
+        type="button"
       >
-        {props.buffer.kind === "channel"
-          ? "#"
-          : props.buffer.title.slice(0, 1).toUpperCase()}
-      </span>
-      <span class={styles.content}>
-        <span class={styles.heading}>
-          <Line class={styles.title}>{props.buffer.title}</Line>
-          {props.networkLabel !== undefined && (
-            <Line class={styles.network}>{props.networkLabel}</Line>
-          )}
-          {activityTime() !== undefined && (
-            <time class={styles.time} dateTime={dateTime(activityTime())}>
-              {formatTime(activityTime() ?? 0)}
-            </time>
+        <span
+          aria-hidden="true"
+          class={styles.avatar}
+          data-nick-color-index={props.buffer.nick_color_index}
+          style={
+            props.buffer.kind === "direct" &&
+            props.buffer.nick_color_index !== undefined
+              ? { color: nickColor(props.buffer.nick_color_index) }
+              : undefined
+          }
+        >
+          {props.buffer.kind === "channel"
+            ? "#"
+            : props.buffer.title.slice(0, 1).toUpperCase()}
+        </span>
+        <span class={styles.content}>
+          <span class={styles.heading}>
+            <Line class={styles.title}>{props.buffer.title}</Line>
+            {props.networkLabel !== undefined && (
+              <Line class={styles.network}>{props.networkLabel}</Line>
+            )}
+            {activityTime() !== undefined && (
+              <time class={styles.time} dateTime={dateTime(activityTime())}>
+                {formatTime(activityTime() ?? 0)}
+              </time>
+            )}
+          </span>
+          {props.previews && visiblePreview() !== "" && (
+            <span class={styles.detail}>
+              <Line class={styles.preview}>{visiblePreview()}</Line>
+            </span>
           )}
         </span>
-        {props.previews && visiblePreview() !== "" && (
-          <span class={styles.detail}>
-            <Line class={styles.preview}>{visiblePreview()}</Line>
+        {badge() !== undefined && (
+          <span
+            aria-label={badge()?.label}
+            class={`${styles.badge} ${
+              badge()?.kind === "mention" ? styles.mention : ""
+            }`}
+            data-badge-kind={badge()?.kind}
+            role="status"
+          >
+            {badge()?.count}
           </span>
         )}
-      </span>
-      {badge() !== undefined && (
-        <span
-          aria-label={badge()?.label}
-          class={`${styles.badge} ${
-            badge()?.kind === "mention" ? styles.mention : ""
-          }`}
-          data-badge-kind={badge()?.kind}
-          role="status"
-        >
-          {badge()?.count}
-        </span>
-      )}
-    </button>
+      </button>
+    </div>
   );
 }
 

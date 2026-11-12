@@ -80,7 +80,7 @@ it("updates chat filters and search through accessible controls", () => {
     target: { value: "mel" },
   });
   const direct = screen.getByRole("button", { name: "mel" });
-  const list = direct.parentElement;
+  const list = direct.closest("[data-mobile-chat-list]");
   if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
   list.scrollTop = 37;
   fireEvent.wheel(list);
@@ -305,7 +305,7 @@ it("restores the retained chat list after returning from a conversation", async 
     />
   ));
   const direct = screen.getByRole("button", { name: "mel" });
-  const list = direct.parentElement;
+  const list = direct.closest("[data-mobile-chat-list]");
   if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
   list.scrollTop = 0;
 
@@ -346,7 +346,9 @@ it("does not overwrite a user scroll with a pending restore frame", () => {
       restoreVersion={() => 0}
     />
   ));
-  const list = screen.getByRole("button", { name: "mel" }).parentElement;
+  const list = screen
+    .getByRole("button", { name: "mel" })
+    .closest("[data-mobile-chat-list]");
   if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
 
   fireEvent.wheel(list);

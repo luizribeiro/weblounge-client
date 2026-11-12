@@ -1,9 +1,12 @@
+.wrapper {
+  border-bottom: 1px solid var(--wl-color-border);
+}
+
 .row {
   align-items: center;
   appearance: none;
-  background: transparent;
+  background: var(--wl-color-surface);
   border: 0;
-  border-bottom: 1px solid var(--wl-color-border);
   color: var(--wl-color-fg);
   display: flex;
   gap: 12px;
