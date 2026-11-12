@@ -3,6 +3,7 @@ import {
   type PagePostConditions,
   type PushDeliveryConditions,
   pushDeliveryFor,
+  pushPendingDeadlineMs,
   shouldPostPageNotification,
 } from "./page-notification-policy";
 
@@ -12,6 +13,7 @@ const enabledPush: PushDeliveryConditions = {
   permission: "granted",
   subscription: "ready",
   registration: { status: "registered", route_id: "route-7f3a" },
+  pendingForMs: 1_200,
 };
 
 const macWrapperPage: PagePostConditions = {
@@ -57,6 +59,34 @@ describe("pushDeliveryFor", () => {
     );
     expect(pushDeliveryFor({ ...enabledPush, registration: undefined })).toBe(
       "pending",
+    );
+  });
+
+  it("gives up on an outcome still in flight at the deadline", () => {
+    for (const inFlight of [
+      { subscription: "pending" },
+      { registration: undefined },
+    ] as const) {
+      expect(
+        pushDeliveryFor({
+          ...enabledPush,
+          ...inFlight,
+          pendingForMs: pushPendingDeadlineMs - 1,
+        }),
+      ).toBe("pending");
+      expect(
+        pushDeliveryFor({
+          ...enabledPush,
+          ...inFlight,
+          pendingForMs: pushPendingDeadlineMs,
+        }),
+      ).toBe("unavailable");
+    }
+  });
+
+  it("keeps a registered route active however long setup took", () => {
+    expect(pushDeliveryFor({ ...enabledPush, pendingForMs: 10 * 60_000 })).toBe(
+      "active",
     );
   });
 

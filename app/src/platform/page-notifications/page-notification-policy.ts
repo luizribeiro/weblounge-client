@@ -4,12 +4,15 @@ export type PushSubscriptionStatus = "pending" | "ready" | "unavailable";
 
 export type PushDelivery = "active" | "pending" | "unavailable";
 
+export const pushPendingDeadlineMs = 15_000;
+
 export interface PushDeliveryConditions {
   readonly webPushSupported: boolean;
   readonly pushConfigured: boolean;
   readonly permission: NotificationPermission;
   readonly subscription: PushSubscriptionStatus;
   readonly registration: PushState | undefined;
+  readonly pendingForMs: number;
 }
 
 export interface PagePostConditions {
@@ -32,8 +35,14 @@ export function pushDeliveryFor(
   ) {
     return "unavailable";
   }
-  if (conditions.subscription === "pending") return "pending";
-  return registrationDelivery(conditions.registration);
+  const delivery =
+    conditions.subscription === "pending"
+      ? "pending"
+      : registrationDelivery(conditions.registration);
+  return delivery === "pending" &&
+    conditions.pendingForMs >= pushPendingDeadlineMs
+    ? "unavailable"
+    : delivery;
 }
 
 export function shouldPostPageNotification(

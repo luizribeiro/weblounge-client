@@ -928,8 +928,11 @@ has no service worker or `PushManager` and will gain a `window.Notification` shi
   definite outcome (no Web Push, no config, subscription unavailable, `Unsupported`, `Failed`,
   `RegisteredButNoDelivery`) means the page posts. While the outcome is still pending (subscription
   or registration in flight) the page doesn't post: a missed alert during startup beats a
-  duplicate. A push setup that throws counts as unavailable; one that never settles (a service
-  worker that never becomes ready) keeps the page quiet.
+  duplicate. A push setup that throws counts as unavailable. Pending ends 15 s after push setup
+  last started or the engine last asked for that network's route, whichever is later: a service
+  worker that never becomes ready, a relay that keeps refusing the route, or a tab whose engine
+  never sees the registration all count as unavailable from then on. The page compares
+  timestamps when a message arrives, so no timer runs.
 - **Which messages.** The engine emits `NotifiableMessageReceived { buffer, message }` for a
   message that arrived live (not history, chathistory catch-up or a service-worker pushed
   message), was not a duplicate `msgid`, isn't own, counts as a mention (every DM, or a channel

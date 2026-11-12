@@ -71,6 +71,7 @@ import {
   pushDeliveryFor,
 } from "./platform/page-notifications/page-notification-policy";
 import { PageNotifications } from "./platform/page-notifications/page-notifications";
+import { PushPendingClock } from "./platform/page-notifications/push-pending-clock";
 import {
   conversationReadMarkers,
   syncAppPushState,
@@ -256,6 +257,7 @@ export function App(props: AppProps) {
   const foregroundRecorder = new ForegroundRecorder(foregroundLog, () =>
     readForegroundSnapshot(document, navigator, window),
   );
+  const pushPendingClock = new PushPendingClock();
   const knownPushRequirements = new Map<number, PushSyncEvent>();
   const knownPushStates = new Map<number, PushSyncEvent>();
   const rememberPushSyncEvent = (event: PushSyncEvent) => {
@@ -352,6 +354,7 @@ export function App(props: AppProps) {
       permission: notificationPermission(),
       subscription: pushSubscription(),
       registration: enginePushStates().get(networkId),
+      pendingForMs: pushPendingClock.pendingForMs(networkId),
     });
   createEffect(() => {
     const config = props.pushConfig;
@@ -564,6 +567,7 @@ export function App(props: AppProps) {
         return;
       }
       if (message.type === "push_route_required") {
+        pushPendingClock.routeRequested(message.network_id);
         rememberPushSyncEvent(message);
       }
       if (message.type === "push_state_changed") {
@@ -1068,6 +1072,7 @@ export function App(props: AppProps) {
       return;
     }
     setPushSubscription("pending");
+    pushPendingClock.restartSetup();
     await waitForProductionServiceWorkerUpdate();
     const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
