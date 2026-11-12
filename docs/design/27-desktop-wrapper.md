@@ -57,7 +57,8 @@ URLs, not frames.
 | Navigation or new-window request (`target="_blank"`, `window.open`) to any other `http:`, `https:` or `mailto:` URL | Opens in the default browser or mail client; the window does not navigate and no second window opens. Chat links use `target="_blank"`. |
 | Any other scheme (`file:`, `javascript:`, `x-apple.systempreferences:`, custom handlers) | Dropped. Chat content must not launch local files or system handlers. |
 
-Without the new-window rule WKWebView silently ignores chat links.
+Without the new-window rule WKWebView silently ignores chat links. The opener plugin's injected link-click script
+stays disabled: it cancels the click and opens the link over IPC, which the page does not have.
 
 ## What the wrapper does not do
 

@@ -4,11 +4,11 @@ mod menu;
 mod navigation;
 mod window;
 
-use tauri::{App, AppHandle, RunEvent};
+use tauri::{App, AppHandle, RunEvent, Wry, plugin::Plugin};
 
 fn main() -> tauri::Result<()> {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .plugin(rust_side_opener())
         .plugin(window::state_plugin())
         .setup(setup)
         .on_menu_event(|app, event| menu::handle_event(app, &event))
@@ -23,6 +23,14 @@ enum SetupError {
     Menu(#[from] tauri::Error),
     #[error(transparent)]
     Window(#[from] window::WindowError),
+}
+
+fn rust_side_opener() -> impl Plugin<Wry> {
+    // The plugin's injected click script cancels `target="_blank"` clicks and opens them over IPC,
+    // which the remote page never has; links must reach `on_new_window` instead.
+    tauri_plugin_opener::Builder::new()
+        .open_js_links_on_click(false)
+        .build()
 }
 
 fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
