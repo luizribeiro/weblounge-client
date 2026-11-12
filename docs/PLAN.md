@@ -9,7 +9,6 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-2. Close conversations on phone: swipe-left plus a long-press sheet; Leave in the details sheet.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -22,6 +21,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: shipped phone conversation closing through axis-locked row swipes, long-press action
+  sheets and channel details. Direct messages close immediately with a six-second Undo; channel
+  actions confirm before PART. iPhone WebKit and Android Chromium journeys cover gesture thresholds,
+  vertical scrolling, both Leave paths, native feel and the accepted light/dark states.
 - 2026-11-12: made the close-conversation browser journey audit native feel only at its truly idle
   confirmation screen and wait for each Undo toast to disappear, avoiding expected close timers
   and engine work in the idle-waste window.
@@ -171,6 +174,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Ship phone conversation closing. Chat rows expose Mark as read plus Close or Leave after an
+  axis-locked left swipe, while long press, context-menu keys and the channel details sheet provide
+  accessible alternatives. A full direct-message swipe closes immediately, returns an open phone
+  conversation to the list and offers the shared six-second Undo; a full channel swipe only reveals
+  actions, and Leave confirms before sending PART. The existing engine-owned close, tombstone,
+  read-marker and notification flow remains the sole state path. Focused gesture and shell units
+  cover thresholds, cancellation, vertical intent and action routing; built-app journeys on iPhone
+  WebKit and Android Chromium exercise both close kinds, Undo, both Leave surfaces, scrolling and
+  native feel, with accepted captures under `screenshots/close-phone/`.
 - [x] Ship desktop conversation closing. Direct-message rows expose a hover/focus × and the
   destructive context-menu action; channels expose a confirmed Leave action that sends PART.
   Registry-derived command-palette and typed `/close` paths share the same close flow, and Menu or
