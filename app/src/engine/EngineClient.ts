@@ -245,6 +245,11 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
+    if (message.type === "notifiable_message_received") {
+      // Alerts matter most while hidden, when the render queue holds events until visible.
+      this.#publish(message);
+      return;
+    }
     this.#enqueueForFrame(message);
   };
 

@@ -591,10 +591,11 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(message);
   });
 
-  it("decodes notifiable messages with their buffer", () => {
+  it("delivers notifiable messages to a hidden page without a frame", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
+    client.setVisibility("hidden");
     const message = {
       type: "notifiable_message_received",
       buffer: {
@@ -627,8 +628,8 @@ describe("WorkerEngineClient", () => {
     };
 
     port.emit(message);
-    frames[0]?.(0);
 
+    expect(frames).toHaveLength(0);
     expect(listener).toHaveBeenCalledWith(message);
   });
 
