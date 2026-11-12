@@ -40,7 +40,6 @@ import {
   isIos,
   type NotificationPromptVisibility,
   shouldShowNotificationPrompt,
-  supportsPageNotifications,
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
@@ -65,6 +64,7 @@ import {
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
+import { supportsPageNotifications } from "./platform/page-notifications/page-notification-capability";
 import {
   type PushDelivery,
   type PushSubscriptionStatus,
