@@ -35,16 +35,22 @@ for (const layout of [
       await expect(
         list.getByText(fixture.recent[2] ?? "", { exact: true }),
       ).toBeVisible();
+      const beginning = page.locator('[data-divider-kind="history"]').filter({
+        hasText: `Beginning of your messages with ${fixture.peer.nickname}`,
+      });
       await expect
-        .poll(() => beforeRequestCount(page, fixture.peer.nickname))
-        .toBe(1);
+        .poll(
+          async () =>
+            (await beforeRequestCount(page, fixture.peer.nickname)) === 1 ||
+            (await beginning.isVisible()),
+        )
+        .toBe(true);
       for (const text of [...fixture.older, ...fixture.recent])
         await expect(list.getByText(text, { exact: true })).toBeVisible();
-      await expect(
-        page.locator('[data-divider-kind="history"]').filter({
-          hasText: `Beginning of your messages with ${fixture.peer.nickname}`,
-        }),
-      ).toBeVisible();
+      await expect(beginning).toBeVisible();
+      expect(
+        await beforeRequestCount(page, fixture.peer.nickname),
+      ).toBeLessThanOrEqual(1);
 
       const geometry = await list.evaluate((element) => ({
         clientHeight: element.clientHeight,

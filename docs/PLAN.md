@@ -39,7 +39,9 @@ The single place a fresh session reads to know where the project stands. Update 
   boundary after the already-stored messages, so its desktop unread readiness check could never hold.
 - 2026-11-11: made short transcripts page older history without input until they exceed the
   prefetch range, reach their signed Beginning edge or receive a page with no new oldest item,
-  with one visible-only request in flight.
+  with one visible-only request in flight. Browser coverage accepts startup history that is already
+  complete instead of requiring a redundant older-page request, and automatic paging waits for the
+  engine's first ready history state so an ignored startup request cannot disarm the list.
 - 2026-11-11: animated the mounted older-history loader with the signed motion duration, leaving
   reduced-motion static and pausing the animation whenever the transcript is hidden.
 - 2026-11-11: kept the in-flight older-history edge visible when a reader reached the transcript
@@ -128,7 +130,8 @@ The single place a fresh session reads to know where the project stands. Update 
   foreground return and every nonterminal page landing. They request one unanchored older page at
   a time until content leaves that range or history start arrives, and schedule no request while
   hidden. An unchanged oldest identity and item count stops the automatic chain, so an empty or
-  duplicate nonterminal server page cannot loop.
+  duplicate nonterminal server page cannot loop. Automatic paging also waits for a defined engine
+  history state and treats its first ready state as a page-ready transition.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
   update read facts, disappear when older history covers them, and leave with their buffer. The UI

@@ -269,7 +269,7 @@ export function MessageList(props: MessageListProps) {
   let olderPageTimelineRestored = false;
   let observedScrollTop = 0;
   let readerAtHistoryTop = false;
-  let historyWasLoading = props.historyState?.loading === true;
+  let previousHistoryLoading = props.historyState?.loading;
   let shortHistoryBaseline: string | undefined;
   let shortHistoryPagingStopped = false;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
@@ -496,6 +496,7 @@ export function MessageList(props: MessageListProps) {
   const requestShortHistoryWhenTracked = () => {
     if (
       props.foreground === false ||
+      props.historyState === undefined ||
       shortHistoryPagingStopped ||
       !olderPageArmed ||
       !canLoadOlder() ||
@@ -538,14 +539,14 @@ export function MessageList(props: MessageListProps) {
   };
   createEffect(() => {
     const history = props.historyState;
-    if (historyWasLoading && history?.loading === false) {
+    if (previousHistoryLoading !== false && history?.loading === false) {
       if (history.at_start === false) olderPageArmed = true;
       olderPageLanded = true;
       readerAtHistoryTop = false;
       cancelLoadingEdgePin();
       requestShortHistoryWhenTracked();
     }
-    historyWasLoading = history?.loading === true;
+    previousHistoryLoading = history?.loading;
   });
   const markWheelScrollIntent = (event: WheelEvent) => {
     cancelOlderAnchorCorrection();
