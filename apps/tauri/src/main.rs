@@ -1,5 +1,6 @@
 //! Temporary macOS shell around the hosted weblounge web app.
 
+mod login_item;
 mod menu;
 mod navigation;
 mod window;
@@ -10,6 +11,7 @@ fn main() -> tauri::Result<()> {
     let app = tauri::Builder::default()
         .plugin(rust_side_opener())
         .plugin(window::state_plugin())
+        .plugin(login_item::plugin())
         .setup(setup)
         .on_menu_event(|app, event| menu::handle_event(app, &event))
         .build(tauri::generate_context!())?;
