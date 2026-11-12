@@ -1951,7 +1951,7 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
   );
 });
 
-it("loads older history only after the virtualizer tracks the user at the top", async () => {
+it("loads older history once after an upward scroll enters the prefetch threshold", async () => {
   const onLoadOlder = vi.fn();
   const { container } = render(() => (
     <MessageList messages={[message]} onLoadOlder={onLoadOlder} />
@@ -1963,16 +1963,13 @@ it("loads older history only after the virtualizer tracks the user at the top", 
     scrollHeight: { configurable: true, value: 500 },
   });
 
-  list.scrollTop = 0;
+  list.scrollTop = 400;
   list.dispatchEvent(new Event("scroll"));
   expect(onLoadOlder).not.toHaveBeenCalled();
-
-  fireEvent.wheel(list, { deltaY: 100 });
-  list.scrollTop = 100;
-  list.dispatchEvent(new Event("scroll"));
   await twoAnimationFrames();
+
   fireEvent.wheel(list, { deltaY: -100 });
-  list.scrollTop = 0;
+  list.scrollTop = 140;
   list.dispatchEvent(new Event("scroll"));
   expect(onLoadOlder).not.toHaveBeenCalled();
   await twoAnimationFrames();
@@ -1982,15 +1979,27 @@ it("loads older history only after the virtualizer tracks the user at the top", 
   list.dispatchEvent(new Event("scroll"));
   await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledOnce();
+});
 
-  fireEvent.wheel(list, { deltaY: 100 });
-  list.scrollTop = 100;
+it("does not load older history for programmatic scrolls into the threshold", async () => {
+  const onLoadOlder = vi.fn();
+  const { container } = render(() => (
+    <MessageList messages={[message]} onLoadOlder={onLoadOlder} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, value: 500 },
+  });
+
+  list.scrollTop = 400;
   list.dispatchEvent(new Event("scroll"));
-  fireEvent.wheel(list, { deltaY: -100 });
-  list.scrollTop = 0;
+  list.scrollTop = 140;
   list.dispatchEvent(new Event("scroll"));
   await twoAnimationFrames();
-  expect(onLoadOlder).toHaveBeenCalledTimes(2);
+
+  expect(onLoadOlder).not.toHaveBeenCalled();
 });
 
 it("loads older history when an upward wheel cannot move past the top", async () => {
@@ -2051,6 +2060,46 @@ it("rearms top loading after a nonterminal older page completes", async () => {
   await twoAnimationFrames();
 
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
+});
+
+it("does not load another older page after reaching history start", async () => {
+  const onLoadOlder = vi.fn();
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: false,
+  });
+  const { container } = render(() => (
+    <MessageList
+      historyState={historyState()}
+      messages={[message]}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 100 },
+    scrollTop: {
+      configurable: true,
+      get: () => 0,
+      set: () => {},
+    },
+  });
+
+  list.scrollTop = 0;
+  fireEvent.wheel(list, { deltaY: -100 });
+  await twoAnimationFrames();
+  expect(onLoadOlder).toHaveBeenCalledOnce();
+
+  setHistoryState({ at_start: false, loading: true });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  setHistoryState({ at_start: true, loading: false });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  fireEvent.wheel(list, { deltaY: -100 });
+  await twoAnimationFrames();
+
+  expect(onLoadOlder).toHaveBeenCalledOnce();
 });
 
 function twoAnimationFrames(): Promise<void> {

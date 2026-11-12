@@ -195,6 +195,7 @@ type NoticeMessage = MessageProjection & {
 };
 
 const liveEdgeTolerance = 2;
+const olderHistoryPrefetchViewportCount = 1.5;
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLElement | undefined;
@@ -258,6 +259,13 @@ export function MessageList(props: MessageListProps) {
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
   let olderPageRequestFrame: number | undefined;
+  let olderAnchorFrame: number | undefined;
+  let pendingOlderAnchor:
+    | { readonly key: string; readonly top: number }
+    | undefined;
+  let olderPageLanded = false;
+  let olderPageTimelineRestored = false;
+  let observedScrollTop = 0;
   let historyWasLoading = props.historyState?.loading === true;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
@@ -371,20 +379,53 @@ export function MessageList(props: MessageListProps) {
     request: (callback) => window.requestAnimationFrame(callback),
     cancel: (handle) => window.cancelAnimationFrame(handle),
   });
+  const cancelOlderAnchorCorrection = () => {
+    if (olderAnchorFrame === undefined) return;
+    window.cancelAnimationFrame(olderAnchorFrame);
+    olderAnchorFrame = undefined;
+  };
   const markPointerScrollIntent = (event: PointerEvent) => {
-    if (event.isPrimary && event.button === 0) userScrollIntent.beginPointer();
+    if (event.isPrimary && event.button === 0) {
+      cancelOlderAnchorCorrection();
+      userScrollIntent.beginPointer();
+    }
   };
   const endPointerScrollIntent = () => userScrollIntent.endPointer();
   const cancelPointerScrollIntent = (event: PointerEvent) => {
     if (event.pointerType === "touch") userScrollIntent.cancelPointer();
     else userScrollIntent.endPointer();
   };
-  const markTouchScrollIntent = () => userScrollIntent.beginTouch();
+  const markTouchScrollIntent = () => {
+    cancelOlderAnchorCorrection();
+    userScrollIntent.beginTouch();
+  };
   const endTouchScrollIntent = (event: TouchEvent) => {
     if (event.touches.length === 0) userScrollIntent.endTouch();
   };
-  const requestOlderAtTop = () => {
-    if (!olderPageArmed) return;
+  const canLoadOlder = () =>
+    props.onLoadOlder !== undefined &&
+    props.historyState?.loading !== true &&
+    props.historyState?.at_start !== true;
+  const captureOlderAnchor = () => {
+    if (list === undefined) return;
+    const listTop = list.getBoundingClientRect().top;
+    const anchor = [
+      ...list.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
+    ].find(
+      (row) =>
+        row.querySelector("[data-message-row]") !== null &&
+        row.getBoundingClientRect().bottom > listTop,
+    );
+    const key = anchor?.dataset.rowKey;
+    if (anchor === undefined || key === undefined) return;
+    pendingOlderAnchor = {
+      key,
+      top: anchor.getBoundingClientRect().top - listTop,
+    };
+  };
+  const requestOlder = () => {
+    if (!olderPageArmed || !canLoadOlder()) return;
+    captureOlderAnchor();
     props.onLoadOlder?.();
     olderPageArmed = false;
   };
@@ -393,41 +434,50 @@ export function MessageList(props: MessageListProps) {
     window.cancelAnimationFrame(olderPageRequestFrame);
     olderPageRequestFrame = undefined;
   };
-  const requestOlderAtTrackedTop = () => {
-    if (!olderPageArmed || olderPageRequestFrame !== undefined) return;
+  const requestOlderWhenTracked = () => {
+    if (
+      !olderPageArmed ||
+      !canLoadOlder() ||
+      olderPageRequestFrame !== undefined
+    )
+      return;
     const requestWhenTracked = () => {
       olderPageRequestFrame = undefined;
-      if ((list?.scrollTop ?? Infinity) > liveEdgeTolerance) return;
+      const scrollTop = list?.scrollTop ?? Infinity;
+      const threshold =
+        (list?.clientHeight ?? 0) * olderHistoryPrefetchViewportCount;
+      if (scrollTop > threshold || !canLoadOlder()) return;
       if (
         virtualizer.scrollOffset !== null &&
-        Math.abs(virtualizer.scrollOffset - (list?.scrollTop ?? 0)) >
-          liveEdgeTolerance
+        Math.abs(virtualizer.scrollOffset - scrollTop) > liveEdgeTolerance
       ) {
         olderPageRequestFrame =
           window.requestAnimationFrame(requestWhenTracked);
         return;
       }
-      requestOlderAtTop();
+      requestOlder();
     };
     olderPageRequestFrame = window.requestAnimationFrame(requestWhenTracked);
   };
   createEffect(() => {
     const history = props.historyState;
-    if (
-      historyWasLoading &&
-      history?.loading === false &&
-      history.at_start === false
-    )
-      olderPageArmed = true;
+    if (historyWasLoading && history?.loading === false) {
+      if (history.at_start === false) olderPageArmed = true;
+      olderPageLanded = true;
+    }
     historyWasLoading = history?.loading === true;
   });
   const markWheelScrollIntent = (event: WheelEvent) => {
+    cancelOlderAnchorCorrection();
     userScrollIntent.beginDiscrete();
-    if (event.deltaY < 0 && (list?.scrollTop ?? Infinity) <= liveEdgeTolerance)
-      requestOlderAtTrackedTop();
+    if (event.deltaY < 0) requestOlderWhenTracked();
+    else if (event.deltaY > 0) cancelOlderPageRequest();
   };
   const markScrollKeyIntent = (event: KeyboardEvent) => {
-    if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
+    if (scrollKeys.has(event.key)) {
+      cancelOlderAnchorCorrection();
+      userScrollIntent.beginDiscrete();
+    }
   };
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLLIElement>({
     get count() {
@@ -575,11 +625,13 @@ export function MessageList(props: MessageListProps) {
   const remeasureRows = (
     clearMeasurements: boolean,
     revisedIndexes: readonly number[] = [],
+    olderAnchor?: { readonly key: string; readonly top: number },
   ) => {
     if (list?.isConnected !== true) return;
+    const scroller = list;
     const indexes = new Map(rows().map((row, index) => [row.key, index]));
     const elements = [
-      ...list.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
+      ...scroller.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
     ];
     const measurements = elements.flatMap((element) => {
       const index = indexes.get(element.dataset.rowKey ?? "");
@@ -603,8 +655,37 @@ export function MessageList(props: MessageListProps) {
         virtualizer.measureElement(element);
       }
     };
-    if (logicallyAtLiveEdge) resize();
-    else preserveVisualScrollAnchor(list, resize);
+    if (olderAnchor !== undefined) {
+      resize();
+      const index = rows().findIndex((row) => row.key === olderAnchor.key);
+      if (index >= 0) {
+        virtualizer.scrollToIndex(index, { align: "start" });
+        scroller.scrollTop -= olderAnchor.top;
+        if (olderAnchorFrame !== undefined)
+          window.cancelAnimationFrame(olderAnchorFrame);
+        let stableFrames = 0;
+        const correctAnchor = () => {
+          olderAnchorFrame = undefined;
+          const moved = [
+            ...scroller.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
+          ].find((row) => row.dataset.rowKey === olderAnchor.key);
+          if (moved === undefined) return;
+          const delta =
+            moved.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top -
+            olderAnchor.top;
+          if (Math.abs(delta) <= 0.1) stableFrames += 1;
+          else {
+            scroller.scrollTop += delta;
+            stableFrames = 0;
+          }
+          if (stableFrames < 2)
+            olderAnchorFrame = window.requestAnimationFrame(correctAnchor);
+        };
+        olderAnchorFrame = window.requestAnimationFrame(correctAnchor);
+      }
+    } else if (logicallyAtLiveEdge) resize();
+    else preserveVisualScrollAnchor(scroller, resize);
     setMeasurementEpoch((epoch) => epoch + 1);
   };
   const remeasureAll = () => remeasureRows(true);
@@ -816,8 +897,21 @@ export function MessageList(props: MessageListProps) {
     });
     measuredRows = currentRows;
     measuredRevisions = currentRevisions;
+    const olderAnchor =
+      !appended && timelineChanged ? pendingOlderAnchor : undefined;
+    if (timelineChanged && olderAnchor !== undefined)
+      olderPageTimelineRestored = true;
+    if (
+      olderAnchor !== undefined &&
+      olderPageLanded &&
+      olderPageTimelineRestored
+    ) {
+      pendingOlderAnchor = undefined;
+      olderPageLanded = false;
+      olderPageTimelineRestored = false;
+    }
     queueMicrotask(() => {
-      if (!appended) remeasureRows(false, revisedIndexes);
+      if (!appended) remeasureRows(false, revisedIndexes, olderAnchor);
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     });
   });
@@ -954,6 +1048,8 @@ export function MessageList(props: MessageListProps) {
         window.cancelAnimationFrame(scrollLiveEdgeFrame);
       if (foregroundRefreshFrame !== undefined)
         window.cancelAnimationFrame(foregroundRefreshFrame);
+      if (olderAnchorFrame !== undefined)
+        window.cancelAnimationFrame(olderAnchorFrame);
       cancelOlderPageRequest();
       userScrollIntent.dispose();
     });
@@ -970,13 +1066,27 @@ export function MessageList(props: MessageListProps) {
         data-presentation={props.presentation ?? "desktop"}
         role="list"
         onScroll={(event) => {
-          if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
-          if (element.scrollTop <= liveEdgeTolerance) {
-            requestOlderAtTrackedTop();
-          } else {
+          const previousScrollTop = observedScrollTop;
+          observedScrollTop = element.scrollTop;
+          if (!userScrollIntent.consumeScroll()) return;
+          if (
+            !olderPageArmed ||
+            olderPageRequestFrame !== undefined ||
+            props.historyState?.loading === true
+          )
+            captureOlderAnchor();
+          const withinPrefetchThreshold =
+            element.scrollTop <=
+            element.clientHeight * olderHistoryPrefetchViewportCount;
+          if (
+            withinPrefetchThreshold &&
+            element.scrollTop < previousScrollTop
+          ) {
+            requestOlderWhenTracked();
+          } else if (element.scrollTop > previousScrollTop) {
             cancelOlderPageRequest();
-            olderPageArmed = true;
+            if (!withinPrefetchThreshold) olderPageArmed = true;
           }
           deferScrollLiveEdge(
             element.scrollHeight - element.scrollTop - element.clientHeight <=
@@ -991,6 +1101,7 @@ export function MessageList(props: MessageListProps) {
         }}
         ref={(element) => {
           list = element;
+          observedScrollTop = element.scrollTop;
           element.addEventListener("keydown", markScrollKeyIntent);
           element.addEventListener("pointerdown", markPointerScrollIntent, {
             passive: true,
