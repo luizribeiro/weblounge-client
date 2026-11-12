@@ -516,14 +516,21 @@ export function MessageList(props: MessageListProps) {
         !canLoadOlder()
       )
         return;
-      const overflow = Math.max(
-        scroller.scrollHeight - scroller.clientHeight,
+      const estimatedContentHeight = rows().reduce(
+        (total, _row, index) => total + virtualizer.options.estimateSize(index),
         0,
       );
+      const contentHeight = Math.max(
+        scroller.scrollHeight,
+        virtualizer.getTotalSize(),
+        estimatedContentHeight,
+      );
+      const overflow = Math.max(contentHeight - scroller.clientHeight, 0);
       const threshold =
         scroller.clientHeight * olderHistoryPrefetchViewportCount;
       if (overflow > threshold) return;
       const items = orderedItems();
+      if (items.length === 0) return;
       const oldest = items[0];
       const progress = `${String(oldest?.id)}:${items.length}`;
       if (
@@ -537,6 +544,9 @@ export function MessageList(props: MessageListProps) {
       requestOlder(false);
     });
   };
+  createEffect(() => {
+    if (orderedItems().length > 0) requestShortHistoryWhenTracked();
+  });
   createEffect(() => {
     const history = props.historyState;
     if (previousHistoryLoading !== false && history?.loading === false) {

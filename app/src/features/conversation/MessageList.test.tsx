@@ -2083,15 +2083,18 @@ it("stops automatically paging short history when a page makes no progress", asy
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });
 
-it("waits for initial history readiness before paging a short transcript", async () => {
+it("waits for history readiness and content before paging a short transcript", async () => {
   const onLoadOlder = vi.fn();
   const [historyState, setHistoryState] = createSignal<
     { readonly at_start: boolean; readonly loading: boolean } | undefined
   >();
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
+    [],
+  );
   const { container } = render(() => (
     <MessageList
       historyState={historyState()}
-      messages={[message]}
+      messages={messages()}
       onLoadOlder={onLoadOlder}
     />
   ));
@@ -2106,6 +2109,10 @@ it("waits for initial history readiness before paging a short transcript", async
   expect(onLoadOlder).not.toHaveBeenCalled();
 
   setHistoryState({ at_start: false, loading: false });
+  await twoAnimationFrames();
+  expect(onLoadOlder).not.toHaveBeenCalled();
+
+  setMessages([message]);
   await twoAnimationFrames();
 
   expect(onLoadOlder).toHaveBeenCalledOnce();
@@ -2125,6 +2132,33 @@ it("does not automatically page history that overflows the prefetch range", asyn
   Object.defineProperties(list, {
     clientHeight: { configurable: true, value: 100 },
     scrollHeight: { configurable: true, value: 251 },
+  });
+
+  await twoAnimationFrames();
+
+  expect(onLoadOlder).not.toHaveBeenCalled();
+});
+
+it("uses virtual content size before scroll geometry settles", async () => {
+  const onLoadOlder = vi.fn();
+  const messages = Array.from({ length: 100 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    received_at_ms: index + 1,
+    text: `settling message ${index + 1}`,
+  }));
+  const { container } = render(() => (
+    <MessageList
+      historyState={{ at_start: false, loading: false }}
+      messages={messages}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 500 },
   });
 
   await twoAnimationFrames();
