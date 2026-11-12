@@ -31,7 +31,6 @@ pub fn plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
-/// The real state, with a failed lookup logged and shown as off.
 pub fn current(item: &impl LoginItem) -> bool {
     item.is_enabled().unwrap_or_else(|error| {
         eprintln!("{error}");
@@ -39,7 +38,6 @@ pub fn current(item: &impl LoginItem) -> bool {
     })
 }
 
-/// Flips the login item and returns the state it is really in afterwards.
 pub fn toggle(item: &impl LoginItem) -> Result<bool, LoginItemError> {
     let wanted = !item.is_enabled()?;
     item.set_enabled(wanted)?;
@@ -52,54 +50,83 @@ mod tests {
 
     use super::*;
 
+    #[derive(Default)]
     struct FakeLoginItem {
         enabled: Cell<bool>,
-        fails: bool,
+        lookup_fails: bool,
+        set_fails: bool,
+        set_is_ignored: bool,
     }
 
-    impl FakeLoginItem {
-        fn new(enabled: bool, fails: bool) -> Self {
-            Self {
-                enabled: Cell::new(enabled),
-                fails,
-            }
-        }
+    fn io_error() -> LoginItemError {
+        LoginItemError(tauri_plugin_autostart::Error::Io(std::io::Error::other(
+            "LaunchAgents is read-only",
+        )))
     }
 
     impl LoginItem for FakeLoginItem {
         fn is_enabled(&self) -> Result<bool, LoginItemError> {
+            if self.lookup_fails {
+                return Err(io_error());
+            }
             Ok(self.enabled.get())
         }
 
         fn set_enabled(&self, enabled: bool) -> Result<(), LoginItemError> {
-            if self.fails {
-                return Err(LoginItemError(tauri_plugin_autostart::Error::Io(
-                    std::io::Error::other("LaunchAgents is read-only"),
-                )));
+            if self.set_fails {
+                return Err(io_error());
             }
-            self.enabled.set(enabled);
+            if !self.set_is_ignored {
+                self.enabled.set(enabled);
+            }
             Ok(())
         }
     }
 
     #[test]
     fn toggling_a_disabled_item_enables_it() {
-        let item = FakeLoginItem::new(false, false);
+        let item = FakeLoginItem::default();
         assert!(toggle(&item).expect("toggle succeeds"));
         assert!(item.enabled.get());
     }
 
     #[test]
     fn toggling_an_enabled_item_disables_it() {
-        let item = FakeLoginItem::new(true, false);
+        let item = FakeLoginItem {
+            enabled: Cell::new(true),
+            ..FakeLoginItem::default()
+        };
         assert!(!toggle(&item).expect("toggle succeeds"));
         assert!(!item.enabled.get());
     }
 
     #[test]
-    fn a_failed_toggle_leaves_the_state_unchanged() {
-        let item = FakeLoginItem::new(false, true);
+    fn a_failed_toggle_is_an_error_and_keeps_the_state() {
+        let item = FakeLoginItem {
+            enabled: Cell::new(true),
+            set_fails: true,
+            ..FakeLoginItem::default()
+        };
         assert!(toggle(&item).is_err());
-        assert!(!item.enabled.get());
+        assert!(current(&item));
+    }
+
+    #[test]
+    fn toggle_reports_the_real_state_when_the_system_ignores_the_change() {
+        let item = FakeLoginItem {
+            set_is_ignored: true,
+            ..FakeLoginItem::default()
+        };
+        assert!(!toggle(&item).expect("toggle succeeds"));
+    }
+
+    #[test]
+    fn current_is_off_when_the_lookup_fails() {
+        let item = FakeLoginItem {
+            enabled: Cell::new(true),
+            lookup_fails: true,
+            ..FakeLoginItem::default()
+        };
+        assert!(!current(&item));
     }
 }
