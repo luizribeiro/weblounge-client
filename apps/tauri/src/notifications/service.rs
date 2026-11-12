@@ -56,7 +56,8 @@ impl Serialize for NotificationError {
 
 pub struct Service {
     center: Arc<dyn NotificationCenter>,
-    one_center_call_at_a_time: Mutex<()>,
+    // Keeps center calls from overlapping; the page orders them by waiting for each to settle.
+    center_call_lock: Mutex<()>,
     permission_request_pending: AtomicBool,
 }
 
@@ -72,7 +73,7 @@ impl Service {
     pub fn new(center: Arc<dyn NotificationCenter>) -> Self {
         Self {
             center,
-            one_center_call_at_a_time: Mutex::new(()),
+            center_call_lock: Mutex::new(()),
             permission_request_pending: AtomicBool::new(false),
         }
     }
@@ -104,7 +105,7 @@ impl Service {
     }
 
     fn take_turn(&self) -> std::sync::MutexGuard<'_, ()> {
-        self.one_center_call_at_a_time
+        self.center_call_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
