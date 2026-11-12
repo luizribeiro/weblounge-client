@@ -7,6 +7,7 @@ import {
   test,
 } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import { captureHistoryWire, type WireTrace } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import {
@@ -20,9 +21,8 @@ test.skip(
   "requires the production-shaped always-on Ergo profile",
 );
 
-// One engine history page holds 100 rows, so 100 newer fillers push the
-// seeded long messages into the older page requested at the transcript top.
-const fillerCount = 100;
+// One engine history page holds 100 rows, so this requires several older pages.
+const fillerCount = 300;
 const fillerSenders = 10;
 
 interface SeededChannel {
@@ -48,7 +48,7 @@ const shells = [
 ] as const;
 
 for (const shell of shells) {
-  test(`places an older page of long and multiline history above the live edge on ${shell.name}`, async ({
+  test(`prefetches older history without moving the reader on ${shell.name}`, async ({
     browser,
     baseURL,
   }) => {
@@ -85,17 +85,71 @@ for (const shell of shells) {
 
       await page.goto(appUrl(seeded.channel));
       await expect(row).toBeVisible();
-      await expectLatestPageLoaded(row, shell.name, seeded);
       await row.click();
+      await expect(productionMessageRow(page, seeded.newest)).toBeVisible();
 
       const list = page.locator("[data-message-list]");
       const older = [...seeded.older, seeded.ownMultiline];
       await expect
-        .poll(async () => {
-          await scrollToTranscriptTop(list);
-          return renderedRowText(list, "first");
-        })
-        .toBe(older[0]);
+        .poll(() => list.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      await beginSteadyOlderScroll(page, list, shell.name);
+      await expect.poll(() => heldBeforeCount(page)).toBe(1);
+      const prefetchPosition = await list.evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollTop: element.scrollTop,
+      }));
+      expect(prefetchPosition.scrollTop).toBeGreaterThan(0);
+      expect(prefetchPosition.scrollTop).toBeLessThanOrEqual(
+        prefetchPosition.clientHeight * 1.5,
+      );
+
+      await continueOlderScroll(page, list, shell.name);
+      await expect
+        .poll(() => list.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0);
+      await settleFrames(list);
+      const anchor = await topVisibleMessage(list);
+      expect(await heldBeforeCount(page)).toBe(1);
+
+      await releaseHeldBefore(page);
+      await expect.poll(() => sentBeforeCount(page, seeded.channel)).toBe(1);
+      await expect(page.locator('[data-divider-kind="loading"]')).toHaveCount(
+        0,
+      );
+      await expect
+        .poll(async () =>
+          Math.abs((await messageTop(list, anchor.text)) - anchor.top),
+        )
+        .toBeLessThanOrEqual(1);
+
+      let requestCount = 1;
+      for (let pageIndex = 0; pageIndex < 6; pageIndex += 1) {
+        if (
+          (await page
+            .locator('[data-divider-kind="history"]')
+            .filter({ hasText: `Beginning of ${seeded.channel}` })
+            .count()) > 0
+        )
+          break;
+        requestCount = await loadNextOlderPage(
+          page,
+          list,
+          seeded.channel,
+          requestCount,
+        );
+      }
+      await expect(
+        page
+          .locator('[data-divider-kind="history"]')
+          .filter({ hasText: `Beginning of ${seeded.channel}` }),
+      ).toBeVisible();
+      await scrollToTranscriptTop(list);
+      await settleFrames(list);
+      expect(await heldBeforeCount(page)).toBe(requestCount);
+      expect(await sentBeforeCount(page, seeded.channel)).toBe(requestCount);
+
+      await expect.poll(() => renderedRowText(list, "first")).toBe(older[0]);
       const rows = older.map((text) => productionMessageRow(page, text));
       for (const olderRow of rows) await expect(olderRow).toHaveCount(1);
       const indexes = await Promise.all(rows.map(rowIndex));
@@ -221,6 +275,7 @@ async function openApp(
   const context = await browser.newContext({ ...options, baseURL });
   const page = await context.newPage();
   await useDedicatedWorker(page);
+  await captureHistoryWire(page, { beforeTarget: channel });
   await page.goto(appUrl(channel));
   return page;
 }
@@ -233,16 +288,200 @@ function appUrl(channel: string): string {
   return `/?${parameters.toString()}`;
 }
 
-async function expectLatestPageLoaded(
-  row: Locator,
-  shell: string,
-  seeded: SeededChannel,
+async function beginSteadyOlderScroll(
+  page: Page,
+  list: Locator,
+  shell: (typeof shells)[number]["name"],
 ): Promise<void> {
-  if (shell === "mobile") {
-    await expect(row).toContainText(seeded.newest);
+  if (shell === "desktop") {
+    await list.hover();
+    await expect
+      .poll(async () => {
+        await page.mouse.wheel(0, -160);
+        return heldBeforeCount(page);
+      })
+      .toBe(1);
     return;
   }
-  await expect(row).toHaveAttribute("data-unread", /^[1-9]\d*$/u);
+  const touch = await touchPoint(list);
+  await list.dispatchEvent("pointerdown", {
+    button: 0,
+    isPrimary: true,
+    pointerId: touch.identifier,
+    pointerType: "touch",
+    ...touch,
+  });
+  await list.dispatchEvent("touchstart", {
+    changedTouches: [touch],
+    targetTouches: [touch],
+    touches: [touch],
+  });
+  await list.dispatchEvent("pointercancel", {
+    button: 0,
+    isPrimary: true,
+    pointerId: touch.identifier,
+    pointerType: "touch",
+    ...touch,
+  });
+  await expect
+    .poll(async () => {
+      await list.evaluate((element) => {
+        element.scrollTop = Math.max(
+          0,
+          element.scrollTop - Math.max(80, element.clientHeight / 4),
+        );
+        element.dispatchEvent(new Event("scroll"));
+      });
+      return heldBeforeCount(page);
+    })
+    .toBe(1);
+}
+
+async function continueOlderScroll(
+  page: Page,
+  list: Locator,
+  shell: (typeof shells)[number]["name"],
+): Promise<void> {
+  if (shell === "desktop") {
+    await page.mouse.wheel(0, -160);
+    return;
+  }
+  const touch = await touchPoint(list);
+  await list.evaluate((element) => {
+    element.scrollTop = Math.max(
+      1,
+      element.scrollTop - Math.max(80, element.clientHeight / 4),
+    );
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await list.dispatchEvent("touchend", {
+    changedTouches: [touch],
+    targetTouches: [],
+    touches: [],
+  });
+}
+
+async function touchPoint(list: Locator) {
+  const bounds = await list.boundingBox();
+  if (bounds === null) throw new Error("message list has no touch target");
+  const clientX = bounds.x + bounds.width / 2;
+  const clientY = bounds.y + bounds.height / 2;
+  return {
+    clientX,
+    clientY,
+    force: 1,
+    identifier: 83,
+    pageX: clientX,
+    pageY: clientY,
+    radiusX: 1,
+    radiusY: 1,
+    rotationAngle: 0,
+    screenX: clientX,
+    screenY: clientY,
+  };
+}
+
+async function loadNextOlderPage(
+  page: Page,
+  list: Locator,
+  channel: string,
+  previousRequestCount: number,
+): Promise<number> {
+  const requestCount = previousRequestCount + 1;
+  await scrollToTranscriptTop(list);
+  await expect.poll(() => heldBeforeCount(page)).toBe(requestCount);
+  await scrollToTranscriptTop(list);
+  await settleFrames(list);
+  await expect
+    .poll(() => list.evaluate((element) => element.scrollTop))
+    .toBe(0);
+  await expect(page.locator('[data-divider-kind="loading"]')).toContainText(
+    "Loading older messages",
+  );
+  expect(await heldBeforeCount(page)).toBe(requestCount);
+  await releaseHeldBefore(page);
+  await expect.poll(() => sentBeforeCount(page, channel)).toBe(requestCount);
+  await expect(page.locator('[data-divider-kind="loading"]')).toHaveCount(0);
+  return requestCount;
+}
+
+function heldBeforeCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (Reflect.get(globalThis, "historyWireTimeline") as WireTrace[]).filter(
+        (entry) => entry.event === "before_held",
+      ).length,
+  );
+}
+
+function sentBeforeCount(page: Page, channel: string): Promise<number> {
+  return page.evaluate(
+    (target) =>
+      (Reflect.get(globalThis, "historyWireTimeline") as WireTrace[]).filter(
+        (entry) =>
+          entry.direction === "sent" &&
+          entry.line.includes(`CHATHISTORY BEFORE ${target} `),
+      ).length,
+    channel,
+  );
+}
+
+async function releaseHeldBefore(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const release = Reflect.get(globalThis, "releaseHeldHistoryBefore");
+    if (typeof release !== "function")
+      throw new Error("history release gate is missing");
+    release();
+  });
+}
+
+async function topVisibleMessage(
+  list: Locator,
+): Promise<{ readonly text: string; readonly top: number }> {
+  return list.evaluate((element) => {
+    const listTop = element.getBoundingClientRect().top;
+    const row = [...element.querySelectorAll<HTMLElement>("li[data-row-key]")]
+      .filter((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return (
+          rect.bottom > listTop &&
+          candidate.querySelector("[data-message-row]") !== null
+        );
+      })
+      .sort(
+        (left, right) =>
+          left.getBoundingClientRect().top - right.getBoundingClientRect().top,
+      )[0];
+    const text = row
+      ?.querySelector<HTMLElement>("[data-message-row]")
+      ?.getAttribute("data-message-text");
+    if (row === undefined || text === null || text === undefined)
+      throw new Error("no visible message row");
+    return { text, top: row.getBoundingClientRect().top - listTop };
+  });
+}
+
+function messageTop(list: Locator, text: string): Promise<number> {
+  return list.evaluate((element, expected) => {
+    const row = [
+      ...element.querySelectorAll<HTMLElement>("[data-message-row]"),
+    ].find((candidate) => candidate.dataset.messageText === expected);
+    const item = row?.closest("li[data-row-key]");
+    if (!(item instanceof HTMLElement))
+      throw new Error(`anchored message is not rendered: ${expected}`);
+    return (
+      item.getBoundingClientRect().top - element.getBoundingClientRect().top
+    );
+  }, text);
+}
+
+function settleFrames(list: Locator): Promise<void> {
+  return list.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 function renderedRowText(list: Locator, edge: "first" | "last") {

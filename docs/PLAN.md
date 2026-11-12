@@ -32,6 +32,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-11: made the production older-history fixture establish and persist unread traffic before
   relaunching into history paging. The previous fresh-device launch correctly seeded its local read
   boundary after the already-stored messages, so its desktop unread readiness check could never hold.
+- 2026-11-11: prefetched older history when user-owned upward scrolling entered a 1.5-viewport
+  top buffer, retaining the visible row across each prepend without issuing requests for
+  programmatic scrolling, an in-flight page or a completed history boundary.
 - 2026-11-11: buffer events 7; represented capped, lagged, unavailable and failed history ranges as
   mergeable timeline gaps, cleared covered markers, and replaced ad hoc transcript boundaries with
   the signed responsive divider family for gaps, history start/loading, empty, day and New rows.
@@ -94,6 +97,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Prefetch older history before the reader reaches the transcript top. Upward wheel, touch and
+  keyboard-owned scrolling now request within a named 1.5-viewport buffer only after the
+  virtualizer tracks the DOM offset; programmatic pinning and remeasurement stay silent. Loading
+  and terminal history state gate duplicate requests, and nonterminal pages re-arm after landing.
+  The prepend reuses the anchor-preserving remeasure path with the latest stable visible message
+  key so phone and desktop retain the top row within 1 px while a real held page lands. Focused
+  units cover the threshold, programmatic movement, terminal state and re-arming; the
+  production-profile journey pages through a 300-message channel on desktop and phone, verifies
+  one request per page, the loading edge, the final Beginning divider and no terminal request.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
   update read facts, disappear when older history covers them, and leave with their buffer. The UI

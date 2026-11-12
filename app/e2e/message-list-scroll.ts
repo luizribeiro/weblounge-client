@@ -88,6 +88,7 @@ export async function scrollToTranscriptTop(list: Locator): Promise<void> {
     targetTouches: [],
     touches: [],
   });
+  await list.dispatchEvent("wheel", { deltaY: -fullWheelDelta });
 }
 
 async function touchPanAway(list: Locator, distance: number): Promise<void> {
