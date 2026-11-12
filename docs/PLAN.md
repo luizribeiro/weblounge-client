@@ -9,10 +9,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-2. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-3. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-4. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-5. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+2. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+3. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+4. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -26,6 +25,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: added the desktop ⌘K/Ctrl+K buffer switcher with fuzzy filtering, visit-recency
+  ranking, unread badges, accessible combobox navigation and focus restoration; restored a default
+  search-icon sidebar launcher with a one-line button variant for review.
 - 2026-11-12: made New-divider browser journeys wait for app-observed hidden or unread traffic
   before foregrounding or opening its conversation, instead of treating the peer's server echo as
   proof that the app had received the message.
@@ -114,6 +116,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
+- The switcher's `pane.open-buffer-right` chord remains unwired while the desktop pane model has a
+  single leaf; add Ctrl/⌘+Enter when split panes land rather than creating a second layout path.
 - WebKit bug 268797 can leave an iOS Home Screen app on the chat list after a notification tap; we
   deliberately do not guess which conversation to open.
 - The dwell, divider, and snapshot flush now share one foreground signal. The push lease still uses
@@ -139,6 +143,16 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Ship the desktop buffer switcher. The reusable omnibar surface owns dialog, combobox/listbox,
+  focus-trap and invoker-restoration behavior for the later command palette. Buffer results span
+  networks, exclude server and unavailable rows, rank actual visit recency before activity when
+  empty, and score exact, prefix, substring and subsequence matches while preserving unread and
+  mention badges. Arrow keys and Ctrl+N/P move, Enter and mouse open, and Escape restores focus;
+  the registry supplies ⌘K/Ctrl+K and the launcher label. The sidebar exposes both signed launcher
+  treatments behind `SWITCHER_LAUNCHER_VARIANT`, defaulting to the header search icon. Focused units
+  cover ranking, filtering, keyboard intent, semantics and shell wiring; the built-app local-Ergo
+  journey covers both launcher variants, keyboard/mouse navigation, focus restoration, light/dark
+  captures and the overlay-open native-feel audit.
 - [x] Land buffer-events batch 4. Typed notice sources now cross the engine boundary, with ordinary
   notices classified as users and server events classified from papo's actor as services or
   servers. Server notices and WALLOPS route by audience without opening a service DM. The shared
