@@ -101,24 +101,15 @@ describe("estimateMessageHeight", () => {
     ).toBe(estimateMessageHeight(message, 1_280, "cozy") - 3);
   });
 
-  it("keeps typed IRC notices on the full sender-row estimate", () => {
-    const text = {
-      delivery: "received" as const,
-      kind: "text" as const,
-      text: "maintenance soon",
-    };
+  it("uses the notice-line rhythm for IRC notice estimates", () => {
     const notice = {
       delivery: "received" as const,
       kind: { irc_notice: "user" as const },
       text: "maintenance soon",
     };
 
-    expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(
-      estimateMessageHeight(text, 390, "cozy", "mobile"),
-    );
-    expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(
-      estimateMessageHeight(text, 1_280, "cozy", "desktop"),
-    );
+    expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(32);
+    expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(26);
   });
 
   it("uses the system-line rhythm for notice estimates", () => {

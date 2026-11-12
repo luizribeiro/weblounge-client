@@ -58,6 +58,21 @@ export function estimateMessageHeight(
       padding
     );
   }
+  if (typeof message.kind === "object") {
+    const textWidth = Math.max(
+      rowWidth - (presentation === "mobile" ? 26 : 230),
+      fontSize * 4,
+    );
+    const charactersPerLine = Math.max(
+      1,
+      Math.floor(textWidth / (fontSize * estimatedCharacterWidthFactor)),
+    );
+    const padding =
+      presentation === "mobile"
+        ? mobileLineTopPadding(preset, lineSpacing)
+        : verticalPadding;
+    return estimatedLines(message.text, charactersPerLine) * 20 + padding;
+  }
   if (presentation === "mobile" && isSenderRow(message.kind)) {
     const textWidth = Math.max(
       rowWidth -
@@ -175,7 +190,7 @@ function messageChromeWidth(
 }
 
 function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
-  return kind === "text" || (typeof kind === "object" && "irc_notice" in kind);
+  return kind === "text";
 }
 
 function deliveryChromeWidth(delivery: EstimatedMessage["delivery"]): number {

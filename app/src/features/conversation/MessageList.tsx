@@ -65,6 +65,7 @@ import {
   estimateSystemLineHeight,
   systemLineSizeRevision,
 } from "./timeline/item-size-estimate";
+import { NoticeRow } from "./timeline/NoticeRow";
 import {
   isIrcNoticeMessage,
   isLocalNoticeMessage,
@@ -1560,12 +1561,21 @@ function MessageRow(props: {
         onOpenExternal={props.onOpenExternal}
       />
     );
-  const ircNotice = isIrcNoticeMessage(message);
+  if (isIrcNoticeMessage(message))
+    return (
+      <NoticeRow
+        message={message}
+        nickLookup={props.nickLookup}
+        onOpenChannel={props.onOpenChannel}
+        onOpenDirect={props.onOpenDirect}
+        onOpenExternal={props.onOpenExternal}
+        presentation={props.presentation ?? "desktop"}
+      />
+    );
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""} ${ircNotice ? styles.ircNotice : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
-      data-irc-notice={ircNotice || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}

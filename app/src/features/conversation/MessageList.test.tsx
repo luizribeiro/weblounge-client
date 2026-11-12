@@ -1671,7 +1671,7 @@ it("renders info notices as plain muted event rows", async () => {
   expect(row).not.toHaveTextContent("set by");
 });
 
-it("renders typed IRC notices with the existing sender style", () => {
+it("renders IRC notices through the typed notice family", () => {
   render(() => (
     <MessageList
       messages={[
@@ -1688,7 +1688,8 @@ it("renders typed IRC notices with the existing sender style", () => {
     .getByText("maintenance soon")
     .closest("[data-message-row]");
   expect(row).toHaveAttribute("data-irc-notice", "true");
-  expect(row?.className).toContain("ircNotice");
+  expect(row).toHaveAttribute("data-notice-source", "user");
+  expect(screen.getByRole("img", { name: "Notice" })).toBeVisible();
   expect(row).not.toHaveAttribute("data-notice-row");
   expect(screen.getByText("alice")).toBeVisible();
 });
