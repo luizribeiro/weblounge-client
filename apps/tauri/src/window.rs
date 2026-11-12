@@ -2,7 +2,7 @@
 
 use tauri::{
     AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
-    webview::NewWindowResponse,
+    utils::config::BackgroundThrottlingPolicy, webview::NewWindowResponse,
 };
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
@@ -40,6 +40,7 @@ pub fn create(app: &AppHandle) -> Result<(), WindowError> {
         .title("weblounge")
         .visible(false)
         .initialization_script(BADGE_SCRIPT)
+        .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .inner_size(1280.0, 840.0)
         .min_inner_size(400.0, 480.0)
         .on_navigation(move |url| {
