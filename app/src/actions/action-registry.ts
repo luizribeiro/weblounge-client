@@ -389,7 +389,7 @@ export class ActionRegistry {
           allowed(command, context) &&
           (surface === "help" ||
             (command.surfaces.includes("palette") &&
-              command.arguments.every((argument) => !argument.required))),
+              canInvokeFromPalette(command, context))),
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
@@ -424,6 +424,21 @@ function allowed(command: CommandSpec, context: ActionContext): boolean {
     ) &&
     permissionRank(context.permission ?? "anyone") >=
       permissionRank(command.permission)
+  );
+}
+
+function canInvokeFromPalette(
+  command: CommandSpec,
+  context: ActionContext,
+): boolean {
+  return (
+    context.currentBufferKind !== undefined &&
+    command.arguments.every(
+      (argument) =>
+        !argument.required &&
+        (argument.kind !== "channel" ||
+          context.currentBufferKind === "channel"),
+    )
   );
 }
 

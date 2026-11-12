@@ -249,6 +249,26 @@ describe("ActionRegistry", () => {
     );
   });
 
+  it("shows implicit channel commands only while a channel is focused", () => {
+    const topic = {
+      ...command("topic", ["slash", "palette"]),
+      arguments: [
+        { name: "channel", kind: "channel" as const, required: false },
+        { name: "text", kind: "text" as const, required: false },
+      ],
+    };
+    const registry = new ActionRegistry({}, "other", [topic], vi.fn());
+
+    expect(registry.palette(context).map(({ id }) => id)).toContain(
+      "command.topic",
+    );
+    expect(
+      registry.palette({ ...context, currentBufferKind: "direct" }),
+    ).toEqual([]);
+    const { currentBufferKind: _, ...noBuffer } = context;
+    expect(registry.palette(noBuffer)).toEqual([]);
+  });
+
   it("gates and runs commands through derived policy", () => {
     const run = vi.fn();
     const oper = {
