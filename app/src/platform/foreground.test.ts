@@ -79,3 +79,29 @@ it("retains a foreground exit when reactive consumers see only the final state",
   expect(readForeground()).toBe(true);
   expect(readForeground.exitEpoch()).toBe(1);
 });
+
+it("runs the entry hook before consumers see the page return", () => {
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const seenOnEntry: boolean[] = [];
+  let readForeground = () => false;
+
+  render(() => {
+    readForeground = createForegroundSignal(() =>
+      seenOnEntry.push(readForeground()),
+    );
+    return undefined;
+  });
+
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(seenOnEntry).toEqual([]);
+  hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  document.dispatchEvent(new Event("visibilitychange"));
+
+  expect(seenOnEntry).toEqual([false]);
+  expect(readForeground()).toBe(true);
+});
