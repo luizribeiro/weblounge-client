@@ -91,6 +91,30 @@ nice -n 10 nix build --no-link --impure --max-jobs 2 --cores 4 --expr '
 '
 ```
 
+## macOS app
+
+`apps/tauri/` is a temporary Tauri 2 wrapper that opens the hosted app at
+<https://beta.weblounge.org> in its own window (see
+[design 27](docs/design/27-desktop-wrapper.md)). On a Mac, build and launch it with:
+
+```sh
+open "$(nix build --no-link --print-out-paths .#desktop)/Applications/Weblounge.app"
+```
+
+To keep it in the Dock, copy the bundle out of the Nix store:
+
+```sh
+ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/Weblounge.app" \
+  ~/Applications/Weblounge.app
+```
+
+For a quick debug build, run `nix develop -c cargo run --manifest-path apps/tauri/Cargo.toml`.
+The bare binary keeps its own web storage, so it asks you to sign in separately from the installed
+app.
+
+After changing the brand mark, regenerate the bundled icons with
+`nix develop -c apps/tauri/scripts/icons.sh`.
+
 ## License
 
 WebLounge is available under either the Apache License 2.0 or the MIT license, at your option.
