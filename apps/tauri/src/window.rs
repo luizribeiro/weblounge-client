@@ -9,6 +9,14 @@ use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
 
 use crate::navigation::{RequestKind, Route, route};
 
+#[derive(Debug, thiserror::Error)]
+pub enum WindowError {
+    #[error("invalid app URL: {0}")]
+    Url(#[from] url::ParseError),
+    #[error("could not create the window: {0}")]
+    Tauri(#[from] tauri::Error),
+}
+
 pub const MAIN_LABEL: &str = "main";
 const APP_URL: &str = "https://beta.weblounge.org";
 
@@ -23,7 +31,7 @@ pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
-pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+pub fn create(app: &AppHandle) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
@@ -49,6 +57,12 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn log_failure(action: &str, result: tauri::Result<()>) {
+    if let Err(error) = result {
+        eprintln!("could not {action}: {error}");
+    }
+}
+
 fn follow(decision: Route, url: &Url, open: impl FnOnce(&Url)) {
     if decision == Route::OpenExternally {
         open(url);
@@ -63,14 +77,14 @@ fn open_externally(app: &AppHandle, url: &Url) {
 
 pub fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        let _ = window.show();
-        let _ = window.set_focus();
+        log_failure("show the window", window.show());
+        log_failure("focus the window", window.set_focus());
     }
 }
 
 pub fn reload(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        let _ = window.reload();
+        log_failure("reload the window", window.reload());
     }
 }
 
@@ -79,7 +93,7 @@ fn hide_instead_of_closing(window: &WebviewWindow) {
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            let _ = hidden.hide();
+            log_failure("hide the window", hidden.hide());
         }
     });
 }

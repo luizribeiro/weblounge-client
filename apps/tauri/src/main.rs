@@ -17,17 +17,26 @@ fn main() -> tauri::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, thiserror::Error)]
+enum SetupError {
+    #[error("could not build the menu: {0}")]
+    Menu(#[from] tauri::Error),
+    #[error(transparent)]
+    Window(#[from] window::WindowError),
+}
+
 fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    install(app).map_err(Into::into)
+}
+
+fn install(app: &App) -> Result<(), SetupError> {
     app.set_menu(menu::build(app.handle())?)?;
     window::create(app.handle())?;
     Ok(())
 }
 
 fn handle_run_event(app: &AppHandle, event: &RunEvent) {
-    #[cfg(target_os = "macos")]
     if let RunEvent::Reopen { .. } = *event {
         window::show(app);
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (app, event);
 }
