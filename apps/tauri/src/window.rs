@@ -20,10 +20,14 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .inner_size(1280.0, 840.0)
         .min_inner_size(900.0, 600.0)
         .on_navigation(move |url| {
-            stays_after_routing(&navigating, RequestKind::MainFrameNavigation, url)
+            let decision = route(RequestKind::Navigation, url);
+            follow(decision, url, |url| open_externally(&navigating, url));
+            decision == Route::Stay
         })
         .on_new_window(move |url, _features| {
-            stays_after_routing(&opening, RequestKind::NewWindow, &url);
+            follow(route(RequestKind::NewWindow, &url), &url, |url| {
+                open_externally(&opening, url);
+            });
             NewWindowResponse::Deny
         })
         .build()?;
@@ -31,15 +35,15 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn stays_after_routing(app: &AppHandle, kind: RequestKind, url: &Url) -> bool {
-    match route(kind, url) {
-        Route::Stay => true,
-        Route::OpenExternally => {
-            if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
-                eprintln!("could not open {url} externally: {error}");
-            }
-            false
-        }
+fn follow(decision: Route, url: &Url, open: impl FnOnce(&Url)) {
+    if decision == Route::OpenExternally {
+        open(url);
+    }
+}
+
+fn open_externally(app: &AppHandle, url: &Url) {
+    if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
+        eprintln!("could not open {url} externally: {error}");
     }
 }
 
@@ -64,4 +68,28 @@ fn hide_instead_of_closing(window: &WebviewWindow) {
             let _ = hidden.hide();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    fn opened_by(decision: Route, url: &str) -> Vec<String> {
+        let opened = RefCell::new(Vec::new());
+        let url: Url = url.parse().expect("test URL parses");
+        follow(decision, &url, |url| {
+            opened.borrow_mut().push(url.to_string());
+        });
+        opened.into_inner()
+    }
+
+    #[test]
+    fn opens_the_url_only_when_routed_externally() {
+        let url = "https://example.com/article";
+        assert_eq!(opened_by(Route::OpenExternally, url), [url]);
+        assert!(opened_by(Route::Stay, url).is_empty());
+        assert!(opened_by(Route::Drop, "file:///etc/passwd").is_empty());
+    }
 }
