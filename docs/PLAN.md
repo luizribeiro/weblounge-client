@@ -9,9 +9,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-2. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-3. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-4. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+2. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+3. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -25,6 +24,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: added a VS Code-style command mode to the quick-switcher omnibar, filtering and
+  recency-ranking available registry actions with group and chord hints; Tauri uses ⇧⌘P /
+  Ctrl+Shift+P, web uses ⇧⌘. / Ctrl+Shift+., and a leading `>` switches modes in every shell.
 - 2026-11-12: added the desktop ⌘K/Ctrl+K buffer switcher with fuzzy filtering, visit-recency
   ranking, unread badges, accessible combobox navigation and focus restoration; restored a default
   search-icon sidebar launcher with a one-line button variant for review.
@@ -116,6 +118,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
+- Palette engine commands with required arguments remain hidden until the action registry can
+  collect typed arguments; `/msg`, `/query`, `/join`, and `/nick` are affected.
 - The switcher's `pane.open-buffer-right` chord remains unwired while the desktop pane model has a
   single leaf; add Ctrl/⌘+Enter when split panes land rather than creating a second layout path.
 - WebKit bug 268797 can leave an iOS Home Screen app on the chat list after a notification tap; we
@@ -143,6 +147,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Ship the command palette. The quick-switcher omnibar now changes to command mode through the
+  Tauri-native ⇧⌘P / Ctrl+Shift+P chord, the web-safe ⇧⌘. / Ctrl+Shift+. fallback, or a leading `>`;
+  deleting the prefix returns to buffers without replacing the overlay or its accessibility and
+  focus-restoration contract. Registry surface metadata is the sole source of visible rows,
+  resolved chord hints and groups; contextual availability removes member actions outside channels,
+  and hidden, target-dependent or required-argument actions do not become no-op rows. Fuzzy match
+  quality and recent action use rank results. Focused unit coverage pins shell chords, availability,
+  filtering, ranking and prefix mode changes; a built-app local-Ergo journey opens both routes,
+  runs Toggle member list, audits native feel and captures both themes.
 - [x] Ship the desktop buffer switcher. The reusable omnibar surface owns dialog, combobox/listbox,
   focus-trap and invoker-restoration behavior for the later command palette. Buffer results span
   networks, exclude server and unavailable rows, rank actual visit recency before activity when
