@@ -140,7 +140,6 @@ export function MobileChatRow(props: MobileChatRowProps) {
         if (next.phase !== "dragging") return;
         clearLongPress();
         event.preventDefault();
-        event.currentTarget.setPointerCapture?.(event.pointerId);
         setDragging(true);
         setOffset(next.offset);
         lastX = event.clientX;

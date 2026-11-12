@@ -23,8 +23,19 @@ export default defineConfig({
         "**/mobile-page-zoom.spec.ts",
         "**/mobile-read-state.spec.ts",
         "**/connection-resilience.spec.ts",
+        "**/close-phone.spec.ts",
       ],
       use: { browserName: "chromium" },
+    },
+    {
+      name: "webkit-close-phone",
+      testMatch: "**/close-phone.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-close-phone",
+      testMatch: "**/close-phone.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
       name: "chromium-push",
