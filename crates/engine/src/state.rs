@@ -3273,6 +3273,11 @@ impl NetworkModel {
         events.push(EngineToUi::BufferUpdated {
             buffer: self.buffers[&buffer_id].projection.clone(),
         });
+        if incoming.origin == TimelineOrigin::Live
+            && let Some(event) = self.notifiable_message(buffer_id, &message)
+        {
+            events.push(event);
+        }
         if let Some(account) = incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, &account));
         }
@@ -3281,6 +3286,25 @@ impl NetworkModel {
             carry_read: None,
             message: Some((buffer_id, message_id)),
         }
+    }
+
+    fn notifiable_message(
+        &self,
+        buffer_id: BufferId,
+        message: &MessageProjection,
+    ) -> Option<EngineToUi> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        let alerts = buffer.chat_metadata.get(&message.id)?.counts_as_mention;
+        let unread = buffer
+            .read_facts
+            .mark()
+            .is_none_or(|mark| ServerTimeMs::new(message_time(message)) > mark);
+        (alerts && unread && buffer.projection.kind != BufferKind::Server).then(|| {
+            EngineToUi::NotifiableMessageReceived {
+                buffer: buffer.projection.clone(),
+                message: message.clone(),
+            }
+        })
     }
 
     fn reconcile_failed_own_message(
@@ -6015,6 +6039,96 @@ mod tests {
             received_at_ms: server_time_ms,
             origin: TimelineOrigin::Live,
         }
+    }
+
+    fn notified_texts(events: &[EngineToUi]) -> Vec<(BufferKind, String)> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                EngineToUi::NotifiableMessageReceived { buffer, message } => {
+                    Some((buffer.kind, message.text.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn live_direct_messages_and_mentions_are_notifiable() {
+        let (mut model, state) = model(10);
+
+        let direct = model.receive_incoming(
+            direct_incoming(&state, "alice", "are you around?", 1_000),
+            &state,
+        );
+        let mention = model.receive_incoming(
+            incoming(
+                &state,
+                "weblounge: the deploy is green",
+                Some("m-mention"),
+                Some(2_000),
+                2_000,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let chatter = model.receive_incoming(
+            incoming(
+                &state,
+                "lunch anyone?",
+                Some("m-chatter"),
+                Some(3_000),
+                3_000,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+
+        assert_eq!(
+            notified_texts(&direct),
+            [(BufferKind::Direct, "are you around?".to_owned())]
+        );
+        assert_eq!(
+            notified_texts(&mention),
+            [(
+                BufferKind::Channel,
+                "weblounge: the deploy is green".to_owned()
+            )]
+        );
+        assert!(notified_texts(&chatter).is_empty());
+    }
+
+    #[test]
+    fn history_pushed_own_duplicate_and_read_messages_are_not_notifiable() {
+        let (mut model, state) = model(10);
+        let replayed = Incoming {
+            origin: TimelineOrigin::History,
+            ..direct_incoming(&state, "alice", "missed while away", 1_000)
+        };
+        let pushed = Incoming {
+            origin: TimelineOrigin::Push,
+            ..direct_incoming(&state, "alice", "shown by push", 2_000)
+        };
+        let own = Incoming {
+            authorship: MessageAuthorship::Own,
+            ..direct_incoming(&state, "alice", "sent from my phone", 3_000)
+        };
+        let first = direct_incoming(&state, "alice", "ping", 4_000);
+        let duplicate = first.clone();
+
+        for message in [replayed, pushed, own] {
+            assert!(notified_texts(&model.receive_incoming(message, &state)).is_empty());
+        }
+        assert_eq!(
+            notified_texts(&model.receive_incoming(first, &state)).len(),
+            1
+        );
+        assert!(notified_texts(&model.receive_incoming(duplicate, &state)).is_empty());
+
+        let direct_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        model.advance_read(direct_id, system_time_from_millis(6_000), false);
+        let already_read = direct_incoming(&state, "alice", "read elsewhere", 5_000);
+        assert!(notified_texts(&model.receive_incoming(already_read, &state)).is_empty());
     }
 
     #[test]

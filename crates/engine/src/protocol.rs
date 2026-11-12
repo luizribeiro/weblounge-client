@@ -1173,6 +1173,13 @@ pub enum EngineToUi {
         /// Complete current buffer projection.
         buffer: BufferProjection,
     },
+    /// A live peer message that should alert: a direct message or a mention, unread on arrival.
+    NotifiableMessageReceived {
+        /// Complete current projection of the message's buffer.
+        buffer: BufferProjection,
+        /// The message that arrived.
+        message: MessageProjection,
+    },
     /// Move a UI-owned draft when a direct message gains a more durable identity.
     DraftKeyChanged {
         /// Previous storage key to consume.

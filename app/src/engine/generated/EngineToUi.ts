@@ -8,6 +8,7 @@ import type { EngineMessageKey } from "./EngineMessageKey";
 import type { LocalSendId } from "./LocalSendId";
 import type { MemberProjection } from "./MemberProjection";
 import type { MessageId } from "./MessageId";
+import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
 import type { NoticeAction } from "./NoticeAction";
@@ -192,7 +193,15 @@ buffer_id: BufferId, } | { "type": "buffer_updated",
 /**
  * Complete current buffer projection.
  */
-buffer: BufferProjection, } | { "type": "draft_key_changed",
+buffer: BufferProjection, } | { "type": "notifiable_message_received",
+/**
+ * Complete current projection of the message's buffer.
+ */
+buffer: BufferProjection,
+/**
+ * The message that arrived.
+ */
+message: MessageProjection, } | { "type": "draft_key_changed",
 /**
  * Previous storage key to consume.
  */

@@ -609,6 +609,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (buffer !== undefined) return { type: messageType, buffer };
       break;
     }
+    case "notifiable_message_received": {
+      const buffer = decodeBuffer(value.buffer);
+      const message = decodeMessage(value.message);
+      if (buffer !== undefined && message !== undefined)
+        return { type: messageType, buffer, message };
+      break;
+    }
     case "buffer_removed":
       if (typeof value.buffer_id === "number") {
         return { type: messageType, buffer_id: value.buffer_id };
@@ -744,6 +751,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffer_added" ||
     value === "buffer_removed" ||
     value === "buffer_updated" ||
+    value === "notifiable_message_received" ||
     value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||
     value === "typing_changed" ||

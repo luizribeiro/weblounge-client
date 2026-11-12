@@ -312,6 +312,7 @@ function isSharedStateEvent(event: unknown): boolean {
     event.type === "buffer_added" ||
     event.type === "buffer_removed" ||
     event.type === "buffer_updated" ||
+    event.type === "notifiable_message_received" ||
     event.type === "draft_key_changed" ||
     event.type === "members_changed" ||
     event.type === "timeline_changed" ||

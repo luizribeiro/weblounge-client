@@ -591,6 +591,47 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(message);
   });
 
+  it("decodes notifiable messages with their buffer", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const message = {
+      type: "notifiable_message_received",
+      buffer: {
+        id: 4,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "direct",
+        title: "alice",
+        available: true,
+        draft_key: "5:Local:rfc1459:alice",
+        topic: null,
+        unread: 2,
+        mentions: 2,
+      },
+      message: {
+        id: 12,
+        author: "alice",
+        text: "are you around?",
+        kind: "text",
+        bot: false,
+        authorship: "other",
+        nick_color_index: 3,
+        highlighted: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: ["msg-12"],
+        server_time_ms: 1_700_000_000_000,
+        received_at_ms: 1_700_000_000_010,
+      },
+    };
+
+    port.emit(message);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(message);
+  });
+
   it("rejects unversioned member windows", () => {
     const { client, port } = fixture();
     const listener = vi.fn();

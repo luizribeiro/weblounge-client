@@ -208,6 +208,11 @@ it("broadcasts asynchronous buffer and member patches to every shared port", asy
     { type: "buffer_updated", buffer: { id: 2, member_count: 2 } },
     { type: "buffer_removed", buffer_id: 3 },
     {
+      type: "notifiable_message_received",
+      buffer: { id: 4, kind: "direct" },
+      message: { id: 9, text: "are you around?" },
+    },
+    {
       type: "draft_key_changed",
       previous: "nick=alice",
       current: "account=alice-account",
