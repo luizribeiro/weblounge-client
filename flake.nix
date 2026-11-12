@@ -738,6 +738,9 @@
           pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };
           push-relay = pushRelay;
           push-e2e = pushE2e;
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+          desktop = import ./nix/desktop.nix { inherit pkgs rustToolchain; };
         };
         apps.ergo = {
           type = "app";
