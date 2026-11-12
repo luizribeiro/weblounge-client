@@ -32,7 +32,11 @@ pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
-pub fn create(app: &AppHandle, show_on_launch: bool) -> Result<(), WindowError> {
+pub fn create(
+    app: &AppHandle,
+    show_on_launch: bool,
+    notification_script: &str,
+) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
@@ -40,6 +44,7 @@ pub fn create(app: &AppHandle, show_on_launch: bool) -> Result<(), WindowError> 
         .title("weblounge")
         .visible(false)
         .initialization_script(BADGE_SCRIPT)
+        .initialization_script(notification_script)
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .inner_size(1280.0, 840.0)
         .min_inner_size(400.0, 480.0)
@@ -84,6 +89,12 @@ pub fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         log_failure("show the window", window.show());
         log_failure("focus the window", window.set_focus());
+    }
+}
+
+pub fn eval_in_page(app: &AppHandle, script: &str) {
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+        log_failure("run a script in the page", window.eval(script));
     }
 }
 

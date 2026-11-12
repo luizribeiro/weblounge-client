@@ -35,6 +35,8 @@ enum SetupError {
     Menu(#[from] tauri::Error),
     #[error(transparent)]
     Window(#[from] window::WindowError),
+    #[error("could not build the notification script: {0}")]
+    Script(#[from] serde_json::Error),
 }
 
 fn rust_side_opener() -> impl Plugin<Wry> {
@@ -51,7 +53,13 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn install(app: &App) -> Result<(), SetupError> {
     app.set_menu(menu::build(app.handle())?)?;
-    window::create(app.handle(), !launch::starts_hidden(std::env::args()))?;
+    notifications::install_click_delegate(app.handle());
+    let notification_script = notifications::init_script(notifications::initial_permission())?;
+    window::create(
+        app.handle(),
+        !launch::starts_hidden(std::env::args()),
+        &notification_script,
+    )?;
     Ok(())
 }
 

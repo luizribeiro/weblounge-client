@@ -57,7 +57,6 @@ fn truncated(text: &str, max_chars: usize) -> &str {
         .map_or(text, |(end, _)| &text[..end])
 }
 
-#[allow(dead_code)]
 pub fn click_script(id: &str) -> Result<String, serde_json::Error> {
     Ok(format!(
         "window.__weblounge_notifications?.click({});",
