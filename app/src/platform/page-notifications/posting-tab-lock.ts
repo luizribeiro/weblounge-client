@@ -59,19 +59,24 @@ export class PostingTabLock {
   #request(request: LockRequest): void {
     void this.#locks
       ?.request(this.#name, request, () => this.#hold(request))
-      .catch(() => undefined)
-      .finally(() => {
+      .then(
+        () => true,
+        (error: unknown) =>
+          error instanceof DOMException && error.name === "AbortError",
+      )
+      .then((released) => {
         if (request.steal === true) this.#claiming = false;
         if (this.#holder === request) {
           this.#holder = undefined;
           this.#release = undefined;
         }
-        if (request.signal?.aborted !== true) this.#queue();
+        if (released && request.signal?.aborted !== true) this.#queue();
       });
   }
 
   async #hold(request: LockRequest): Promise<void> {
     if (request.signal !== undefined) this.#queued = undefined;
+    if (request.steal === true) this.#claiming = false;
     if (this.#disposed) return;
     this.#holder = request;
     await new Promise<void>((resolve) => {

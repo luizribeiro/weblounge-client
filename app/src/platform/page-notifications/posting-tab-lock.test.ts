@@ -88,4 +88,32 @@ describe("PostingTabLock", () => {
 
     await vi.waitFor(() => expect(second.held).toBe(true));
   });
+
+  it("keeps a tab that was stolen from queued to inherit posting again", async () => {
+    const locks = new FakeLockManager();
+    const first = new PostingTabLock("page-notifier", locks);
+    const second = new PostingTabLock("page-notifier", locks);
+    await vi.waitFor(() => expect(first.held).toBe(true));
+    second.claim();
+    await vi.waitFor(() =>
+      expect([first.held, second.held]).toEqual([false, true]),
+    );
+
+    second.dispose();
+
+    await vi.waitFor(() => expect(first.held).toBe(true));
+  });
+
+  it("stops asking for the lock when the platform refuses it", async () => {
+    const request = vi.fn(() =>
+      Promise.reject(new DOMException("blocked", "SecurityError")),
+    );
+    const tab = new PostingTabLock("page-notifier", { request });
+
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(tab.held).toBe(false);
+  });
 });
