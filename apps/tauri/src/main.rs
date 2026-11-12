@@ -1,12 +1,14 @@
 //! Temporary macOS shell around the hosted weblounge web app.
 
 mod menu;
+mod navigation;
 mod window;
 
 use tauri::{App, AppHandle, RunEvent};
 
 fn main() -> tauri::Result<()> {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(setup)
         .on_menu_event(|app, event| menu::handle_event(app, &event))
