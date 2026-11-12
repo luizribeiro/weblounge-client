@@ -8,7 +8,7 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
 2. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
 3. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
 4. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
@@ -36,6 +36,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-11: derived transcript-gap 99+ badges from the actual unfilled ranges, cleared them with
   covering history or a read through the newest known message, and migrated the beta's orphaned
   persisted gap scalar so a restart cannot leave a conversation stuck at 99+.
+- 2026-11-11: buffer events 4; classified user, service and server IRC notices, routed server
+  notices and WALLOPS to the server timeline, and rendered the signed responsive notice row with
+  local-Ergo browser coverage through the socket forwarder's raw IRC injection endpoint.
 - 2026-11-11: kept a hidden-page New divider frozen when a delayed own-message confirmation and
   the hidden peer arrival reach the UI together; observing a foreground exit now wins over the
   own-confirmation branch that normally resumes live-edge divider tracking.
@@ -125,6 +128,13 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Land buffer-events batch 4. Typed notice sources now cross the engine boundary, with ordinary
+  notices classified as users and server events classified from papo's actor as services or
+  servers. Server notices and WALLOPS route by audience without opening a service DM. The shared
+  responsive notice row uses the signed icon, identity and trailing-time treatments on desktop and
+  phone, while retaining highlights and unverified-sender state. A protocol-aware `/inject`
+  control sends raw text or binary IRC WebSocket frames, and local-Ergo browser coverage verifies
+  all three sources in both themes and both presentation modes.
 - [x] Prefetch older history before the reader reaches the transcript top. Upward wheel, touch and
   keyboard-owned scrolling now request within a named 1.5-viewport buffer only after the
   virtualizer tracks the DOM offset; programmatic pinning and remeasurement stay silent. Loading
