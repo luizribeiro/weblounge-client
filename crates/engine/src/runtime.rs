@@ -6608,6 +6608,7 @@ async fn delay(duration: Duration) {
             arguments: Vec::new(),
             usage: "cmd.react.usage".into(),
             description: "cmd.react.description".into(),
+            menu_label: None,
             requirements: vec![CommandRequirement::Feature("Reactions".into())],
             permission: CommandPermission::Anyone,
             surfaces: Vec::new(),

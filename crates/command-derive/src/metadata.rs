@@ -7,6 +7,7 @@ pub(crate) struct Metadata {
     pub(crate) aliases: Vec<String>,
     pub(crate) usage: String,
     pub(crate) description: String,
+    pub(crate) menu_label: Option<String>,
     pub(crate) requirements: Vec<String>,
     pub(crate) permission: String,
     pub(crate) surfaces: Vec<String>,
@@ -22,6 +23,7 @@ impl Metadata {
             aliases: Vec::new(),
             usage: String::new(),
             description: String::new(),
+            menu_label: None,
             requirements: vec!["Connected".into()],
             permission: "Anyone".into(),
             surfaces: Vec::new(),
@@ -86,6 +88,7 @@ impl Metadata {
                         }
                         "usage" => result.usage = value.value(),
                         "description" => result.description = value.value(),
+                        "menu_label" => result.menu_label = Some(value.value()),
                         "permission" => {
                             result.permission = known_value(value, PERMISSIONS, "permission")?;
                         }
@@ -177,7 +180,7 @@ mod tests {
         let variant: syn::Variant = syn::parse_quote! {
             #[command(name = "join", aliases = ["j"], usage = "cmd.join.usage",
                 description = "cmd.join.description", requires = ["Feature:multi-prefix"],
-                surfaces = ["Slash", "Palette"], secret)]
+                surfaces = ["Slash", "Palette"], menu_label = "cmd.join.menu", secret)]
             Join { channels: ChannelList }
         };
         let metadata = Metadata::parse(&variant).expect("metadata is valid");
@@ -187,6 +190,7 @@ mod tests {
         assert_eq!(metadata.confirm, "None");
         assert_eq!(metadata.completion, "Other");
         assert_eq!(metadata.requirements, ["Feature:multi-prefix"]);
+        assert_eq!(metadata.menu_label.as_deref(), Some("cmd.join.menu"));
         assert!(metadata.secret);
     }
 

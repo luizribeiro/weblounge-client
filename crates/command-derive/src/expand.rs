@@ -113,6 +113,7 @@ fn spec(
         aliases,
         usage,
         description,
+        menu_label,
         requirements,
         permission,
         surfaces,
@@ -123,6 +124,11 @@ fn spec(
     let permission = format_ident!("{permission}");
     let confirm = format_ident!("{confirm}");
     let completion = format_ident!("{completion}");
+    let menu_label = if let Some(label) = menu_label {
+        quote! { Some(#label.into()) }
+    } else {
+        quote! { None }
+    };
     let confirmation = if confirm == "None" {
         quote! { confirmation_prompt: None, confirmation_action: None }
     } else {
@@ -149,6 +155,7 @@ fn spec(
         CommandSpec {
             name: #name.into(), aliases: vec![#(#aliases.into()),*], arguments: vec![#(#arguments),*],
             usage: #usage.into(), description: #description.into(),
+            menu_label: #menu_label,
             requirements: vec![#(#requirements),*], permission: CommandPermission::#permission,
             surfaces: vec![#(CommandSurface::#surfaces),*], confirm: ConfirmPolicy::#confirm,
             completion_priority: CompletionPriority::#completion,

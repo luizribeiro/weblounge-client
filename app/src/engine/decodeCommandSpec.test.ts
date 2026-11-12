@@ -23,3 +23,10 @@ it("accepts generated enum values and rejects unknown variants", () => {
     undefined,
   );
 });
+
+it("decodes an optional menu-specific label", () => {
+  expect(
+    decodeCommandSpecs([{ ...spec, menu_label: "cmd.fixture.menu" }])?.[0],
+  ).toEqual(expect.objectContaining({ menu_label: "cmd.fixture.menu" }));
+  expect(decodeCommandSpecs([{ ...spec, menu_label: 7 }])).toBeUndefined();
+});

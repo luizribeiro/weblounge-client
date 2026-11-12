@@ -58,6 +58,7 @@ function decodeCommandSpec(value: unknown): CommandSpec | undefined {
     arguments_.some((argument) => argument === undefined) ||
     typeof value.usage !== "string" ||
     typeof value.description !== "string" ||
+    !isOptionalString(value.menu_label) ||
     requirements === undefined ||
     requirements.some((requirement) => requirement === undefined) ||
     !isOneOf(value.permission, permissions) ||
@@ -74,6 +75,7 @@ function decodeCommandSpec(value: unknown): CommandSpec | undefined {
     arguments: arguments_.filter((argument) => argument !== undefined),
     usage: value.usage,
     description: value.description,
+    ...(value.menu_label === undefined ? {} : { menu_label: value.menu_label }),
     requirements: requirements.filter(
       (requirement) => requirement !== undefined,
     ),

@@ -76,6 +76,9 @@ pub struct CommandSpec {
     pub arguments: Vec<CommandArgumentSpec>,
     pub usage: String,
     pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub menu_label: Option<String>,
     pub requirements: Vec<CommandRequirement>,
     pub permission: CommandPermission,
     pub surfaces: Vec<CommandSurface>,
@@ -169,6 +172,7 @@ mod tests {
             arguments: Vec::new(),
             usage: "cmd.later.usage".into(),
             description: "cmd.later.description".into(),
+            menu_label: None,
             requirements: Vec::new(),
             permission: CommandPermission::Anyone,
             surfaces: Vec::new(),
