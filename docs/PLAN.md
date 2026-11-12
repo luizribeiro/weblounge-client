@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: derived transcript-gap 99+ badges from the actual unfilled ranges, cleared them with
+  covering history or a read through the newest known message, and migrated the beta's orphaned
+  persisted gap scalar so a restart cannot leave a conversation stuck at 99+.
 - 2026-11-11: kept a hidden-page New divider frozen when a delayed own-message confirmation and
   the hidden peer arrival reach the UI together; observing a foreground exit now wins over the
   own-confirmation branch that normally resumes live-edge divider tracking.
@@ -140,7 +143,10 @@ The single place a fresh session reads to know where the project stands. Update 
   virtualized total size while DOM scroll geometry settles.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
-  update read facts, disappear when older history covers them, and leave with their buffer. The UI
+  derive unknown unread directly, disappear with their badge when older history covers them, and
+  leave with their buffer. Disconnect ranges cap their unread edge at the newest known message so
+  reading the loaded transcript to the bottom restores the exact count. Schema-7 snapshots discard
+  the old ambiguous scalar, recovering already-stuck beta conversations on their first launch. The UI
   renders the signed dashed range, titled history start with its oldest-day caption, loading and
   empty states through one divider family while preserving day and New rows. Component coverage
   pins every variant and local-Ergo browser coverage exercises a real capped reconnect gap, a

@@ -376,8 +376,11 @@ canvas shows it unread. It uses its msgid, or a `local:` id. System lines are ne
 
 **Gap ("Messages may be missing").** `record_gap(buffer, from_ms, to_ms)` is the one entry point.
 It merges into any gap in the buffer that overlaps or touches the span; otherwise it inserts a
-`Gap` record anchored at `from_ms`. It also calls `read_facts.merge_gap_until(to_ms)`, so a lagged
-event followed by a reconnect yields one marker and one badge fact. It runs when:
+`Gap` record anchored at `from_ms`, so a lagged event followed by a reconnect yields one merged
+marker. The marker itself is the single source of
+truth for transcript uncertainty: the in-app badge derives `99+` from unfilled ranges above the
+read mark, with each range's upper edge capped at the newest known message so reading to the bottom
+can settle a reconnect whose wall-clock end is later than every message. It runs when:
 
 1. a launch or reconnect catch-up page ends with `end == false` (today's `completion.gap`,
    `state.rs:1766-1773`). The span runs from the previous newest cursor to the page's oldest
@@ -388,10 +391,11 @@ event followed by a reconnect yields one marker and one badge fact. It runs when
    with rows, gets a gap from the disconnect to `Connected`.
 
 A filled gap makes no row. A gap clears when a later page's range covers it (in v1, only an older
-page reaching a gap at the top), and it leaves with eviction, PART or close. The marker is
-memory-only. After a relaunch the transcript restarts from history, and only a new shortfall
-records a marker. A persisted `gap_until` keeps driving `99+` (design 24) but never recreates the
-row.
+page reaching a gap at the top), and clearing the row recomputes the exact badge in the same
+operation. It leaves with eviction, PART or close. The marker is memory-only. After a relaunch the
+transcript restarts from history, and only a new shortfall records a marker. Schema 8 drops the
+ambiguous schema-7 `gap_until` during migration; stub-cap gaps can be reconstructed by later stub
+eviction, while a beta transcript scalar with no restored range can no longer pin `99+`.
 
 **Tombstone.** `Redacted`, live or from history, finds its target through the msgid map
 (`state.rs:2785`).

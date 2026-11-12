@@ -8,7 +8,8 @@ For every conversation `c`:
 
 ```text
 unread(c)   = { s ∈ c.stubs : s.time > c.mark }          // stubs never contain own messages
-count(c)    = |unread(c)|, shown as "99+" when > 99 or when c.gap_until > c.mark
+count(c)    = |unread(c)|, shown as "99+" when > 99, c.gap_until > c.mark,
+              or an unfilled transcript gap reaches above c.mark
 mentions(c) = |{ s ∈ unread(c) : s.mention }|             // 0 when muted
 closed(n)   = n.conv = c ∧ n.time ≤ c.mark                 // OS notification close
 ```
@@ -61,7 +62,7 @@ Each conversation has one snapshot row, which is the only instant-launch state:
 | `mark` | `Option<ServerTimeMs>` | `max` | Effective read used by projections: the maximum of `raw_mark` and bounded reconciliations whose provisional time is at or before `raw_mark`. |
 | `pending` | `Option<ServerTimeMs>` | `max`; clear after a server report at or beyond it | A user or own-message advance that the server has not acknowledged. The seed never sets it. |
 | `stubs` | at most 100 `{msgid, time, provisional_time?, mention}` values | union by msgid; authoritative history time replaces push time | The unread index. A reconciled stub retains its provisional push time until read, so carry survives eviction from the rendering timeline and restart. Own messages are never stubs. Drop entries at or before `mark` and keep the newest 100. |
-| `gap_until` | `Option<ServerTimeMs>` | `max` | Messages after `mark` and before this time may be missing because a catch-up page was full or the cap evicted a stub. It is irrelevant once `mark >= gap_until`. |
+| `gap_until` | `Option<ServerTimeMs>` | `max` | The stub cap evicted known unread facts before this time. It is irrelevant once `mark >= gap_until`. Transcript shortfalls are owned by the timeline gap ranges in design 26, not copied here. |
 | `latest` | `{msgid, time, preview}` | `max` by time | Chat-list preview, sort order and TARGETS comparison. It is not read state. |
 
 Each network stores a monotonic `cursor: ServerTimeMs`: this device has every message for its
@@ -135,7 +136,10 @@ local state. Re-sending an acknowledged real mark after server eviction is optio
 ## 3. Derivations
 
 - Count and mentions follow the invariant. Muting changes the projected mention count to zero but
-  does not erase stub facts. Display `99+` when the exact count exceeds 99 or `gap_until > mark`.
+  does not erase stub facts. Display `99+` when the exact count exceeds 99, the stub-cap
+  `gap_until > mark`, or an actual unfilled transcript range reaches above the mark. For a
+  disconnect range, its unread edge is capped at the newest known message, so reading the loaded
+  transcript to the bottom can clear the badge even when reconnect wall-clock time is later.
 - The OS app badge is the sum of direct-message unread counts and channel mention counts. Page and
   service worker derive it from the same rows plus push log.
 - A notification is closed exactly when its conversation matches and its message time is at or
@@ -160,14 +164,16 @@ marks through the greatest held server time. The engine receives read commands, 
 Each pane owns one `divider_mark`. It is set to the current mark on open and own send. While reading
 and no peer message follows it, it tracks the mark so watched arrivals never display `New`;
 otherwise it is frozen. The divider renders before the first non-own message after it, or at the top
-when the loaded window or `gap_until` starts later. Badge suppression covers every visible pane.
+when the loaded window, stub-cap `gap_until`, or active transcript gap starts later. Badge
+suppression covers every visible pane.
 
 ## 5. Launch sync
 
 Channel markers arrive with JOIN. TARGETS begins at the network cursor. For each target whose latest
 time exceeds the row's latest time, fetch `CHATHISTORY LATEST <target>
 timestamp=max(mark, row.latest) 100`, retaining the newest 100 messages after the bound. A full page
-sets `gap_until` to its oldest time. Unchanged targets keep their persisted stubs and need no fetch.
+records an unfilled transcript range from the request bound to its oldest result (design 26).
+Unchanged targets keep their persisted stubs and need no fetch.
 
 Fetch direct-message markers only for conversations that changed or still have stubs. Advance the
 network cursor only after all scheduled deltas settle.
@@ -192,7 +198,7 @@ network cursor only after all scheduled deltas settle.
 | Redelivered msgid or same notification tag after a read | Union by msgid prevents a duplicate; time comparison does not let an old mark close a newer message. |
 | Relaunch during a delta | The cursor has not advanced, so the delta is fetched again. |
 | More unread messages than the render window | Stubs, never timeline retention, determine the count. |
-| Partial remote read inside a gap | Remaining known stubs count and the badge stays `99+` while the mark precedes `gap_until`. |
+| Partial remote read inside a gap | Remaining known stubs count and the badge stays `99+` while the mark precedes the active range's newest-known-message-capped edge. |
 | Concurrent tab writers | Maximum and union merges converge. |
 | Network without read-marker support | Pending remains unset; the local mark and all derivations behave identically. |
 | Message tied with a real mark at millisecond precision | It is read; this is an IRC protocol limit. |
@@ -200,9 +206,10 @@ network cursor only after all scheduled deltas settle.
 
 ## 7. Boundaries and migration
 
-The read model owns monotonic per-conversation facts, input merges and the pure count, mention,
-divider, badge and notification-close derivations. History scheduling owns page selection and cursor
-settlement. Papo owns MARKREAD encoding, capability support, server marker state and typed IRC
+The read model owns monotonic per-conversation facts, input merges and the pure known count, mention,
+stub-cap divider, badge and notification-close derivations. The buffer timeline owns actual unfilled
+transcript ranges and contributes their unknown-unread state to the projection. History scheduling
+owns page selection, range settlement and cursor settlement. Papo owns MARKREAD encoding, capability support, server marker state and typed IRC
 identity. The UI owns visibility, live-edge dwell and the frozen per-pane divider snapshot. Storage
 owns transactional persistence, not read policy.
 
