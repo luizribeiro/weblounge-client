@@ -1,0 +1,43 @@
+.grabber {
+  background: var(--wl-color-border);
+  border-radius: var(--wl-radius-pill);
+  display: block;
+  height: 4px;
+  margin: 0 auto 10px;
+  width: 36px;
+}
+
+h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  text-align: center;
+}
+
+.item,
+.leave {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-fg);
+  font: inherit;
+  min-height: 44px;
+  width: 100%;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0;
+}
+
+.item span:last-child {
+  color: var(--wl-color-muted);
+}
+
+.leave {
+  border: 1px solid var(--wl-color-error);
+  border-radius: var(--wl-radius-palette);
+  color: var(--wl-color-error);
+  font-weight: 650;
+  margin-top: 8px;
+}

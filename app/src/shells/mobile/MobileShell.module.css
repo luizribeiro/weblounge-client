@@ -149,8 +149,17 @@
 }
 
 .chatIdentity {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
   min-width: 0;
+  padding: 0;
   text-align: center;
+}
+.chatIdentity:disabled {
+  opacity: 1;
 }
 .chatIdentity h2 {
   --wl-connection-bg: var(--wl-color-surface);

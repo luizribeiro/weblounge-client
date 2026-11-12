@@ -58,6 +58,7 @@ export interface MobileConversationProps {
   ) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onOpenMembers: () => void;
+  readonly onOpenDetails?: (() => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onTrustDirectIdentity?: ((bufferId: number) => void) | undefined;
@@ -125,7 +126,15 @@ export function MobileConversation(props: MobileConversationProps) {
         >
           <span aria-hidden="true">‹</span>
         </button>
-        <span class={styles.chatIdentity}>
+        <button
+          aria-label={t("mobile.show_details", { title: props.buffer.title })}
+          class={styles.chatIdentity}
+          disabled={
+            props.buffer.kind !== "channel" || props.onOpenDetails === undefined
+          }
+          onClick={props.onOpenDetails}
+          type="button"
+        >
           <ConversationTitle sync={sync} title={props.buffer.title} />
           <Line class={styles.subtitle}>
             {props.buffer.kind === "direct" ? (
@@ -138,7 +147,7 @@ export function MobileConversation(props: MobileConversationProps) {
               </Selectable>
             )}
           </Line>
-        </span>
+        </button>
         {props.buffer.kind === "channel" ? (
           <button
             aria-label={t("mobile.show_members")}

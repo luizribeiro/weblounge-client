@@ -76,6 +76,7 @@ interface MobileScreenProps extends MobileShellData {
   readonly onBack: () => void;
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
+  readonly onOpenDetails?: ((bufferId: number) => void) | undefined;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onMotionEnd: () => void;
@@ -168,6 +169,11 @@ export function MobileScreen(props: MobileScreenProps) {
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
+          onOpenDetails={
+            props.onOpenDetails === undefined
+              ? undefined
+              : () => props.onOpenDetails?.(buffer()?.id ?? 0)
+          }
           onOpenDirect={(nick) =>
             props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)
           }
