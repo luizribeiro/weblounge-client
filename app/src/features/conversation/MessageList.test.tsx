@@ -2042,16 +2042,17 @@ it("does not load older history for programmatic scrolls into the threshold", as
   expect(onLoadOlder).not.toHaveBeenCalled();
 });
 
-it("automatically pages short history until the boundary lands", async () => {
+it("stops automatically paging short history when a page makes no progress", async () => {
   const onLoadOlder = vi.fn();
   const [historyState, setHistoryState] = createSignal({
     at_start: false,
     loading: false,
   });
+  const [messages, setMessages] = createSignal([message]);
   const { container } = render(() => (
     <MessageList
       historyState={historyState()}
-      messages={[message]}
+      messages={messages()}
       onLoadOlder={onLoadOlder}
     />
   ));
@@ -2067,13 +2068,17 @@ it("automatically pages short history until the boundary lands", async () => {
 
   setHistoryState({ at_start: false, loading: true });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  setMessages([
+    { ...message, id: 0, text: "an older message", received_at_ms: 0 },
+    message,
+  ]);
   setHistoryState({ at_start: false, loading: false });
   await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 
   setHistoryState({ at_start: false, loading: true });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
-  setHistoryState({ at_start: true, loading: false });
+  setHistoryState({ at_start: false, loading: false });
   await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });

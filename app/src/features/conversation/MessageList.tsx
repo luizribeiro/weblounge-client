@@ -259,6 +259,7 @@ export function MessageList(props: MessageListProps) {
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
   let olderPageRequestFrame: number | undefined;
+  let olderPageRequestIsAutomatic = false;
   let olderAnchorFrame: number | undefined;
   let loadingEdgePinFrame: number | undefined;
   let pendingOlderAnchor:
@@ -269,6 +270,8 @@ export function MessageList(props: MessageListProps) {
   let observedScrollTop = 0;
   let readerAtHistoryTop = false;
   let historyWasLoading = props.historyState?.loading === true;
+  let shortHistoryBaseline: string | undefined;
+  let shortHistoryPagingStopped = false;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
@@ -461,8 +464,10 @@ export function MessageList(props: MessageListProps) {
     if (olderPageRequestFrame === undefined) return;
     window.cancelAnimationFrame(olderPageRequestFrame);
     olderPageRequestFrame = undefined;
+    olderPageRequestIsAutomatic = false;
   };
   const requestOlderWhenTracked = () => {
+    if (olderPageRequestIsAutomatic) cancelOlderPageRequest();
     if (
       !olderPageArmed ||
       !canLoadOlder() ||
@@ -485,18 +490,22 @@ export function MessageList(props: MessageListProps) {
       }
       requestOlder();
     };
+    olderPageRequestIsAutomatic = false;
     olderPageRequestFrame = window.requestAnimationFrame(requestWhenTracked);
   };
   const requestShortHistoryWhenTracked = () => {
     if (
       props.foreground === false ||
+      shortHistoryPagingStopped ||
       !olderPageArmed ||
       !canLoadOlder() ||
       olderPageRequestFrame !== undefined
     )
       return;
+    olderPageRequestIsAutomatic = true;
     olderPageRequestFrame = window.requestAnimationFrame(() => {
       olderPageRequestFrame = undefined;
+      olderPageRequestIsAutomatic = false;
       const scroller = list;
       if (
         props.foreground === false ||
@@ -512,7 +521,19 @@ export function MessageList(props: MessageListProps) {
       );
       const threshold =
         scroller.clientHeight * olderHistoryPrefetchViewportCount;
-      if (overflow <= threshold) requestOlder(false);
+      if (overflow > threshold) return;
+      const items = orderedItems();
+      const oldest = items[0];
+      const progress = `${String(oldest?.id)}:${items.length}`;
+      if (
+        shortHistoryBaseline !== undefined &&
+        shortHistoryBaseline === progress
+      ) {
+        shortHistoryPagingStopped = true;
+        return;
+      }
+      shortHistoryBaseline = progress;
+      requestOlder(false);
     });
   };
   createEffect(() => {
