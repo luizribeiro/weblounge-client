@@ -27,6 +27,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: made the spacing audit seed its prior-day rows in the platform-local calendar, so
+  runs around UTC midnight retain the intended day-divider system-line boundary.
 - 2026-11-11: pinned reconnect and lag transcript gaps to keep OS badge counts exact while
   conversation badges and unread dividers reflect incomplete history until catch-up covers it.
 - 2026-11-11: made the production older-history fixture establish and persist unread traffic before

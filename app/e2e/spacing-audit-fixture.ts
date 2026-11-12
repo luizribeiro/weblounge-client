@@ -36,12 +36,12 @@ export async function seedMixedConversation(
     `spacing clock ${suffix}`,
   );
   const clock = new Date(serverTime(clockLine));
-  const baseTime = Date.UTC(
-    clock.getUTCFullYear(),
-    clock.getUTCMonth(),
-    clock.getUTCDate() - 1,
+  const baseTime = new Date(
+    clock.getFullYear(),
+    clock.getMonth(),
+    clock.getDate() - 1,
     12,
-  );
+  ).getTime();
   let nextTime = baseTime;
   const armNextRow = async (text: string) => {
     await armMessageTime(text, nextTime);
