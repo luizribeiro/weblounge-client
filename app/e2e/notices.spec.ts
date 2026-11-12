@@ -9,9 +9,15 @@ test.skip(
   "requires the flake's local Ergo fixture",
 );
 
+test.describe.configure({ mode: "serial" });
+
 test("routes live channel and direct notices as styled chat", async ({
   page,
-}) => {
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name.includes("phone"),
+    "the phone project covers the signed notice row through raw server events",
+  );
   const suffix = Date.now().toString(36).slice(-6);
   const account = `ntuser${suffix}`;
   const channel = `#notice-${suffix}`;
@@ -59,8 +65,6 @@ test("routes live channel and direct notices as styled chat", async ({
     await bot.noticeConfirmed(channel, screenshotNotice);
     await bot.privmsgConfirmed(channel, `after notice ${suffix}`);
     await expectNoticeStyle(noticeRow(page, screenshotNotice));
-    await captureScreenshots(page);
-
     await page.setViewportSize({ width: 1280, height: 800 });
     await bot.noticeConfirmed(account, directNotice);
     const directBuffer = bufferRow(page, bot.nickname);
@@ -79,9 +83,44 @@ test("routes live channel and direct notices as styled chat", async ({
   }
 });
 
+test("routes server notices, services, and WALLOPS into the server buffer", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+    "requires the controllable socket forwarder",
+  );
+  const suffix = Date.now().toString(36).slice(-6);
+  const account = `ntserver${suffix}`;
+  const channel = `#notice-server-${suffix}`;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(await isolatedStartUrl(account, channel, true));
+  await expect(page.getByRole("heading", { name: "Local Ergo" })).toBeVisible();
+
+  const serverNotice = `Global notice: services restart ${suffix}`;
+  const serviceNotice = `You are now identified ${suffix}`;
+  const wallops = `WALLOPS: rotating the TLS certificate ${suffix}`;
+  await inject(`:offline.test NOTICE ${account} :${serverNotice}`);
+  await inject(`:NickServ!service@services.test NOTICE $* :${serviceNotice}`);
+  await inject(`:offline.test WALLOPS :${wallops}`);
+
+  const service = noticeRow(page, serviceNotice);
+  const server = noticeRow(page, serverNotice);
+  const wallopsRow = noticeRow(page, wallops);
+  await expect(service).toHaveAttribute("data-notice-source", "service");
+  await expect(service.getByRole("img", { name: "Notice" })).toBeVisible();
+  for (const row of [server, wallopsRow]) {
+    await expect(row).toHaveAttribute("data-notice-source", "server");
+    await expect(row.getByRole("img", { name: "Server notice" })).toBeVisible();
+  }
+  await expect(bufferRow(page, "NickServ")).toHaveCount(0);
+  await captureScreenshots(page, testInfo.project.name.includes("phone"));
+});
+
 async function isolatedStartUrl(
   account: string,
   channel: string,
+  serverBuffer = false,
 ): Promise<string> {
   const seed = await IrcClient.connectIsolated(account, channel);
   seed.close();
@@ -92,7 +131,8 @@ async function isolatedStartUrl(
     "irc-nickname": account,
     "irc-password": `test-${account}`,
   });
-  return `/?${params.toString()}`;
+  const path = serverBuffer ? `/${encodeURIComponent("Local Ergo")}` : "/";
+  return `${path}?${params.toString()}`;
 }
 
 function bufferRow(page: Page, title: string): Locator {
@@ -100,23 +140,25 @@ function bufferRow(page: Page, title: string): Locator {
 }
 
 function noticeRow(page: Page, text: string): Locator {
-  return page.locator('[data-message-row][data-irc-notice="true"]').filter({
-    has: page.getByText(text, { exact: true }),
-  });
+  return page
+    .locator('[data-message-row][data-irc-notice="true"]')
+    .filter({ hasText: text });
 }
 
 async function expectNoticeStyle(row: Locator): Promise<void> {
   await expect(row).toHaveCount(1);
   await expect(row).toBeVisible();
   await expect(row).toHaveAttribute("data-irc-notice", "true");
+  await expect(row).toHaveAttribute("data-notice-source", "user");
+  await expect(row.getByRole("img", { name: "Notice" })).toBeVisible();
   const text = row.locator("[data-selectable]").last();
-  await expect(text).toHaveCSS("font-style", "italic");
+  await expect(text).toHaveCSS("font-style", "normal");
   const expectedColor = await row
     .page()
     .locator("html")
     .evaluate(() => {
       const sample = document.createElement("span");
-      sample.style.color = "var(--wl-color-muted)";
+      sample.style.color = "var(--wl-color-fg)";
       document.body.append(sample);
       const expected = getComputedStyle(sample).color;
       sample.remove();
@@ -137,20 +179,39 @@ async function expectHighlighted(row: Locator): Promise<void> {
     .toBe(true);
 }
 
-async function captureScreenshots(page: Page): Promise<void> {
+async function captureScreenshots(page: Page, phone: boolean): Promise<void> {
   const directory = process.env.WEBLOUNGE_NOTICE_SCREENSHOT_DIR;
   if (directory === undefined) return;
   await mkdir(directory, { recursive: true });
-  for (const [name, viewport] of [
-    ["desktop", { width: 1280, height: 800 }],
-    ["phone", { width: 390, height: 844 }],
-  ] as const) {
-    await page.setViewportSize(viewport);
-    await expect(
-      page.getByRole("heading", { name: /^#notice-/u }),
-    ).toBeVisible();
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      scheme === "dark" ? "lounge-night" : "lounge",
+    );
+    const name = phone ? "phone" : "desktop";
+    await page.setViewportSize(
+      phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
+    );
+    await expect(page.getByText(/rotating the TLS certificate/u)).toBeVisible();
     await screenshotWithInter(page.locator("[data-app-root]"), {
-      path: path.join(directory, `notice-${name}-lounge-night.png`),
+      path: path.join(directory, `notice-${name}-${scheme}.png`),
     });
   }
+}
+
+async function inject(line: string): Promise<void> {
+  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
+  if (base === undefined) throw new Error("socket forwarder is unavailable");
+  const response = await fetch(`${base}/inject`, {
+    method: "POST",
+    body: line,
+  });
+  if (!response.ok)
+    throw new Error(`socket forwarder inject failed: ${response.status}`);
+  const result = await response.text();
+  if (!result.includes("into 1 connection"))
+    throw new Error(
+      `socket forwarder inject reached the wrong scope: ${result}`,
+    );
 }
