@@ -126,25 +126,16 @@ function notificationFor(
 ): NotificationPresentation {
   if (isChatPayload(event)) {
     const direct = sameIrcName(event.target, route.nickname);
-    const buffer = direct ? event.sender : event.target;
-    const bufferRoute = bufferPath(route.networkLabel, buffer, direct);
-    const tag = `${route.networkLabel}/${buffer.toLowerCase()}`;
-    return {
-      title: direct ? event.sender : `${event.sender} in ${event.target}`,
-      options: {
-        body:
-          event.type === "action"
-            ? `* ${event.sender} ${event.text}`
-            : event.text,
-        tag,
-        data: {
-          route: bufferRoute,
-          conversationTag: tag,
-          messageId: event.msgid,
-          messageTime: event.time,
-        },
-      },
-    };
+    return chatNotification({
+      networkLabel: route.networkLabel,
+      buffer: direct ? event.sender : event.target,
+      direct,
+      sender: event.sender,
+      action: event.type === "action",
+      text: event.text,
+      msgid: event.msgid,
+      time: event.time,
+    });
   }
   if (event.type === "invite") {
     const bufferRoute = bufferPath(route.networkLabel, event.target, false);
@@ -152,12 +143,50 @@ function notificationFor(
       title: event.sender,
       options: {
         body: `Invited you to ${event.target}`,
-        tag: `${route.networkLabel}/${event.target.toLowerCase()}`,
+        tag: conversationTag(route.networkLabel, event.target),
         data: { route: bufferRoute },
       },
     };
   }
   return genericNotification(route.networkLabel);
+}
+
+export interface ChatNotificationMessage {
+  readonly networkLabel: string;
+  readonly buffer: string;
+  readonly direct: boolean;
+  readonly sender: string;
+  readonly action: boolean;
+  readonly text: string;
+  readonly msgid: string;
+  readonly time: string;
+}
+
+export function chatNotification(
+  message: ChatNotificationMessage,
+): NotificationPresentation {
+  const tag = conversationTag(message.networkLabel, message.buffer);
+  return {
+    title: message.direct
+      ? message.sender
+      : `${message.sender} in ${message.buffer}`,
+    options: {
+      body: message.action
+        ? `* ${message.sender} ${message.text}`
+        : message.text,
+      tag,
+      data: {
+        route: bufferPath(message.networkLabel, message.buffer, message.direct),
+        conversationTag: tag,
+        messageId: message.msgid,
+        messageTime: message.time,
+      },
+    },
+  };
+}
+
+export function conversationTag(networkLabel: string, buffer: string): string {
+  return `${networkLabel}/${buffer.toLowerCase()}`;
 }
 
 export function bufferPath(
