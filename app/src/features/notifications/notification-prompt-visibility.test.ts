@@ -8,6 +8,7 @@ import {
 const visible = {
   configured: true,
   supported: true,
+  pageNotifications: true,
   permission: "default" as const,
   dismissed: false,
   ios: false,
@@ -21,7 +22,10 @@ describe("notification prompt visibility", () => {
 
   it.each([
     ["push is not configured", { configured: false }],
-    ["Web Push is unsupported", { supported: false }],
+    [
+      "neither Web Push nor page notifications exist",
+      { supported: false, pageNotifications: false },
+    ],
     ["permission was granted", { permission: "granted" as const }],
     ["permission was denied", { permission: "denied" as const }],
     ["the device dismissed it", { dismissed: true }],
@@ -37,8 +41,14 @@ describe("notification prompt visibility", () => {
     expect(
       formatNotificationPromptVisibility({ ...visible, dismissed: undefined }),
     ).toBe(
-      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser",
+      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true",
     );
+  });
+
+  it("shows without Web Push when the page can post notifications", () => {
+    expect(
+      shouldShowNotificationPrompt({ ...visible, supported: false, ios: true }),
+    ).toBe(true);
   });
 
   it("shows in an installed iOS home-screen app", () => {

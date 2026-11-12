@@ -3,6 +3,7 @@ import type { DisplayMode } from "../../platform/environment";
 export interface NotificationPromptVisibility {
   readonly configured: boolean;
   readonly supported: boolean;
+  readonly pageNotifications: boolean;
   readonly permission: NotificationPermission;
   readonly dismissed: boolean | undefined;
   readonly ios: boolean;
@@ -14,10 +15,11 @@ export function shouldShowNotificationPrompt(
 ): boolean {
   return (
     conditions.configured &&
-    conditions.supported &&
     conditions.permission === "default" &&
     conditions.dismissed === false &&
-    (!conditions.ios || conditions.display === "standalone")
+    (conditions.supported
+      ? !conditions.ios || conditions.display === "standalone"
+      : conditions.pageNotifications)
   );
 }
 
@@ -31,6 +33,7 @@ export function formatNotificationPromptVisibility(
     `dismissed=${conditions.dismissed ?? "pending"}`,
     `ios=${conditions.ios}`,
     `display=${conditions.display}`,
+    `page=${conditions.pageNotifications}`,
   ].join(" / ");
 }
 
@@ -39,10 +42,14 @@ export function supportsWebPush(
   browserNavigator: Navigator,
 ): boolean {
   return (
-    "Notification" in browserWindow &&
+    supportsPageNotifications(browserWindow) &&
     "PushManager" in browserWindow &&
     "serviceWorker" in browserNavigator
   );
+}
+
+export function supportsPageNotifications(browserWindow: Window): boolean {
+  return "Notification" in browserWindow;
 }
 
 export function isIos(

@@ -4,6 +4,10 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import {
+  installPageNotificationStub,
+  pageNotificationPermissionRequests,
+} from "./page-notification-stub";
 
 const engineWasmRequest = /\/engine_bg(?:-[^/?]+)?\.wasm(?:\?.*)?$/u;
 const builtEngineWorkerRequest =
@@ -1492,6 +1496,55 @@ test("fresh Firefox and Chromium profiles show notification setup when the prefe
   await expect(page.locator("[data-debug-overlay]")).toContainText(
     "notifications: configured=true / supported=true / permission=default / dismissed=false / ios=false / display=browser",
   );
+});
+
+test("grants page notifications without a service worker or Web Push", async ({
+  baseURL,
+  browserName,
+  page,
+}) => {
+  test.skip(browserName !== "chromium");
+  if (baseURL === undefined) throw new Error("app base URL is missing");
+  await installPageNotificationStub(page, {
+    permission: "default",
+    requestResult: "granted",
+  });
+  await installFakeEngine(page);
+  await installFakeOAuth(page);
+  await page.route("**/config.json", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(pushHostedConfig(route.request().url())),
+    });
+  });
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(baseURL).origin);
+      return;
+    }
+    await fulfillSessionToken(route, baseURL, "push-session-token");
+  });
+  const relayRequests: string[] = [];
+  await page.route("https://push.weblounge.org/**", async (route) => {
+    relayRequests.push(route.request().url());
+    await route.abort();
+  });
+
+  await page.goto("/?debug=viewport");
+  const prompt = page.getByRole("region", { name: "Notifications" });
+  await expect(prompt).toBeVisible();
+  await expect(page.locator("[data-debug-overlay]")).toContainText(
+    "supported=false / permission=default / dismissed=false / ios=false / display=browser / page=true",
+  );
+
+  await prompt.getByRole("button", { name: "Turn on" }).click();
+
+  await expect(prompt).toHaveCount(0);
+  await expect(page.locator("[data-debug-overlay]")).toContainText(
+    "permission=granted",
+  );
+  expect(await pageNotificationPermissionRequests(page)).toBe(1);
+  expect(relayRequests).toEqual([]);
 });
 
 for (const surface of [

@@ -40,6 +40,7 @@ import {
   isIos,
   type NotificationPromptVisibility,
   shouldShowNotificationPrompt,
+  supportsPageNotifications,
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
@@ -280,6 +281,7 @@ export function App(props: AppProps) {
   const notificationPromptConditions = (): NotificationPromptVisibility => ({
     configured: props.pushConfig !== undefined,
     supported: supportsWebPush(window, navigator),
+    pageNotifications: supportsPageNotifications(window),
     permission: notificationPermission(),
     dismissed: notificationPromptDismissed(),
     ios: isIos(navigator),
@@ -946,6 +948,13 @@ export function App(props: AppProps) {
     });
   });
 
+  function webPushPermitted(): boolean {
+    return (
+      supportsWebPush(window, navigator) &&
+      Notification.permission === "granted"
+    );
+  }
+
   async function startConfiguredPush(
     mountedClient: EngineClient,
   ): Promise<void> {
@@ -1000,13 +1009,7 @@ export function App(props: AppProps) {
     session: HostedSession,
     generation: number,
   ): Promise<void> {
-    if (
-      !("Notification" in window) ||
-      Notification.permission !== "granted" ||
-      !("serviceWorker" in navigator)
-    ) {
-      return;
-    }
+    if (!webPushPermitted()) return;
     await waitForProductionServiceWorkerUpdate();
     const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
@@ -1160,12 +1163,7 @@ export function App(props: AppProps) {
       await startConfiguredPush(mountedClient);
       return;
     }
-    if (
-      !("Notification" in window) ||
-      Notification.permission !== "granted" ||
-      !("serviceWorker" in navigator)
-    )
-      return;
+    if (!webPushPermitted()) return;
     const registration = await navigator.serviceWorker.ready;
     const subscription = await ensurePushSubscription(
       registration,
