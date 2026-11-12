@@ -192,6 +192,7 @@ export default defineConfig({
         "**/highlight-row.spec.ts",
         "**/phone-layout.spec.ts",
         "**/history-loading-row.spec.ts",
+        "**/short-history.spec.ts",
         "**/spacing-audit.spec.ts",
         "**/spacing-audit-screenshot.spec.ts",
       ],

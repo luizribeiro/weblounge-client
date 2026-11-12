@@ -253,6 +253,18 @@ export class IrcClient {
     );
   }
 
+  async enablePersistence(): Promise<void> {
+    this.send("CAP REQ :draft/persistence");
+    await this.waitFor("persistence capability acknowledgement", (line) =>
+      line.includes(" ACK draft/persistence"),
+    );
+    this.send("PERSISTENCE SET ON");
+    await this.waitFor(
+      "enabled persistence status",
+      (line) => line.includes(" PERSISTENCE STATUS ") && line.endsWith(" ON"),
+    );
+  }
+
   async readMarker(target: string): Promise<string | undefined> {
     this.send(`MARKREAD ${target}`);
     const response = await this.waitFor(`read marker for ${target}`, (line) =>
