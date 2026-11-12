@@ -1,0 +1,26 @@
+.overlay {
+  inset: 0;
+  position: absolute;
+  z-index: 40;
+}
+
+.backdrop {
+  appearance: none;
+  background: var(--wl-color-overlay-scrim);
+  border: 0;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.panel {
+  background: var(--wl-color-panel-alt);
+  border-radius: 14px 14px 0 0;
+  bottom: 0;
+  box-shadow: var(--wl-effect-overlay-shadow);
+  color: var(--wl-color-fg);
+  left: var(--wl-safe-left);
+  padding: 8px 16px calc(18px + var(--wl-safe-bottom));
+  position: absolute;
+  right: var(--wl-safe-right);
+}
