@@ -36,11 +36,8 @@ impl<'a> Notification<'a> {
         title: &'a str,
         body: Option<&'a str>,
     ) -> Result<Self, InvalidId> {
-        if id.is_empty() || id.chars().count() > MAX_ID_CHARS {
-            return Err(InvalidId);
-        }
         Ok(Self {
-            id,
+            id: validated_id(id)?,
             title: truncated(title, MAX_TITLE_CHARS),
             body: truncated(body.unwrap_or_default(), MAX_BODY_CHARS),
         })
@@ -48,7 +45,11 @@ impl<'a> Notification<'a> {
 }
 
 pub fn validated_id(id: &str) -> Result<&str, InvalidId> {
-    Notification::from_page(id, "", None).map(|notification| notification.id)
+    if id.is_empty() || id.chars().count() > MAX_ID_CHARS {
+        Err(InvalidId)
+    } else {
+        Ok(id)
+    }
 }
 
 fn truncated(text: &str, max_chars: usize) -> &str {
