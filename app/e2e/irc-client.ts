@@ -239,6 +239,13 @@ export class IrcClient {
     await this.waitFor(`${nickname} to rejoin ${target}`, matches);
   }
 
+  async waitForNextPart(target: string, nickname: string): Promise<void> {
+    const matches = (line: string) =>
+      line.includes(`:${nickname}!`) && line.includes(` PART ${target}`);
+    this.#discardLines(matches);
+    await this.waitFor(`${nickname} to leave ${target}`, matches);
+  }
+
   async waitForNextQuit(nickname: string): Promise<void> {
     const matches = (line: string) =>
       line.includes(`:${nickname}!`) && line.includes(" QUIT ");

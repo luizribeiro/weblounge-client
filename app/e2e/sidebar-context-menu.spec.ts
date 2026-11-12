@@ -82,7 +82,10 @@ test.describe("desktop sidebar context menu against local Ergo", () => {
       await channelRow.click({ button: "right" });
       const menu = page.getByRole("menu", { name: `Actions for ${channel}` });
       await expect(menu).toBeVisible();
-      await expect(menu.getByRole("menuitem")).toHaveText(["Mark as read"]);
+      await expect(menu.getByRole("menuitem")).toHaveText([
+        "Mark as read",
+        "Leave channel",
+      ]);
       await nativeFeelAudit(page);
       await sidebarScreenshot(page, sidebar, "menu-light.png");
       await page.keyboard.press("Escape");
