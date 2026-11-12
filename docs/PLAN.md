@@ -162,11 +162,12 @@ The single place a fresh session reads to know where the project stands. Update 
   retaining the brief's 256px shell, brand header, network tile and footer. The reusable menu
   renders typed registry actions with accessible menu semantics and viewport-aware placement;
   arrows, Enter, Escape, right-click, Shift+F10 and Menu share one surface registration path.
-  Mark as read targets the clicked buffer rather than the open pane, while existing runnable
-  channel actions come from command metadata and confirmation-backed Close/Leave stay out until
-  their designed confirmation/undo task. Focused units cover invocation, keyboard focus,
-  restoration and item gating; local-Ergo browser coverage exercises both routes, the read marker,
-  native-feel/idle/hidden checks, console cleanliness and light/dark captures.
+  Mark as read targets the clicked buffer rather than the open pane. Context-menu rows require
+  their own short action labels, so command help stays out and topic editing, split-pane opening
+  and confirmation-backed Close/Leave stay absent until their working UI paths land. Focused units
+  cover invocation, keyboard focus, restoration and item gating; local-Ergo browser coverage
+  exercises both routes, the read marker, native-feel/idle/hidden checks, console cleanliness and
+  light/dark captures.
 - [x] Ship the command palette. The quick-switcher omnibar now changes to command mode through the
   Tauri-native ⇧⌘P / Ctrl+Shift+P chord, the web-safe ⇧⌘. / Ctrl+Shift+. fallback, or a leading `>`;
   deleting the prefix returns to buffers without replacing the overlay or its accessibility and

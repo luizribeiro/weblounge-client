@@ -90,6 +90,7 @@ interface Binding {
 interface ActionSpec {
   readonly id: UiActionId;
   readonly title: string;
+  readonly menuLabel?: string;
   readonly availability: (context: ActionContext) => ActionAvailability;
   readonly bindings?: readonly Binding[];
   readonly surfaces: readonly ActionSurface[];
@@ -112,7 +113,12 @@ const needsChannel = (context: ActionContext): ActionAvailability => ({
 
 const specs: readonly ActionSpec[] = [
   {
-    ...command("buffer.mark-read", t("action.mark_read"), needsUnread),
+    ...command(
+      "buffer.mark-read",
+      t("action.mark_read.description"),
+      needsUnread,
+    ),
+    menuLabel: t("action.mark_read"),
     surfaces: ["channelMenu"],
   },
   command(
@@ -384,6 +390,7 @@ export class ActionRegistry {
       .filter(
         (spec) =>
           spec.surfaces.includes(surface) &&
+          (surface !== "channelMenu" || spec.menuLabel !== undefined) &&
           this.#handlers[spec.id] !== undefined &&
           spec.availability(context).state === "available",
       )
@@ -391,7 +398,10 @@ export class ActionRegistry {
         const chord = this.#binding(spec)?.label[this.#platform];
         return {
           id: spec.id,
-          title: spec.title,
+          title:
+            surface === "channelMenu" && spec.menuLabel !== undefined
+              ? spec.menuLabel
+              : spec.title,
           group: spec.group,
           ...(chord === undefined ? {} : { chord }),
         };
@@ -404,12 +414,18 @@ export class ActionRegistry {
             (command.surfaces.includes(
               surface === "palette" ? "palette" : "channel_menu",
             ) &&
-              (surface !== "channelMenu" || command.confirm === "none") &&
+              (surface !== "channelMenu" ||
+                (command.confirm === "none" &&
+                  command.menu_label !== undefined)) &&
               canInvokeWithoutArguments(command, context))),
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
-        title: translate(command.description),
+        title: translate(
+          surface === "channelMenu" && command.menu_label !== undefined
+            ? command.menu_label
+            : command.description,
+        ),
         group: "Commands" as const,
         command,
       }));

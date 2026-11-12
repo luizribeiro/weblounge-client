@@ -276,7 +276,10 @@ describe("ActionRegistry", () => {
       confirm: "menu" as const,
     };
     const cycle = implicitChannelCommand("cycle");
-    const topic = implicitChannelCommand("topic");
+    const topic = {
+      ...implicitChannelCommand("topic"),
+      menu_label: "cmd.topic.menu",
+    };
     const registry = new ActionRegistry(
       { "buffer.mark-read": markRead },
       "other",
@@ -284,15 +287,27 @@ describe("ActionRegistry", () => {
       vi.fn(),
     );
 
-    expect(
-      registry
-        .channelMenu({ ...context, targetUnread: true })
-        .map(({ id }) => id),
-    ).toEqual(["buffer.mark-read", "command.cycle", "command.topic"]);
-    expect(registry.channelMenu(context).map(({ id }) => id)).toEqual([
-      "command.cycle",
+    const unreadMenu = registry.channelMenu({
+      ...context,
+      targetUnread: true,
+    });
+    expect(unreadMenu.map(({ id }) => id)).toEqual([
+      "buffer.mark-read",
       "command.topic",
     ]);
+    expect(unreadMenu.map(({ title }) => title)).toEqual([
+      "Mark as read",
+      "Edit topic…",
+    ]);
+    expect(registry.title("buffer.mark-read")).toBe(
+      "Mark the current conversation as read",
+    );
+    expect(registry.channelMenu(context).map(({ id }) => id)).toEqual([
+      "command.topic",
+    ]);
+    expect(
+      registry.help(context).find(({ id }) => id === "command.topic")?.title,
+    ).toBe("Show or change the channel topic");
     expect(
       registry.channelMenu({ ...context, currentBufferKind: "direct" }),
     ).toEqual([]);

@@ -192,11 +192,7 @@ it("shows only runnable row-menu items and dispatches against its target", async
   );
   expect(
     screen.getAllByRole("menuitem").map((item) => item.textContent),
-  ).toEqual([
-    "Mark as read",
-    "Leave and rejoin a channel",
-    "Show or change the channel topic",
-  ]);
+  ).toEqual(["Mark as read"]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
   expect(markRead).toHaveBeenCalledWith(
     expect.objectContaining({ targetBufferId: 2, targetUnread: true }),
