@@ -17,6 +17,7 @@ import { platformEnvironment } from "../../platform/environment";
 import { recordGestureNotStarted } from "../../platform/gesture-debug";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { t } from "../../strings";
+import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
 import { MobileChatActionSheet } from "./MobileChatActionSheet";
@@ -108,6 +109,10 @@ export function MobileShell(props: MobileShellProps) {
     readonly networkId: number;
     readonly title: string;
   }>();
+  const [leaveConfirmation, setLeaveConfirmation] = createSignal<{
+    readonly bufferId: number;
+    readonly invoker?: HTMLElement | undefined;
+  }>();
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
@@ -117,6 +122,9 @@ export function MobileShell(props: MobileShellProps) {
   });
   const actionSheetBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === chatActions()?.bufferId),
+  );
+  const confirmationBuffer = createMemo(() =>
+    props.buffers.find((buffer) => buffer.id === leaveConfirmation()?.bufferId),
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let acceptedInitialBuffer = initialBufferId !== undefined;
@@ -259,8 +267,13 @@ export function MobileShell(props: MobileShellProps) {
     closeUndoTimer = window.setTimeout(dismissCloseUndo, 6_000);
     return true;
   };
-  const requestClose = async (buffer: BufferProjection): Promise<boolean> =>
-    buffer.kind === "channel" ? false : closeDirect(buffer);
+  const requestClose = async (buffer: BufferProjection): Promise<boolean> => {
+    if (buffer.kind === "channel") {
+      setLeaveConfirmation({ bufferId: buffer.id });
+      return true;
+    }
+    return closeDirect(buffer);
+  };
   const undoClose = () => {
     const closed = closedConversation();
     if (closed === undefined) return;
@@ -276,6 +289,8 @@ export function MobileShell(props: MobileShellProps) {
     if (removal === undefined || removal === handledBufferRemoval) return;
     handledBufferRemoval = removal;
     if (chatActions()?.bufferId === removal.bufferId) setChatActions(undefined);
+    if (leaveConfirmation()?.bufferId === removal.bufferId)
+      setLeaveConfirmation(undefined);
     const active = stack().active;
     if (active.kind === "chat" && active.bufferId === removal.bufferId) {
       setDrawerBufferId(undefined);
@@ -335,6 +350,10 @@ export function MobileShell(props: MobileShellProps) {
   const requestBack = () => {
     if (chatActions() !== undefined) {
       dismissChatActions();
+      return;
+    }
+    if (leaveConfirmation() !== undefined) {
+      setLeaveConfirmation(undefined);
       return;
     }
     if (drawerBufferId() !== undefined) {
@@ -749,6 +768,27 @@ export function MobileShell(props: MobileShellProps) {
             {t("sidebar.undo")}
           </button>
         </div>
+      )}
+      {confirmationBuffer()?.kind === "channel" && (
+        <ConfirmationDialog
+          action={t("cmd.part.confirmation_action")}
+          label={t("cmd.part.confirmation_prompt", {
+            text: confirmationBuffer()?.title ?? "",
+          })}
+          message={t("cmd.part.confirmation_prompt", {
+            text: confirmationBuffer()?.title ?? "",
+          })}
+          onCancel={() => {
+            const invoker = leaveConfirmation()?.invoker;
+            setLeaveConfirmation(undefined);
+            queueMicrotask(() => invoker?.focus({ preventScroll: true }));
+          }}
+          onConfirm={() => {
+            const buffer = confirmationBuffer();
+            setLeaveConfirmation(undefined);
+            if (buffer !== undefined) void props.onSend(buffer.id, "/part");
+          }}
+        />
       )}
       {drawerBuffer() !== undefined && (
         <MobileMemberDrawer

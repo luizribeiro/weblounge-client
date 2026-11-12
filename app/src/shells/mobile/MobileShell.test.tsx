@@ -240,6 +240,43 @@ it("closes a direct from its phone action sheet and offers Undo", async () => {
   expect(openDirect).toHaveBeenCalledWith(1, "mel");
 });
 
+it("confirms channel Leave from the row sheet and chat details", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: true }) as MediaQueryList),
+  );
+  const channel = {
+    ...buffer,
+    id: 3,
+    kind: "channel" as const,
+    title: "#room",
+  };
+  const send = vi.fn(async () => true);
+  render(() => (
+    <MobileShell
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={send}
+    />
+  ));
+
+  fireEvent.contextMenu(screen.getByRole("button", { name: "#room" }));
+  fireEvent.click(screen.getByRole("button", { name: "Leave #room" }));
+  expect(
+    screen.getByRole("alertdialog", { name: "Leave #room?" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(send).not.toHaveBeenCalled();
+});
+
 it("opens a deep link when its buffer resolves after mount", () => {
   vi.stubGlobal(
     "matchMedia",
