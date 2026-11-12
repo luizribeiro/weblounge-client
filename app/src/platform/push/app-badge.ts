@@ -3,6 +3,8 @@ import {
   type ConversationNotificationCount,
   writeNotificationCounts,
 } from "./push-database";
+import { conversationTag } from "./push-notification";
+import { notificationDataIsRead } from "./push-notification-state";
 
 interface BadgeNavigator {
   setAppBadge?(contents?: number): Promise<void>;
@@ -30,18 +32,19 @@ export function conversationNotificationCounts(
   buffers: readonly BufferProjection[],
   networkLabels: ReadonlyMap<number, string>,
 ): readonly ConversationNotificationCount[] {
-  return buffers
-    .filter(
-      (buffer) =>
-        buffer.kind !== "server" && networkLabels.has(buffer.network_id),
-    )
-    .map((buffer) => ({
-      tag: `${networkLabels.get(buffer.network_id)}/${buffer.title.toLowerCase()}`,
-      count: knownNotificationCount(buffer),
-      ...(buffer.read_at_ms === undefined
-        ? {}
-        : { readAtMs: buffer.read_at_ms }),
-    }));
+  return buffers.flatMap((buffer) => {
+    const networkLabel = networkLabels.get(buffer.network_id);
+    if (buffer.kind === "server" || networkLabel === undefined) return [];
+    return [
+      {
+        tag: conversationTag(networkLabel, buffer.title),
+        count: knownNotificationCount(buffer),
+        ...(buffer.read_at_ms === undefined
+          ? {}
+          : { readAtMs: buffer.read_at_ms }),
+      },
+    ];
+  });
 }
 
 function knownNotificationCount(buffer: BufferProjection): number {
@@ -82,40 +85,23 @@ export async function closeReadConversationNotifications(
   networkLabels: ReadonlyMap<number, string>,
   registrations: RegistrationProvider = navigator.serviceWorker,
 ): Promise<void> {
-  const readMarkers = new Map(
-    conversationNotificationCounts(buffers, networkLabels)
-      .filter(
-        (
-          entry,
-        ): entry is ConversationNotificationCount & {
-          readonly readAtMs: number;
-        } => entry.readAtMs !== undefined,
-      )
-      .map(({ tag, readAtMs }) => [tag, readAtMs]),
-  );
+  const readMarkers = conversationReadMarkers(buffers, networkLabels);
   const registration = await registrations.getRegistration("/");
   const notifications = await registration?.getNotifications();
   for (const notification of notifications ?? []) {
-    if (notificationIsRead(notification, readMarkers)) notification.close();
+    if (notificationDataIsRead(notification.data, readMarkers))
+      notification.close();
   }
 }
 
-function notificationIsRead(
-  notification: Notification,
-  readMarkers: ReadonlyMap<string, number>,
-): boolean {
-  const data: unknown = notification.data;
-  if (typeof data !== "object" || data === null) return false;
-  if (
-    !("conversationTag" in data) ||
-    typeof data.conversationTag !== "string" ||
-    !("messageTime" in data) ||
-    typeof data.messageTime !== "string"
-  )
-    return false;
-  const marker = readMarkers.get(data.conversationTag);
-  const messageTime = Date.parse(data.messageTime);
-  return (
-    marker !== undefined && !Number.isNaN(messageTime) && messageTime <= marker
+export function conversationReadMarkers(
+  buffers: readonly BufferProjection[],
+  networkLabels: ReadonlyMap<number, string>,
+): ReadonlyMap<string, number> {
+  return new Map(
+    conversationNotificationCounts(buffers, networkLabels).flatMap(
+      ({ tag, readAtMs }) =>
+        readAtMs === undefined ? [] : [[tag, readAtMs] as const],
+    ),
   );
 }
