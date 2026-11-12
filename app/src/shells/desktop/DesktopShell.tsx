@@ -45,6 +45,7 @@ import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
+import { focusAfterClose } from "../../features/sidebar/sidebar-close";
 import { BufferSwitcher } from "../../features/switcher/BufferSwitcher";
 import {
   createReadDwell,
@@ -142,6 +143,12 @@ export function DesktopShell(props: DesktopShellProps) {
   const [recentBufferIds, setRecentBufferIds] = createSignal<readonly number[]>(
     [],
   );
+  const [closedConversation, setClosedConversation] = createSignal<{
+    readonly id: number;
+    readonly networkId: number;
+    readonly title: string;
+  }>();
+  const [retainSidebarFocus, setRetainSidebarFocus] = createSignal(false);
   const [drawer, setDrawer] = createSignal<"sidebar" | "members" | null>(null);
   const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
@@ -149,6 +156,7 @@ export function DesktopShell(props: DesktopShellProps) {
   let messageListController: MessageListController | undefined;
   let shellElement: HTMLDivElement | undefined;
   let shellObserver: ResizeObserver | undefined;
+  let closeUndoTimer: number | undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -245,6 +253,38 @@ export function DesktopShell(props: DesktopShellProps) {
       if (path !== undefined)
         window.history.replaceState(window.history.state, "", path);
     }
+  };
+  const dismissCloseUndo = () => {
+    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
+    closeUndoTimer = undefined;
+    setClosedConversation(undefined);
+  };
+  const closeDirect = async (
+    buffer: BufferProjection,
+    nextBufferId = focusAfterClose(
+      orderedBufferIds(props.networks, props.buffers),
+      buffer.id,
+    ),
+    retainFocus = false,
+  ): Promise<boolean> => {
+    if (!(await props.onSend(buffer.id, "/close"))) return false;
+    setRetainSidebarFocus(retainFocus);
+    showBuffer(nextBufferId);
+    if (retainFocus) queueMicrotask(() => setRetainSidebarFocus(false));
+    setClosedConversation({
+      id: buffer.id,
+      networkId: buffer.network_id,
+      title: buffer.title,
+    });
+    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
+    closeUndoTimer = window.setTimeout(dismissCloseUndo, 6_000);
+    return true;
+  };
+  const undoClose = () => {
+    const closed = closedConversation();
+    if (closed === undefined) return;
+    dismissCloseUndo();
+    props.onOpenDirect?.(closed.networkId, closed.title);
   };
   const moveBuffer = (offset: -1 | 1) => {
     const ids = orderedBufferIds(props.networks, props.buffers);
@@ -417,12 +457,24 @@ export function DesktopShell(props: DesktopShellProps) {
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
+      if (
+        closedConversation() !== undefined &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLocaleLowerCase() === "z" &&
+        !(event.target instanceof HTMLInputElement) &&
+        !(event.target instanceof HTMLTextAreaElement)
+      ) {
+        event.preventDefault();
+        undoClose();
+        return;
+      }
       if (registry.handleKeydown(event, context())) return;
       forwardPrintableKey(event, shellElement);
     };
     document.addEventListener("keydown", handleKeydown);
     onCleanup(() => {
       shellObserver?.disconnect();
+      if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
       document.removeEventListener("keydown", handleKeydown);
     });
   });
@@ -568,7 +620,7 @@ export function DesktopShell(props: DesktopShellProps) {
                         (buffer() !== undefined &&
                           directIdentityBlocked(buffer() as BufferProjection))
                       }
-                      focusOnMount
+                      focusOnMount={!retainSidebarFocus()}
                       typers={props.typers?.get(bufferId)}
                       onRequestCandidates={(input, cursor, explicit) =>
                         props.onRequestCompletion(
@@ -697,12 +749,20 @@ export function DesktopShell(props: DesktopShellProps) {
         networks={props.networks}
         notificationPromptVisible={props.notificationPromptVisible}
         onDismissNotificationPrompt={props.onDismissNotificationPrompt}
+        onCloseDirect={(buffer, nextBufferId) =>
+          closeDirect(buffer, nextBufferId, true)
+        }
         onRetryNetwork={props.onRetryNetwork}
         onTurnOnNotifications={props.onTurnOnNotifications}
         registerListController={(controller) => {
           listController = controller;
         }}
         registry={registry}
+        closedConversation={
+          closedConversation() === undefined
+            ? undefined
+            : { title: closedConversation()?.title ?? "", onUndo: undoClose }
+        }
         visibleBufferIds={visibleBufferIds()}
       />
     );

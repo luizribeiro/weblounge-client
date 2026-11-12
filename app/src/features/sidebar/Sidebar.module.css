@@ -7,7 +7,38 @@
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  position: relative;
   width: 256px;
+}
+
+.undoToast {
+  align-items: center;
+  background: var(--wl-color-panel-fg);
+  border-radius: var(--wl-radius-palette);
+  bottom: 10px;
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-panel);
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  justify-content: space-between;
+  left: 8px;
+  padding: 10px 14px;
+  position: absolute;
+  right: 8px;
+  z-index: 10;
+}
+
+.undoToast button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .brand {

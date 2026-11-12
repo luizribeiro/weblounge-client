@@ -54,6 +54,9 @@ interface SidebarProps extends NotificationPromptControls {
         nextBufferId: number | undefined,
       ) => Promise<boolean>)
     | undefined;
+  readonly closedConversation?:
+    | { readonly title: string; readonly onUndo: () => void }
+    | undefined;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -295,6 +298,18 @@ export function Sidebar(props: SidebarProps) {
         onDismiss={() => setMenu(undefined)}
         request={menu()?.request}
       />
+      <Show when={props.closedConversation} keyed>
+        {(closed) => (
+          <div class={styles.undoToast} role="status">
+            <span>
+              {t("sidebar.closed_conversation", { title: closed.title })}
+            </span>
+            <button onClick={closed.onUndo} type="button">
+              {t("sidebar.undo")}
+            </button>
+          </div>
+        )}
+      </Show>
       <Show when={confirmation()} keyed>
         {(pending) => (
           <ConfirmationDialog

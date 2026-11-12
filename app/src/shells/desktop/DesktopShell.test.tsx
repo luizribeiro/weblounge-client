@@ -39,6 +39,13 @@ const direct: BufferProjection = {
   unread: 0,
   mentions: 0,
 };
+const otherDirect: BufferProjection = {
+  ...direct,
+  id: 5,
+  title: "alice",
+  direct_identity: "verified",
+  draft_key: "1:alice",
+};
 const nickMessage: MessageProjection = {
   id: 1,
   author: "mel",
@@ -108,6 +115,42 @@ it("places the notification prompt above the desktop channel list", () => {
   );
   expect(turnOn).toHaveBeenCalledOnce();
   expect(dismiss).toHaveBeenCalledOnce();
+});
+
+it("closes a direct downward, keeps sidebar focus, and offers Undo", async () => {
+  const send = vi.fn(async () => true);
+  const openDirect = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={direct.id}
+      buffers={[channel, direct, otherDirect]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenDirect={openDirect}
+      onRequestCompletion={() => {}}
+      onSend={send}
+    />
+  ));
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close conversation with mel" }),
+  );
+  await waitFor(() => expect(send).toHaveBeenCalledWith(direct.id, "/close"));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "alice" })).toHaveFocus(),
+  );
+  expect(screen.getByRole("heading", { name: "alice" })).toBeVisible();
+  expect(screen.getByText("Closed chat with mel")).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(openDirect).toHaveBeenCalledWith(1, "mel");
+  expect(screen.queryByText("Closed chat with mel")).not.toBeInTheDocument();
 });
 
 it("resolves a cached direct through normal history", () => {
