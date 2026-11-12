@@ -24,7 +24,7 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ pkgs.cargo-tauri.hook ];
   preCheck = ''
     cargo clippy --offline --release --all-targets -- -D warnings
-    ${pkgs.lib.getExe pkgs.nodejs} --test src/badge.test.mjs
+    ${pkgs.lib.getExe pkgs.nodejs} --test 'src/*.test.mjs'
   '';
   meta.platforms = pkgs.lib.platforms.darwin;
 }
