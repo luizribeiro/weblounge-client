@@ -9,8 +9,7 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ### Next (in order)
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-2. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-3. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+2. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
@@ -24,6 +23,12 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: matched the desktop sidebar's compact rows, section typography, aligned sigils,
+  badges and interaction states to the accepted close-conversations mockup, and added a reusable
+  accessible context menu opened by right-click, Shift+F10 or Menu. Its registry-derived actions
+  run against the clicked buffer, Mark as read advances that buffer through its newest committed
+  message, Escape restores the row, and the destructive Close/Leave group remains reserved for the
+  next task.
 - 2026-11-12: kept initial live-edge placement armed while virtual transcript geometry settles,
   using the virtualizer's known extent before the DOM publishes its scroll height; explicit wheel,
   touch, pointer and keyboard intent cancels that command so later measurements cannot reclaim a
@@ -151,6 +156,17 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Restyle the desktop sidebar and add its first custom context menu. Compact row geometry,
+  section-label typography, channel sigils, direct-message alignment, count/mention badges and
+  hover, focus, active, unread and muted states now follow the accepted light/dark mockup while
+  retaining the brief's 256px shell, brand header, network tile and footer. The reusable menu
+  renders typed registry actions with accessible menu semantics and viewport-aware placement;
+  arrows, Enter, Escape, right-click, Shift+F10 and Menu share one surface registration path.
+  Mark as read targets the clicked buffer rather than the open pane, while existing runnable
+  channel actions come from command metadata and confirmation-backed Close/Leave stay out until
+  their designed confirmation/undo task. Focused units cover invocation, keyboard focus,
+  restoration and item gating; local-Ergo browser coverage exercises both routes, the read marker,
+  native-feel/idle/hidden checks, console cleanliness and light/dark captures.
 - [x] Ship the command palette. The quick-switcher omnibar now changes to command mode through the
   Tauri-native ⇧⌘P / Ctrl+Shift+P chord, the web-safe ⇧⌘. / Ctrl+Shift+. fallback, or a leading `>`;
   deleting the prefix returns to buffers without replacing the overlay or its accessibility and
