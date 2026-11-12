@@ -56,6 +56,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-12: made rejected `/close` commands side-effect-free for unavailable channel buffers;
   they no longer advance read state, clear notifications, send MARKREAD or strand the read-flush
   guard, while successful direct-message closes still mark through their newest message.
+- 2026-11-12: kept a hidden DM's New divider when an own send confirms while the page is hidden.
+  Engine events held while hidden used to land a frame after the panes already counted as
+  foreground, so the confirmation re-armed divider tracking and the held peer DM read as watched;
+  the foreground signal now drains the held events before it reports the return.
 - 2026-11-12: kept a hidden DM's New divider when an earlier optimistic send confirms after the
   hidden peer row. Pending own rows now retain the peer boundary from when the send appeared, so a
   later confirmation cannot reorder read presentation; read-dwell and engine mark advances are

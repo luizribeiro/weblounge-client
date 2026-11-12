@@ -163,7 +163,6 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const clientId = crypto.randomUUID();
-  const foreground = createForegroundSignal();
   const startupSyncRequired =
     props.hostedSession !== undefined ||
     (__DEBUG_IRC_CONFIG__ !== null &&
@@ -239,6 +238,15 @@ export function App(props: AppProps) {
   );
   let pageNotifications: PageNotifications | undefined;
   let client: EngineClient | undefined;
+  let reportedForeground: boolean | undefined;
+  const reportEngineForeground = (next: boolean) => {
+    if (client === undefined || next === reportedForeground) return;
+    reportedForeground = next;
+    client.setVisibility(next ? "visible" : "hidden");
+  };
+  // Events held while hidden must reach the panes before they count as
+  // foreground, or a DM that arrived in the background reads as watched.
+  const foreground = createForegroundSignal(() => reportEngineForeground(true));
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushOwner: PushSyncOwner | undefined;
   let pushLeaseOwner: PushSyncOwner | undefined;
@@ -862,7 +870,7 @@ export function App(props: AppProps) {
     const setAppForeground = (foreground: boolean) => {
       foregroundRecorder.recordForegroundTransition(foreground);
       appIsForeground = foreground;
-      mountedClient.setVisibility(foreground ? "visible" : "hidden");
+      reportEngineForeground(foreground);
       if (foreground) {
         notifications.claimPosting();
         if (foregroundLeaseHandoffTimer !== undefined) {

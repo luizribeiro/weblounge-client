@@ -48,6 +48,33 @@ test.describe("New divider ownership", () => {
     }
   });
 
+  test("shows New when the DM follows an own send confirmed while hidden", async ({
+    isMobile,
+    page,
+  }) => {
+    const peer = await openDirect(page, "own", isMobile);
+    try {
+      await setPageHidden(page, true);
+      const ownText = `own send before leaving ${Date.now()}`;
+      await submitComposer(page, ownText);
+      const ownLine = await peer.waitForPrivmsg(
+        peer.nickname,
+        ownText,
+        "weblounge",
+      );
+      await expectClockPast(serverTime(ownLine));
+      const text = `hidden DM after own send ${Date.now()}`;
+      await peer.privmsgConfirmed("weblounge", text);
+      await expectDeliveredToPage(page, text);
+
+      await setPageHidden(page, false);
+      await expect(messageText(page, text)).toBeVisible();
+      await expect(page.locator("[data-new-line]")).toBeVisible();
+    } finally {
+      peer.close();
+    }
+  });
+
   test("shows New when the reader is scrolled away from the live edge", async ({
     isMobile,
     page,
@@ -123,6 +150,18 @@ async function openDirect(
     peer.close();
     throw error;
   }
+}
+
+function serverTime(line: string): number {
+  const time = line.match(/(?:^@|;)time=([^; ]+)/u)?.[1];
+  if (time === undefined) throw new Error(`no server time in ${line}`);
+  return Date.parse(time);
+}
+
+// Read marks compare millisecond server times, so a reply stamped in the same
+// millisecond as the own send would count as already read.
+async function expectClockPast(timeMs: number): Promise<void> {
+  await expect.poll(() => Date.now()).toBeGreaterThan(timeMs);
 }
 
 async function submitComposer(page: Page, text: string): Promise<void> {
