@@ -108,6 +108,11 @@ ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/Weblounge
   ~/Applications/Weblounge.app
 ```
 
+To install it on another Mac, build a disk image with `nix build .#desktop-dmg`, open
+`result/Weblounge.dmg` there and drag Weblounge into Applications. The app is not notarized, so if
+the image arrived through a browser or AirDrop, clear its quarantine before the first launch with
+`xattr -dr com.apple.quarantine /Applications/Weblounge.app`.
+
 For a quick debug build, run `nix develop -c cargo run --manifest-path apps/tauri/Cargo.toml`.
 The bare binary keeps its own web storage, so it asks you to sign in separately from the installed
 app.
