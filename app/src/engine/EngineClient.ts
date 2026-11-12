@@ -1175,15 +1175,19 @@ function decodeReactions(
 function decodeMessageKind(
   value: unknown,
 ): MessageProjection["kind"] | undefined {
-  if (isOneOf(value, ["text", "action", "irc_notice"])) return value;
+  if (isOneOf(value, ["text", "action"])) return value;
   if (!isRecord(value)) return undefined;
+  if (isOneOf(value.irc_notice, ["user", "service", "server"]))
+    return { irc_notice: value.irc_notice };
   const notice = decodeNoticeKind(value.notice);
   return notice === undefined ? undefined : { notice };
 }
 
 function decodeNoticeKind(
   value: unknown,
-): Extract<MessageProjection["kind"], object>["notice"] | undefined {
+):
+  | Extract<MessageProjection["kind"], { notice: unknown }>["notice"]
+  | undefined {
   if (!isRecord(value)) return undefined;
   if (value.type === "info") return { type: "info" };
   if (

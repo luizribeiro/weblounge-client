@@ -1336,7 +1336,7 @@ it("renders engine system runs with typed wording and breakers", async () => {
   const notice: MessageProjection = {
     ...message,
     id: 24,
-    kind: "irc_notice",
+    kind: { irc_notice: "user" },
     received_at_ms: 24,
     text: "membership run breaker",
   };
@@ -1671,13 +1671,13 @@ it("renders info notices as plain muted event rows", async () => {
   expect(row).not.toHaveTextContent("set by");
 });
 
-it("renders IRC notices as sender rows with quiet notice styling", () => {
+it("renders typed IRC notices with the existing sender style", () => {
   render(() => (
     <MessageList
       messages={[
         {
           ...message,
-          kind: "irc_notice",
+          kind: { irc_notice: "user" },
           text: "maintenance soon",
         },
       ]}

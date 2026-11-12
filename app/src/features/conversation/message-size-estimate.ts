@@ -44,7 +44,7 @@ export function estimateMessageHeight(
       (presentation === "mobile" ? mobileListInlinePadding : listInlinePadding),
     1,
   );
-  if (typeof message.kind === "object") {
+  if (typeof message.kind === "object" && "notice" in message.kind) {
     const charactersPerLine = Math.max(
       1,
       Math.floor(rowWidth / (systemFontSize * estimatedCharacterWidthFactor)),
@@ -144,6 +144,7 @@ export function messageSizeRevision(
 
 function messageKindRevision(kind: EstimatedMessage["kind"]): string {
   if (typeof kind === "string") return kind;
+  if ("irc_notice" in kind) return `irc_notice:${kind.irc_notice}`;
   const notice = kind.notice;
   switch (notice.type) {
     case "info":
@@ -174,7 +175,7 @@ function messageChromeWidth(
 }
 
 function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
-  return kind === "text" || kind === "irc_notice";
+  return kind === "text" || (typeof kind === "object" && "irc_notice" in kind);
 }
 
 function deliveryChromeWidth(delivery: EstimatedMessage["delivery"]): number {

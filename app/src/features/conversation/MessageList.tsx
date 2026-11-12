@@ -23,7 +23,6 @@ import type {
   HistoryState,
   MembershipProjection,
   MessageProjection,
-  NoticeKind,
 } from "../../engine/protocol";
 import {
   deriveJumpCount,
@@ -66,6 +65,11 @@ import {
   estimateSystemLineHeight,
   systemLineSizeRevision,
 } from "./timeline/item-size-estimate";
+import {
+  isIrcNoticeMessage,
+  isLocalNoticeMessage,
+  type LocalNoticeMessage,
+} from "./timeline/notice-message";
 import { type RowFamily, topPadding } from "./timeline/row-spacing";
 import { SystemLine } from "./timeline/SystemLine";
 import { systemLineText, systemLineWords } from "./timeline/system-line-words";
@@ -189,10 +193,6 @@ type DisplayTimelineItem =
       readonly order: TimelineItem["order"];
       readonly day: TimelineItem["day"];
     };
-
-type NoticeMessage = MessageProjection & {
-  readonly kind: { readonly notice: NoticeKind };
-};
 
 const liveEdgeTolerance = 2;
 const olderHistoryPrefetchViewportCount = 1.5;
@@ -817,7 +817,7 @@ export function MessageList(props: MessageListProps) {
   const selectLastOwn = () => {
     const message = [...orderedMessages()]
       .reverse()
-      .find((item) => item.authorship === "own" && !isNoticeMessage(item));
+      .find((item) => item.authorship === "own" && !isLocalNoticeMessage(item));
     if (message === undefined) return;
     const index = rows().findIndex(
       (row) => row.kind === "message" && row.message.id === message.id,
@@ -1550,9 +1550,9 @@ function MessageRow(props: {
   readonly startsMobileGroup: boolean;
 }) {
   const message = props.message;
-  if (isNoticeMessage(message))
+  if (isLocalNoticeMessage(message))
     return (
-      <NoticeRow
+      <LocalNoticeRow
         message={message}
         nickLookup={props.nickLookup}
         onOpenChannel={props.onOpenChannel}
@@ -1560,11 +1560,12 @@ function MessageRow(props: {
         onOpenExternal={props.onOpenExternal}
       />
     );
+  const ircNotice = isIrcNoticeMessage(message);
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""} ${message.kind === "irc_notice" ? styles.ircNotice : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""} ${ircNotice ? styles.ircNotice : ""}`}
       data-delivery={message.delivery}
-      data-irc-notice={message.kind === "irc_notice" || undefined}
+      data-irc-notice={ircNotice || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}
@@ -1670,8 +1671,8 @@ function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
   ) : null;
 }
 
-function NoticeRow(props: {
-  readonly message: NoticeMessage;
+function LocalNoticeRow(props: {
+  readonly message: LocalNoticeMessage;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
@@ -1949,7 +1950,7 @@ function latestCommittedOwnTime(
   return messages.reduce<number | undefined>((latest, message) => {
     if (
       message.authorship !== "own" ||
-      isNoticeMessage(message) ||
+      isLocalNoticeMessage(message) ||
       (message.delivery !== "received" && message.delivery !== "confirmed")
     ) {
       return latest;
@@ -1963,7 +1964,8 @@ function latestPeerTime(
   messages: readonly MessageProjection[],
 ): number | undefined {
   return messages.reduce<number | undefined>((latest, message) => {
-    if (message.authorship === "own" || isNoticeMessage(message)) return latest;
+    if (message.authorship === "own" || isLocalNoticeMessage(message))
+      return latest;
     const time = messageTime(message);
     return latest === undefined ? time : Math.max(latest, time);
   }, undefined);
@@ -2021,7 +2023,7 @@ function historyStartTitle(
 }
 
 function messageTime(message: MessageProjection): number {
-  if (isNoticeMessage(message)) return message.received_at_ms;
+  if (isLocalNoticeMessage(message)) return message.received_at_ms;
   return message.server_time_ms ?? message.received_at_ms;
 }
 
@@ -2223,7 +2225,8 @@ function isSystemLineRow(row: TimelineRow | undefined): boolean {
   return (
     row?.kind === "membership" ||
     row?.kind === "system" ||
-    (row?.kind === "message" && isNoticeMessage(row.message))
+    (row?.kind === "message" &&
+      (isIrcNoticeMessage(row.message) || isLocalNoticeMessage(row.message)))
   );
 }
 
@@ -2318,7 +2321,7 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
       };
     if (
       row.kind === "message" &&
-      (row.message.kind === "text" || row.message.kind === "irc_notice")
+      (row.message.kind === "text" || isIrcNoticeMessage(row.message))
     )
       return {
         kind: "message",
@@ -2326,13 +2329,13 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
         author: row.message.author,
         text: row.message.text,
       };
-    if (row.kind === "message" && isNoticeMessage(row.message))
+    if (row.kind === "message" && isLocalNoticeMessage(row.message))
       return { kind: "system", text: noticeText(row.message) };
     return undefined;
   });
 }
 
-function noticeText(message: NoticeMessage): string {
+function noticeText(message: LocalNoticeMessage): string {
   const notice = message.kind.notice;
   switch (notice.type) {
     case "info":
@@ -2350,10 +2353,6 @@ function noticeText(message: NoticeMessage): string {
     default:
       return assertNever(notice);
   }
-}
-
-function isNoticeMessage(message: MessageProjection): message is NoticeMessage {
-  return typeof message.kind === "object";
 }
 
 function assertNever(value: never): never {

@@ -9,7 +9,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
     EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -112,7 +112,7 @@ impl ChatInput<'_> {
                 papo::MessageKind::Action => MessageKind::Action,
                 _ => MessageKind::Text,
             },
-            Self::Notice(_) => MessageKind::IrcNotice,
+            Self::Notice(_) => MessageKind::IrcNotice(NoticeSource::User),
         }
     }
 
@@ -1258,7 +1258,7 @@ impl NetworkModel {
             destination,
             author: notice.actor.to_string(),
             text: notice.text.clone(),
-            kind: MessageKind::IrcNotice,
+            kind: MessageKind::IrcNotice(server_notice_source(&notice.actor)),
             bot: notice.actor.user().and_then(papo::UserSource::is_bot),
             authorship: map_authorship(notice.authorship),
             msgid: notice.msgid.as_ref().map(ToString::to_string),
@@ -1389,7 +1389,7 @@ impl NetworkModel {
                     text: message.text,
                     kind: match message.kind {
                         PushedMessageKind::Message => MessageKind::Text,
-                        PushedMessageKind::Notice => MessageKind::IrcNotice,
+                        PushedMessageKind::Notice => MessageKind::IrcNotice(NoticeSource::User),
                         PushedMessageKind::Action => MessageKind::Action,
                     },
                     bot: None,
@@ -4439,6 +4439,34 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Own => MessageAuthorship::Own,
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
+    }
+}
+
+fn server_notice_source(actor: &papo::Source) -> NoticeSource {
+    if actor.user().is_some() {
+        NoticeSource::Service
+    } else {
+        NoticeSource::Server
+    }
+}
+
+#[cfg(test)]
+mod notice_source_tests {
+    use super::*;
+
+    #[test]
+    fn classifies_typed_server_notice_sources() {
+        let service = papo::Source::from_proto(
+            papo_proto::Source::__user("NickServ", Some("service"), Some("services.test")),
+            papo::Casemapping::Ascii,
+        );
+        let server = papo::Source::from_proto(
+            papo_proto::Source::Server("irc.example.test"),
+            papo::Casemapping::Ascii,
+        );
+
+        assert_eq!(server_notice_source(&service), NoticeSource::Service);
+        assert_eq!(server_notice_source(&server), NoticeSource::Server);
     }
 }
 

@@ -101,16 +101,16 @@ describe("estimateMessageHeight", () => {
     ).toBe(estimateMessageHeight(message, 1_280, "cozy") - 3);
   });
 
-  it("gives IRC notices the full sender-row estimate", () => {
+  it("keeps typed IRC notices on the full sender-row estimate", () => {
     const text = {
       delivery: "received" as const,
       kind: "text" as const,
       text: "maintenance soon",
     };
     const notice = {
-      delivery: text.delivery,
-      kind: "irc_notice" as const,
-      text: text.text,
+      delivery: "received" as const,
+      kind: { irc_notice: "user" as const },
+      text: "maintenance soon",
     };
 
     expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(

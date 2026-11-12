@@ -1491,7 +1491,7 @@ impl Runtime {
                     .model
                     .begin_action(buffer_id, text, &running.client.state())
             }
-            crate::MessageKind::IrcNotice | crate::MessageKind::Notice(_) => None,
+            crate::MessageKind::IrcNotice(_) | crate::MessageKind::Notice(_) => None,
         };
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
@@ -13393,7 +13393,14 @@ async fn delay(duration: Duration) {
     const HISTORY_CAPS: &str = "draft/chathistory labeled-response batch server-time message-tags";
 
     fn is_irc_notice(message: &crate::MessageProjection) -> bool {
-        serde_json::to_value(&message.kind).expect("message kind serializes") == "irc_notice"
+        matches!(message.kind, crate::MessageKind::IrcNotice(_))
+    }
+
+    fn irc_notice_source(message: &crate::MessageProjection) -> Option<crate::NoticeSource> {
+        match message.kind {
+            crate::MessageKind::IrcNotice(source) => Some(source),
+            _ => None,
+        }
     }
 
     fn snapshot_messages(
@@ -13516,6 +13523,39 @@ async fn delay(duration: Duration) {
             .find(|message| message.text == "history notice")
             .expect("history notice is projected");
         assert!(is_irc_notice(notice));
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn server_notices_and_wallops_route_with_typed_sources() {
+        let mut harness = ReplayHarness::joined(HISTORY_CAPS).await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
+        _ = harness.page_output("notice-server-ready").await;
+
+        harness
+            .wire
+            .server(":NickServ!service@services.test NOTICE $* :service broadcast")
+            .await;
+        harness
+            .wire
+            .server(":offline.test WALLOPS :network maintenance")
+            .await;
+        _ = harness
+            .timeline_output(&["service broadcast", "network maintenance"])
+            .await;
+
+        let state = lock(&harness.state);
+        let model = &state.network.as_ref().expect("active network").model;
+        let messages = snapshot_messages(model, BufferId(1));
+        assert_eq!(
+            messages
+                .iter()
+                .filter_map(irc_notice_source)
+                .collect::<Vec<_>>(),
+            [crate::NoticeSource::Service, crate::NoticeSource::Server]
+        );
+        drop(state);
         harness.drain.abort();
     }
 

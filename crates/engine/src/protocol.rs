@@ -553,10 +553,23 @@ pub enum MessageKind {
     Text,
     /// A CTCP ACTION displayed as `/me` prose.
     Action,
-    /// An IRC NOTICE displayed as a lightly distinguished chat line.
-    IrcNotice,
+    /// An IRC NOTICE displayed as a typed notice line.
+    IrcNotice(NoticeSource),
     /// A local row generated from current engine state.
     Notice(NoticeKind),
+}
+
+/// Identity class that determines an IRC notice's presentation.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum NoticeSource {
+    /// An ordinary IRC user.
+    User,
+    /// A service or operator delivering to a server-wide audience.
+    Service,
+    /// The IRC server itself.
+    Server,
 }
 
 /// Semantic presentation of a local timeline notice.

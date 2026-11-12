@@ -349,7 +349,7 @@ describe("WorkerEngineClient", () => {
       id: 10,
       author: "NickServ",
       text: "This nickname is registered",
-      kind: "irc_notice",
+      kind: { irc_notice: "service" },
       bot: false,
       authorship: "other",
       nick_color_index: 0,

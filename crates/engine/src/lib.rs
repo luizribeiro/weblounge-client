@@ -33,10 +33,10 @@ pub use protocol::{
     EngineToUi, Hello, HistoryDirection, HostedNetworkConfig, HostedOAuthConfig, LocalSendId,
     MemberGroup, MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship,
     MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
-    PushDeviceCredentials, PushFailure, PushRoute, PushState, PushUnsupportedReason,
-    ReactionActorProjection, ReactionProjection, RedactedSecret, SaslCredentials, ShellKind,
-    TypingProjection, UiToEngine,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
+    PushDeploymentConfig, PushDeviceCredentials, PushFailure, PushRoute, PushState,
+    PushUnsupportedReason, ReactionActorProjection, ReactionProjection, RedactedSecret,
+    SaslCredentials, ShellKind, TypingProjection, UiToEngine,
 };
 
 /// Reads service-worker push records while constructing the web engine.

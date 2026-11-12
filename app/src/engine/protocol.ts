@@ -10,6 +10,7 @@ import type { HistoryDirection } from "./generated/HistoryDirection";
 import type { MessageProjection } from "./generated/MessageProjection";
 import type { NetworkProjection } from "./generated/NetworkProjection";
 import type { NoticeKind } from "./generated/NoticeKind";
+import type { NoticeSource } from "./generated/NoticeSource";
 import type { PushState } from "./generated/PushState";
 import type { TypingProjection } from "./generated/TypingProjection";
 import type { UiToEngine } from "./generated/UiToEngine";
@@ -27,6 +28,7 @@ export type {
   MessageProjection,
   NetworkProjection,
   NoticeKind,
+  NoticeSource,
   PushState,
   TypingProjection,
   UiToEngine,

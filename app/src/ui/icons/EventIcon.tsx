@@ -1,9 +1,11 @@
 import type { SystemLineIcon } from "../../features/conversation/timeline/system-line-words";
 
+type EventIconName = SystemLineIcon | "notice" | "server";
+
 const shield =
   "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z";
 
-const paths: Readonly<Record<SystemLineIcon, string>> = {
+const paths: Readonly<Record<EventIconName, string>> = {
   ban: "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M4.9 4.9l14.2 14.2",
   chat: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   flag: "M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7",
@@ -15,18 +17,21 @@ const paths: Readonly<Record<SystemLineIcon, string>> = {
   loader: "M21 12a9 9 0 1 1-6.219-8.56",
   mode: "M20 7h-9M14 17H5M14 17a3 3 0 1 0 6 0a3 3 0 1 0-6 0M4 7a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
   nick: "M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16",
+  notice: "M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6",
   op: shield,
   part: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   people:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   quit: "M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04",
+  server:
+    "M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM6 6h.01M6 18h.01",
   warning:
     "M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01",
 };
 
 export function EventIcon(props: {
   readonly class?: string | undefined;
-  readonly icon: SystemLineIcon;
+  readonly icon: EventIconName;
   readonly label?: string | undefined;
 }) {
   return (
