@@ -35,55 +35,64 @@ export function SidebarRow(props: SidebarRowProps) {
       ? props.buffer.title.slice(1)
       : props.buffer.title;
   return (
-    <button
-      aria-label={rowLabel(props.buffer.title, badge()?.label)}
-      aria-current={props.active ? "page" : undefined}
+    <div
       class={`${styles.row} ${props.active ? styles.active : ""} ${
         props.muted === true ? styles.muted : ""
       } ${visibleUnread() > 0 ? styles.unread : ""}`}
-      data-buffer-id={props.buffer.id}
-      data-mentions={visibleMentions()}
-      data-muted={props.muted === true ? "true" : undefined}
-      data-unread={visibleUnread()}
-      onClick={props.onClick}
-      onFocus={props.onFocus}
-      ref={(element) => {
-        props.ref?.(element);
-        unregisterContextSurface();
-        unregisterContextSurface = contextMenuRegistry.register(element, {
-          id: `sidebar-buffer-${props.buffer.id}`,
-          kind: "chrome",
-          ...(props.onOpenMenu === undefined
-            ? {}
-            : { openMenu: props.onOpenMenu }),
-        });
-      }}
-      tabIndex={props.tabIndex}
-      type="button"
+      data-sidebar-row="true"
     >
-      <span aria-hidden="true" class={styles.prefix} data-sidebar-prefix="true">
-        {prefix()}
-      </span>
-      <Line
-        class={styles.title}
-        data-sidebar-name="true"
-        title={props.buffer.title}
+      <button
+        aria-label={rowLabel(props.buffer.title, badge()?.label)}
+        aria-current={props.active ? "page" : undefined}
+        class={styles.open}
+        data-buffer-id={props.buffer.id}
+        data-mentions={visibleMentions()}
+        data-muted={props.muted === true ? "true" : undefined}
+        data-unread={visibleUnread()}
+        onClick={props.onClick}
+        onFocus={props.onFocus}
+        ref={(element) => {
+          props.ref?.(element);
+          unregisterContextSurface();
+          unregisterContextSurface = contextMenuRegistry.register(element, {
+            id: `sidebar-buffer-${props.buffer.id}`,
+            kind: "chrome",
+            ...(props.onOpenMenu === undefined
+              ? {}
+              : { openMenu: props.onOpenMenu }),
+          });
+        }}
+        tabIndex={props.tabIndex}
+        type="button"
       >
-        {name()}
-      </Line>
-      {badge() !== undefined && (
-        <Line
-          aria-label={badge()?.label}
-          class={`${styles.badge} ${
-            badge()?.kind === "mention" ? styles.mention : ""
-          }`}
-          data-badge-kind={badge()?.kind}
-          role="status"
+        <span
+          aria-hidden="true"
+          class={styles.prefix}
+          data-sidebar-prefix="true"
         >
-          {badge()?.count}
+          {prefix()}
+        </span>
+        <Line
+          class={styles.title}
+          data-sidebar-name="true"
+          title={props.buffer.title}
+        >
+          {name()}
         </Line>
-      )}
-    </button>
+        {badge() !== undefined && (
+          <Line
+            aria-label={badge()?.label}
+            class={`${styles.badge} ${
+              badge()?.kind === "mention" ? styles.mention : ""
+            }`}
+            data-badge-kind={badge()?.kind}
+            role="status"
+          >
+            {badge()?.count}
+          </Line>
+        )}
+      </button>
+    </div>
   );
 }
 

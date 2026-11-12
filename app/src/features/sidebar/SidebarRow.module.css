@@ -2,21 +2,30 @@
   --wl-sidebar-prefix-width: 12px;
 
   align-items: center;
-  appearance: none;
   background: transparent;
-  border: 0;
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-panel-muted);
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  height: var(--wl-density-sidebar-row-height);
+  position: relative;
+  width: 100%;
+}
+
+.open {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  column-gap: var(--wl-space-list-gap);
+  display: grid;
   font: inherit;
   font-size: var(--wl-density-sidebar-font-size);
-  column-gap: var(--wl-space-list-gap);
   grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr) auto;
-  height: var(--wl-density-sidebar-row-height);
+  min-width: 0;
   padding: 0 calc(var(--wl-space-list-inset) / 2) 0 var(--wl-space-list-inset);
-  position: relative;
   text-align: start;
-  width: 100%;
 }
 
 .prefix {
@@ -29,7 +38,7 @@
   color: var(--wl-color-panel-fg);
 }
 
-.row:focus-visible {
+.open:focus-visible {
   outline-offset: -2px;
 }
 
