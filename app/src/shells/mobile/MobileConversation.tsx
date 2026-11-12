@@ -130,6 +130,8 @@ export function MobileConversation(props: MobileConversationProps) {
           <Line class={styles.subtitle}>
             {props.buffer.kind === "direct" ? (
               t("mobile.conversation.direct")
+            ) : props.buffer.kind === "server" ? (
+              t("mobile.conversation.server")
             ) : (
               <Selectable surfaceId="mobile-conversation-topic">
                 {props.buffer.topic || t("mobile.conversation.channel")}

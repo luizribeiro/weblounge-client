@@ -188,6 +188,7 @@ export const messages = {
   "mobile.chats": "Chats",
   "mobile.conversation.channel": "Channel",
   "mobile.conversation.direct": "Direct message",
+  "mobile.conversation.server": "Server",
   "mobile.empty": "No chats match this view.",
   "mobile.filter.all": "All",
   "mobile.filter.channels": "Channels",

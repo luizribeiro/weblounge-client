@@ -201,6 +201,15 @@ it("shows the members action only for channels", () => {
   expect(screen.queryByRole("button", { name: "Show members" })).toBeNull();
 });
 
+it("labels a server buffer as a server", () => {
+  render(() =>
+    conversation({ ...buffer, kind: "server", title: "Local Ergo" }, () => {}),
+  );
+
+  expect(screen.getByText("Server")).toBeVisible();
+  expect(screen.queryByText("Channel")).toBeNull();
+});
+
 it("keeps a kicked channel readable and disables its composer", () => {
   render(() =>
     conversation(
