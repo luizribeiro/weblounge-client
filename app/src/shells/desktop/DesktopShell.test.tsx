@@ -555,7 +555,7 @@ it("opens, dismisses, and navigates with the buffer switcher", async () => {
   launcher.focus();
   fireEvent.click(launcher);
   const firstInput = await screen.findByRole("combobox", { name: "Jump to" });
-  expect(firstInput).toHaveFocus();
+  await waitFor(() => expect(firstInput).toHaveFocus());
   fireEvent.keyDown(firstInput, { key: "Escape" });
   await waitFor(() => expect(launcher).toHaveFocus());
 

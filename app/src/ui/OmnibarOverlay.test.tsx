@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal, Show } from "solid-js";
 import { expect, it } from "vitest";
 import { OmnibarOverlay } from "./OmnibarOverlay";
@@ -33,10 +33,8 @@ it("exposes combobox semantics, traps focus, and restores the invoker", async ()
   const launcher = screen.getByRole("button", { name: "Open switcher" });
   launcher.focus();
   fireEvent.click(launcher);
-  await Promise.resolve();
-
   const input = screen.getByRole("combobox", { name: "Jump to" });
-  expect(input).toHaveFocus();
+  await waitFor(() => expect(input).toHaveFocus());
   expect(input).toHaveAttribute("aria-controls", "buffer-results");
   expect(input).toHaveAttribute("aria-activedescendant", "buffer-option-1");
   fireEvent.keyDown(input, { key: "Tab" });

@@ -24,9 +24,16 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
       : undefined;
   let dialog: HTMLDivElement | undefined;
   let input: HTMLInputElement | undefined;
+  let focusFrame: number | undefined;
 
-  onMount(() => queueMicrotask(() => input?.focus({ preventScroll: true })));
+  onMount(() => {
+    focusFrame = requestAnimationFrame(() => {
+      focusFrame = undefined;
+      input?.focus({ preventScroll: true });
+    });
+  });
   onCleanup(() => {
+    if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
     if (props.shouldRestoreFocus?.() === false) return;
     queueMicrotask(() => {
       if (invoker?.isConnected === true) invoker.focus({ preventScroll: true });
