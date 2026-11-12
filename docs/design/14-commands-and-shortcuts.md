@@ -146,6 +146,7 @@ and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-disco
 | Action ID — action | macOS | Linux / Windows | Web | Source |
 |---|---|---|---|---|
 | `switcher.open` — Jump to / browse channels and DMs | `⌘K` | `Ctrl+K` | same | both |
+| `palette.open` — run an available action | `⇧⌘P` | `Ctrl+Shift+P` | `Mod+Shift+.` | VS Code / ours web fallback |
 | `shortcuts.open` — shortcut help | `⌘/` | `Ctrl+/` | same | both |
 | `settings.open` — settings | `⌘,` | `Ctrl+,` | `Mod+Shift+,` | both / ours web fallback |
 | `navigation.escape` — close/cancel/focus composer | `Esc` | `Esc` | scope cascade above | both |
@@ -210,6 +211,17 @@ metadata includes it but do not receive global chords.
 Controls without a bespoke global chord remain reachable by Tab plus Enter/Space and appear in the
 switcher when their action exists. Frequent actions in the table also have a chord in every shell.
 
+## Command palette
+
+The command palette is a mode of the quick-switcher omnibar, retaining its dialog, combobox,
+listbox, focus trap and invoker restoration. Tauri opens it with `Mod+Shift+P`; web uses
+`Mod+Shift+.` because Firefox owns the native chord. Typing `>` as the first switcher character
+enters command mode in every shell, and deleting it returns to buffer mode. Rows come only from
+available registry entries whose surface metadata includes `palette`, show the resolved chord and
+optional group, and rank fuzzy matches with recently run actions. Running an action closes the
+overlay. Runtime engine commands with required arguments stay absent until the registry can prompt
+for their typed arguments.
+
 ## Pane mode
 
 `pane.mode` is `Mod+Alt+P` in every desktop shell and has `input: "always"`, so it works while a
@@ -250,6 +262,7 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 | Defaults | Known conflict and disposition |
 |---|---|
 | `Mod+K`, `Mod+/`, `Mod+F` | Browsers assign omnibox/quick-find/find behavior, but Slack and Discord web establish the first two; search intentionally replaces find. **Verify (manual/Playwright):** Chrome, Firefox, Safari delivery. |
+| native `Mod+Shift+P`; web `Mod+Shift+.` | Firefox owns the native chord for private browsing. No published major browser, desktop or screen-reader default was found for the punctuation fallback; it follows produced-character matching. **Verify (manual/Playwright):** non-US punctuation layouts and assistive technology. |
 | native `Mod+,`; web `Mod+Shift+,` | Browsers may own the conventional preferences chord. No major browser, macOS, Windows, GNOME/KDE, VoiceOver, or NVDA default was found for the shifted web chord. **Verify (manual/Playwright)** its punctuation matching on non-US layouts. |
 | native `Mod+[`/`]`, `Alt+Left/Right`; web `Mod+Alt+[`/`]` | Safari and other browsers own the native history chords, and Chrome macOS owns `⌥⌘Left/Right` for tabs. Brackets avoid both published sets. `Ctrl+Alt` may be AltGr, so the AltGraph guard wins. **Verify (manual/Playwright):** browser delivery and GNOME/KDE custom defaults. |
 | native `Mod+Shift+K`; web macOS `Mod+Shift+K`; web Linux/Windows `Ctrl+Alt+K` | Firefox owns `Ctrl+Shift+K` on Linux/Windows and `⌥⌘K` on macOS for Web Console. The platform split avoids both; `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** Safari and Linux AltGr layouts. |
@@ -371,6 +384,8 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
   for slash commands and `EngineRequest` for UI-to-engine protocol messages.
 - Merge UI-only TypeScript actions with runtime engine `CommandSpec`s in the action registry.
   Palette, shortcuts, help, and later context menus consume only that merged registry.
+- Reuse the quick-switcher omnibar for a VS Code-style palette; `>` switches modes in every shell,
+  while Tauri uses `Mod+Shift+P` and web uses `Mod+Shift+.`.
 - Use `event.key` by default and explicit `event.code` only for slot and macOS Option-printable
   bindings.
 - Render macOS modifiers in `⌃⌥⇧⌘` order.
