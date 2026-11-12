@@ -2442,6 +2442,22 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn joined_channel_for_buffer(
+        &self,
+        buffer_id: BufferId,
+    ) -> Option<papo::ChannelName> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        if buffer.projection.channel_status != Some(ChannelStatus::Joined)
+            || buffer.projection.available == Some(false)
+        {
+            return None;
+        }
+        match buffer.key.clone()? {
+            NameKey::Channel(channel) => Some(channel),
+            NameKey::Direct(_) => None,
+        }
+    }
+
     pub(crate) fn buffer_id_for_channel(&self, channel: &papo::ChannelName) -> Option<BufferId> {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }

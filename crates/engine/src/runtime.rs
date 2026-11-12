@@ -1840,22 +1840,21 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        if running.model.channel_for_buffer(buffer_id).is_some() {
+        if running.model.joined_channel_for_buffer(buffer_id).is_some() {
             drop(state);
             return self.part(command_id, buffer_id, None, None);
         }
         let Some(conversation) = running.model.snapshot_conversation_for_buffer(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
-        let mut output = running
-            .model
-            .prepare_latest_mark_read(buffer_id)
-            .map(|advance| record_read_advances(running, [advance]))
-            .unwrap_or_default();
-        let flush = start_read_flush(running);
+        let advance = running.model.prepare_latest_mark_read(buffer_id);
         let Some(event) = running.model.close_direct(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
+        let mut output = advance
+            .map(|advance| record_read_advances(running, [advance]))
+            .unwrap_or_default();
+        let flush = start_read_flush(running);
         running.chat_list.removed.push(SnapshotRemoval {
             conversation,
             removed_at_ms: time_millis(papo::time::now()),
@@ -8548,6 +8547,103 @@ async fn delay(duration: Duration) {
             SnapshotConversation::Direct {
                 key: "alice".into(),
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_close_does_not_mark_read_or_stall_later_flushes() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        restore_cached_room(&state);
+        let unavailable_id = {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.model.rebuild_name_keys(&client.state());
+            running.model.restore_pushed_messages(
+                vec![pushed_channel_message("gone-unread", "still unread")],
+                &client.state(),
+            );
+            _ = running.model.mark_vanished_restored_rows();
+            _ = running.model.take_timeline_changes(false);
+            running
+                .model
+                .buffer_id_for_channel(&known_channel(&client, "#room"))
+                .expect("unavailable channel remains projected")
+        };
+        let (direct_id, direct_message_id) = restore_pushed_direct(&state, &client);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+
+        let rejected = runtime.request(EngineRequestEnvelope {
+            id: "close-unavailable".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: unavailable_id,
+                input: "/close".into(),
+            },
+        });
+
+        assert!(
+            matches!(
+                rejected.as_slice(),
+                [EngineToUi::CommandRejected {
+                    id,
+                    message_key: EngineMessageKey::BufferNotSendable,
+                    values: None,
+                }] if id == "close-unavailable"
+            ),
+            "close output: {rejected:#?}"
+        );
+        {
+            let state = lock(&state);
+            let running = state.network.as_ref().expect("network remains active");
+            assert!(!running.flushing_reads);
+            assert!(running.pending_reads.is_empty());
+            assert_eq!(running.model.pending_read_time(unavailable_id), None);
+            assert!(matches!(
+                running.model.buffers_event(),
+                EngineToUi::BuffersChanged { buffers, .. }
+                    if buffers.iter().any(|buffer|
+                        buffer.id == unavailable_id && buffer.unread > 0
+                    )
+            ));
+        }
+        tokio::task::yield_now().await;
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
+
+        let marked = runtime.request(EngineRequestEnvelope {
+            id: "mark-direct".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id: direct_id,
+                through: direct_message_id,
+            },
+        });
+        assert!(marked.iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == direct_id && buffer.unread == 0
+        )));
+        let request = wire.next_sent().await;
+        assert!(
+            request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.788Z"),
+            "unexpected request: {request}"
         );
     }
 
