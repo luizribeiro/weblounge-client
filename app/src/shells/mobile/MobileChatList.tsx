@@ -48,6 +48,13 @@ interface MobileChatListProps extends NotificationPromptControls {
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
   readonly onMarkRead?: ((buffer: BufferProjection) => void) | undefined;
+  readonly onRequestActions?:
+    | ((
+        buffer: BufferProjection,
+        rect: DOMRect,
+        invoker: HTMLButtonElement,
+      ) => void)
+    | undefined;
   readonly onRequestClose?:
     | ((buffer: BufferProjection) => Promise<boolean>)
     | undefined;
@@ -275,6 +282,9 @@ export function MobileChatList(props: MobileChatListProps) {
                     }}
                     onMarkRead={() => props.onMarkRead?.(current())}
                     onPressStart={(event) => pressRow(event, current().id)}
+                    onRequestActions={(rect, invoker) =>
+                      props.onRequestActions?.(current(), rect, invoker)
+                    }
                     onRequestClose={() => props.onRequestClose?.(current())}
                     onReset={() =>
                       setRevealedRowId((id) =>

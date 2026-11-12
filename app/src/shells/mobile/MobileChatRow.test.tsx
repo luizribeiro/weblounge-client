@@ -1,12 +1,14 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type {
   BufferProjection,
   MessageProjection,
 } from "../../engine/protocol";
 import { MessageList } from "../../features/conversation/MessageList";
 import { MobileChatRow } from "./MobileChatRow";
+
+afterEach(() => vi.useRealTimers());
 
 const lastMessage: MessageProjection = {
   id: 8,
@@ -218,6 +220,7 @@ it("reveals row actions and runs Mark as read", () => {
   fireEvent.pointerUp(wrapper, pointer(230, 101, 150));
 
   expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+  expect(screen.getByRole("button", { name: "Read" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Read" }));
   expect(markRead).toHaveBeenCalledOnce();
   expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
@@ -240,6 +243,28 @@ it("full-swipes a direct conversation into the existing close callback", () => {
   fireEvent.pointerUp(wrapper, pointer(130, 100, 150));
 
   expect(close).toHaveBeenCalledOnce();
+});
+
+it("opens the action sheet after an unmoved long press", () => {
+  vi.useFakeTimers();
+  const actions = vi.fn();
+  const open = vi.fn();
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={buffer()}
+      onOpen={open}
+      onRequestActions={actions}
+      previews={true}
+    />
+  ));
+  const wrapper = mobileRowWrapper(container);
+
+  fireEvent.pointerDown(wrapper, pointer(200, 100, 0));
+  vi.advanceTimersByTime(500);
+  fireEvent.click(screen.getByRole("button", { name: /^#garden,/u }));
+
+  expect(actions).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
 });
 
 function mobileRowWrapper(container: HTMLElement): HTMLDivElement {

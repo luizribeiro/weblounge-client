@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { nickColor } from "../../features/conversation/nick-color";
 import { unreadBadge } from "../../features/unread/unread-badge";
@@ -30,17 +30,27 @@ interface MobileChatRowProps {
   readonly onRequestClose?:
     | (() => boolean | Promise<boolean> | void)
     | undefined;
+  readonly onRequestActions?:
+    | ((rect: DOMRect, invoker: HTMLButtonElement) => void)
+    | undefined;
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {
+  let wrapper: HTMLDivElement | undefined;
+  let rowButton: HTMLButtonElement | undefined;
   let pointerId: number | undefined;
   let swipe: MobileRowSwipeState = { phase: "idle", revealed: false };
+  let longPressTimer: number | undefined;
   let lastX = 0;
   let lastTime = 0;
   let suppressClick = false;
   const [offset, setOffset] = createSignal(0);
   const [dragging, setDragging] = createSignal(false);
   const [revealed, setRevealed] = createSignal(false);
+  const clearLongPress = () => {
+    if (longPressTimer !== undefined) window.clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+  };
   const settle = (endpoint: "reveal" | "reset") => {
     setDragging(false);
     setRevealed(endpoint === "reveal");
@@ -51,8 +61,16 @@ export function MobileChatRow(props: MobileChatRowProps) {
   };
   const cancelGesture = () => {
     if (pointerId === undefined) return;
+    clearLongPress();
     pointerId = undefined;
     settle(cancelledMobileRowSwipe(swipe));
+  };
+  const requestActions = () => {
+    if (rowButton === undefined) return;
+    props.onRequestActions?.(
+      wrapper?.getBoundingClientRect() ?? new DOMRect(),
+      rowButton,
+    );
   };
   createEffect(() => {
     if (dragging()) return;
@@ -60,6 +78,15 @@ export function MobileChatRow(props: MobileChatRowProps) {
     setRevealed(next);
     setOffset(next ? mobileRowActionWidth : 0);
   });
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") cancelGesture();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  onCleanup(() => {
+    clearLongPress();
+    document.removeEventListener("visibilitychange", onVisibility);
+  });
+
   const badge = () => unreadBadge(props.buffer);
   const message = () => props.buffer.last_message;
   const activityTime = () =>
@@ -89,12 +116,29 @@ export function MobileChatRow(props: MobileChatRowProps) {
           event.clientY,
           revealed(),
         );
+        clearLongPress();
+        if (!revealed()) {
+          // wait-ok: this is the product's fixed long-press recognition window.
+          longPressTimer = window.setTimeout(() => {
+            longPressTimer = undefined;
+            if (pointerId === undefined || swipe.phase !== "tracking") return;
+            suppressClick = true;
+            pointerId = undefined;
+            settle("reset");
+            requestActions();
+          }, 500);
+        }
       }}
       onPointerMove={(event) => {
         if (event.pointerId !== pointerId) return;
         const next = moveMobileRowSwipe(swipe, event.clientX, event.clientY);
         swipe = next;
+        if (next.phase === "cancelled") {
+          clearLongPress();
+          return;
+        }
         if (next.phase !== "dragging") return;
+        clearLongPress();
         event.preventDefault();
         event.currentTarget.setPointerCapture?.(event.pointerId);
         setDragging(true);
@@ -104,6 +148,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
       }}
       onPointerUp={(event) => {
         if (event.pointerId !== pointerId) return;
+        clearLongPress();
         pointerId = undefined;
         const elapsed = event.timeStamp - lastTime;
         const velocity = elapsed > 0 ? (event.clientX - lastX) / elapsed : 0;
@@ -126,6 +171,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
           settle(result);
         }
       }}
+      ref={wrapper}
       style={{ "--wl-mobile-row-offset": `${offset()}px` }}
     >
       <span
@@ -162,6 +208,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
         </button>
       </span>
       <button
+        aria-haspopup="dialog"
         aria-label={
           badge() === undefined
             ? props.buffer.title
@@ -180,6 +227,20 @@ export function MobileChatRow(props: MobileChatRowProps) {
           }
           props.onOpen(event);
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          requestActions();
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key !== "ContextMenu" &&
+            !(event.shiftKey && event.key === "F10")
+          )
+            return;
+          event.preventDefault();
+          requestActions();
+        }}
+        ref={rowButton}
         type="button"
       >
         <span
