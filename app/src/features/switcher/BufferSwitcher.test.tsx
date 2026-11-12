@@ -23,10 +23,13 @@ it("filters, moves the active option, and opens the selected buffer", async () =
   render(() => (
     <Show when={open()}>
       <BufferSwitcher
+        actions={[]}
         buffers={buffers}
         networks={networks}
         onDismiss={() => setOpen(false)}
         onOpen={opened}
+        onRunAction={() => false}
+        recentActionIds={[]}
         recentBufferIds={[1]}
       />
     </Show>
@@ -54,6 +57,40 @@ it("filters, moves the active option, and opens the selected buffer", async () =
   fireEvent.keyDown(input, { key: "Enter" });
   expect(opened).toHaveBeenCalledWith(2);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("switches to commands with a leading greater-than and back on deletion", () => {
+  const run = vi.fn(() => true);
+  render(() => (
+    <BufferSwitcher
+      actions={[
+        {
+          id: "members.toggle",
+          title: "Toggle member list",
+          group: "View",
+          chord: "Ctrl+.",
+        },
+      ]}
+      buffers={buffers}
+      networks={networks}
+      onDismiss={() => {}}
+      onOpen={() => {}}
+      onRunAction={run}
+      recentActionIds={[]}
+      recentBufferIds={[]}
+    />
+  ));
+  const input = screen.getByRole("combobox", { name: "Jump to" });
+
+  fireEvent.input(input, { target: { value: ">member" } });
+  expect(
+    screen.getByRole("combobox", { name: "Run a command" }),
+  ).toHaveAttribute("aria-controls", "omnibar-results");
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(run).toHaveBeenCalledWith("members.toggle");
+
+  fireEvent.input(input, { target: { value: "member" } });
+  expect(screen.getByRole("combobox", { name: "Jump to" })).toBeInTheDocument();
 });
 
 function buffer(

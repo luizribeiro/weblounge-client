@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import {
   type ActionContext,
+  type ActionId,
   ActionRegistry,
   type UiActionId,
 } from "../../actions/action-registry";
@@ -51,7 +52,7 @@ import {
   newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
-import { t } from "../../strings";
+import { t, translate } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
@@ -132,7 +133,12 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
   const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
-  const [switcherOpen, setSwitcherOpen] = createSignal(false);
+  const [omnibarMode, setOmnibarMode] = createSignal<
+    "buffers" | "commands" | null
+  >(null);
+  const [recentActionIds, setRecentActionIds] = createSignal<
+    readonly ActionId[]
+  >([]);
   const [recentBufferIds, setRecentBufferIds] = createSignal<readonly number[]>(
     [],
   );
@@ -208,10 +214,19 @@ export function DesktopShell(props: DesktopShellProps) {
     setDrawer(null);
     if (restoreFocus) focusComposer();
   };
-  const context = (): ActionContext => ({
-    bufferCount: props.buffers.length,
-    listActive: (sidebarShown() && sidebarInline()) || drawer() === "sidebar",
-  });
+  const context = (): ActionContext => {
+    const currentBufferKind = activeBuffer()?.kind;
+    return {
+      bufferCount: props.buffers.length,
+      connected: props.networks.some(
+        (network) =>
+          network.id === activeBuffer()?.network_id &&
+          network.state === "online",
+      ),
+      ...(currentBufferKind === undefined ? {} : { currentBufferKind }),
+      listActive: (sidebarShown() && sidebarInline()) || drawer() === "sidebar",
+    };
+  };
   const showBuffer = (bufferId: number | undefined) => {
     if (bufferId !== undefined) {
       setLayout((current) => showInFocusedPane(current, bufferId));
@@ -273,13 +288,45 @@ export function DesktopShell(props: DesktopShellProps) {
         if (drawer() === "sidebar") closeDrawer();
         else setDrawer("sidebar");
       },
-      "switcher.open": () => setSwitcherOpen(true),
+      "palette.open": () => setOmnibarMode("commands"),
+      "switcher.open": () => setOmnibarMode("buffers"),
     },
     platform.shortcutPlatform,
     props.commandSpecs ?? [],
+    (command) => {
+      const bufferId = activeBufferId();
+      if (bufferId !== undefined)
+        void props.onSend(bufferId, `/${command.name}`);
+    },
+    platform.environment().display === "tauri" ? "tauri" : "web",
   );
   createEffect(() => registry.updateCommands(props.commandSpecs ?? []));
   const run = (id: UiActionId) => registry.run(id, context());
+  const runPaletteAction = (id: ActionId): boolean => {
+    let result = registry.run(id, context(), "menu");
+    if (result === "confirmation_required") {
+      const command = registry
+        .palette(context())
+        .find((entry) => entry.id === id)?.command;
+      if (
+        command?.confirmation_prompt === undefined ||
+        !window.confirm(
+          translate(command.confirmation_prompt, {
+            text: activeBuffer()?.title,
+          }),
+        )
+      ) {
+        return false;
+      }
+      result = registry.run(id, context(), "menu", true);
+    }
+    if (result !== "ran") return false;
+    setRecentActionIds((current) => [
+      id,
+      ...current.filter((recentId) => recentId !== id),
+    ]);
+    return true;
+  };
   const openDirect = (nick: string) => {
     const buffer = activeBuffer();
     if (buffer === undefined || buffer.kind === "server") return;
@@ -559,17 +606,23 @@ export function DesktopShell(props: DesktopShellProps) {
           );
         }}
       </Show>
-      <Show when={switcherOpen()}>
-        <BufferSwitcher
-          buffers={props.buffers}
-          networks={props.networks}
-          onDismiss={() => setSwitcherOpen(false)}
-          onOpen={(bufferId) => {
-            setSwitcherOpen(false);
-            showBuffer(bufferId);
-          }}
-          recentBufferIds={recentBufferIds()}
-        />
+      <Show when={omnibarMode()} keyed>
+        {(initialMode) => (
+          <BufferSwitcher
+            actions={registry.palette(context())}
+            buffers={props.buffers}
+            initialMode={initialMode}
+            networks={props.networks}
+            onDismiss={() => setOmnibarMode(null)}
+            onOpen={(bufferId) => {
+              setOmnibarMode(null);
+              showBuffer(bufferId);
+            }}
+            onRunAction={runPaletteAction}
+            recentActionIds={recentActionIds()}
+            recentBufferIds={recentBufferIds()}
+          />
+        )}
       </Show>
       {drawer() === "sidebar" && !sidebarInline() && (
         <OverlayDrawer

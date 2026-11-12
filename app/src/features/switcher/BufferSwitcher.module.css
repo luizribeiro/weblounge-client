@@ -47,6 +47,18 @@
   max-width: 160px;
 }
 
+.chord {
+  color: var(--wl-color-muted);
+  font-family: var(--wl-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.option:hover .chord,
+.option[aria-selected="true"] .chord {
+  color: currentColor;
+}
+
 .badge {
   align-items: center;
   background: var(--wl-color-accent);
