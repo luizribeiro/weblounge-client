@@ -195,3 +195,31 @@
   margin: 0;
   padding: 5px 14px;
 }
+
+.undoToast {
+  align-items: center;
+  background: var(--wl-color-fg);
+  border-radius: 8px;
+  bottom: calc(14px + var(--wl-safe-bottom));
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-surface);
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  justify-content: space-between;
+  left: calc(10px + var(--wl-safe-left));
+  padding: 11px 14px;
+  position: absolute;
+  right: calc(10px + var(--wl-safe-right));
+  z-index: 35;
+}
+
+.undoToast button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-selection);
+  font: inherit;
+  font-weight: 650;
+  padding: 0;
+}

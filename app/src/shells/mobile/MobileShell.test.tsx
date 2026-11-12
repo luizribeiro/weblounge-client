@@ -205,6 +205,41 @@ it("returns to chats and drops the route when the active buffer is removed", () 
   expect(window.location.pathname).toBe("/");
 });
 
+it("closes a direct from its phone action sheet and offers Undo", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: true }) as MediaQueryList),
+  );
+  const send = vi.fn(async () => true);
+  const openDirect = vi.fn();
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenDirect={openDirect}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={send}
+    />
+  ));
+
+  fireEvent.contextMenu(screen.getByRole("button", { name: "mel" }));
+  const sheet = screen.getByRole("dialog", { name: "Actions for mel" });
+  fireEvent.click(screen.getByRole("button", { name: "Close mel" }));
+
+  await waitFor(() => expect(send).toHaveBeenCalledWith(2, "/close"));
+  expect(sheet).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Closed chat with mel");
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(openDirect).toHaveBeenCalledWith(1, "mel");
+});
+
 it("opens a deep link when its buffer resolves after mount", () => {
   vi.stubGlobal(
     "matchMedia",

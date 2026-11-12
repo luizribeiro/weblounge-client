@@ -84,6 +84,9 @@ interface MobileScreenProps extends MobileShellData {
         invoker: HTMLButtonElement,
       ) => void)
     | undefined;
+  readonly onRequestClose?:
+    | ((buffer: BufferProjection) => Promise<boolean>)
+    | undefined;
   readonly onOpenDetails?: ((bufferId: number) => void) | undefined;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
@@ -148,6 +151,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onOpen={props.onOpen}
           onQuery={props.onQuery}
           onRequestActions={props.onRequestChatActions}
+          onRequestClose={props.onRequestClose}
           onRetryNetwork={props.onRetryNetwork}
           onTurnOnNotifications={props.onTurnOnNotifications}
           showConnectionError={!props.retained}
