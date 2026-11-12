@@ -74,7 +74,7 @@ export function newestCommittedMessageId(
   for (const message of messages) {
     if (
       (message.delivery !== "received" && message.delivery !== "confirmed") ||
-      typeof message.kind === "object" ||
+      !participatesInReadDwell(message.kind) ||
       message.server_time_ms === null
     ) {
       continue;
@@ -83,6 +83,17 @@ export function newestCommittedMessageId(
       newest = message;
   }
   return newest?.id;
+}
+
+function participatesInReadDwell(kind: MessageProjection["kind"]): boolean {
+  if (kind === "text" || kind === "action") return true;
+  if ("irc_notice" in kind) return true;
+  if ("notice" in kind) return false;
+  return assertNever(kind);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled message kind: ${String(value)}`);
 }
 
 export function newestCommittedTimelineMessageId(

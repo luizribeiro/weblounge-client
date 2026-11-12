@@ -62,6 +62,26 @@ it("marks the newest server time when catch-up appends behind live traffic", () 
   expect(newestCommittedTimelineMessageId([item])).toBe(9);
 });
 
+it("uses a committed IRC notice as the read-dwell candidate", () => {
+  const notice: MessageProjection = {
+    id: 12,
+    author: "NickServ",
+    text: "You are now identified",
+    kind: { irc_notice: "service" },
+    bot: null,
+    authorship: "other",
+    nick_color_index: 0,
+    highlighted: false,
+    delivery: "received",
+    local_send_id: null,
+    server_ids: ["notice-12"],
+    server_time_ms: 2_000,
+    received_at_ms: 2_100,
+  };
+
+  expect(newestCommittedMessageId([notice])).toBe(12);
+});
+
 it("keeps the dwell armed across equal read-state snapshots", () => {
   const [snapshot, setSnapshot] = createSignal({
     bufferId: 2,

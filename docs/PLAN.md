@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: restored typed IRC notices as committed read-dwell candidates, so viewing a
+  push-restored notice advances its read marker and closes the covered notification while local
+  UI notices remain excluded.
 - 2026-11-11: aligned the cold pushed-notice journey with the signed notice row, asserting its
   icon, weighted sender and upright text while retaining its pre-IRC display and history
   deduplication coverage.
