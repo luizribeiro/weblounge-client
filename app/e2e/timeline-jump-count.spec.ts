@@ -49,10 +49,15 @@ test("counts only new peer suffix rows across history, own send, and catch-up", 
       else bot.privmsg(channel, text);
     }
     await Promise.all(finalEchoes);
+    const seedFence = `jump seed fence ${suffix}`;
+    await firstBot.privmsgConfirmed(channel, seedFence);
     await useDedicatedWorker(page);
     await page.goto(accountUrl(baseURL, account, channel));
     await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const heading = page.getByRole("heading", { name: channel });
+    await expect(heading).toBeVisible();
+    await expect(messageRow(page, seedFence)).toBeVisible();
+    await expect(heading).not.toHaveAttribute("aria-busy", "true");
     const list = page.locator("[data-message-list]");
     await expect
       .poll(async () => {
@@ -63,9 +68,7 @@ test("counts only new peer suffix rows across history, own send, and catch-up", 
     await expect(jumpButton(page)).toHaveCount(0);
 
     await list.press("End");
-    await expect(
-      messageRow(page, seeded.at(-1) ?? "missing newest"),
-    ).toBeVisible();
+    await expect(messageRow(page, seedFence)).toBeVisible();
     await scrollAwayFromLiveEdge(page, list, { distance: 100 });
     const own = `jump own ${suffix}`;
     const composer = page.getByRole("textbox", { name: "Message" });

@@ -78,7 +78,9 @@ export async function scrollToTranscriptTop(list: Locator): Promise<void> {
   });
   await list.evaluate((element) => {
     const maximum = element.scrollHeight - element.clientHeight;
-    element.scrollTop = Math.min(maximum, Math.max(element.scrollTop, 8));
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll"));
+    element.scrollTop = maximum;
     element.dispatchEvent(new Event("scroll"));
     element.scrollTop = 0;
     element.dispatchEvent(new Event("scroll"));
