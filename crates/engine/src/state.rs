@@ -3028,6 +3028,18 @@ impl NetworkModel {
             .collect()
     }
 
+    pub(crate) fn prepare_latest_mark_read(&self, buffer_id: BufferId) -> Option<ReadAdvance> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        let through = buffer
+            .timeline
+            .iter()
+            .rev()
+            .filter_map(chat_projection)
+            .find(|message| is_committed(message))?
+            .id;
+        read_advance(buffer_id, buffer, through, false)
+    }
+
     pub(crate) fn advance_read(
         &mut self,
         buffer_id: BufferId,

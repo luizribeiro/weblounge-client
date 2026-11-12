@@ -1844,13 +1844,35 @@ impl Runtime {
             drop(state);
             return self.part(command_id, buffer_id, None, None);
         }
+        let Some(conversation) = running.model.snapshot_conversation_for_buffer(buffer_id) else {
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
+        };
+        let mut output = running
+            .model
+            .prepare_latest_mark_read(buffer_id)
+            .map(|advance| record_read_advances(running, [advance]))
+            .unwrap_or_default();
+        let flush = start_read_flush(running);
         let Some(event) = running.model.close_direct(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
-        finish_timeline_turn(
-            state,
-            vec![event, EngineToUi::CommandResult { id: command_id }],
-        )
+        running.chat_list.removed.push(SnapshotRemoval {
+            conversation,
+            removed_at_ms: time_millis(papo::time::now()),
+        });
+        let instance = running.instance;
+        output.extend([event, EngineToUi::CommandResult { id: command_id }]);
+        let output = finish_timeline_turn(state, output);
+        update_chat_list(&self.state, &self.outbound, instance);
+        if let Some((client, instance)) = flush {
+            spawn_read_flush(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                client,
+                instance,
+            );
+        }
+        output
     }
 
     fn cycle(
@@ -5555,6 +5577,30 @@ mod tests {
             .collect()
     }
 
+    fn cached_direct_snapshot() -> ChatListSnapshot {
+        ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "alice".into(),
+                last_activity_ms: Some(100),
+                preview: Some("alice: cached".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("cached".into()),
+                    server_time_ms: 100,
+                }),
+                read_at_ms: None,
+                raw_read_at_ms: None,
+                pending_read_at_ms: None,
+                stubs: snapshot_stubs(1, 1, 100),
+                gap_until: None,
+                peer_pin: None,
+            }],
+        )
+    }
+
     fn pushed_channel_message(msgid: &str, text: &str) -> PushedMessage {
         serde_json::from_value(serde_json::json!({
             "schema": 1,
@@ -8402,6 +8448,107 @@ async fn delay(duration: Duration) {
     #[tokio::test]
     async fn direct_confirmation_after_close_stays_confirmed() {
         assert_direct_confirmation_survives_close(true).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn close_direct_marks_read_and_persists_until_new_peer_activity() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags", "server-time"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let cached = cached_direct_snapshot();
+        restore_and_store_snapshot(&state, &cached).await;
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.chat_list.fingerprint = "network".into();
+            running
+                .model
+                .set_connection(NetworkConnectionState::Online, None);
+        }
+        wire.server(
+            "@time=2026-11-10T12:00:00.000Z;msgid=live :alice!a@host PRIVMSG weblounge :close me",
+        )
+        .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let buffer_id = lock(&state)
+            .network
+            .as_ref()
+            .and_then(|running| {
+                running
+                    .model
+                    .buffer_id_for_conversation(&papo::Conversation::Private(
+                        client.state().name_rules()?.nick("alice"),
+                    ))
+            })
+            .expect("alice buffer");
+        _ = collect(&mut receiver);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "close-alice".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/close".into(),
+            },
+        });
+        assert!(
+            output.iter().any(|event| matches!(
+                event,
+                EngineToUi::BufferUpdated { buffer }
+                    if buffer.id == buffer_id && buffer.unread == 0 && buffer.mentions == 0
+            )),
+            "close output: {output:#?}"
+        );
+        tokio::time::advance(Duration::from_millis(750)).await;
+        tokio::task::yield_now().await;
+        let storage = lock(&state).storage.clone();
+        let closed = read(storage.as_ref())
+            .await
+            .expect("read snapshot")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+            .expect("closed snapshot");
+        assert!(closed.rows.is_empty());
+        assert!(closed.direct_closed_since("alice", 100));
+
+        wire.server(
+            "@time=2099-11-10T12:00:00.000Z;msgid=reopen :alice!a@host PRIVMSG weblounge :new peer message",
+        )
+        .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferAdded { buffer }
+                if buffer.id == buffer_id && buffer.unread > 0
+        )));
+        tokio::time::advance(Duration::from_millis(750)).await;
+        tokio::task::yield_now().await;
+        let reopened = read(storage.as_ref())
+            .await
+            .expect("read snapshot")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+            .expect("reopened snapshot");
+        assert_eq!(
+            reopened.rows[0].conversation,
+            SnapshotConversation::Direct {
+                key: "alice".into(),
+            }
+        );
     }
 
     async fn assert_direct_confirmation_survives_close(close_first: bool) {
