@@ -79,7 +79,7 @@ export function releaseMobileRowSwipe(
 
 export function cancelledMobileRowSwipe(
   state: MobileRowSwipeState,
-): MobileRowSwipeRelease {
+): "reveal" | "reset" {
   if (
     (state.phase === "tracking" || state.phase === "dragging") &&
     state.startOffset > 0

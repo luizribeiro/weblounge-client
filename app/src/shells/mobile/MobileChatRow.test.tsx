@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type {
   BufferProjection,
@@ -195,24 +196,78 @@ it("keeps a long message's full text unique to the conversation", () => {
 
 it("reveals row actions and runs Mark as read", () => {
   const markRead = vi.fn();
-  const { container } = render(() => (
-    <MobileChatRow
-      buffer={buffer()}
-      onMarkRead={markRead}
-      onOpen={vi.fn()}
-      previews={true}
-      revealed={true}
-    />
-  ));
+  const Harness = () => {
+    const [revealed, setRevealed] = createSignal(false);
+    return (
+      <MobileChatRow
+        buffer={buffer()}
+        onMarkRead={markRead}
+        onOpen={vi.fn()}
+        onReset={() => setRevealed(false)}
+        onReveal={() => setRevealed(true)}
+        previews={true}
+        revealed={revealed()}
+      />
+    );
+  };
+  const { container } = render(Harness);
+  const wrapper = mobileRowWrapper(container);
 
-  expect(container.querySelector("[data-mobile-row-wrapper]")).toHaveAttribute(
-    "data-swipe-state",
-    "revealed",
-  );
+  fireEvent.pointerDown(wrapper, pointer(300, 100, 0));
+  fireEvent.pointerMove(wrapper, pointer(230, 101, 100));
+  fireEvent.pointerUp(wrapper, pointer(230, 101, 150));
+
+  expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
   fireEvent.click(screen.getByRole("button", { name: "Read" }));
   expect(markRead).toHaveBeenCalledOnce();
-  expect(container.querySelector("[data-mobile-row-wrapper]")).toHaveAttribute(
-    "data-swipe-state",
-    "closed",
-  );
+  expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
 });
+
+it("full-swipes a direct conversation into the existing close callback", () => {
+  const close = vi.fn();
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={buffer({ kind: "direct", title: "mel" })}
+      onOpen={vi.fn()}
+      onRequestClose={close}
+      previews={true}
+    />
+  ));
+  const wrapper = mobileRowWrapper(container);
+
+  fireEvent.pointerDown(wrapper, pointer(390, 100, 0));
+  fireEvent.pointerMove(wrapper, pointer(130, 100, 100));
+  fireEvent.pointerUp(wrapper, pointer(130, 100, 150));
+
+  expect(close).toHaveBeenCalledOnce();
+});
+
+function mobileRowWrapper(container: HTMLElement): HTMLDivElement {
+  const wrapper = container.querySelector<HTMLDivElement>(
+    "[data-mobile-row-wrapper]",
+  );
+  if (wrapper === null) throw new Error("mobile row wrapper missing");
+  vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue({
+    bottom: 164,
+    height: 64,
+    left: 0,
+    right: 400,
+    top: 100,
+    width: 400,
+    x: 0,
+    y: 100,
+    toJSON: () => ({}),
+  });
+  return wrapper;
+}
+
+function pointer(clientX: number, clientY: number, timeStamp: number) {
+  return {
+    button: 0,
+    clientX,
+    clientY,
+    isPrimary: true,
+    pointerId: 1,
+    timeStamp,
+  };
+}

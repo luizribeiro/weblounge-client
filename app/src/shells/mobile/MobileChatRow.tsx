@@ -6,6 +6,14 @@ import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
+import {
+  beginMobileRowSwipe,
+  cancelledMobileRowSwipe,
+  type MobileRowSwipeState,
+  mobileRowActionWidth,
+  moveMobileRowSwipe,
+  releaseMobileRowSwipe,
+} from "./mobile-row-swipe";
 
 interface MobileChatRowProps {
   readonly buffer: BufferProjection;
@@ -25,18 +33,32 @@ interface MobileChatRowProps {
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {
+  let pointerId: number | undefined;
+  let swipe: MobileRowSwipeState = { phase: "idle", revealed: false };
+  let lastX = 0;
+  let lastTime = 0;
+  let suppressClick = false;
   const [offset, setOffset] = createSignal(0);
+  const [dragging, setDragging] = createSignal(false);
   const [revealed, setRevealed] = createSignal(false);
   const settle = (endpoint: "reveal" | "reset") => {
+    setDragging(false);
     setRevealed(endpoint === "reveal");
-    setOffset(endpoint === "reveal" ? 148 : 0);
+    setOffset(endpoint === "reveal" ? mobileRowActionWidth : 0);
+    swipe = { phase: "idle", revealed: endpoint === "reveal" };
     if (endpoint === "reveal") props.onReveal?.();
     else props.onReset?.();
   };
+  const cancelGesture = () => {
+    if (pointerId === undefined) return;
+    pointerId = undefined;
+    settle(cancelledMobileRowSwipe(swipe));
+  };
   createEffect(() => {
+    if (dragging()) return;
     const next = props.revealed === true;
     setRevealed(next);
-    setOffset(next ? 148 : 0);
+    setOffset(next ? mobileRowActionWidth : 0);
   });
   const badge = () => unreadBadge(props.buffer);
   const message = () => props.buffer.last_message;
@@ -49,8 +71,61 @@ export function MobileChatRow(props: MobileChatRowProps) {
     <div
       class={styles.wrapper}
       data-mobile-row-wrapper={props.buffer.id}
-      data-swipe-state={revealed() ? "revealed" : "closed"}
-      onPointerDown={props.onPressStart}
+      data-swipe-state={
+        dragging() ? "dragging" : revealed() ? "revealed" : "closed"
+      }
+      onLostPointerCapture={cancelGesture}
+      onPointerCancel={cancelGesture}
+      onPointerDown={(event) => {
+        if (event.isPrimary === false || event.button !== 0) return;
+        props.onPressStart?.(event);
+        pointerId = event.pointerId;
+        lastX = event.clientX;
+        lastTime = event.timeStamp;
+        swipe = beginMobileRowSwipe(
+          props.buffer.kind === "channel" ? "channel" : "direct",
+          event.currentTarget.getBoundingClientRect().width,
+          event.clientX,
+          event.clientY,
+          revealed(),
+        );
+      }}
+      onPointerMove={(event) => {
+        if (event.pointerId !== pointerId) return;
+        const next = moveMobileRowSwipe(swipe, event.clientX, event.clientY);
+        swipe = next;
+        if (next.phase !== "dragging") return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        setDragging(true);
+        setOffset(next.offset);
+        lastX = event.clientX;
+        lastTime = event.timeStamp;
+      }}
+      onPointerUp={(event) => {
+        if (event.pointerId !== pointerId) return;
+        pointerId = undefined;
+        const elapsed = event.timeStamp - lastTime;
+        const velocity = elapsed > 0 ? (event.clientX - lastX) / elapsed : 0;
+        const result = releaseMobileRowSwipe(swipe, velocity);
+        if (result === "tap") {
+          if (revealed()) {
+            suppressClick = true;
+            settle("reset");
+          }
+          return;
+        }
+        suppressClick = true;
+        if (result === "close") {
+          setDragging(false);
+          setOffset(event.currentTarget.getBoundingClientRect().width);
+          void Promise.resolve(props.onRequestClose?.()).then((closed) => {
+            if (closed === false) settle("reset");
+          });
+        } else {
+          settle(result);
+        }
+      }}
       style={{ "--wl-mobile-row-offset": `${offset()}px` }}
     >
       <span
@@ -97,7 +172,14 @@ export function MobileChatRow(props: MobileChatRowProps) {
         }
         class={styles.row}
         data-buffer-id={props.buffer.id}
-        onClick={props.onOpen}
+        onClick={(event) => {
+          if (suppressClick) {
+            suppressClick = false;
+            event.preventDefault();
+            return;
+          }
+          props.onOpen(event);
+        }}
         type="button"
       >
         <span

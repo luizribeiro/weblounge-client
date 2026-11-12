@@ -47,6 +47,10 @@ interface MobileChatListProps extends NotificationPromptControls {
   readonly restoreVersion: Accessor<number>;
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
+  readonly onMarkRead?: ((buffer: BufferProjection) => void) | undefined;
+  readonly onRequestClose?:
+    | ((buffer: BufferProjection) => Promise<boolean>)
+    | undefined;
   readonly onQuery: (query: string) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly showConnectionError?: boolean | undefined;
@@ -64,6 +68,7 @@ export function MobileChatList(props: MobileChatListProps) {
   let restoreFrame: number | undefined;
   let releaseFrame: number | undefined;
   const [rowPressed, setRowPressed] = createSignal(false);
+  const [revealedRowId, setRevealedRowId] = createSignal<number>();
   const cancelScrollRestore = () => {
     if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame);
     if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
@@ -96,8 +101,9 @@ export function MobileChatList(props: MobileChatListProps) {
     rowPressed() ? visible : latestChatIds(),
   );
   const releasePressedRow = () => setRowPressed(false);
-  const pressRow = (event: PointerEvent) => {
+  const pressRow = (event: PointerEvent, bufferId: number) => {
     if (event.isPrimary !== false) setRowPressed(true);
+    if (revealedRowId() !== bufferId) setRevealedRowId(undefined);
   };
   window.addEventListener("pointerup", releasePressedRow);
   window.addEventListener("pointercancel", releasePressedRow);
@@ -267,7 +273,16 @@ export function MobileChatList(props: MobileChatListProps) {
                       userScrollSequence = false;
                       props.onOpen(current().id, scrollTopBeforeOpen);
                     }}
-                    onPressStart={pressRow}
+                    onMarkRead={() => props.onMarkRead?.(current())}
+                    onPressStart={(event) => pressRow(event, current().id)}
+                    onRequestClose={() => props.onRequestClose?.(current())}
+                    onReset={() =>
+                      setRevealedRowId((id) =>
+                        id === current().id ? undefined : id,
+                      )
+                    }
+                    onReveal={() => setRevealedRowId(current().id)}
+                    revealed={revealedRowId() === current().id}
                   />
                 )}
               </Show>
