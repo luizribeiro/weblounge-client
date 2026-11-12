@@ -11,6 +11,9 @@ The single place a fresh session reads to know where the project stands. Update 
 1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
 
 ### Later
+- Desktop wrapper (design 27) phase 2: page-posted notifications in the web app, then the wrapper's
+  notification shim, unthrottled background and Open at Login. Phase 3: seamless title bar, after
+  Luiz signs off its layout.
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
 - Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
@@ -21,6 +24,12 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: built phase 1 of the temporary macOS desktop wrapper (design 27): a Tauri 2 window
+  on beta.weblounge.org with the macOS menu, close-to-hide, persisted geometry, a URL-based
+  navigation policy (app hosts stay; other http/https/mailto open externally; other schemes are
+  dropped) and the brand icon, packaged by `nix build .#desktop`. Builds, unit tests and clippy
+  pass and the app launches; Luiz's manual checklist (sign-in, links, ⌘W/Dock, quit while hidden)
+  is still outstanding because this session can't see the screen.
 - 2026-11-12: shipped phone conversation closing through axis-locked row swipes, long-press action
   sheets and channel details. Direct messages close immediately with a six-second Undo; channel
   actions confirm before PART. iPhone WebKit and Android Chromium journeys cover gesture thresholds,
