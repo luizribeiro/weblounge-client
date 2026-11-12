@@ -7,7 +7,7 @@ mod tests {
     use crate::window::{APP_URL, MAIN_LABEL};
 
     #[test]
-    fn remote_page_may_only_set_the_badge() {
+    fn remote_page_may_only_use_the_badge_and_notifications() {
         let config: Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).expect("config is JSON");
         let capabilities = config["app"]["security"]["capabilities"]
@@ -22,7 +22,13 @@ mod tests {
         );
         assert_eq!(
             capability["permissions"],
-            json!(["core:window:allow-set-badge-count"])
+            json!([
+                "core:window:allow-set-badge-count",
+                "allow-notification-permission",
+                "allow-request-notification-permission",
+                "allow-post-notification",
+                "allow-close-notification"
+            ])
         );
     }
 }

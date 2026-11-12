@@ -11,8 +11,8 @@
       "csp": null,
       "capabilities": [
         {
-          "identifier": "remote-badge",
-          "description": "Lets the hosted app set the Dock badge and nothing else.",
+          "identifier": "remote-page",
+          "description": "Lets the hosted app set the Dock badge and use the system notification center, and nothing else.",
           "windows": [
             "main"
           ],
@@ -22,7 +22,11 @@
             ]
           },
           "permissions": [
-            "core:window:allow-set-badge-count"
+            "core:window:allow-set-badge-count",
+            "allow-notification-permission",
+            "allow-request-notification-permission",
+            "allow-post-notification",
+            "allow-close-notification"
           ]
         }
       ]

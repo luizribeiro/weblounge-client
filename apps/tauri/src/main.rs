@@ -15,6 +15,13 @@ fn main() -> tauri::Result<()> {
         .plugin(rust_side_opener())
         .plugin(window::state_plugin())
         .plugin(login_item::plugin())
+        .manage(notifications::service())
+        .invoke_handler(tauri::generate_handler![
+            notifications::notification_permission,
+            notifications::request_notification_permission,
+            notifications::post_notification,
+            notifications::close_notification,
+        ])
         .setup(setup)
         .on_menu_event(|app, event| menu::handle_event(app, &event))
         .build(tauri::generate_context!())?;

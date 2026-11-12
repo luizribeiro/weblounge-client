@@ -29,8 +29,10 @@ use crate::window::log_failure;
 const QUICK_ANSWER: Duration = Duration::from_secs(5);
 const PERMISSION_PROMPT_ANSWER: Duration = Duration::from_secs(300);
 
+#[allow(dead_code)]
 type ClickHandler = Box<dyn Fn(String) + Send + Sync>;
 
+#[allow(dead_code)]
 static CLICK_HANDLER: OnceLock<ClickHandler> = OnceLock::new();
 
 pub struct SystemCenter;
@@ -183,6 +185,7 @@ define_class!(
 );
 
 /// The center keeps only a weak reference to its delegate, so the delegate is leaked.
+#[allow(dead_code)]
 pub fn install_delegate(on_click: ClickHandler) {
     let Some(main_thread) = MainThreadMarker::new() else {
         eprintln!("the notification delegate must be installed on the main thread");
