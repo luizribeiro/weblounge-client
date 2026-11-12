@@ -135,6 +135,37 @@ the conversation sideways; the mobile drawer focuses no field, so it never raise
 
 All of them: opaque surfaces from theme tokens with the overlay shadow, transform/opacity only, nothing under reduced motion, no layout shift, no empty-state flicker while results update.
 
+### Phone conversation actions (Luiz, 2026-11-10)
+
+The Chats list owns one horizontal row gesture at a time. A left drag first passes an axis-lock
+threshold; vertical intent abandons the row gesture without cancelling list scrolling. Once
+horizontal intent wins, the row follows the pointer over two trailing 74px actions: Mark as read
+and Close for a direct conversation, or Mark as read and Leave for a channel. Releasing after a
+short deliberate drag reveals both actions. A direct-conversation drag beyond 60% of the row closes
+immediately; the same full drag on a channel only reveals its actions because leaving requires
+confirmation. Pointer cancellation, lost capture, visibility loss, filtering, or another row
+gesture returns the row to a stable closed or revealed endpoint. The gesture never claims a
+rightward leading-edge drag, preserving Safari's navigation gesture.
+
+A long press that remains inside the movement threshold opens a modal action sheet with the same
+available actions. Context-menu and keyboard-menu invocation open that sheet too, providing the
+assistive-technology and hardware-keyboard route without allowing the browser callout. The selected
+row is repeated above the sheet so its target remains unambiguous. The channel title opens a details
+sheet with Members and Leave channel; the existing members button remains a direct route to the
+member drawer.
+
+These surfaces dispatch existing paths only. Mark as read advances through the target buffer's
+newest committed message. Closing a direct conversation submits `/close`, returns an open phone
+chat to Chats, and shows the existing six-second Undo behavior. Leave submits `/part` only after the
+shared confirmation dialog. The engine remains the sole owner of read markers, notification
+cleanup, direct-conversation tombstones, PART, and peer-message reopening.
+
+The row gesture is a pure state machine covered at its axis, reveal, full-swipe, cancellation, and
+vertical-scroll boundaries. Built-app phone coverage runs in Chromium and WebKit for reveal,
+direct close and Undo, long press, confirmed channel Leave from both sheets, and retained vertical
+scrolling. Every visible surface keeps the native-feel idle, hidden-page, callout, and selection
+audits green.
+
 The mirrored desktop sidebar/member drawers and the mobile member drawer are one primitive with a
 typed edge (`"left" | "right"`), not separate transition or focus implementations. Platform
 capabilities, safe-area values, and reduced-motion state arrive through subsystem 09's root
