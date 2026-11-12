@@ -4,6 +4,7 @@ mod launch;
 mod login_item;
 mod menu;
 mod navigation;
+mod notifications;
 mod security;
 mod window;
 
