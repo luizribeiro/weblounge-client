@@ -109,7 +109,8 @@ part on a Linux host, which alone runs the local-Ergo Playwright journeys.
 2. **No background throttling.** The window uses `BackgroundThrottlingPolicy::Disabled` so the
    engine worker keeps its connection while hidden.
 3. **Open at Login.** A checked item in the app menu, off by default, backed by the autostart
-   plugin from Rust only (design 23 decision 5).
+   plugin from Rust only (design 23 decision 5). A login launch starts with the window hidden;
+   the Dock icon shows it, as after ⌘W.
 
 ### Web app, deployed to beta
 
