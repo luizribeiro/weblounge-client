@@ -132,7 +132,8 @@
   letter-spacing: var(--wl-font-section-tracking);
   margin-top: var(--wl-network-header-lead);
   min-height: calc(
-    var(--wl-density-sidebar-row-height) - var(--wl-network-header-lead)
+    var(--wl-density-sidebar-row-height) -
+    var(--wl-network-header-lead)
   );
   padding: 4px var(--wl-space-list-inset);
   text-align: start;
