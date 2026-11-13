@@ -23,6 +23,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: lined the transcript up on one gutter. On desktop, rows, dividers, the typing line
+  and the composer box share the prototype's 20px (`--wl-space-transcript-desktop-inline`). On
+  mobile, the typing line sits level with the messages (16px) and the composer pill keeps its
+  14px wrap.
 - 2026-11-13: the phone close e2e now waits for Back to settle before scrolling the chats list,
   so the post-pop scroll restore no longer resets its scroll or lands in the idle audit.
 - 2026-11-13: kept the sidebar's Undo button inside the close-conversation toast when a long
