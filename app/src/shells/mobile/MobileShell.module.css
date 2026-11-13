@@ -181,6 +181,11 @@
   padding: 0;
 }
 .conversation {
+  --wl-composer-typing-inset: calc(
+    var(--wl-space-transcript-inline) -
+    var(--wl-space-composer-inline)
+  );
+
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr);

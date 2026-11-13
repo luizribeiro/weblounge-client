@@ -150,14 +150,18 @@ test.describe("typing indicators", () => {
       );
       const senderNick = typingRow.locator(`[title="${first.nickname}"]`);
       await expect(senderNick).toBeVisible();
-      if (!mobile)
-        await expectSharedLeftEdge({
-          composer: page.getByRole("textbox", {
-            name: `Message ${typingChannel}`,
-          }),
-          time: typingRow.locator("time"),
-          typing: indicator.locator("[data-typing-text]"),
-        });
+      const typingText = indicator.locator("[data-typing-text]");
+      await expectSharedLeftEdge(
+        mobile
+          ? { nick: senderNick, typing: typingText }
+          : {
+              composer: page.getByRole("textbox", {
+                name: `Message ${typingChannel}`,
+              }),
+              time: typingRow.locator("time"),
+              typing: typingText,
+            },
+      );
       await expect(typingNick).toHaveCSS("font-weight", "650");
       const senderColor = await senderNick.evaluate(
         (element) => getComputedStyle(element).color,
