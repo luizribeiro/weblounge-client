@@ -9,7 +9,8 @@
     auto;
   line-height: 21px;
   overflow-wrap: anywhere;
-  padding: var(--wl-density-message-one-line-row-padding) 22px;
+  padding: var(--wl-density-message-one-line-row-padding)
+    var(--wl-space-transcript-desktop-inline);
 }
 .line[data-warning="true"] {
   color: var(--wl-color-fg);

@@ -5,7 +5,8 @@
   gap: 10px;
   grid-template-columns: var(--wl-message-time-column, 9ch) 112px minmax(0, 1fr);
   line-height: 20px;
-  padding: var(--wl-density-message-one-line-row-padding) 22px;
+  padding: var(--wl-density-message-one-line-row-padding)
+    var(--wl-space-transcript-desktop-inline);
   position: relative;
   z-index: 0;
 }
