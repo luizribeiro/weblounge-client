@@ -9,6 +9,7 @@ import type { ContextMenuRequest } from "../../ui/context-menu";
 import { Line } from "../../ui/Line";
 import styles from "./Sidebar.module.css";
 import { SidebarRow } from "./SidebarRow";
+import { conversations, serverBuffer } from "./sidebar-order";
 
 export type SidebarBuffer = BufferProjection & { readonly muted?: boolean };
 
@@ -33,11 +34,12 @@ interface NetworkSectionProps {
 }
 
 export function NetworkSection(props: NetworkSectionProps) {
-  const server = () => props.buffers.find((buffer) => buffer.kind === "server");
-  const conversations = () =>
-    props.buffers.filter((buffer) => buffer.kind !== "server");
+  const server = () => serverBuffer(props.buffers);
   const conversationsById = createMemo(
-    () => new Map(conversations().map((buffer) => [buffer.id, buffer])),
+    () =>
+      new Map(
+        conversations(props.buffers).map((buffer) => [buffer.id, buffer]),
+      ),
   );
   const conversationIds = createMemo(() => [...conversationsById().keys()]);
   return (

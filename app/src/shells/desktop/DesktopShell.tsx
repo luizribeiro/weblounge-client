@@ -46,6 +46,7 @@ import {
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
 import { focusAfterClose } from "../../features/sidebar/sidebar-close";
+import { sidebarRowIds } from "../../features/sidebar/sidebar-order";
 import {
   sidebarWidth,
   sidebarWidthToken,
@@ -266,7 +267,7 @@ export function DesktopShell(props: DesktopShellProps) {
   const closeDirect = async (
     buffer: BufferProjection,
     nextBufferId = focusAfterClose(
-      orderedBufferIds(props.networks, props.buffers),
+      sidebarRowIds(props.networks, props.buffers),
       buffer.id,
     ),
     retainFocus = false,
@@ -291,7 +292,7 @@ export function DesktopShell(props: DesktopShellProps) {
     props.onOpenDirect?.(closed.networkId, closed.title);
   };
   const moveBuffer = (offset: -1 | 1) => {
-    const ids = orderedBufferIds(props.networks, props.buffers);
+    const ids = sidebarRowIds(props.networks, props.buffers);
     const current = layout().root.bufferId;
     if (ids.length < 2 || current === undefined) return;
     const index = Math.max(0, ids.indexOf(current));
@@ -839,23 +840,6 @@ function isEditable(target: Element): boolean {
   );
 }
 
-function orderedBufferIds(
-  networks: readonly NetworkProjection[],
-  buffers: readonly BufferProjection[],
-): number[] {
-  const networkOrder = new Map(
-    networks.map((network, index) => [network.id, index]),
-  );
-  return [...buffers]
-    .sort(
-      (first, second) =>
-        (networkOrder.get(first.network_id) ?? Number.MAX_SAFE_INTEGER) -
-          (networkOrder.get(second.network_id) ?? Number.MAX_SAFE_INTEGER) ||
-        kindOrder(first) - kindOrder(second),
-    )
-    .map((buffer) => buffer.id);
-}
-
 function preferredInitialBuffer(
   buffers: readonly BufferProjection[],
 ): BufferProjection | undefined {
@@ -864,12 +848,6 @@ function preferredInitialBuffer(
     buffers.find((buffer) => buffer.kind === "direct") ??
     buffers[0]
   );
-}
-
-function kindOrder(buffer: BufferProjection): number {
-  if (buffer.kind === "server") return 0;
-  if (buffer.kind === "channel") return 1;
-  return 2;
 }
 
 function tooltip(registry: ActionRegistry, id: UiActionId): string {

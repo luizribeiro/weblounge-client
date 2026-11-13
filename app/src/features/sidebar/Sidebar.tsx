@@ -29,6 +29,7 @@ import {
   SwitcherLauncher,
 } from "./SwitcherLauncher";
 import { focusAfterClose } from "./sidebar-close";
+import { networkBuffers, sidebarRowIds } from "./sidebar-order";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -75,7 +76,7 @@ export function Sidebar(props: SidebarProps) {
     readonly title: string;
   }>();
   const elements = new Map<number, HTMLButtonElement>();
-  const orderedIds = () => orderedBuffers(props.networks, props.buffers);
+  const orderedIds = () => sidebarRowIds(props.networks, props.buffers);
   const connection = () => connectionPresentation(props.networks);
   const switcherAvailable = () =>
     props.registry.availability("switcher.open", props.commandContext).state ===
@@ -268,11 +269,7 @@ export function Sidebar(props: SidebarProps) {
           {(network) => (
             <NetworkSection
               activeBufferId={props.activeBufferId}
-              buffers={props.buffers.filter(
-                (buffer) =>
-                  buffer.network_id === network.id &&
-                  buffer.available !== false,
-              )}
+              buffers={networkBuffers(network, props.buffers)}
               network={network}
               onFocus={setRovingId}
               onCloseBuffer={(buffer) => void closeDirect(buffer)}
@@ -345,27 +342,6 @@ export function Sidebar(props: SidebarProps) {
 
 function isDestructive(entry: ActionEntry): boolean {
   return entry.command?.name === "close" || entry.command?.name === "part";
-}
-
-function orderedBuffers(
-  networks: readonly NetworkProjection[],
-  buffers: readonly SidebarBuffer[],
-): number[] {
-  return networks.flatMap((network) =>
-    buffers
-      .filter(
-        (buffer) =>
-          buffer.network_id === network.id && buffer.available !== false,
-      )
-      .sort((first, second) => kindOrder(first) - kindOrder(second))
-      .map((buffer) => buffer.id),
-  );
-}
-
-function kindOrder(buffer: SidebarBuffer): number {
-  if (buffer.kind === "server") return 0;
-  if (buffer.kind === "channel") return 1;
-  return 2;
 }
 
 function networkSummary(networks: readonly NetworkProjection[]): string {
