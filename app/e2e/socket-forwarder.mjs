@@ -2,6 +2,11 @@ import http from "node:http";
 import net from "node:net";
 import { injectedIrcFrame } from "./socket-forwarder-inject.mjs";
 import { WebSocketIrcTimeRewriter } from "./socket-forwarder-rewrite.mjs";
+import {
+  inScope,
+  ScopedFlag,
+  upgradeRequestScope,
+} from "./socket-forwarder-scope.mjs";
 
 const listenPort = Number(process.env.WEBLOUNGE_FORWARDER_PORT ?? "8066");
 const targetPort = Number(
@@ -13,11 +18,11 @@ const controlPort = Number(
 
 const connections = new Set();
 const incomingTimeRewrites = [];
-let available = true;
-let incomingPaused = false;
+const dropped = new ScopedFlag();
+const incomingPaused = new ScopedFlag();
 
 const server = net.createServer((client) => {
-  if (!available) {
+  if (dropped.has(null)) {
     client.resetAndDestroy();
     return;
   }
@@ -25,6 +30,8 @@ const server = net.createServer((client) => {
   const connection = {
     client,
     upstream: undefined,
+    scope: undefined,
+    requestHead: Buffer.alloc(0),
     silent: false,
     dropIncomingContaining: undefined,
     incomingHandshake: Buffer.alloc(0),
@@ -33,12 +40,14 @@ const server = net.createServer((client) => {
     recentIncoming: Buffer.alloc(0),
   };
   const upstream = net.connect(targetPort, "127.0.0.1");
-  if (incomingPaused) upstream.pause();
   connection.upstream = upstream;
   connections.add(connection);
 
   client.on("data", (data) => {
-    if (!connection.silent) connection.upstream?.write(data);
+    const forwarded =
+      connection.scope === undefined ? identifyScope(connection, data) : data;
+    if (forwarded !== undefined && !connection.silent)
+      connection.upstream?.write(forwarded);
   });
   upstream.on("data", (data) => {
     observeIncomingProtocol(connection, data);
@@ -68,14 +77,44 @@ const server = net.createServer((client) => {
   });
 });
 
+function identifyScope(connection, data) {
+  const head = Buffer.concat([connection.requestHead, data]);
+  const scope = upgradeRequestScope(head);
+  if (scope === undefined) {
+    connection.requestHead = head;
+    return undefined;
+  }
+  connection.scope = scope;
+  connection.requestHead = undefined;
+  if (dropped.has(scope)) {
+    closeConnection(connection);
+    return undefined;
+  }
+  if (incomingPaused.has(scope)) connection.upstream?.pause();
+  return head;
+}
+
+function scopedConnections(scope) {
+  return [...connections].filter((connection) =>
+    inScope(connection.scope, scope),
+  );
+}
+
 const control = http.createServer((request, response) => {
-  if (request.method === "GET" && request.url === "/health") {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const scope = url.searchParams.get("scope");
+  const selected = () => scopedConnections(scope);
+  if (request.method === "GET" && url.pathname === "/health") {
     response.end("ok");
     return;
   }
-  if (request.method === "POST" && request.url === "/drop") {
-    available = false;
-    for (const connection of connections) {
+  if (request.method !== "POST") {
+    response.writeHead(404).end();
+    return;
+  }
+  if (url.pathname === "/drop") {
+    dropped.set(scope, true);
+    for (const connection of selected()) {
       connection.silent = true;
       connection.upstream?.destroy();
       connection.upstream = undefined;
@@ -83,31 +122,32 @@ const control = http.createServer((request, response) => {
     response.end("dropped");
     return;
   }
-  if (request.method === "POST" && request.url === "/restore") {
-    available = true;
+  if (url.pathname === "/restore") {
+    dropped.set(scope, false);
     response.end("restored");
     return;
   }
-  if (request.method === "POST" && request.url === "/pause-incoming") {
-    incomingPaused = true;
-    for (const connection of connections) connection.upstream?.pause();
+  if (url.pathname === "/pause-incoming") {
+    incomingPaused.set(scope, true);
+    for (const connection of selected()) connection.upstream?.pause();
     response.end("paused");
     return;
   }
-  if (request.method === "POST" && request.url === "/resume-incoming") {
-    incomingPaused = false;
-    for (const connection of connections) connection.upstream?.resume();
+  if (url.pathname === "/resume-incoming") {
+    incomingPaused.set(scope, false);
+    for (const connection of selected()) connection.upstream?.resume();
     response.end("resumed");
     return;
   }
-  if (request.method === "POST" && request.url === "/inject") {
+  if (url.pathname === "/inject") {
     readRequestBody(request, response, (line) => {
       if (line.length === 0) {
         response.writeHead(400).end("missing IRC line");
         return;
       }
+      const targets = selected();
       try {
-        for (const connection of connections)
+        for (const connection of targets)
           connection.client.write(
             injectedIrcFrame(line, connection.injectedOpcode),
           );
@@ -115,26 +155,25 @@ const control = http.createServer((request, response) => {
         response.writeHead(413).end(String(error));
         return;
       }
-      response.end(`injected into ${connections.size} connection(s)`);
+      response.end(`injected into ${targets.length} connection(s)`);
     });
     return;
   }
-  const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  if (request.method === "POST" && url.pathname === "/drop-incoming") {
+  if (url.pathname === "/drop-incoming") {
     const contains = url.searchParams.get("contains");
     if (contains === null || contains.length === 0) {
       response.writeHead(400).end("missing contains");
       return;
     }
     const target = Buffer.from(contains);
-    for (const connection of connections) {
+    for (const connection of selected()) {
       connection.dropIncomingContaining = target;
       connection.recentIncoming = Buffer.alloc(0);
     }
     response.end("armed");
     return;
   }
-  if (request.method === "POST" && url.pathname === "/rewrite-time") {
+  if (url.pathname === "/rewrite-time") {
     const contains = url.searchParams.get("contains");
     const time = url.searchParams.get("time");
     if (
