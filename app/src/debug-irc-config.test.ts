@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import {
   buildDebugIrcConfig,
   consumeDebugConnection,
+  debugAutojoin,
 } from "./debug-irc-config";
 
 it.each([
@@ -40,7 +41,7 @@ it("keeps the runtime password out of build-time debug config", () => {
 it("consumes runtime connection fields and removes them from the URL", () => {
   const replace = vi.fn();
   const url = new URL(
-    "http://127.0.0.1:5173/?irc-password=runtime-secret&irc-account=tester&irc-nickname=tester-away&irc-autojoin=%23two&irc-autojoin=&keep=yes#channel",
+    "http://127.0.0.1:5173/?irc-password=runtime-secret&irc-account=tester&irc-nickname=tester-away&irc-channel=%23mine&irc-autojoin=%23two&irc-autojoin=&keep=yes#channel",
   );
 
   expect(consumeDebugConnection(url, replace)).toEqual({
@@ -48,6 +49,26 @@ it("consumes runtime connection fields and removes them from the URL", () => {
     additionalAutojoin: ["#two"],
     account: "tester",
     nickname: "tester-away",
+    channel: "#mine",
   });
   expect(replace).toHaveBeenCalledWith("/?keep=yes#channel");
+});
+
+it.each([
+  {
+    name: "joins the build-time channel first",
+    connection: { password: "p", additionalAutojoin: ["#two", "#home"] },
+    expected: ["#home", "#two"],
+  },
+  {
+    name: "replaces the build-time channel with the runtime one",
+    connection: {
+      password: "p",
+      additionalAutojoin: ["#mine", "#two"],
+      channel: "#mine",
+    },
+    expected: ["#mine", "#two"],
+  },
+])("$name", ({ connection, expected }) => {
+  expect(debugAutojoin(connection, "#home")).toEqual(expected);
 });

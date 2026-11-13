@@ -11,6 +11,7 @@ export interface DebugConnection {
   readonly additionalAutojoin: readonly string[];
   readonly account?: string;
   readonly nickname?: string;
+  readonly channel?: string;
 }
 
 type DebugEnvironment = Readonly<Record<string, string | undefined>>;
@@ -55,19 +56,36 @@ export function consumeDebugConnection(
     .filter((channel) => channel !== "");
   const account = nonempty(url.searchParams.get("irc-account"));
   const nickname = nonempty(url.searchParams.get("irc-nickname"));
-  url.searchParams.delete("irc-password");
-  url.searchParams.delete("irc-autojoin");
-  url.searchParams.delete("irc-account");
-  url.searchParams.delete("irc-nickname");
+  const channel = nonempty(url.searchParams.get("irc-channel"));
+  for (const name of [
+    "irc-password",
+    "irc-autojoin",
+    "irc-account",
+    "irc-nickname",
+    "irc-channel",
+  ])
+    url.searchParams.delete(name);
   replace(`${url.pathname}${url.search}${url.hash}`);
   return {
     password,
     additionalAutojoin,
     ...(account === undefined ? {} : { account }),
     ...(nickname === undefined ? {} : { nickname }),
+    ...(channel === undefined ? {} : { channel }),
   };
 }
 
 function nonempty(value: string | null): string | undefined {
   return value === null || value === "" ? undefined : value;
+}
+
+export function debugAutojoin(
+  connection: DebugConnection,
+  defaultChannel: string,
+): string[] {
+  const channel = connection.channel ?? defaultChannel;
+  return [
+    channel,
+    ...connection.additionalAutojoin.filter((joined) => joined !== channel),
+  ];
 }

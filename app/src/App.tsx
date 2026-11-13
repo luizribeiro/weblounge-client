@@ -8,6 +8,7 @@ import { commandHelp } from "./actions/command-help";
 import {
   consumeDebugConnection,
   type DebugConnection,
+  debugAutojoin,
 } from "./debug-irc-config";
 import {
   connectionFailureMessage,
@@ -1864,12 +1865,7 @@ async function connectDebugNetwork(
         account: connection.account ?? __DEBUG_IRC_CONFIG__.account,
         password: connection.password,
       },
-      autojoin: [
-        __DEBUG_IRC_CONFIG__.channel,
-        ...connection.additionalAutojoin.filter(
-          (channel) => channel !== __DEBUG_IRC_CONFIG__?.channel,
-        ),
-      ],
+      autojoin: debugAutojoin(connection, __DEBUG_IRC_CONFIG__.channel),
       allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
     },
   });
