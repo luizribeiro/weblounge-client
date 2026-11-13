@@ -8,6 +8,7 @@ import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 import { seedMixedConversation } from "./spacing-audit-fixture";
 import { armMessageTime } from "./time-rewrite";
+import { withTranscriptDiagnostics } from "./transcript-diagnostics";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -185,7 +186,9 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await useDedicatedWorker(page);
     await page.goto(startUrl);
     await page.getByRole("button", { name: channel }).click();
-    await expect(messageRow(page, seedFence)).toBeVisible();
+    await withTranscriptDiagnostics(page, testInfo, () =>
+      expect(messageRow(page, seedFence)).toBeVisible(),
+    );
     await expect(
       page.getByRole("heading", { name: channel }),
     ).not.toHaveAttribute("aria-busy", "true");
@@ -207,7 +210,9 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await expectContiguousRows(page, 2);
     await throttleCpu(page, testInfo.project.name);
     await list.press("End");
-    await expect(messageRow(page, seedFence)).toBeVisible();
+    await withTranscriptDiagnostics(page, testInfo, () =>
+      expect(messageRow(page, seedFence)).toBeVisible(),
+    );
     await expectContiguousRows(page, 2);
 
     const reactionTarget = await writer.privmsgConfirmed(
