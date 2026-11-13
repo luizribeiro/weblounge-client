@@ -111,7 +111,7 @@ async function startForwarder(t) {
         WEBLOUNGE_FORWARDER_TARGET_PORT: String(ports.target),
         WEBLOUNGE_FORWARDER_CONTROL_PORT: String(ports.control),
       },
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["ignore", "pipe", "inherit", "ipc"],
     },
   );
   const sockets = [];

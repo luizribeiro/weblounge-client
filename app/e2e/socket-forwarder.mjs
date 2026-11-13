@@ -232,6 +232,9 @@ function readRequestBody(request, response, receive) {
   });
 }
 
+// A test that spawns the forwarder over IPC must not leave it running if it dies.
+process.on("disconnect", () => process.exit());
+
 server.listen(listenPort, "127.0.0.1");
 control.listen(controlPort, "127.0.0.1", () => {
   console.log("WebLounge socket forwarder is ready");
