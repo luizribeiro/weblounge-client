@@ -110,10 +110,13 @@
 }
 
 .network {
+  display: flow-root;
   margin-block: 4px 8px;
 }
 
 .networkHeader {
+  --wl-network-header-lead: 6px;
+
   align-items: center;
   appearance: none;
   background: transparent;
@@ -127,8 +130,11 @@
   gap: var(--wl-space-list-gap);
   grid-template-columns: 16px minmax(0, 1fr);
   letter-spacing: var(--wl-font-section-tracking);
-  min-height: var(--wl-density-sidebar-row-height);
-  padding: 10px var(--wl-space-list-inset) 4px;
+  margin-top: var(--wl-network-header-lead);
+  min-height: calc(
+    var(--wl-density-sidebar-row-height) - var(--wl-network-header-lead)
+  );
+  padding: 4px var(--wl-space-list-inset);
   text-align: start;
   text-transform: var(--wl-font-section-transform);
   width: 100%;

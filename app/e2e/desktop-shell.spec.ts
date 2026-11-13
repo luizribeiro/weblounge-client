@@ -5,7 +5,10 @@ import { expectFullBleedHighlight } from "./highlight-geometry";
 import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
-import { expectPinnedToHeaderEnd } from "./sidebar-geometry";
+import {
+  expectBalancedNetworkHeaderAtEachDensity,
+  expectPinnedToHeaderEnd,
+} from "./sidebar-geometry";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
 
@@ -212,6 +215,7 @@ test.describe("desktop shell against local Ergo", () => {
     await expect(sidebar).toHaveCSS("width", "224px");
     await expect(network).toBeVisible();
     await expect(channel).toBeVisible();
+    await expectBalancedNetworkHeaderAtEachDensity(page, network);
     const launcher = sidebar.getByRole("button", { name: "Jump to" });
     await expect(launcher).toHaveAttribute("data-switcher-launcher", "icon");
     await expectPinnedToHeaderEnd(launcher);

@@ -23,6 +23,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: centred the sidebar network header's label in its highlight, moving the extra space
+  above it into a margin so the rows keep their place, a signed-off departure (design 09).
 - 2026-11-13: pinned the sidebar header's search button to the row's right edge, as in the
   prototype, by letting the brand text take the free space (design 09).
 - 2026-11-13: lined the transcript up on one gutter. On desktop, rows, dividers, the typing line
