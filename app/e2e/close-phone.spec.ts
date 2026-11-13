@@ -234,6 +234,7 @@ async function seedScrollableChannels(page: Page, suffix: string) {
     current = channel;
   }
   await page.getByRole("button", { name: "Back to chats" }).click();
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
 }
 
 async function captureThemes(

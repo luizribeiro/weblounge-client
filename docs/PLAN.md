@@ -23,6 +23,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: the phone close e2e now waits for Back to settle before scrolling the chats list,
+  so the post-pop scroll restore no longer resets its scroll or lands in the idle audit.
 - 2026-11-13: kept the sidebar's Undo button inside the close-conversation toast when a long
   nick wraps the message.
 - 2026-11-12: removed the desktop sidebar's own-nick footer, a signed-off departure from the
