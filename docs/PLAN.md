@@ -23,6 +23,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-12: removed the desktop sidebar's own-nick footer, a signed-off departure from the
+  prototype (design 09); the close-conversation Undo toast keeps its place at the sidebar's bottom.
 - 2026-11-12: narrowed the desktop sidebar and its narrow-desktop drawer to 224px through one
   `--wl-size-sidebar` token, a signed-off departure from the prototype's 256px (design 09).
 - 2026-11-12: packaged the desktop app as a drag-to-install DMG (`nix build .#desktop-dmg`), an

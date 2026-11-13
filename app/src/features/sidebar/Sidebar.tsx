@@ -24,7 +24,6 @@ import {
 } from "../notifications/NotificationPrompt";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
-import { SidebarFooter } from "./SidebarFooter";
 import {
   SWITCHER_LAUNCHER_VARIANT,
   SwitcherLauncher,
@@ -290,7 +289,6 @@ export function Sidebar(props: SidebarProps) {
         </For>
       </nav>
 
-      <SidebarFooter networks={props.networks} />
       <ContextMenu
         destructiveItems={menuItems(true)}
         items={menuItems(false)}

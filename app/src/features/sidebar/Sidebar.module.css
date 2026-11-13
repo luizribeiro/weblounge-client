@@ -156,20 +156,3 @@
 .rows {
   display: block;
 }
-
-.footer {
-  align-items: center;
-  border-top: 1px solid var(--wl-color-panel-border);
-  display: flex;
-  min-height: 54px;
-  padding: 8px 12px;
-}
-
-.userIdentity {
-  min-width: 0;
-}
-
-.nickname {
-  font-size: 12px;
-  font-weight: 700;
-}

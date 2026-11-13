@@ -62,11 +62,10 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
 
   expect(screen.getByText("1 network")).toBeInTheDocument();
   expect(
-    screen.getByText("weblounge", {
-      exact: true,
-      selector: "footer [data-line]",
-    }),
-  ).toBeInTheDocument();
+    screen
+      .getByRole("complementary", { name: "Channel list" })
+      .querySelector("footer"),
+  ).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Jump to" }));
   expect(switcher).toHaveBeenCalledOnce();
   expect(

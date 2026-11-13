@@ -66,6 +66,10 @@ test.describe("desktop conversation closing against local Ergo", () => {
         hasText: `Closed chat with ${peer.nickname}`,
       });
       await expect(toast).toBeVisible();
+      await expectToastAtSidebarBottom(
+        toast,
+        page.getByRole("complementary", { name: "Channel list" }),
+      );
       await captureThemes(page, toast, "undo-toast");
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(toast).toBeHidden();
@@ -133,6 +137,25 @@ test.describe("desktop conversation closing against local Ergo", () => {
     }
   });
 });
+
+async function expectToastAtSidebarBottom(
+  toast: Locator,
+  sidebar: Locator,
+): Promise<void> {
+  const [toastBox, sidebarBox] = await Promise.all([
+    toast.boundingBox(),
+    sidebar.boundingBox(),
+  ]);
+  if (toastBox === null || sidebarBox === null)
+    throw new Error("undo toast or sidebar is not rendered");
+  expect(toastBox.x - sidebarBox.x).toBeCloseTo(8, 0);
+  expect(
+    sidebarBox.x + sidebarBox.width - (toastBox.x + toastBox.width),
+  ).toBeCloseTo(9, 0);
+  expect(
+    sidebarBox.y + sidebarBox.height - (toastBox.y + toastBox.height),
+  ).toBeCloseTo(10, 0);
+}
 
 async function captureThemes(
   page: Page,

@@ -220,9 +220,7 @@ test.describe("desktop shell against local Ergo", () => {
     await expect(sidebar.getByRole("button", { name: "Settings" })).toHaveCount(
       0,
     );
-    await expect(
-      sidebar.locator("footer").getByText("weblounge", { exact: true }),
-    ).toBeVisible();
+    await expect(sidebar.locator("footer")).toHaveCount(0);
 
     await channel.click();
     await expect(
