@@ -190,7 +190,9 @@ condition. The planned `iosGestureEvents` entry for WebKit pinch suppression fol
 quirks cannot select a shell or provide ordinary layout policy.
 
 Width still controls presentation inside the desktop shell. `760px` is the single desktop-panel
-breakpoint: at or above it the sidebar can be inline; below it the sidebar is transient. Member
+breakpoint: at or above it the sidebar can be inline; below it the sidebar is transient. Inline
+and drawer sidebars share the `--wl-size-sidebar` token, 224px: Luiz signed off this departure
+from the brief's and prototype's 256px on 2026-11-12. Member
 lists independently use the existing pane calculation of a 232px list beside at least a 320px
 conversation. The minimum supported desktop viewport is `360px`.
 

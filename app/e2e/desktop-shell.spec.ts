@@ -26,15 +26,15 @@ test.describe("desktop shell against local Ergo", () => {
 
     for (const width of [1440, 1024]) {
       await page.setViewportSize({ width, height: 900 });
-      await expectDesktopGeometry(page, width, 256, 0);
+      await expectDesktopGeometry(page, width, 224, 0);
 
       await sidebarToggle.click();
       await expectDesktopGeometry(page, width, 0, 0);
       await page.keyboard.press("Control+Alt+S");
-      await expectDesktopGeometry(page, width, 256, 0);
+      await expectDesktopGeometry(page, width, 224, 0);
 
       await memberToggle.click();
-      await expectDesktopGeometry(page, width, 256, 232);
+      await expectDesktopGeometry(page, width, 224, 232);
       await sidebarToggle.click();
       await expectDesktopGeometry(page, width, 0, 232);
       await memberToggle.click();
@@ -208,7 +208,7 @@ test.describe("desktop shell against local Ergo", () => {
     const network = page.getByRole("button", { name: "Local Ergo, online" });
     const channel = page.getByRole("button", { name: /^#weblounge-test/ });
     await expect(sidebar).toBeVisible();
-    await expect(sidebar).toHaveCSS("width", "256px");
+    await expect(sidebar).toHaveCSS("width", "224px");
     await expect(network).toBeVisible();
     await expect(channel).toBeVisible();
     await expect(

@@ -80,6 +80,7 @@ test.describe("platform shell selection against local Ergo", () => {
       await page.getByRole("button", { name: "Toggle channel list" }).click();
       const channels = page.getByRole("dialog", { name: "Channels" });
       await expect(channels).toBeVisible();
+      await expect(channels).toHaveCSS("width", "224px");
       await channels.getByRole("button", { name: secondChannel }).click();
       await expect(channels).toHaveCount(0);
       const secondComposer = page.getByRole("textbox", {

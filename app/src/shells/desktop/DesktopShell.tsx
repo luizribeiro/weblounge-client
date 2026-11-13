@@ -46,6 +46,10 @@ import {
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
 import { focusAfterClose } from "../../features/sidebar/sidebar-close";
+import {
+  sidebarWidth,
+  sidebarWidthToken,
+} from "../../features/sidebar/sidebar-width";
 import { BufferSwitcher } from "../../features/switcher/BufferSwitcher";
 import {
   createReadDwell,
@@ -214,7 +218,7 @@ export function DesktopShell(props: DesktopShellProps) {
   });
   const sidebarInline = () => platform.environment().desktopPanels === "inline";
   const paneWidth = () =>
-    shellWidth() - (sidebarShown() && sidebarInline() ? 256 : 0);
+    shellWidth() - (sidebarShown() && sidebarInline() ? sidebarWidth : 0);
   const membersInline = () => paneWidth() >= 232 + 320;
   const membersAvailable = () => activeBuffer()?.kind === "channel";
   const membersVisible = () =>
@@ -708,7 +712,7 @@ export function DesktopShell(props: DesktopShellProps) {
           edge="left"
           label="Channels"
           onClose={closeDrawer}
-          width="256px"
+          width={sidebarWidthToken}
         >
           {sidebarView()}
         </OverlayDrawer>
