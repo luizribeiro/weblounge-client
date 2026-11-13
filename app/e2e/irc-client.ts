@@ -442,21 +442,13 @@ export class IrcClient {
   }
 
   async pushSubscriptionEndpoints(): Promise<readonly string[]> {
-    this.#discardLines((line) =>
-      /(?:push subscription\(s\)|Subscription [0-9]+:|Endpoint:|Last renewal:|Last push:)/u.test(
-        line,
-      ),
+    const count = await this.#nickServCount(
+      "PUSH LIST",
+      /(?:push subscription\(s\)|Subscription [0-9]+:|Endpoint:|Last renewal:|Last push:)/u,
+      / has ([0-9]+) push subscription\(s\)/u,
     );
-    this.privmsg("NickServ", "PUSH LIST");
-    const response = await this.waitFor("push subscription count", (line) =>
-      line.includes(" push subscription(s)"),
-    );
-    const count = / has ([0-9]+) push subscription\(s\)/u.exec(response)?.[1];
-    if (count === undefined) {
-      throw new Error(`Could not parse push subscription count: ${response}`);
-    }
     const endpoints: string[] = [];
-    for (let index = 0; index < Number.parseInt(count, 10); index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const endpoint = await this.waitFor(
         "push subscription endpoint",
         (line) => line.includes("Endpoint:"),
@@ -470,6 +462,32 @@ export class IrcClient {
       endpoints.push(value);
     }
     return endpoints;
+  }
+
+  async attachedClientCount(): Promise<number> {
+    // Ergo's SESSIONS reply really spells it "clients(s)".
+    return this.#nickServCount(
+      "SESSIONS",
+      /(?:attached clients\(s\)|Client [0-9]+|IP address:|Hostname:|Created at:|Last active:|IRCv3 CAPs:)/u,
+      / has ([0-9]+) attached clients\(s\)/u,
+    );
+  }
+
+  async #nickServCount(
+    command: string,
+    staleReply: RegExp,
+    countReply: RegExp,
+  ): Promise<number> {
+    this.#discardLines((line) => staleReply.test(line));
+    this.privmsg("NickServ", command);
+    const response = await this.waitFor(`NickServ ${command} count`, (line) =>
+      countReply.test(line),
+    );
+    const count = countReply.exec(response)?.[1];
+    if (count === undefined) {
+      throw new Error(`Could not parse NickServ ${command} count: ${response}`);
+    }
+    return Number.parseInt(count, 10);
   }
 
   close(): void {

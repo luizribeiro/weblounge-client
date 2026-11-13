@@ -923,7 +923,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotRows(current, titles))
         .toEqual(await visibleRows(current, titles));
 
-      await current.close();
+      await closeAppUntilDetached(current, markerReader);
       const closedDirect = await bot.privmsgReplyConfirmed(
         appAccount,
         `closed-app reply-tagged direct ${suffix}`,
@@ -1129,6 +1129,17 @@ async function openSnapshotInspector(page: Page): Promise<void> {
     route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
   );
   await page.goto("/__snapshot-inspector");
+}
+
+// Page close resolves before the engine worker's IRC socket detaches, so lines
+// sent in between still reach the closing app and its snapshot.
+async function closeAppUntilDetached(
+  page: Page,
+  sameAccount: IrcClient,
+): Promise<void> {
+  const attached = await sameAccount.attachedClientCount();
+  await page.close();
+  await expect.poll(() => sameAccount.attachedClientCount()).toBe(attached - 1);
 }
 
 function isMobile(page: Page): boolean {
