@@ -21,8 +21,9 @@ test.describe("mobile read state against local Ergo", () => {
     await composer.fill(`/join ${channel}`);
     await composer.press("Enter");
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await expectScreensSettled(page);
     await page.getByRole("button", { name: "Back to chats" }).click();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
+    await expectScreensSettled(page);
 
     const quiet = await IrcClient.connect(
       `quiet-${suffix}`,
@@ -63,8 +64,9 @@ test.describe("mobile read state against local Ergo", () => {
         .poll(() => markReadRequestCount(page))
         .toBeGreaterThan(firstMarkerCount);
       await expect(row).toHaveAttribute("aria-label", channel);
+      await expectScreensSettled(page);
       await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(page.locator("[data-motion]")).toHaveCount(0);
+      await expectScreensSettled(page);
       await expect(row).toHaveAccessibleName(channel);
 
       await quiet.privmsgConfirmed(channel, "yeah again");
@@ -76,9 +78,10 @@ test.describe("mobile read state against local Ergo", () => {
         .poll(() => markReadRequestCount(page))
         .toBeGreaterThan(secondMarkerCount);
       await expect(row).toHaveAttribute("aria-label", channel);
+      await expectScreensSettled(page);
       await completeBackSwipe(page);
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-      await expect(page.locator("[data-motion]")).toHaveCount(0);
+      await expectScreensSettled(page);
       await expect(row).toHaveAccessibleName(channel);
     } finally {
       chatting = false;
@@ -129,6 +132,10 @@ function markReadRequestCount(page: Page): Promise<number> {
   return page.evaluate(
     () => (window as Window & { markReadRequests: number }).markReadRequests,
   );
+}
+
+async function expectScreensSettled(page: Page): Promise<void> {
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
 }
 
 async function completeBackSwipe(page: Page): Promise<void> {
