@@ -9,7 +9,7 @@
   line-height: var(--wl-message-system-line-height);
   padding-block: var(--wl-density-message-divider-top-padding)
     var(--wl-density-message-divider-bottom-padding);
-  padding-inline: 14px;
+  padding-inline: var(--wl-transcript-gutter, 14px);
 }
 .line::before,
 .line::after {

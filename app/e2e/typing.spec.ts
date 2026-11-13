@@ -145,10 +145,19 @@ test.describe("typing indicators", () => {
       const typingNick = indicator.locator(
         `[data-typing-nick="${first.nickname}"]`,
       );
-      const senderNick = page
-        .locator(`[data-message-row][data-message-text="${typingMessage}"]`)
-        .locator(`[title="${first.nickname}"]`);
+      const typingRow = page.locator(
+        `[data-message-row][data-message-text="${typingMessage}"]`,
+      );
+      const senderNick = typingRow.locator(`[title="${first.nickname}"]`);
       await expect(senderNick).toBeVisible();
+      if (!mobile)
+        await expectSharedLeftEdge({
+          composer: page.getByRole("textbox", {
+            name: `Message ${typingChannel}`,
+          }),
+          time: typingRow.locator("time"),
+          typing: indicator.locator("[data-typing-text]"),
+        });
       await expect(typingNick).toHaveCSS("font-weight", "650");
       const senderColor = await senderNick.evaluate(
         (element) => getComputedStyle(element).color,
@@ -529,6 +538,26 @@ test.describe("typing indicators", () => {
     }
   });
 });
+
+async function expectSharedLeftEdge(
+  elements: Readonly<Record<string, Locator>>,
+): Promise<void> {
+  for (const element of Object.values(elements))
+    await waitForStableGeometry(element);
+  const edges = Object.fromEntries(
+    await Promise.all(
+      Object.entries(elements).map(async ([name, element]) => [
+        name,
+        await element.evaluate((node) => node.getBoundingClientRect().left),
+      ]),
+    ),
+  ) as Record<string, number>;
+  const values = Object.values(edges);
+  expect(
+    Math.max(...values) - Math.min(...values),
+    `left edges ${JSON.stringify(edges)}`,
+  ).toBeLessThanOrEqual(0.5);
+}
 
 async function visibleTypingSpaces(indicator: Locator): Promise<number[]> {
   return indicator.evaluate((root) => {

@@ -17,8 +17,14 @@
 }
 
 .wrap {
+  --wl-composer-gutter: var(
+    --wl-transcript-gutter,
+    var(--wl-space-composer-inline)
+  );
+
   background: var(--wl-color-surface);
-  padding: 0 14px max(14px, var(--wl-safe-bottom-effective));
+  padding: 0 var(--wl-composer-gutter)
+    max(14px, var(--wl-safe-bottom-effective));
   position: relative;
 }
 
@@ -35,7 +41,7 @@
   height: 24px;
   margin: 0;
   overflow: hidden;
-  padding-inline: 12px;
+  padding-inline: var(--wl-composer-typing-inset, 12px);
   white-space: nowrap;
 }
 
@@ -99,8 +105,11 @@ textarea.input {
   border-radius: var(--wl-radius-palette);
   bottom: 100%;
   box-shadow: var(--wl-effect-overlay-shadow);
-  inline-size: min(calc(100% - 28px), var(--wl-size-suggestions-max-width));
-  inset-inline-start: 14px;
+  inline-size: min(
+    calc(100% - 2 * var(--wl-composer-gutter)),
+    var(--wl-size-suggestions-max-width)
+  );
+  inset-inline-start: var(--wl-composer-gutter);
   overflow: hidden;
   position: absolute;
   z-index: 2;
@@ -200,7 +209,7 @@ textarea.input {
 }
 
 :global(#root[data-input="touch"]) .popup {
-  inline-size: calc(100% - 28px);
+  inline-size: calc(100% - 2 * var(--wl-composer-gutter));
 }
 
 :global(#root[data-input="touch"]) .candidates {

@@ -29,6 +29,9 @@
 }
 
 .conversationBody {
+  --wl-composer-typing-inset: 0;
+  --wl-transcript-gutter: var(--wl-space-transcript-desktop-inline);
+
   display: grid;
   flex: 1;
   grid-template-rows: minmax(0, 1fr) auto;
