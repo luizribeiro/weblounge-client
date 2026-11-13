@@ -22,7 +22,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
     const suffix = Date.now().toString(36);
     const channel = `#close-${suffix}`;
     const peer = await IrcClient.connect(
-      `close-${suffix}`,
+      `closed-long-peer-nick-${suffix}`,
       "weblounge-bot",
       "weblounge-bot-test",
       channel,
@@ -66,7 +66,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
         hasText: `Closed chat with ${peer.nickname}`,
       });
       await expect(toast).toBeVisible();
-      await expectToastAtSidebarBottom(
+      await expectUndoToastLayout(
         toast,
         page.getByRole("complementary", { name: "Channel list" }),
       );
@@ -138,16 +138,20 @@ test.describe("desktop conversation closing against local Ergo", () => {
   });
 });
 
-async function expectToastAtSidebarBottom(
+async function expectUndoToastLayout(
   toast: Locator,
   sidebar: Locator,
 ): Promise<void> {
-  const [toastBox, sidebarBox] = await Promise.all([
+  const [toastBox, sidebarBox, undoBox] = await Promise.all([
     toast.boundingBox(),
     sidebar.boundingBox(),
+    toast.getByRole("button", { name: "Undo" }).boundingBox(),
   ]);
-  if (toastBox === null || sidebarBox === null)
-    throw new Error("undo toast or sidebar is not rendered");
+  if (toastBox === null || sidebarBox === null || undoBox === null)
+    throw new Error("undo toast, its button or the sidebar is not rendered");
+  expect(undoBox.x + undoBox.width).toBeLessThanOrEqual(
+    toastBox.x + toastBox.width,
+  );
   expect(toastBox.x - sidebarBox.x).toBeCloseTo(8, 0);
   expect(
     sidebarBox.x + sidebarBox.width - (toastBox.x + toastBox.width),
