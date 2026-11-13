@@ -68,7 +68,7 @@ export function MobileChatList(props: MobileChatListProps) {
   const platform = platformEnvironment();
   let header: HTMLElement | undefined;
   let list: HTMLDivElement | undefined;
-  let restoringScroll = false;
+  const [restoringScroll, setRestoringScroll] = createSignal(false);
   let userScrollIntent = false;
   let userScrollSequence = false;
   let scrollTopBeforeOpen = 0;
@@ -81,7 +81,7 @@ export function MobileChatList(props: MobileChatListProps) {
     if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
     restoreFrame = undefined;
     releaseFrame = undefined;
-    restoringScroll = false;
+    setRestoringScroll(false);
   };
   const markUserScrollIntent = (continuesThroughScrollEnd: boolean) => {
     cancelScrollRestore();
@@ -130,14 +130,14 @@ export function MobileChatList(props: MobileChatListProps) {
     userScrollSequence = false;
     scrollTopBeforeOpen = scrollTop;
     const element = list;
-    restoringScroll = true;
+    setRestoringScroll(true);
     element.scrollTop = scrollTop;
     restoreFrame = requestAnimationFrame(() => {
       restoreFrame = undefined;
       element.scrollTop = scrollTop;
       releaseFrame = requestAnimationFrame(() => {
         releaseFrame = undefined;
-        restoringScroll = false;
+        setRestoringScroll(false);
       });
     });
   });
@@ -236,15 +236,16 @@ export function MobileChatList(props: MobileChatListProps) {
       <div
         class={styles.list}
         data-mobile-chat-list="true"
+        data-restoring-scroll={restoringScroll() || undefined}
         onScroll={(event) => {
-          if (!restoringScroll && userScrollIntent) {
+          if (!restoringScroll() && userScrollIntent) {
             userScrollIntent = false;
             scrollTopBeforeOpen = event.currentTarget.scrollTop;
             props.onScroll(event.currentTarget.scrollTop);
           }
         }}
         onScrollEnd={(event) => {
-          if (!restoringScroll && userScrollSequence) {
+          if (!restoringScroll() && userScrollSequence) {
             userScrollIntent = false;
             userScrollSequence = false;
             scrollTopBeforeOpen = event.currentTarget.scrollTop;

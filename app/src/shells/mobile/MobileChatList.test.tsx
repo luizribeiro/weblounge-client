@@ -309,10 +309,17 @@ it("restores the retained chat list after returning from a conversation", async 
   if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
   list.scrollTop = 0;
 
+  await waitFor(() =>
+    expect(list).not.toHaveAttribute("data-restoring-scroll"),
+  );
   setRestoreScroll(57);
   setRestoreVersion(1);
 
+  expect(list).toHaveAttribute("data-restoring-scroll", "true");
   await waitFor(() => expect(list.scrollTop).toBe(57));
+  await waitFor(() =>
+    expect(list).not.toHaveAttribute("data-restoring-scroll"),
+  );
 });
 
 it("does not overwrite a user scroll with a pending restore frame", () => {
