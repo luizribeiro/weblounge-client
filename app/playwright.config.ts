@@ -33,6 +33,12 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-image-viewer",
+      grep: /@phone/u,
+      testMatch: "**/image-viewer.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "android-close-phone",
       testMatch: "**/close-phone.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },

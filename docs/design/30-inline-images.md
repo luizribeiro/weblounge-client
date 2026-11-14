@@ -129,7 +129,8 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
 - **Pan.** Drag when zoomed, with PhotoSwipe's momentum; arrow keys pan by 80px.
 - **Closing.** Escape, the close button, a click or tap on the backdrop, and a vertical swipe on
   touch, which fades the backdrop as it moves. Focus returns to the slot that opened the viewer if it
-  is still mounted; otherwise the normal composer rules apply.
+  is still mounted; if virtualisation removed it, focus stays on the document, where typing still
+  reaches the composer, and the close fades instead of shrinking to the slot.
 - **Chrome.** An opaque top bar with the sender's nick, the message time, an "Open original" link
   (new tab, like message links) and a close button, in theme tokens. The backdrop is
   `--wl-color-bg` at full opacity. The image fits inside a CSS fit box below the bar, with a 24px
@@ -140,33 +141,36 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   shared trap extracted from `OmnibarOverlay`; the rest of the app root is `inert` while it is open;
   a polite status says "Image from {nick}. Press Escape to close." PhotoSwipe's nested `role` and
   carousel descriptions are removed, since there is one image.
-- **Keyboard ownership.** The viewer handles every keydown inside it and stops propagation, so
-  application shortcuts and printable-key forwarding do not reach the shell behind a modal. It is
-  the top overlay of design 14's Escape cascade.
+- **Keyboard ownership.** While open, the viewer captures every keydown at the document and stops
+  propagation, wherever focus is, so application shortcuts and printable-key forwarding do not
+  reach the shell behind a modal. Its Escape closes it locally, like the omnibar's, instead of
+  through `navigation.escape`: no shell command can run while the viewer is open.
 - **Idle.** No frame or timer runs while the open viewer is still: PhotoSwipe schedules rAF only
-  during gestures and animations, and its one-shot timers (transition start, placeholder removal
-  one second after load) end once the image settles. The viewer unmounts on close and removes its
-  listeners.
+  during gestures and animations, and its one-shot transition-start timers end with each
+  animation. The viewer unmounts on close and removes its listeners.
 
 ### Types and boundaries
 
-- `features/image-viewer/image-viewer-context.tsx`: `ImageViewerProvider` (inside the app root) and
-  `useImageViewer()`. `open(request)` takes
-  `{ url, author, time, naturalWidth, naturalHeight, origin: HTMLElement }`; one request is current
-  at a time. Without a provider, an inline image stays a plain link.
+- `features/image-viewer/image-viewer-request.ts`: the one current request,
+  `{ url, author, time, naturalWidth, naturalHeight, origin: HTMLElement }`, with
+  `openImageViewer` (ignored while a viewer is open) and `closeImageViewer`.
+  `ImageViewerOutlet`, the last child of the app root, renders the viewer for it.
 - `features/image-viewer/ImageViewer.tsx`: the dialog, top bar, status and focus handling; loaded
   with `lazy()`, so it and PhotoSwipe form their own chunk.
 - `features/image-viewer/photoswipe-viewer.ts`: creates and configures the PhotoSwipe instance and
-  exposes `close`, `zoomBy`, `reset` and `pan`.
+  exposes `close`, `destroy` and `run(command)` for the key commands.
 - `features/image-viewer/viewer-zoom.ts` and `viewer-keys.ts`: pure zoom levels and steps, token
   duration parsing, and the key → command map.
 - `ui/focus-trap.ts`: `trapTab(event, root)`, shared by the omnibar and the viewer.
 - `InlineImage` gains `time` and opens the viewer once it has loaded; loading and failed slots keep
   their link.
+- `photoswipe-viewer.ts` keeps PhotoSwipe's placeholder (a transparent block) for the viewer's
+  lifetime, so no removal timer runs after the image loads.
 
 ### Testing
 
-- Unit: zoom levels and steps, duration parsing, the key map, the focus trap, InlineImage's open
+- Unit: zoom levels and steps, duration parsing, the key map, the focus trap, the request store, the
+  adapter's fit-box padding, backdrop test and commands, InlineImage's open
   request (click, Enter/Space, modified click, failed tile), and the dialog's labels, status, focus
   and close button with PhotoSwipe stubbed.
 - Playwright against local Ergo and the fake file host: open by click and by keyboard; `+`, `-`,

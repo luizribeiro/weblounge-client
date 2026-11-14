@@ -1734,6 +1734,7 @@ function MessageImage(props: {
             author={props.message.author}
             onOpenExternal={props.onOpenExternal}
             presentation={props.presentation ?? "desktop"}
+            time={messageTime(props.message)}
             url={url}
           />
         </div>

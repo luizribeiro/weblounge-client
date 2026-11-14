@@ -71,11 +71,6 @@ test.describe("inline file host images against local Ergo", () => {
       await nativeFeelAudit(page);
 
       await captureThemes(page, "desktop");
-      const popupPromise = page.waitForEvent("popup");
-      await heldSlot.click();
-      const popup = await popupPromise;
-      await expect.poll(() => popup.url()).toBe(held);
-      await popup.close();
     });
   });
 

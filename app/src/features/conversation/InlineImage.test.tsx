@@ -1,8 +1,15 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, expect, it, vi } from "vitest";
+import {
+  closeImageViewer,
+  currentImageViewerRequest,
+} from "../image-viewer/image-viewer-request";
 import { InlineImage } from "./InlineImage";
 
+const sentAt = Date.UTC(2026, 10, 13, 22, 1);
+
 afterEach(() => {
+  closeImageViewer();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -13,6 +20,7 @@ function renderImage(url: string, onOpenExternal?: (href: string) => void) {
       author="alice"
       onOpenExternal={onOpenExternal}
       presentation="desktop"
+      time={sentAt}
       url={url}
     />
   ));
@@ -20,9 +28,7 @@ function renderImage(url: string, onOpenExternal?: (href: string) => void) {
 
 function slotFor(url: string, onOpenExternal?: (href: string) => void) {
   renderImage(url, onOpenExternal);
-  return screen.getByRole("link", {
-    name: "Open image from alice on files.example.test",
-  });
+  return screen.getByRole("link");
 }
 
 function loadNaturalSize(slot: HTMLElement, width: number, height: number) {
@@ -37,6 +43,9 @@ it("reserves a non-draggable link slot before the image loads", () => {
   const url = "https://files.example.test/loading.png";
   const slot = slotFor(url);
 
+  expect(slot).toHaveAccessibleName(
+    "Open image from alice on files.example.test",
+  );
   expect(slot).toHaveAttribute("href", url);
   expect(slot).toHaveAttribute("data-inline-image", "loading");
   expect(slot).toHaveAttribute("draggable", "false");
@@ -138,4 +147,84 @@ it("keeps the slot as an error tile that still opens the link", () => {
   expect(slot).toHaveTextContent("Couldn’t load image · Open link");
   fireEvent.click(slot);
   expect(open).toHaveBeenCalledWith(url);
+});
+
+it("opens the viewer from a loaded image with its size, sender and time", () => {
+  const url = "https://files.example.test/viewer.png";
+  const slot = slotFor(url);
+  expect(slot).toHaveAccessibleName(
+    "Open image from alice on files.example.test",
+  );
+  fireEvent.click(slot);
+  expect(currentImageViewerRequest()).toBeUndefined();
+
+  loadNaturalSize(slot, 640, 480);
+  expect(slot).toHaveAccessibleName("Image from alice, open viewer");
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  slot.dispatchEvent(click);
+
+  expect(click.defaultPrevented).toBe(true);
+  expect(currentImageViewerRequest()).toEqual({
+    author: "alice",
+    naturalHeight: 480,
+    naturalWidth: 640,
+    origin: slot,
+    time: sentAt,
+    url,
+  });
+});
+
+it("opens the viewer with Space on the focused image", () => {
+  const slot = slotFor("https://files.example.test/keyboard.png");
+  loadNaturalSize(slot, 640, 480);
+  slot.focus();
+  const space = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    key: " ",
+  });
+  slot.dispatchEvent(space);
+
+  expect(space.defaultPrevented).toBe(true);
+  expect(currentImageViewerRequest()?.origin).toBe(slot);
+});
+
+it("leaves a modified click to the browser's new-tab behaviour", () => {
+  const slot = slotFor("https://files.example.test/modified.png");
+  loadNaturalSize(slot, 640, 480);
+  const click = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    metaKey: true,
+  });
+  slot.dispatchEvent(click);
+
+  expect(click.defaultPrevented).toBe(false);
+  expect(currentImageViewerRequest()).toBeUndefined();
+});
+
+it("keeps a failed image a link", () => {
+  const slot = slotFor("https://files.example.test/missing-viewer.png");
+  fireEvent.error(slot.querySelector("img") as HTMLImageElement);
+  fireEvent.click(slot);
+  fireEvent.keyDown(slot, { key: " " });
+
+  expect(currentImageViewerRequest()).toBeUndefined();
+});
+
+it("hands a modified click on a viewable image to the external opener", () => {
+  const open = vi.fn();
+  const url = "https://files.example.test/external.png";
+  const slot = slotFor(url, open);
+  loadNaturalSize(slot, 640, 480);
+  const click = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    metaKey: true,
+  });
+  slot.dispatchEvent(click);
+
+  expect(click.defaultPrevented).toBe(true);
+  expect(open).toHaveBeenCalledWith(url);
+  expect(currentImageViewerRequest()).toBeUndefined();
 });
