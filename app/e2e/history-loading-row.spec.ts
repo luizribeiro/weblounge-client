@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
@@ -18,66 +18,54 @@ for (const layout of [
   { name: "iPhone WebKit", project: "webkit-phone-layout" },
 ] as const) {
   test(`shows the in-flight older-history row at the top on ${layout.name}`, async ({
-    baseURL,
     page,
+    irc,
   }, testInfo) => {
     test.skip(testInfo.project.name !== layout.project, "layout project only");
-    const fixture = await seedHistory();
-    let incomingPaused = false;
-    try {
-      await installNativeFeelInstrumentation(page);
-      await useDedicatedWorker(page);
-      await page.goto(startUrl(baseURL, fixture));
-      await page.getByRole("button", { name: fixture.channel }).click();
-      await expect(
-        page.getByText(fixture.newest, { exact: true }),
-      ).toBeVisible();
+    const fixture = await seedHistory(irc);
+    await installNativeFeelInstrumentation(page);
+    await useDedicatedWorker(page);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: fixture.channel }).click();
+    await expect(page.getByText(fixture.newest, { exact: true })).toBeVisible();
 
-      const list = page.locator("[data-message-list]");
-      const loading = list.locator('[data-divider-kind="loading"]');
-      await expect(loading).toHaveCount(0);
-      await controlForwarder("pause-incoming");
-      incomingPaused = true;
-      await scrollToTranscriptTop(list);
-      await expect(loading).toHaveCount(1);
-      await expect.poll(() => scrollTop(list)).toBe(0);
-      await expect(loading).toBeVisible();
-      await expect
-        .poll(async () => (await viewportOverflow(list, loading)).bottom)
-        .toBeLessThanOrEqual(1);
-      await expect
-        .poll(async () => (await viewportOverflow(list, loading)).top)
-        .toBeLessThanOrEqual(1);
-      const loader = loading.locator("svg");
-      await expect(loader).toHaveCSS("animation-duration", "1.4s");
-      await expect.poll(() => activeAnimations(loader)).toBe(1);
-      const moving = await sampledTransforms(loader);
-      expect(moving.after).not.toBe(moving.before);
+    const list = page.locator("[data-message-list]");
+    const loading = list.locator('[data-divider-kind="loading"]');
+    await expect(loading).toHaveCount(0);
+    await irc.forwarder.pauseIncoming();
+    await scrollToTranscriptTop(list);
+    await expect(loading).toHaveCount(1);
+    await expect.poll(() => scrollTop(list)).toBe(0);
+    await expect(loading).toBeVisible();
+    await expect
+      .poll(async () => (await viewportOverflow(list, loading)).bottom)
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(async () => (await viewportOverflow(list, loading)).top)
+      .toBeLessThanOrEqual(1);
+    const loader = loading.locator("svg");
+    await expect(loader).toHaveCSS("animation-duration", "1.4s");
+    await expect.poll(() => activeAnimations(loader)).toBe(1);
+    const moving = await sampledTransforms(loader);
+    expect(moving.after).not.toBe(moving.before);
 
-      await setNativeVisibility(page, true);
-      await expect(
-        page.locator('[data-transcript-foreground="false"]'),
-      ).toHaveCount(1);
-      await expect(loader).toHaveCSS("animation-play-state", "paused");
-      await expect.poll(() => activeAnimations(loader)).toBe(0);
-      await setNativeVisibility(page, false);
-      await expect(loader).toHaveCSS("animation-play-state", "running");
+    await setNativeVisibility(page, true);
+    await expect(
+      page.locator('[data-transcript-foreground="false"]'),
+    ).toHaveCount(1);
+    await expect(loader).toHaveCSS("animation-play-state", "paused");
+    await expect.poll(() => activeAnimations(loader)).toBe(0);
+    await setNativeVisibility(page, false);
+    await expect(loader).toHaveCSS("animation-play-state", "running");
 
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await expect(loader).toHaveCSS("animation-duration", "0s");
-      const reduced = await sampledTransforms(loader);
-      expect(reduced.after).toBe(reduced.before);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(loader).toHaveCSS("animation-duration", "0s");
+    const reduced = await sampledTransforms(loader);
+    expect(reduced.after).toBe(reduced.before);
 
-      await controlForwarder("resume-incoming");
-      incomingPaused = false;
-      await expect(loading).toHaveCount(0);
-      await expect.poll(() => loadingAnimationCount(page)).toBe(0);
-    } finally {
-      if (incomingPaused) await controlForwarder("resume-incoming");
-      await page.context().close();
-      fixture.keeper.close();
-      for (const sender of fixture.senders) sender.close();
-    }
+    await irc.forwarder.resumeIncoming();
+    await expect(loading).toHaveCount(0);
+    await expect.poll(() => loadingAnimationCount(page)).toBe(0);
   });
 }
 
@@ -125,27 +113,16 @@ function setNativeVisibility(page: Page, hidden: boolean): Promise<void> {
 }
 
 interface HistoryFixture {
-  readonly account: string;
   readonly channel: string;
-  readonly keeper: IrcClient;
   readonly newest: string;
-  readonly senders: readonly IrcClient[];
 }
 
-async function seedHistory(): Promise<HistoryFixture> {
-  const suffix = Date.now().toString(36);
-  const account = `loading-${suffix}`;
-  const channel = `#loading-${suffix}`;
-  const keeper = await IrcClient.connectIsolated(account, channel);
+async function seedHistory(irc: IrcTestAccount): Promise<HistoryFixture> {
+  const suffix = irc.id;
+  const channel = irc.channel;
+  await irc.self([channel]);
   const senders = await Promise.all(
-    Array.from({ length: 10 }, (_, index) =>
-      IrcClient.connect(
-        `loading-${index}-${suffix}`,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      ),
-    ),
+    Array.from({ length: 10 }, (_, index) => irc.peer(`loading-${index}`)),
   );
   const messages = Array.from(
     { length: 140 },
@@ -164,20 +141,7 @@ async function seedHistory(): Promise<HistoryFixture> {
   const writer = senders[0];
   if (writer === undefined) throw new Error("history writer is missing");
   await writer.privmsgConfirmed(channel, newest);
-  return { account, channel, keeper, newest, senders };
-}
-
-function startUrl(
-  baseURL: string | undefined,
-  fixture: HistoryFixture,
-): string {
-  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
-  const url = new URL("/", baseURL);
-  url.searchParams.set("irc-password", `test-${fixture.account}`);
-  url.searchParams.set("irc-account", fixture.account);
-  url.searchParams.set("irc-nickname", fixture.account);
-  url.searchParams.append("irc-autojoin", fixture.channel);
-  return url.href;
+  return { channel, newest };
 }
 
 function scrollTop(list: Locator): Promise<number> {
@@ -201,14 +165,4 @@ async function viewportOverflow(
     ),
     top: Math.max(0, viewport.y - bounds.y),
   };
-}
-
-async function controlForwarder(
-  action: "pause-incoming" | "resume-incoming",
-): Promise<void> {
-  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
-  if (base === undefined) throw new Error("forwarder URL is missing");
-  const response = await fetch(new URL(`/${action}`, base), { method: "POST" });
-  if (!response.ok)
-    throw new Error(`forwarder ${action} failed: ${response.status}`);
 }

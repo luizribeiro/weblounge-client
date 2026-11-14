@@ -2,15 +2,15 @@ import path from "node:path";
 import {
   type Browser,
   devices,
-  expect,
   type Locator,
   type Page,
-  test,
 } from "@playwright/test";
 import { expectInterFont } from "./inter-font";
-import { IrcClient } from "./irc-client";
+import { type IrcClient, serverTime } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 
 test.describe("transcript gap and boundary dividers", () => {
   test.skip(
@@ -21,12 +21,6 @@ test.describe("transcript gap and boundary dividers", () => {
     process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
     "requires the controllable socket forwarder",
   );
-  test.describe.configure({ mode: "serial" });
-  test.beforeEach(async () => {
-    await setAppAlwaysOn(false);
-    await setAppAlwaysOn(true);
-  });
-  test.afterAll(async () => setAppAlwaysOn(false));
 
   for (const layout of [
     {
@@ -44,31 +38,22 @@ test.describe("transcript gap and boundary dividers", () => {
     test(`shows signed transcript boundaries on ${layout.name}`, async ({
       baseURL,
       browser,
+      irc,
     }) => {
-      const suffix = Date.now().toString(36);
-      const channel = `#gap-${suffix}`;
-      const bot = await IrcClient.connect(
-        `gap-${suffix}`,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      );
+      await setAppAlwaysOn(irc);
+      const suffix = irc.id;
+      const channel = irc.channelNamed("gap");
+      const bot = await irc.peer("gap", [channel]);
       const senders = await Promise.all(
         Array.from({ length: 20 }, (_, index) =>
-          IrcClient.connect(
-            `gap-${index}-${suffix}`,
-            "weblounge-bot",
-            "weblounge-bot-test",
-            channel,
-          ),
+          irc.peer(`gap-${index}`, [channel]),
         ),
       );
       const seed = `gap cursor ${suffix}`;
       const seedLine = await bot.privmsgConfirmed(channel, seed);
-      const page = await openApp(browser, baseURL, layout.context);
-      let forwarderDropped = false;
+      const page = await openApp(browser, baseURL, irc, layout.context);
       try {
-        await openChannel(page, channel, layout.name === "phone");
+        await openChannel(page, irc, channel, layout.name === "phone");
         await expect(messageText(page, seed)).toBeVisible();
 
         const list = activeMessageList(page);
@@ -84,11 +69,7 @@ test.describe("transcript gap and boundary dividers", () => {
         await captureDivider(history, layout.name, "history");
 
         await runCommand(page, `/query ${bot.nickname}`);
-        await expect(
-          page.getByRole("heading", { name: bot.nickname }),
-        ).toBeVisible();
-        if (layout.name === "phone")
-          await expect(page.locator("[data-motion]")).toHaveCount(0);
+        await expectSettled(page, { conversation: bot.nickname });
         const empty = activeMessageList(page).locator("[data-empty-row]");
         await expect(empty).toHaveAttribute("aria-label", "No messages yet");
         await expect(empty).toContainText(
@@ -97,16 +78,14 @@ test.describe("transcript gap and boundary dividers", () => {
         await captureDivider(empty, layout.name, "empty");
 
         await selectBuffer(page, channel, layout.name === "phone");
-        await controlForwarder("drop");
-        forwarderDropped = true;
+        await irc.forwarder.drop();
         const firstRetainedLine = await sendCappedGap(senders, channel, suffix);
 
         await setVisibility(page, true);
         await setVisibility(page, false);
         await dispatchPersistedPageShow(page);
         await expect.poll(() => currentNetworkState(page)).not.toBe("online");
-        await controlForwarder("restore");
-        forwarderDropped = false;
+        await irc.forwarder.restore();
         await expect.poll(() => currentNetworkState(page)).toBe("online");
 
         const caughtUpList = activeMessageList(page);
@@ -116,10 +95,7 @@ test.describe("transcript gap and boundary dividers", () => {
         await expect(gap).toHaveAttribute("aria-label", expectedGap);
         await captureDivider(gap, layout.name, "gap");
       } finally {
-        if (forwarderDropped) await controlForwarder("restore");
         await page.context().close();
-        bot.close();
-        for (const sender of senders) sender.close();
       }
     });
   }
@@ -128,30 +104,30 @@ test.describe("transcript gap and boundary dividers", () => {
 async function openApp(
   browser: Browser,
   baseURL: string | undefined,
+  irc: IrcTestAccount,
   options: Parameters<Browser["newContext"]>[0],
 ): Promise<Page> {
   const context = await browser.newContext({ ...options, baseURL });
+  await irc.scope(context);
   const page = await context.newPage();
   await installNativeFeelInstrumentation(page);
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(irc.url());
   return page;
 }
 
 async function openChannel(
   page: Page,
+  irc: IrcTestAccount,
   channel: string,
   phone: boolean,
 ): Promise<void> {
   if (phone) {
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await page
-      .getByRole("button", { name: /^#weblounge-test(?:,|$)/u })
-      .click();
+    await page.getByRole("button", { name: irc.channel }).click();
   }
   await expect.poll(() => currentNetworkState(page)).toBe("online");
   await runCommand(page, `/join ${channel}`);
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-  if (phone) await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page, { conversation: channel });
 }
 
 async function selectBuffer(
@@ -163,8 +139,7 @@ async function selectBuffer(
   await page
     .getByRole("button", { name: new RegExp(`^${title},|^${title}$`) })
     .click();
-  await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  if (phone) await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page, { conversation: title });
 }
 
 async function runCommand(page: Page, command: string): Promise<void> {
@@ -214,7 +189,7 @@ async function captureDivider(
 }
 
 async function formatHistoryDay(page: Page, line: string): Promise<string> {
-  const milliseconds = serverTime(line);
+  const milliseconds = Date.parse(serverTime(line));
   return page.evaluate((time) => {
     const date = new Date(time);
     const localDay = Date.UTC(
@@ -236,15 +211,8 @@ async function formatLineTime(page: Page, line: string): Promise<string> {
         hour: "numeric",
         minute: "2-digit",
       }).format(time),
-    serverTime(line),
+    Date.parse(serverTime(line)),
   );
-}
-
-function serverTime(line: string): number {
-  const value = line.match(/(?:^@|;)time=([^; ]+)/u)?.[1];
-  if (value === undefined)
-    throw new Error(`IRC line has no server time: ${line}`);
-  return new Date(value).getTime();
 }
 
 function messageText(page: Page, text: string): Locator {
@@ -253,13 +221,6 @@ function messageText(page: Page, text: string): Locator {
 
 function activeMessageList(page: Page): Locator {
   return page.locator("[data-message-list]:visible");
-}
-
-async function controlForwarder(action: "drop" | "restore"): Promise<void> {
-  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
-  if (base === undefined) throw new Error("socket forwarder is unavailable");
-  const response = await fetch(`${base}/${action}`, { method: "POST" });
-  if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
 }
 
 function currentNetworkState(page: Page): Promise<string | null> {
@@ -286,20 +247,9 @@ async function dispatchPersistedPageShow(page: Page): Promise<void> {
   });
 }
 
-async function setAppAlwaysOn(enabled: boolean): Promise<void> {
-  const control = await IrcClient.connect(
-    "gap-always-on-control",
-    "weblounge",
-    "weblounge-test",
-    "#weblounge-test",
-  );
-  try {
-    if (control.nickname !== "weblounge") {
-      await control.waitForNickDeparture("weblounge");
-      await control.nick("weblounge");
-    }
-    await control.setAlwaysOn(enabled);
-  } finally {
-    control.close();
-  }
+async function setAppAlwaysOn(irc: IrcTestAccount): Promise<void> {
+  const control = await irc.self();
+  await control.setAlwaysOn(true);
+  control.close();
+  await control.waitForDisconnect();
 }
