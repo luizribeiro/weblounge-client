@@ -24,6 +24,15 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: image uploads from the composer (design 31). Pasting an image attaches a chip
+  (thumbnail, size, ×) inside the field; Enter uploads it to the network's advertised FILEHOST
+  with progress and sends one `caption URL` message, which renders inline. The engine resolves
+  the endpoint and authorization: Basic from SASL PLAIN only on the IRC endpoint's own site
+  (Public Suffix List), otherwise after a prompt that can remember the host on this device;
+  Bearer from the deployment's session token. JPEG metadata is stripped, HEIC/TIFF/AVIF are
+  re-encoded, a 413 with `Upload-Limit` shrinks and retries once, and a network without a file
+  host shows a note instead. Needs device checks: iPhone HEIC paste, Android paste, the Mac app's
+  ⌘V. Later: a switch to forget remembered hosts (`ForgetUploadApprovals`) in Networks settings.
 - 2026-11-13: Ergo e2e specs get a fresh account, channel and
   forwarder scope per test (`irc` fixture) and one `expectSettled` helper; CI shards run two workers
   plus a single-worker `@serial` lane (Ergo restarts, fixed-name committed screenshots). See
