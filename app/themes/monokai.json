@@ -1,0 +1,69 @@
+{
+  "id": "monokai",
+  "name": "Monokai",
+  "description": "Monokai on charcoal, set in Hack",
+  "order": 7,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#1c1c1c",
+    "surface": "#1c1c1c",
+    "panel": "#161616",
+    "panelFg": "#f8f7f2",
+    "panelMuted": "#8e8e8e",
+    "panelBorder": "#262621",
+    "panelAlt": "#20201d",
+    "fg": "#f8f7f2",
+    "muted": "#8e8e8e",
+    "border": "#383731",
+    "accent": "#bbd756",
+    "accentFg": "#1c1c1c",
+    "selection": "#383731",
+    "selectionFg": "#fefefe",
+    "mentionBg": "#2b2a1e",
+    "mentionBadge": "#d4607d",
+    "mentionBadgeFg": "#1c1c1c",
+    "overlayScrim": "rgba(0,0,0,.6)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#edefe5",
+    "unread": "#d4607d",
+    "inputBg": "#262621",
+    "chip": "#2e2d28",
+    "codeBg": "#262621",
+    "online": "#bbd756",
+    "selfNick": "#ded685",
+    "error": "#d65e4f",
+    "focusRing": "#bbd756"
+  },
+  "typography": {
+    "ui": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "mono": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "title": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "base": "13px",
+    "sectionFamily": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "sectionSize": "12px",
+    "sectionTransform": "none",
+    "sectionTracking": "0"
+  },
+  "shape": {
+    "control": "3px",
+    "avatar": "3px",
+    "icon": "3px",
+    "composer": "3px",
+    "palette": "3px",
+    "pill": "3px",
+    "round": "3px"
+  },
+  "effects": {
+    "overlayShadow": "none",
+    "tooltipShadow": "none",
+    "iconRing": "inset 0 0 0 1px rgba(255,255,255,.14)"
+  },
+  "nickPalette": [
+    "#bbd756",
+    "#ded685",
+    "#85c2d6",
+    "#8a81d2",
+    "#d4607d",
+    "#fd971f"
+  ]
+}

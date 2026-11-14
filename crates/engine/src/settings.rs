@@ -39,6 +39,10 @@ pub enum ThemePreference {
     #[serde(rename = "retro")]
     #[ts(rename = "retro")]
     Retro,
+    /// The Monokai theme.
+    #[serde(rename = "monokai")]
+    #[ts(rename = "monokai")]
+    Monokai,
 }
 
 /// Spacing, text size and avatar size of a list.
@@ -309,6 +313,7 @@ mod tests {
             (ThemePreference::Modern, "modern"),
             (ThemePreference::Terminal, "terminal"),
             (ThemePreference::Retro, "retro"),
+            (ThemePreference::Monokai, "monokai"),
         ] {
             let storage = MemoryKv::default();
 

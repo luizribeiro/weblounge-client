@@ -11,6 +11,7 @@ export const themePreferences = everyValueOf<ThemePreference>()([
   "modern",
   "terminal",
   "retro",
+  "monokai",
 ]);
 export const densities = everyValueOf<Density>()([
   "compact",

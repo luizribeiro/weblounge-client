@@ -364,6 +364,65 @@
   --wl-nick-4: #6d4a8c;
   --wl-nick-5: #5d6b16;
 }
+:root[data-theme="monokai"] {
+  color-scheme: dark;
+  --wl-color-bg: #1c1c1c;
+  --wl-color-surface: #1c1c1c;
+  --wl-color-panel: #161616;
+  --wl-color-panel-fg: #f8f7f2;
+  --wl-color-panel-muted: #8e8e8e;
+  --wl-color-panel-border: #262621;
+  --wl-color-panel-alt: #20201d;
+  --wl-color-fg: #f8f7f2;
+  --wl-color-muted: #8e8e8e;
+  --wl-color-border: #383731;
+  --wl-color-accent: #bbd756;
+  --wl-color-accent-fg: #1c1c1c;
+  --wl-color-selection: #383731;
+  --wl-color-selection-fg: #fefefe;
+  --wl-color-mention-bg: #2b2a1e;
+  --wl-color-mention-badge: #d4607d;
+  --wl-color-mention-badge-fg: #1c1c1c;
+  --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
+  --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
+  --wl-color-viewer-fg: #edefe5;
+  --wl-color-unread: #d4607d;
+  --wl-color-input-bg: #262621;
+  --wl-color-chip: #2e2d28;
+  --wl-color-code-bg: #262621;
+  --wl-color-online: #bbd756;
+  --wl-color-self-nick: #ded685;
+  --wl-color-error: #d65e4f;
+  --wl-color-focus-ring: #bbd756;
+  --wl-font-ui:
+    Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace;
+  --wl-font-mono:
+    Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace;
+  --wl-font-title:
+    Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace;
+  --wl-font-base: 13px;
+  --wl-font-section-family:
+    Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace;
+  --wl-font-section-size: 12px;
+  --wl-font-section-transform: none;
+  --wl-font-section-tracking: 0;
+  --wl-radius-control: 3px;
+  --wl-radius-avatar: 3px;
+  --wl-radius-icon: 3px;
+  --wl-radius-composer: 3px;
+  --wl-radius-palette: 3px;
+  --wl-radius-pill: 3px;
+  --wl-radius-round: 3px;
+  --wl-effect-overlay-shadow: none;
+  --wl-effect-tooltip-shadow: none;
+  --wl-effect-icon-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  --wl-nick-0: #bbd756;
+  --wl-nick-1: #ded685;
+  --wl-nick-2: #85c2d6;
+  --wl-nick-3: #8a81d2;
+  --wl-nick-4: #d4607d;
+  --wl-nick-5: #fd971f;
+}
 @media (prefers-reduced-motion: reduce) {
   :root {
     --wl-motion-drawer-close: 0ms;

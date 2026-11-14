@@ -12,6 +12,7 @@ const themes = [
   { name: "Modern", id: "modern", background: "rgb(255, 255, 255)" },
   { name: "Terminal", id: "terminal", background: "rgb(16, 17, 18)" },
   { name: "Retro", id: "retro", background: "rgb(246, 239, 225)" },
+  { name: "Monokai", id: "monokai", background: "rgb(28, 28, 28)" },
 ] as const;
 
 test.describe("themes against local Ergo", () => {
@@ -67,6 +68,19 @@ test.describe("themes against local Ergo", () => {
       "box-shadow",
       "rgb(46, 33, 25) 6px 6px 0px 0px",
     );
+  });
+
+  test("Monokai sets titles in Hack and rounds its overlays by 3px", async ({
+    irc,
+    page,
+  }) => {
+    const dialog = await settingsIn(page, irc, "Monokai");
+
+    await expect(dialog.getByRole("heading", { name: "Settings" })).toHaveCSS(
+      "font-family",
+      /^Hack,/u,
+    );
+    await expect(dialog).toHaveCSS("border-radius", "3px");
   });
 });
 

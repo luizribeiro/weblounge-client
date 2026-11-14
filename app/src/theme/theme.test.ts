@@ -22,6 +22,7 @@ describe("theme registry", () => {
       "modern",
       "terminal",
       "retro",
+      "monokai",
     ]);
     expect(themes[0]?.nickPalette).toHaveLength(6);
     expect(nickPaletteSize).toBe(6);
@@ -62,6 +63,7 @@ describe("theme registry", () => {
       modern: "Clean and bright",
       terminal: "Monospace, dense, dark",
       retro: "Wood, cream and serifs",
+      monokai: "Monokai on charcoal, set in Hack",
     });
     expect(() =>
       buildRegistry({ "night.json": { ...loungeNight, description: "" } }),
@@ -78,6 +80,7 @@ describe("theme registry", () => {
       modern: "light",
       terminal: "dark",
       retro: "light",
+      monokai: "dark",
     });
   });
 

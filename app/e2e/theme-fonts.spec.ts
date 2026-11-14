@@ -23,6 +23,11 @@ const lazyThemes = [
     families: ["Work Sans", "Fraunces", "Courier Prime"],
     files: ["work-sans", "fraunces", "courier-prime"],
   },
+  {
+    name: "Monokai",
+    families: ["Hack"],
+    files: ["hack"],
+  },
 ] as const;
 
 test.describe("theme fonts against local Ergo", () => {
