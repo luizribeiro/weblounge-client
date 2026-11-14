@@ -1376,8 +1376,10 @@ async function replaceWithConversationNotification(
     const registration = await navigator.serviceWorker.ready;
     const notifications = await registration.getNotifications();
     const data = notifications.at(0)?.data;
+    // showNotification replaces the same-tag notification; closing it first
+    // lets Chromium apply the asynchronous close to the replacement.
     for (const notification of notifications) {
-      notification.close();
+      if (notification.tag !== conversationTag) notification.close();
     }
     await registration.showNotification("conversation notification", {
       data,
