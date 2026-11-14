@@ -32,10 +32,7 @@ test.describe("desktop Settings against local Ergo", () => {
     await settingsScreenshot(dialog, "desktop-1280-light");
 
     await choose(page, "Lounge Night");
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-theme",
-      "lounge-night",
-    );
+    await expectTheme(page, "lounge-night");
     await page.getByRole("radio", { name: "Cozy" }).focus();
     await page.keyboard.press("ArrowRight");
     await expect(
@@ -73,9 +70,31 @@ test.describe("desktop Settings against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
-  test("paints the remembered appearance first and follows another tab", async ({
+  test("follows a change made in another tab", async ({
     irc,
     context,
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await openHome(page, irc);
+    await settingsButton(page).click();
+    await choose(page, "Lounge Night");
+
+    const other = await context.newPage();
+    await other.emulateMedia({ colorScheme: "light" });
+    await openHome(other, irc);
+    await expectTheme(other, "lounge-night");
+    await choose(page, "Lounge");
+    await expectTheme(other, "lounge");
+    await choose(page, "System");
+    await other.emulateMedia({ colorScheme: "dark" });
+    await expectTheme(other, "lounge-night");
+    await other.emulateMedia({ colorScheme: "light" });
+    await expectTheme(other, "lounge");
+  });
+
+  test("paints the remembered appearance on the first frame after a reload", async ({
+    irc,
     page,
   }) => {
     await page.emulateMedia({ colorScheme: "light" });
@@ -95,31 +114,11 @@ test.describe("desktop Settings against local Ergo", () => {
     await settingsButton(page).click();
     await choose(page, "Lounge Night");
     await choose(page, "Comfortable");
-
-    const other = await context.newPage();
-    await other.emulateMedia({ colorScheme: "light" });
-    await openHome(other, irc);
-    await expect(other.locator("html")).toHaveAttribute(
-      "data-theme",
-      "lounge-night",
+    await expectTheme(page, "lounge-night");
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-message-density",
+      "comfortable",
     );
-    await choose(page, "Lounge");
-    await expect(other.locator("html")).toHaveAttribute("data-theme", "lounge");
-    await choose(page, "System");
-    await other.emulateMedia({ colorScheme: "dark" });
-    await expect(other.locator("html")).toHaveAttribute(
-      "data-theme",
-      "lounge-night",
-    );
-    await other.emulateMedia({ colorScheme: "light" });
-    await expect(other.locator("html")).toHaveAttribute("data-theme", "lounge");
-    await choose(page, "Lounge Night");
-    await expect(other.locator("html")).toHaveAttribute(
-      "data-theme",
-      "lounge-night",
-    );
-    await other.close();
-
     const nightBackground = await page.evaluate(() => {
       const probe = document.createElement("div");
       probe.style.background = "var(--wl-color-bg)";
@@ -128,7 +127,9 @@ test.describe("desktop Settings against local Ergo", () => {
       probe.remove();
       return color;
     });
+
     await page.reload();
+
     await expect
       .poll(() => page.evaluate(() => Reflect.get(window, "__firstFrame")))
       .toEqual({
@@ -136,7 +137,6 @@ test.describe("desktop Settings against local Ergo", () => {
         density: "comfortable",
         theme: "lounge-night",
       });
-    await openHome(page, irc);
     await settingsButton(page).click();
     await expect(
       page.getByRole("radio", { name: "Lounge Night" }),
@@ -213,6 +213,10 @@ test.describe("desktop Settings against local Ergo", () => {
     await expect(dialog).toBeFocused();
   });
 });
+
+async function expectTheme(page: Page, theme: string): Promise<void> {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
 
 function settingsButton(page: Page) {
   return page
