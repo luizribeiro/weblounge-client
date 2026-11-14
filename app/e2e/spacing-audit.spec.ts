@@ -1,11 +1,13 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import { messageId, serverTime } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import {
   scrollAwayFromLiveEdge,
   scrollToTranscriptTop,
 } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
+import { expectSettled } from "./settled";
 import { seedMixedConversation } from "./spacing-audit-fixture";
 import { armMessageTime } from "./time-rewrite";
 import { withTranscriptDiagnostics } from "./transcript-diagnostics";
@@ -17,6 +19,7 @@ test.skip(
 
 test("keeps every transcript row kind on the signed spacing rhythm", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(!auditProject(testInfo.project.name), "runs on desktop and phones");
   const phone = isPhoneProject(testInfo.project.name);
@@ -24,137 +27,122 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
   );
   await page.emulateMedia({ colorScheme: "dark" });
-  const scenario = await seedMixedConversation(testInfo.project.name);
-  try {
-    await useDedicatedWorker(page);
-    await page.goto(scenario.startUrl);
-    await page.getByRole("button", { name: scenario.channel }).click();
-    await expect(
-      page.getByRole("heading", { name: scenario.channel }),
-    ).toBeVisible();
-    await expect(messageRow(page, scenario.systemFence)).toBeVisible();
-    const composer = page.getByRole("textbox", { name: "Message" });
-    await composer.fill("/version");
-    await composer.press("Enter");
-    await composer.fill("/topic");
-    await composer.press("Enter");
-    await expect(page.locator("[data-notice-row]")).toHaveCount(2);
-    await expect(
-      page.getByRole("heading", { name: scenario.channel }),
-    ).not.toHaveAttribute("aria-busy", "true");
+  const scenario = await seedMixedConversation(irc);
+  await useDedicatedWorker(page);
+  await page.goto(scenario.startUrl);
+  await page.getByRole("button", { name: scenario.channel }).click();
+  await expect(
+    page.getByRole("heading", { name: scenario.channel }),
+  ).toBeVisible();
+  await expect(messageRow(page, scenario.systemFence)).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message" });
+  await composer.fill("/version");
+  await composer.press("Enter");
+  await composer.fill("/topic");
+  await composer.press("Enter");
+  await expect(page.locator("[data-notice-row]")).toHaveCount(2);
+  await expectSettled(page, { conversation: scenario.channel });
 
-    const list = page.locator("[data-message-list]");
-    await expect
-      .poll(async () => {
-        await driveToTranscriptTop(list);
-        return page
-          .locator('[data-divider-kind="history"]')
-          .evaluateAll((rows) =>
-            rows.map((row) => row.getAttribute("aria-label")),
-          );
-      })
-      .toContain(`Beginning of ${scenario.channel}`);
-    await expect(page.locator('[data-divider-kind="history"]')).toContainText(
-      "Server history starts",
-    );
-    await leaveConversation(page, phone);
-    await scenario.sendUnread(page);
-    await page.getByRole("button", { name: scenario.channel }).click();
-    await expect(messageRow(page, scenario.unreadMessage)).toBeVisible();
-    await expect(page.locator("[data-new-line]")).toBeVisible();
-    await composer.fill("/version");
-    await composer.press("Enter");
-    await expect(
-      page.locator('[data-line-spacing="after-message"] [data-notice-row]'),
-    ).toBeVisible();
-    const density = await transcriptDensity(
-      page,
-      scenario.unreadMessage,
-      scenario.systemFence,
-    );
-    expect(density.dividerBefore).toBeCloseTo(phone ? 20 : 14, 0);
-    expect(density.dividerAfter).toBeCloseTo(phone ? 8 : 6, 0);
-    expect(density.newBefore).toBeCloseTo(density.dividerBefore, 0);
-    expect(density.newAfter).toBeCloseTo(density.dividerAfter, 0);
-    expect(density.paintedDividerBefore).toBeGreaterThan(
-      density.paintedDividerAfter,
-    );
-    expect(density.systemBefore).toBeCloseTo(phone ? 12 : 3, 0);
-    expect(density.systemAfter).toBeCloseTo(phone ? 0 : 3, 0);
-    expect(density.consecutiveLineBefore).toBeCloseTo(phone ? 4 : 3, 0);
-    expect(density.consecutiveLineAfter).toBeCloseTo(phone ? 0 : 3, 0);
-    expect(density.afterDividerLineBefore).toBeCloseTo(0, 0);
-    expect(density.afterDividerMessageBefore).toBeCloseTo(0, 0);
-    expect(density.historyBefore).toBeCloseTo(density.dividerBefore, 0);
-    expect(density.historyAfter).toBeCloseTo(density.dividerAfter, 0);
+  const list = page.locator("[data-message-list]");
+  await expect
+    .poll(async () => {
+      await driveToTranscriptTop(list);
+      return page
+        .locator('[data-divider-kind="history"]')
+        .evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute("aria-label")),
+        );
+    })
+    .toContain(`Beginning of ${scenario.channel}`);
+  await expect(page.locator('[data-divider-kind="history"]')).toContainText(
+    "Server history starts",
+  );
+  await leaveConversation(page, phone);
+  await scenario.sendUnread(page);
+  await page.getByRole("button", { name: scenario.channel }).click();
+  await expect(messageRow(page, scenario.unreadMessage)).toBeVisible();
+  await expect(page.locator("[data-new-line]")).toBeVisible();
+  await composer.fill("/version");
+  await composer.press("Enter");
+  await expect(
+    page.locator('[data-line-spacing="after-message"] [data-notice-row]'),
+  ).toBeVisible();
+  const density = await transcriptDensity(
+    page,
+    scenario.unreadMessage,
+    scenario.systemFence,
+  );
+  expect(density.dividerBefore).toBeCloseTo(phone ? 20 : 14, 0);
+  expect(density.dividerAfter).toBeCloseTo(phone ? 8 : 6, 0);
+  expect(density.newBefore).toBeCloseTo(density.dividerBefore, 0);
+  expect(density.newAfter).toBeCloseTo(density.dividerAfter, 0);
+  expect(density.paintedDividerBefore).toBeGreaterThan(
+    density.paintedDividerAfter,
+  );
+  expect(density.systemBefore).toBeCloseTo(phone ? 12 : 3, 0);
+  expect(density.systemAfter).toBeCloseTo(phone ? 0 : 3, 0);
+  expect(density.consecutiveLineBefore).toBeCloseTo(phone ? 4 : 3, 0);
+  expect(density.consecutiveLineAfter).toBeCloseTo(phone ? 0 : 3, 0);
+  expect(density.afterDividerLineBefore).toBeCloseTo(0, 0);
+  expect(density.afterDividerMessageBefore).toBeCloseTo(0, 0);
+  expect(density.historyBefore).toBeCloseTo(density.dividerBefore, 0);
+  expect(density.historyAfter).toBeCloseTo(density.dividerAfter, 0);
 
-    await expectContiguousRows(page, 2);
-    if (phone) {
-      await expectTextGap(
-        messageRow(page, scenario.groupStart),
-        messageRow(page, scenario.continuation),
-        6,
-      );
-      await expectTextGap(
-        messageRow(page, scenario.continuation),
-        messageRow(page, scenario.newSender),
-        16,
-        true,
-      );
-      await expectTextGap(
-        messageRow(page, scenario.highlightStart),
-        messageRow(page, scenario.highlightContinuation),
-        6,
-      );
-      const band = await bandInsets(
-        messageRow(page, scenario.highlightContinuation),
-      );
-      expect(band).toEqual({ after: 3, before: 3 });
-    }
-
-    const link = messageRow(page, scenario.wrappedLink);
-    await expect(link.getByRole("link")).toBeVisible();
-    await expect(link.locator("[data-selectable]")).toHaveCSS(
-      "overflow-wrap",
-      "anywhere",
+  await expectContiguousRows(page, 2);
+  if (phone) {
+    await expectTextGap(
+      messageRow(page, scenario.groupStart),
+      messageRow(page, scenario.continuation),
+      6,
     );
-    await expect(
-      messageRow(page, scenario.reacted).locator('[data-reaction="👍"]'),
-    ).toBeVisible();
-    await expect(messageRow(page, scenario.own)).toBeVisible();
-    await expect(page.locator("[data-notice-row]").first()).toBeVisible();
-    await expect
-      .poll(() => page.locator("[data-system-line]").count())
-      .toBeGreaterThanOrEqual(1);
-  } finally {
-    scenario.close();
+    await expectTextGap(
+      messageRow(page, scenario.continuation),
+      messageRow(page, scenario.newSender),
+      16,
+      true,
+    );
+    await expectTextGap(
+      messageRow(page, scenario.highlightStart),
+      messageRow(page, scenario.highlightContinuation),
+      6,
+    );
+    const band = await bandInsets(
+      messageRow(page, scenario.highlightContinuation),
+    );
+    expect(band).toEqual({ after: 3, before: 3 });
   }
+
+  const link = messageRow(page, scenario.wrappedLink);
+  await expect(link.getByRole("link")).toBeVisible();
+  await expect(link.locator("[data-selectable]")).toHaveCSS(
+    "overflow-wrap",
+    "anywhere",
+  );
+  await expect(
+    messageRow(page, scenario.reacted).locator('[data-reaction="👍"]'),
+  ).toBeVisible();
+  await expect(messageRow(page, scenario.own)).toBeVisible();
+  await expect(page.locator("[data-notice-row]").first()).toBeVisible();
+  await expect
+    .poll(() => page.locator("[data-system-line]").count())
+    .toBeGreaterThanOrEqual(1);
 });
 
 test("keeps measured virtual rows contiguous through transcript mutations", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(!auditProject(testInfo.project.name), "runs on desktop and phones");
   const phone = isPhoneProject(testInfo.project.name);
   await page.setViewportSize(
     phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
   );
-  const suffix = suffixFor(
-    testInfo.project.name,
-    testInfo.workerIndex,
-    testInfo.repeatEachIndex,
-  );
-  const account = `sa-virt-${suffix}`;
-  const channel = `#sa-virt-${suffix}`;
-  const startUrl = await isolatedStartUrl(account, channel);
+  const suffix = irc.id;
+  const channel = irc.channelNamed("sa-virt");
+  const startUrl = irc.url({ autojoin: [channel] });
   const writers = await Promise.all(
     Array.from({ length: 9 }, (_, index) =>
-      IrcClient.connect(
-        `sa-writer-${index}-${suffix}`,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      ),
+      irc.peer(`sa-writer-${index}`, [channel]),
     ),
   );
   const writer = writers[0];
@@ -164,115 +152,108 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     (_, index) =>
       `spacing virtual ${suffix} ${index} ${index % 9 === 0 ? "wrapped transcript text ".repeat(7) : "row"}`,
   );
-  try {
-    const oldest = messages[0];
-    if (oldest === undefined) throw new Error("oldest spacing row is missing");
-    const oldestEcho = await writer.privmsgConfirmed(channel, oldest);
-    await armMessageTime(oldest, Date.parse(serverTime(oldestEcho)) - 1_000);
-    const bulkMessages = messages.slice(1);
-    const finalEchoes: Promise<string>[] = [];
-    for (const [index, text] of bulkMessages.entries()) {
-      const sender = writers[index % writers.length];
-      if (sender === undefined) throw new Error("spacing writer is missing");
-      if (index >= bulkMessages.length - writers.length) {
-        finalEchoes.push(sender.privmsgConfirmed(channel, text));
-      } else {
-        sender.privmsg(channel, text);
-      }
+  const oldest = messages[0];
+  if (oldest === undefined) throw new Error("oldest spacing row is missing");
+  const oldestEcho = await writer.privmsgConfirmed(channel, oldest);
+  await armMessageTime(oldest, Date.parse(serverTime(oldestEcho)) - 1_000);
+  const bulkMessages = messages.slice(1);
+  const finalEchoes: Promise<string>[] = [];
+  for (const [index, text] of bulkMessages.entries()) {
+    const sender = writers[index % writers.length];
+    if (sender === undefined) throw new Error("spacing writer is missing");
+    if (index >= bulkMessages.length - writers.length) {
+      finalEchoes.push(sender.privmsgConfirmed(channel, text));
+    } else {
+      sender.privmsg(channel, text);
     }
-    await Promise.all(finalEchoes);
-    const seedFence = `spacing seed fence ${suffix}`;
-    await writer.privmsgConfirmed(channel, seedFence);
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await page.getByRole("button", { name: channel }).click();
-    await withTranscriptDiagnostics(page, testInfo, () =>
-      expect(messageRow(page, seedFence)).toBeVisible(),
-    );
-    await expect(
-      page.getByRole("heading", { name: channel }),
-    ).not.toHaveAttribute("aria-busy", "true");
-    const list = page.locator("[data-message-list]");
-    await expect
-      .poll(() => list.evaluate((element) => element.scrollHeight))
-      .toBeGreaterThan(2_500);
-    await expectContiguousRows(page, 2);
-
-    await expect
-      .poll(async () => {
-        await driveToTranscriptTop(list);
-        return messageRow(page, oldest).count();
-      })
-      .toBe(1);
-    await list.evaluate((element) => {
-      element.scrollTop = 0;
-    });
-    await expectContiguousRows(page, 2);
-    await throttleCpu(page, testInfo.project.name);
-    await list.press("End");
-    await withTranscriptDiagnostics(page, testInfo, () =>
-      expect(messageRow(page, seedFence)).toBeVisible(),
-    );
-    await expectContiguousRows(page, 2);
-
-    const reactionTarget = await writer.privmsgConfirmed(
-      channel,
-      `spacing reaction target ${suffix}`,
-    );
-    const reactionText = `spacing reaction target ${suffix}`;
-    await expect(messageRow(page, reactionText)).toBeVisible();
-    await writer.reactionConfirmed(channel, messageId(reactionTarget), "👍");
-    await expect(
-      messageRow(page, reactionText).locator('[data-reaction="👍"]'),
-    ).toBeVisible();
-    await expectContiguousRows(page, 2);
-
-    await page.setViewportSize(
-      phone ? { width: 844, height: 390 } : { width: 980, height: 800 },
-    );
-    await expectContiguousRows(page, 2);
-    await page.setViewportSize(
-      phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
-    );
-    await expectContiguousRows(page, 2);
-
-    if (phone) {
-      await keyboardGeometry(page, true);
-      await expectContiguousRows(page, 2);
-      await keyboardGeometry(page, false);
-      await expectContiguousRows(page, 2);
-    }
-
-    await throttleCpu(page, testInfo.project.name, 1);
-    await scrollAwayFromLiveEdge(page, list, {
-      distance: 100,
-      input: phone ? "touch" : "wheel",
-      wheelDelta: 55,
-    });
-    const beforeJump = await mountedRowPositions(page);
-    await throttleCpu(page, testInfo.project.name);
-    const unseenText = `spacing unseen ${suffix}`;
-    writer.privmsg(channel, unseenText);
-    const jump = page.getByRole("button", { name: /new message/u });
-    await expect(jump).toBeVisible();
-    await expect
-      .poll(() => mountedMessageRowKey(page, unseenText))
-      .toBeTruthy();
-    const unseenKey = await mountedMessageRowKey(page, unseenText);
-    const afterJump = await mountedRowPositions(page);
-    expect(afterJump.map(([key]) => key)).toContain(unseenKey);
-    expect(commonRowKeys(beforeJump, afterJump).length).toBeGreaterThan(0);
-    expect(commonRowShift(beforeJump, afterJump)).toBeLessThanOrEqual(1);
-    await jump.click();
-    await throttleCpu(page, testInfo.project.name, 1);
-    await expectContiguousRows(page, 2);
-  } finally {
-    for (const client of writers) client.close();
   }
+  await Promise.all(finalEchoes);
+  const seedFence = `spacing seed fence ${suffix}`;
+  await writer.privmsgConfirmed(channel, seedFence);
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await page.getByRole("button", { name: channel }).click();
+  await withTranscriptDiagnostics(page, testInfo, () =>
+    expect(messageRow(page, seedFence)).toBeVisible(),
+  );
+  await expectSettled(page, { conversation: channel });
+  const list = page.locator("[data-message-list]");
+  await expect
+    .poll(() => list.evaluate((element) => element.scrollHeight))
+    .toBeGreaterThan(2_500);
+  await expectContiguousRows(page, 2);
+
+  await expect
+    .poll(async () => {
+      await driveToTranscriptTop(list);
+      return messageRow(page, oldest).count();
+    })
+    .toBe(1);
+  await list.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expectContiguousRows(page, 2);
+  await throttleCpu(page, testInfo.project.name);
+  await list.press("End");
+  await withTranscriptDiagnostics(page, testInfo, () =>
+    expect(messageRow(page, seedFence)).toBeVisible(),
+  );
+  await expectContiguousRows(page, 2);
+
+  const reactionTarget = await writer.privmsgConfirmed(
+    channel,
+    `spacing reaction target ${suffix}`,
+  );
+  const reactionText = `spacing reaction target ${suffix}`;
+  await expect(messageRow(page, reactionText)).toBeVisible();
+  await writer.reactionConfirmed(channel, messageId(reactionTarget), "👍");
+  await expect(
+    messageRow(page, reactionText).locator('[data-reaction="👍"]'),
+  ).toBeVisible();
+  await expectContiguousRows(page, 2);
+
+  await page.setViewportSize(
+    phone ? { width: 844, height: 390 } : { width: 980, height: 800 },
+  );
+  await expectContiguousRows(page, 2);
+  await page.setViewportSize(
+    phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
+  );
+  await expectContiguousRows(page, 2);
+
+  if (phone) {
+    await keyboardGeometry(page, true);
+    await expectContiguousRows(page, 2);
+    await keyboardGeometry(page, false);
+    await expectContiguousRows(page, 2);
+  }
+
+  await throttleCpu(page, testInfo.project.name, 1);
+  await scrollAwayFromLiveEdge(page, list, {
+    distance: 100,
+    input: phone ? "touch" : "wheel",
+    wheelDelta: 55,
+  });
+  const beforeJump = await mountedRowPositions(page);
+  await throttleCpu(page, testInfo.project.name);
+  const unseenText = `spacing unseen ${suffix}`;
+  writer.privmsg(channel, unseenText);
+  const jump = page.getByRole("button", { name: /new message/u });
+  await expect(jump).toBeVisible();
+  await expect.poll(() => mountedMessageRowKey(page, unseenText)).toBeTruthy();
+  const unseenKey = await mountedMessageRowKey(page, unseenText);
+  const afterJump = await mountedRowPositions(page);
+  expect(afterJump.map(([key]) => key)).toContain(unseenKey);
+  expect(commonRowKeys(beforeJump, afterJump).length).toBeGreaterThan(0);
+  expect(commonRowShift(beforeJump, afterJump)).toBeLessThanOrEqual(1);
+  await jump.click();
+  await throttleCpu(page, testInfo.project.name, 1);
+  await expectContiguousRows(page, 2);
 });
 
 test("paints hidden multiline catch-up without stale row gaps", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== "webkit-phone-layout",
@@ -280,68 +261,54 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
   );
   await installNativeFeelInstrumentation(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  const suffix = suffixFor(
-    testInfo.project.name,
-    testInfo.workerIndex,
-    testInfo.repeatEachIndex,
-  );
-  const account = `sa-hidden-${suffix}`;
-  const channel = `#sa-hidden-${suffix}`;
-  const startUrl = await isolatedStartUrl(account, channel);
-  const writer = await IrcClient.connect(
-    `sa-hidden-writer-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const suffix = irc.id;
+  const channel = irc.channelNamed("sa-hidden");
+  const startUrl = irc.url({ autojoin: [channel] });
+  const writer = await irc.peer("sa-hidden-writer", [channel]);
   const hiddenMessages = [
     `hidden multiline one ${suffix} ${"variable width words for wrapping ".repeat(8)}\nsecond explicit line ${suffix}\n\nlast line ${suffix}`,
     `hidden long two ${suffix} ${"i".repeat(330)}`,
     `hidden multiline three ${suffix}\n${"another wrapped segment ".repeat(10)}\nfinal segment ${suffix}`,
   ] as const;
-  try {
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-    await page.evaluate(() =>
-      (
-        window as Window & {
-          __setNativeVisibility?: (hidden: boolean) => void;
-        }
-      ).__setNativeVisibility?.(true),
-    );
-    for (const text of hiddenMessages)
-      await writer.multilineConfirmed(channel, text);
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as Window & {
+        __setNativeVisibility?: (hidden: boolean) => void;
+      }
+    ).__setNativeVisibility?.(true),
+  );
+  for (const text of hiddenMessages)
+    await writer.multilineConfirmed(channel, text);
+  await expect(
+    page
+      .locator("[data-message-row]")
+      .filter({ hasText: hiddenMessages[0].split("\n")[0] }),
+  ).toHaveCount(0);
+
+  await captureFirstForegroundGaps(page, hiddenMessages);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __firstForegroundGaps?: readonly string[];
+            }
+          ).__firstForegroundGaps,
+      ),
+    )
+    .toEqual([]);
+  for (const text of hiddenMessages)
     await expect(
       page
         .locator("[data-message-row]")
-        .filter({ hasText: hiddenMessages[0].split("\n")[0] }),
-    ).toHaveCount(0);
-
-    await captureFirstForegroundGaps(page, hiddenMessages);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            (
-              window as Window & {
-                __firstForegroundGaps?: readonly string[];
-              }
-            ).__firstForegroundGaps,
-        ),
-      )
-      .toEqual([]);
-    for (const text of hiddenMessages)
-      await expect(
-        page
-          .locator("[data-message-row]")
-          .filter({ hasText: text.split("\n")[0] }),
-      ).toBeVisible();
-    await expectContiguousRows(page, hiddenMessages.length);
-  } finally {
-    writer.close();
-  }
+        .filter({ hasText: text.split("\n")[0] }),
+    ).toBeVisible();
+  await expectContiguousRows(page, hiddenMessages.length);
 });
 
 async function leaveConversation(page: Page, phone: boolean): Promise<void> {
@@ -366,45 +333,8 @@ function isPhoneProject(project: string): boolean {
   );
 }
 
-function suffixFor(
-  project: string,
-  workerIndex: number,
-  repeatIndex: number,
-): string {
-  return `${project.slice(0, 2)}${Date.now().toString(36).slice(-6)}w${workerIndex}r${repeatIndex}`;
-}
-
-async function isolatedStartUrl(
-  account: string,
-  channel: string,
-): Promise<string> {
-  const seed = await IrcClient.connectIsolated(account, channel);
-  seed.close();
-  await seed.waitForDisconnect();
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": `test-${account}`,
-    "irc-autojoin": channel,
-  });
-  return `/?${params.toString()}`;
-}
-
 function messageRow(page: Page, text: string): Locator {
   return page.locator(`[data-message-row][data-message-text="${text}"]`);
-}
-
-function messageId(line: string): string {
-  const id = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
-  if (id === undefined) throw new Error(`message has no msgid: ${line}`);
-  return id;
-}
-
-function serverTime(line: string): string {
-  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
-  if (value === undefined)
-    throw new Error(`message has no server time: ${line}`);
-  return value;
 }
 
 async function transcriptDensity(

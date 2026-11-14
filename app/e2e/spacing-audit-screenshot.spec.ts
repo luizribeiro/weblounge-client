@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
+import { expectSettled } from "./settled";
 import { seedMixedConversation } from "./spacing-audit-fixture";
 
 const phase = process.env.WEBLOUNGE_SPACING_SCREENSHOT_PHASE;
@@ -15,6 +16,7 @@ test.skip(
 
 test("captures the transcript spacing review fixture", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(!auditProject(testInfo.project.name), "runs on desktop and phones");
   const phone = isPhoneProject(testInfo.project.name);
@@ -22,46 +24,37 @@ test("captures the transcript spacing review fixture", async ({
     phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
   );
   await page.emulateMedia({ colorScheme: "dark" });
-  const scenario = await seedMixedConversation(testInfo.project.name);
-  try {
-    await page.goto(scenario.startUrl);
-    await page.getByRole("button", { name: scenario.channel }).click();
-    if (phone) await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: scenario.channel }),
-    ).toBeVisible();
-    await expect(
-      page.locator(
-        `[data-message-row][data-message-text="${scenario.systemFence}"]`,
-      ),
-    ).toBeVisible();
-    const composer = page.getByRole("textbox", { name: "Message" });
-    await composer.fill("/version");
-    await composer.press("Enter");
-    await composer.fill("/topic");
-    await composer.press("Enter");
-    await expect(page.locator("[data-notice-row]")).toHaveCount(2);
-    const list = page.locator("[data-message-list]");
-    if (phone) await scrollToTranscriptTop(list);
-    else {
-      await list.hover();
-      await page.mouse.wheel(0, -100_000);
-    }
-    if (phone)
-      await page.getByRole("button", { name: "Back to chats" }).click();
-    else
-      await page.getByRole("button", { name: /Local Ergo, online/u }).click();
-    await scenario.sendUnread(page);
-    await page.getByRole("button", { name: scenario.channel }).click();
-    await expect(page.locator("[data-new-line]")).toBeVisible();
-    if (phone) await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await mkdir(`${outputDirectory}/${phase}`, { recursive: true });
-    await page.screenshot({
-      path: `${outputDirectory}/${phase}/${phone ? "phone" : "desktop"}-mixed.png`,
-    });
-  } finally {
-    scenario.close();
+  const scenario = await seedMixedConversation(irc);
+  await page.goto(scenario.startUrl);
+  await page.getByRole("button", { name: scenario.channel }).click();
+  await expectSettled(page, { conversation: scenario.channel });
+  await expect(
+    page.locator(
+      `[data-message-row][data-message-text="${scenario.systemFence}"]`,
+    ),
+  ).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message" });
+  await composer.fill("/version");
+  await composer.press("Enter");
+  await composer.fill("/topic");
+  await composer.press("Enter");
+  await expect(page.locator("[data-notice-row]")).toHaveCount(2);
+  const list = page.locator("[data-message-list]");
+  if (phone) await scrollToTranscriptTop(list);
+  else {
+    await list.hover();
+    await page.mouse.wheel(0, -100_000);
   }
+  if (phone) await page.getByRole("button", { name: "Back to chats" }).click();
+  else await page.getByRole("button", { name: /Local Ergo, online/u }).click();
+  await scenario.sendUnread(page);
+  await page.getByRole("button", { name: scenario.channel }).click();
+  await expect(page.locator("[data-new-line]")).toBeVisible();
+  await expectSettled(page, { conversation: scenario.channel });
+  await mkdir(`${outputDirectory}/${phase}`, { recursive: true });
+  await page.screenshot({
+    path: `${outputDirectory}/${phase}/${phone ? "phone" : "desktop"}-mixed.png`,
+  });
 });
 
 function auditProject(project: string): boolean {

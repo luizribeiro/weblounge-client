@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import { messageId, serverTime } from "./irc-client";
+import type { IrcTestAccount } from "./irc-fixture";
 import { armMessageTime } from "./time-rewrite";
 
 export interface MixedConversation {
@@ -15,25 +16,19 @@ export interface MixedConversation {
   readonly systemFence: string;
   readonly unreadMessage: string;
   readonly wrappedLink: string;
-  readonly close: () => void;
   readonly sendUnread: (page: Page) => Promise<void>;
 }
 
 export async function seedMixedConversation(
-  project: string,
+  irc: IrcTestAccount,
 ): Promise<MixedConversation> {
-  const suffix = `${project.slice(0, 2)}${Date.now().toString(36).slice(-6)}`;
-  const account = `sauser${suffix}`;
-  const channel = `#sa-mixed-${suffix}`;
-  const startUrl = await isolatedStartUrl(account, channel);
-  const first = await IrcClient.connect(
-    `sa-first-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const account = irc.account;
+  const suffix = account;
+  const channel = irc.channelNamed("sa-mixed");
+  const startUrl = irc.url({ autojoin: [channel] });
+  const first = await irc.peer("sa-first", [channel]);
   const clockLine = await first.privmsgConfirmed(
-    `sa-first-${suffix}`,
+    first.nickname,
     `spacing clock ${suffix}`,
   );
   const clock = new Date(serverTime(clockLine));
@@ -51,21 +46,11 @@ export async function seedMixedConversation(
   const beforeJoin = `message before join ${suffix}`;
   await armNextRow(beforeJoin);
   await first.privmsgConfirmed(channel, beforeJoin);
-  const second = await IrcClient.connect(
-    `sa-second-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const second = await irc.peer("sa-second", [channel]);
   const afterJoin = `message after join ${suffix}`;
   await armNextRow(afterJoin);
   await second.privmsgConfirmed(channel, afterJoin);
-  const marker = await IrcClient.connect(
-    account,
-    account,
-    `test-${account}`,
-    channel,
-  );
+  const marker = await irc.self([channel]);
   const own = `own confirmed row ${suffix}`;
   await armNextRow(own);
   const ownLine = await marker.privmsgConfirmed(channel, own);
@@ -98,6 +83,7 @@ export async function seedMixedConversation(
   await armNextRow(systemFence);
   await first.privmsgConfirmed(channel, systemFence);
   marker.close();
+  await marker.waitForDisconnect();
   return {
     channel,
     continuation,
@@ -117,10 +103,6 @@ export async function seedMixedConversation(
         .poll(() => bufferUnreadCount(page, channel))
         .toBeGreaterThan(0);
     },
-    close: () => {
-      second.close();
-      first.close();
-    },
   };
 }
 
@@ -133,33 +115,4 @@ function bufferUnreadCount(page: Page, title: string): Promise<number> {
       if (desktopCount !== null) return Number(desktopCount);
       return Number(row.querySelector('[role="status"]')?.textContent ?? 0);
     });
-}
-
-async function isolatedStartUrl(
-  account: string,
-  channel: string,
-): Promise<string> {
-  const seed = await IrcClient.connectIsolated(account, channel);
-  seed.close();
-  await seed.waitForDisconnect();
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": `test-${account}`,
-    "irc-autojoin": channel,
-  });
-  return `/?${params.toString()}`;
-}
-
-function messageId(line: string): string {
-  const id = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
-  if (id === undefined) throw new Error(`message has no msgid: ${line}`);
-  return id;
-}
-
-function serverTime(line: string): string {
-  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
-  if (value === undefined)
-    throw new Error(`message has no server time: ${line}`);
-  return value;
 }
