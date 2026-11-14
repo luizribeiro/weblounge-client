@@ -81,6 +81,12 @@ it("pushes Settings and its Appearance page over Chats and pops them with Back",
   expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
 
   window.dispatchEvent(
+    new CustomEvent("weblounge:action", { detail: "buffer.next" }),
+  );
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
+
+  window.dispatchEvent(
     new CustomEvent("weblounge:action", { detail: "settings.open" }),
   );
   window.dispatchEvent(

@@ -133,9 +133,12 @@ from the action registry (design 14) and opens the same modal (D3).
 window.dispatchEvent(new CustomEvent("weblounge:action", { detail: "settings.open" }));
 ```
 
-Only actions in the shell-menu allow-list (`app/src/actions/shell-actions.ts`) run this way (today
-just `settings.open`); any other detail is ignored. The event runs the same `settings.open` as the button, the palette and the
-chord, so it opens Settings on whichever shell is showing, and drops the request while the app is
+Only actions in the shell-menu allow-list (`app/src/actions/shell-actions.ts`) run this way:
+`settings.open`, and `buffer.next` and `buffer.previous` for the Window menu's next and previous
+conversation items. The registry's action ids are the public names. Any other detail is ignored,
+and the phone shell, which has no app menu, acts only on `settings.open`. Each runs the same
+registry action as its chord; `settings.open` is also the button's and the palette's, so it opens
+Settings on whichever shell is showing, and drops the request while the app is
 still starting: the shells install the listener when they mount, after the splash, so there is no
 Settings to show before then. On the phone the event does nothing while Settings is already
 showing.

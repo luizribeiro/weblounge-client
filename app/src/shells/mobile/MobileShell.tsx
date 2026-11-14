@@ -7,7 +7,10 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import { listenForShellActions } from "../../actions/shell-actions";
+import {
+  listenForShellActions,
+  type ShellMenuAction,
+} from "../../actions/shell-actions";
 import type { BufferProjection, HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { MobileSettingsPage } from "../../features/settings/MobileSettings";
@@ -238,7 +241,8 @@ export function MobileShell(props: MobileShellProps) {
       ),
     );
   };
-  const openSettingsFromMenu = () => {
+  const runShellMenuAction = (action: ShellMenuAction) => {
+    if (action !== "settings.open") return;
     if (
       props.onChangeSetting !== undefined &&
       stack().active.kind !== "settings"
@@ -671,7 +675,7 @@ export function MobileShell(props: MobileShellProps) {
       requestBack();
     };
     window.addEventListener("popstate", handlePopState);
-    onCleanup(listenForShellActions(window, openSettingsFromMenu));
+    onCleanup(listenForShellActions(window, runShellMenuAction));
     document.addEventListener("visibilitychange", handleVisibilityChange);
     document.addEventListener("keydown", handleKeydown);
     shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);

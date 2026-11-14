@@ -3,6 +3,8 @@ import type { UiActionId } from "./action-registry";
 export const shellActionEvent = "weblounge:action";
 const shellMenuActions = [
   "settings.open",
+  "buffer.next",
+  "buffer.previous",
 ] as const satisfies readonly UiActionId[];
 export type ShellMenuAction = (typeof shellMenuActions)[number];
 
