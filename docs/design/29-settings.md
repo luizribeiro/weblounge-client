@@ -162,6 +162,13 @@ on one SharedWorker) sees changes live.
 - Signing out of a network deletes its network and conversation records. "Sign out of
   everything" clears the whole profile, Settings included (design 22).
 - The existing `notifications/prompt` record stays as is: it is device state, not a preference.
+- Remembered upload approvals (design 31) are already in `Space::Settings`, under
+  `uploads/approvals`, keyed by endpoint, account and file host because `NetworkKey` does not
+  exist yet; unlike the per-scope records it is one record for the whole device. It is the data
+  behind the network card's `UploadPassword` row. The Networks slice adds the request that lists
+  it, and its switch uses `ForgetUploadApprovals`. When `NetworkKey` lands, the engine moves each
+  approval into its network's `settings/network/<NetworkKey>` record on first read, and
+  `ForgetUploadApprovals` clears it there.
 
 **First paint.** Theme and density must be right before the engine answers, or each launch
 flashes the default theme. The page keeps a non-authoritative copy of the resolved appearance
