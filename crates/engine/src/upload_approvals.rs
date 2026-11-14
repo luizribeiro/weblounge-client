@@ -215,6 +215,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stores_each_grant_with_its_time_and_prunes_lapsed_ones() {
+        let storage = MemoryKv::default();
+        seed(
+            &storage,
+            br#"{"version":1,"approvals":[{"endpoint":"wss://irc.example.org/socket","account":"luiz","authority":"legacy.example.net"}]}"#,
+        )
+        .await;
+        remember(&storage, key("old.example.net"), NOW - 91 * DAY)
+            .await
+            .expect("remember old");
+        remember(&storage, key("future.example.net"), NOW + DAY)
+            .await
+            .expect("remember future");
+
+        remember(&storage, key("files.example.net"), NOW)
+            .await
+            .expect("remember");
+
+        let stored: serde_json::Value = serde_json::from_slice(
+            &storage
+                .get(Space::Settings, APPROVALS_KEY)
+                .await
+                .expect("read")
+                .expect("record"),
+        )
+        .expect("json");
+        assert_eq!(
+            stored,
+            serde_json::json!({
+                "version": 1,
+                "approvals": [{
+                    "endpoint": "wss://irc.example.org/socket",
+                    "account": "luiz",
+                    "authority": "files.example.net",
+                    "granted_at_ms": NOW,
+                }],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_grant_is_current_from_its_own_instant_but_not_before_it() {
+        let storage = MemoryKv::default();
+        remember(&storage, key("files.example.net"), NOW)
+            .await
+            .expect("remember");
+        assert!(remembered(&storage, &key("files.example.net"), NOW).await);
+        assert!(!remembered(&storage, &key("files.example.net"), NOW - 1).await);
+    }
+
+    #[tokio::test]
     async fn approvals_without_a_grant_time_count_as_expired() {
         let storage = MemoryKv::default();
         seed(
