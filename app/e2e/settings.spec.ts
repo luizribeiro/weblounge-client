@@ -5,6 +5,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { choose, settingsScreenshot } from "./settings-fixture";
+import { expectSettled } from "./settled";
 import { expectHeaderButtonsAtEnd } from "./sidebar-geometry";
 
 test.describe("desktop Settings against local Ergo", () => {
@@ -155,6 +156,7 @@ test.describe("desktop Settings against local Ergo", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(irc.url());
     await page.getByRole("button", { name: "Toggle channel list" }).click();
+    await expectSettled(page);
     const drawer = page.getByRole("dialog", { name: "Channels" });
     const search = drawer.getByRole("button", { name: "Jump to" });
     const settings = drawer.getByRole("button", { name: "Settings" });
