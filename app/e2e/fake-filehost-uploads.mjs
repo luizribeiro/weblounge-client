@@ -78,16 +78,19 @@ function cors(request, response) {
   response.setHeader("Access-Control-Expose-Headers", "Location, Upload-Limit");
 }
 
-// A held upload stops reading its body after the first chunk, so the browser's progress stalls
-// part-way until the test releases it.
+// A held upload stops reading its body half-way, so the browser's progress stalls part-way
+// until the test releases it.
 function receive(request, response, release) {
   const chunks = [];
   const hold = state.hold;
   state.hold = undefined;
+  const half = Number(request.headers["content-length"] ?? 0) / 2;
+  let received = 0;
   let paused = false;
   request.on("data", (chunk) => {
     chunks.push(chunk);
-    if (hold === undefined || paused) return;
+    received += chunk.length;
+    if (hold === undefined || paused || received < half) return;
     paused = true;
     request.pause();
     release(hold, () => request.resume());
