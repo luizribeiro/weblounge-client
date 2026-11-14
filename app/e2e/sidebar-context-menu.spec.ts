@@ -7,6 +7,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { rowName } from "./sidebar-rows";
 
 const screenshotDirectory = path.join(
   process.cwd(),
@@ -100,9 +101,7 @@ test.describe("desktop sidebar context menu against local Ergo", () => {
     await directRow.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Mark as read" }).click();
     await expect(stableDirectRow).toHaveAttribute("data-unread", "0");
-    await expect(stableDirectRow).toHaveAccessibleName(
-      `${peer.nickname}, online`,
-    );
+    await expect(stableDirectRow).toHaveAccessibleName(rowName(peer.nickname));
     expect(consoleIssues).toEqual([]);
   });
 });

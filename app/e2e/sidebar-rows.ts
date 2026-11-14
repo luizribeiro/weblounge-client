@@ -53,3 +53,29 @@ export async function conversationRowIds(page: Page): Promise<string[]> {
 export function row(page: Page, bufferId: string | undefined): Locator {
   return page.locator(`[data-sidebar-row] [data-buffer-id="${bufferId}"]`);
 }
+
+const peerPresenceSuffix = ", (?:online|away)";
+
+/** A desktop DM row's name ends with its peer's presence whenever the network reports one. */
+export function withoutPeerPresence(label: string): string {
+  return label.replace(new RegExp(`${peerPresenceSuffix}$`, "u"), "");
+}
+
+export function rowName(
+  title: string,
+  badge?: string,
+  { badgeOptional = false } = {},
+): RegExp {
+  const badgePart =
+    badge === undefined
+      ? ""
+      : `(?:, ${escapeRegex(badge)})${badgeOptional ? "?" : ""}`;
+  return new RegExp(
+    `^${escapeRegex(title)}${badgePart}(?:${peerPresenceSuffix})?$`,
+    "u",
+  );
+}
+
+export function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}

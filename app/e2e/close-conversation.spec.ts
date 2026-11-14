@@ -7,6 +7,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { rowName } from "./sidebar-rows";
 
 const screenshots = path.join(process.cwd(), "..", "screenshots", "close");
 
@@ -97,7 +98,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
     await expect(directRow()).toHaveCount(0);
     await peer.privmsgConfirmed(irc.account, "reopen direct");
     await expect(directRow()).toHaveAccessibleName(
-      `${peer.nickname}, 1 unread, including mentions, online`,
+      rowName(peer.nickname, "1 unread, including mentions"),
     );
 
     await home.click();

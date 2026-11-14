@@ -7,6 +7,7 @@ import {
   scrollAwayFromLiveEdge,
 } from "./message-list-scroll";
 import { expectSettled } from "./settled";
+import { rowName } from "./sidebar-rows";
 
 const ready = "Engine ready: wasm worker round trip complete";
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
@@ -115,7 +116,7 @@ test.describe("local Ergo user flow", () => {
     await expectSettled(page, { conversation: irc.channel });
     bot.privmsg(irc.account, text);
     const direct = page.getByRole("button", {
-      name: new RegExp(`^${bot.nickname}, 1 unread, including mentions$`, "u"),
+      name: rowName(bot.nickname, "1 unread, including mentions"),
     });
     await expect(direct).toBeVisible();
     await direct.click();

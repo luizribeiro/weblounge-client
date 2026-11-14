@@ -10,6 +10,7 @@ import {
 import { type IrcClient, messageTag } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
+import { escapeRegex, rowName, withoutPeerPresence } from "./sidebar-rows";
 
 test.describe("startup chat-list snapshot against local Ergo", () => {
   test.skip(
@@ -96,7 +97,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     await page.goto(irc.url());
 
     await expect(bufferRow(page, nick)).toHaveAccessibleName(
-      new RegExp(`^${nick}(?:$|, 1 unread, including mentions$)`, "u"),
+      rowName(nick, "1 unread, including mentions", { badgeOptional: true }),
     );
   });
 
@@ -1006,7 +1007,7 @@ async function expectRead(
   row: ReturnType<typeof bufferRow>,
   channel: string,
 ): Promise<void> {
-  await expect(row).toHaveAttribute("aria-label", channel);
+  await expect(row).toHaveAttribute("aria-label", rowName(channel));
 }
 
 async function snapshotRow(page: Page, channel: string): Promise<unknown> {
@@ -1448,7 +1449,9 @@ async function visibleRows(
 ): Promise<readonly { label: string }[]> {
   return Promise.all(
     titles.map(async (title) => ({
-      label: (await bufferRow(page, title).getAttribute("aria-label")) ?? "",
+      label: withoutPeerPresence(
+        (await bufferRow(page, title).getAttribute("aria-label")) ?? "",
+      ),
     })),
   );
 }
@@ -1580,12 +1583,13 @@ function cachedChatRows(
 async function visibleChatRows(
   page: Page,
 ): Promise<readonly { label: string; text: string }[]> {
-  return page.locator("[data-buffer-id]").evaluateAll((rows) =>
+  const rows = await page.locator("[data-buffer-id]").evaluateAll((rows) =>
     rows.map((row) => ({
       label: row.getAttribute("aria-label") ?? "",
       text: row.textContent ?? "",
     })),
   );
+  return rows.map((row) => ({ ...row, label: withoutPeerPresence(row.label) }));
 }
 
 async function expectUnreadCount(
@@ -1616,10 +1620,6 @@ async function expectNewDividerBetween(
       return [divider - beforeIndex, afterIndex - divider];
     })
     .toEqual([1, 1]);
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 async function observeMarkReadRequests(page: Page): Promise<void> {

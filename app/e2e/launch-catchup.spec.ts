@@ -3,6 +3,7 @@ import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { messageTag } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
+import { escapeRegex } from "./sidebar-rows";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -477,10 +478,6 @@ function bufferRow(page: Page, title: string) {
       name: new RegExp(`^${escapeRegex(title)}(?:,|$)`, "u"),
     })
     .first();
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 async function seedSnapshot(
