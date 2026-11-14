@@ -228,10 +228,9 @@ test.describe("desktop members against local Ergo", () => {
     ).toBeVisible();
   });
 
-  test("slides the narrow member drawer closed from its panel control", async ({
-    page,
-    irc,
-  }) => {
+  test("slides the narrow member drawer closed from its panel control", {
+    tag: "@serial",
+  }, async ({ page, irc }) => {
     await page.setViewportSize({ width: 500, height: 900 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto(irc.url());

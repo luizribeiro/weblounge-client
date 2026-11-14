@@ -147,10 +147,9 @@ test("gesture diagnostics show and remember pan decisions", async ({
   await expect(overlay).toHaveCount(0);
 });
 
-test("mobile Back button animates the chat over the visible list", async ({
-  page,
-  irc,
-}) => {
+test("mobile Back button animates the chat over the visible list", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openChat(page, irc);
   await startPopRecording(page);
   await page.getByRole("button", { name: "Back to chats" }).tap();

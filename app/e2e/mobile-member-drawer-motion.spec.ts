@@ -19,9 +19,9 @@ test.beforeEach(async ({ page, irc }) => {
   await openStandaloneChannel(page, irc);
 });
 
-test("opens with a fast start, anchored right, over a painted chat", async ({
-  page,
-}) => {
+test("opens with a fast start, anchored right, over a painted chat", {
+  tag: "@serial",
+}, async ({ page }) => {
   const recording = await recordMotion(page, { kind: "show" });
   const { before, frames } = recording;
   const moving = frames.filter((frame) => frame.left !== null);
@@ -53,13 +53,17 @@ test("opens with a fast start, anchored right, over a painted chat", async ({
 });
 
 for (const kind of ["close-button", "scrim", "escape"] as const) {
-  test(`closes via ${kind} by sliding fully off-screen`, async ({ page }) => {
+  test(`closes via ${kind} by sliding fully off-screen`, {
+    tag: "@serial",
+  }, async ({ page }) => {
     await openDrawer(page);
     await expectSlidesClosed(page, kind);
   });
 }
 
-test("closes via Back by sliding fully off-screen", async ({ page, irc }) => {
+test("closes via Back by sliding fully off-screen", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await page.addInitScript(() => Reflect.deleteProperty(window, "WebKitPoint"));
   await openStandaloneChannel(page, irc);
   await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
@@ -70,9 +74,9 @@ test("closes via Back by sliding fully off-screen", async ({ page, irc }) => {
   await expectSlidesClosed(page, "back");
 });
 
-test("hands a released drag to the transition without jumping", async ({
-  page,
-}) => {
+test("hands a released drag to the transition without jumping", {
+  tag: "@serial",
+}, async ({ page }) => {
   await openDrawer(page);
   const openLeft = await page
     .getByRole("dialog", { name: "Members" })

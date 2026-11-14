@@ -372,7 +372,7 @@
         };
         e2eShardCount = 4;
         # Specs tagged @serial restart Ergo, show fixed names in committed
-        # screenshots, sample motion frames that CPU contention drops, or
+        # screenshots, sample animation frames that CPU contention drops, or
         # assert wall-clock performance budgets.
         e2eWorkers = 2;
         e2e = pkgs.stdenvNoCC.mkDerivation {
