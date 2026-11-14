@@ -19,13 +19,15 @@ rustPlatform.buildRustPackage {
       (root + "/tauri.conf.json")
       (root + "/icons")
       (root + "/src")
+      (root + "/release/plan.mjs")
+      (root + "/release/plan.test.mjs")
     ];
   };
   cargoLock.lockFile = root + "/Cargo.lock";
   nativeBuildInputs = [ pkgs.cargo-tauri.hook ];
   preCheck = ''
     cargo clippy --offline --release --all-targets -- -D warnings
-    ${pkgs.lib.getExe pkgs.nodejs} --test 'src/*.test.mjs'
+    ${pkgs.lib.getExe pkgs.nodejs} --test 'src/*.test.mjs' 'release/*.test.mjs'
   '';
   # UNUserNotificationCenter rejects every call unless the signature binds the Info.plist, which the
   # linker's ad-hoc signature does not. A post phase runs after darwin's own fixup re-signing.
