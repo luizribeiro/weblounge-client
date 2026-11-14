@@ -1,4 +1,5 @@
 import { type Accessor, createSignal } from "solid-js";
+import { darkSchemeQuery } from "./color-scheme";
 import { type HostShell, hostShell } from "./host-shell";
 import { observeKeyboardMotion } from "./keyboard-motion";
 import { observeTouchMoveLock } from "./touch-move-lock";
@@ -43,7 +44,6 @@ type WidthObserver = (
 
 const touchQuery = "(hover: none) and (pointer: coarse)";
 const standaloneQuery = "(display-mode: standalone)";
-const darkQuery = "(prefers-color-scheme: dark)";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
 
 let installed: PlatformController | undefined;
@@ -56,7 +56,7 @@ export function installPlatformEnvironment(
   const target = options.target ?? "web";
   const touch = mediaQuery(browserWindow, touchQuery);
   const standalone = mediaQuery(browserWindow, standaloneQuery);
-  const dark = mediaQuery(browserWindow, darkQuery);
+  const dark = mediaQuery(browserWindow, darkSchemeQuery);
   const reducedMotion = mediaQuery(browserWindow, reducedMotionQuery);
   let panels = panelsForWidth(initialWidth(root, browserWindow));
   const [environment, setEnvironment] = createSignal(

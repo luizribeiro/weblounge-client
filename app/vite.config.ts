@@ -119,6 +119,9 @@ export default defineConfig(({ mode }) => {
       solid(),
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
+      emitAppearanceHintScript(
+        resolve(import.meta.dirname, "src/platform/appearance-hint-entry.ts"),
+      ),
       emitPushPayloadParser(pushPayloadJs, pushPayloadWasm),
       emitServiceWorker(
         resolve(import.meta.dirname, "src/push-worker.ts"),
@@ -387,6 +390,74 @@ export function removeStyle(id) {
       );
     },
   };
+}
+
+// The appearance hint must run before the first paint, so it ships as a
+// classic, render-blocking script rather than a deferred module.
+function emitAppearanceHintScript(entry: string): Plugin {
+  const devPath = "/@weblounge/appearance-hint.js";
+  return {
+    name: "weblounge-appearance-hint",
+    enforce: "post",
+    configureServer(server) {
+      server.middlewares.use(devPath, (_request, response) => {
+        bundleClassicScript(entry).then(
+          (code) => {
+            response.setHeader("Content-Type", "text/javascript");
+            response.end(code);
+          },
+          (error: unknown) => {
+            response.statusCode = 500;
+            response.end(String(error));
+          },
+        );
+      });
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler: (html, context) =>
+        context.server === undefined || context.path !== "/index.html"
+          ? html
+          : withHeadScript(html, devPath),
+    },
+    async generateBundle(_options, bundle) {
+      const html = bundle["index.html"];
+      if (html === undefined) return;
+      if (html.type !== "asset" || typeof html.source !== "string")
+        throw new Error("index.html is not a text asset");
+      const reference = this.emitFile({
+        type: "asset",
+        name: "appearance-hint.js",
+        source: await bundleClassicScript(entry),
+      });
+      html.source = withHeadScript(
+        html.source,
+        `/${this.getFileName(reference)}`,
+      );
+    },
+  };
+}
+
+function withHeadScript(html: string, src: string): string {
+  if (!html.includes("</head>")) throw new Error("index.html has no head");
+  return html.replace("</head>", `<script src="${src}"></script></head>`);
+}
+
+async function bundleClassicScript(entry: string): Promise<string> {
+  const output = await viteBuild({
+    configFile: false,
+    publicDir: false,
+    logLevel: "error",
+    build: {
+      write: false,
+      rollupOptions: { input: entry, output: { format: "iife" } },
+    },
+  });
+  const chunk = (Array.isArray(output) ? output : [output])
+    .flatMap((result) => ("output" in result ? result.output : []))
+    .find((item) => item.type === "chunk");
+  if (chunk === undefined) throw new Error(`could not bundle ${entry}`);
+  return chunk.code;
 }
 
 function prioritizeSplashStylesheet(): Plugin {
