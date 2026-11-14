@@ -11,6 +11,7 @@
   --wl-motion-push-in: 280ms;
   --wl-motion-suggestions: 120ms;
   --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --wl-time-hint-hold: 400ms;
 }
 :root[data-theme="lounge"] {
   color-scheme: light;

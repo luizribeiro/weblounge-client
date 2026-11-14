@@ -98,6 +98,10 @@ export const motionTokens = {
   standardCurve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 } as const;
 
+export const timeTokens = {
+  hintHold: "400ms",
+} as const;
+
 export const themes = buildRegistry(themeFiles);
 export const nickPaletteSize = sharedNickPaletteSize(themes);
 
@@ -121,7 +125,8 @@ export function themeStyleSheet(registry = themes): string {
       return `:root[data-theme="${theme.id}"]{${values.join(";")}}`;
     })
     .join("");
-  return `:root{${motion}}${themeRules}@media(prefers-reduced-motion:reduce){:root{${reducedMotion}}}`;
+  const time = tokenProperties("time", timeTokens).join(";");
+  return `:root{${motion};${time}}${themeRules}@media(prefers-reduced-motion:reduce){:root{${reducedMotion}}}`;
 }
 
 function motionProperties(

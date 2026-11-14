@@ -6,6 +6,7 @@ import {
   nickPaletteSize,
   themeStyleSheet,
   themes,
+  timeTokens,
 } from "./theme-registry";
 
 describe("theme registry", () => {
@@ -45,6 +46,12 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).not.toContain("--wl-motion-drawer-curve:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-push-curve:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-pop-curve:0ms");
+  });
+
+  it("keeps time tokens when motion is reduced, since a hold delay is not motion", () => {
+    expect(timeTokens.hintHold).toBe("400ms");
+    expect(themeStyleSheet()).toContain("--wl-time-hint-hold:400ms");
+    expect(themeStyleSheet()).not.toContain("--wl-time-hint-hold:0ms");
   });
 });
 
