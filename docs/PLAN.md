@@ -5,26 +5,116 @@ The single place a fresh session reads to know where the project stands. Update 
 ## Roadmap
 
 ### Now
-- Desktop wrapper (design 27) phase 2: deploy to beta, then Luiz's end-to-end check in the app
-  (hidden-window DM notification, Dock badge, click opens the DM, reading clears both).
+- Main is `86651352`; the beta deployment runs `13b8229d`. Main is ahead by the row-remount fix, the
+  near-black viewer scrim, the filter-chip test fix and the desktop 0.1.2 release.
+- Done and live: desktop wrapper phases 1 and 2 (design 27, Dock badge and page-posted
+  notifications), conversation closing, the ⌘K switcher and command palette, inline images, the
+  image viewer, image uploads (design 31) and Settings slice 1 (design 29).
+- Waiting on Luiz's checks: V1 to V3 in the Backlog (paste, viewer, wrapper end to end).
+- Next: buffer events 5, 6, 8, 9 (F1).
 
-### Next (in order)
-1. Buffer events 5, 6, 8, 9: channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+### In progress
+- Four new themes: Modern, Terminal, Retro and Black (OLED pitch black); each sets `viewerScrim`
+  to `rgba(0,0,0,.92)`. Design 08, design 29.
+- Bot icon instead of the presence circle on bot DM rows in the sidebar, and the network's online
+  indicator aligned with the prefix column of the rows below it. Design 09.
 
-### Later
-- Desktop wrapper (design 27) phase 3: seamless title bar, after Luiz signs off its layout.
-- Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
-- Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
-- Refresh crates/engine/data/public-suffixes.txt (command in its header); vendored 2026-11-12.
-- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
-- CI flake (2 in ~80 main runs, not reproduced locally): `spacing-audit.spec.ts:133` opens the channel at the top of the transcript instead of the live edge. Hypothesis: TanStack drops the in-flight `scrollToEnd` (an "external" scroll while queued, or the 5s reconcile cap) and MessageList never re-issues it; failures now attach `transcript-geometry`.
-- 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
+### Backlog
+One list for everything deferred or open; move an item to Done recently (dated) in the commit that
+finishes it, and add new items here, not in another list. IDs are stable; detail lives where the
+pointer says. "Memory" is the maintainer's session notes, not the repo.
 
-### Waiting
-- papo: a single bump after its handle redesign (ServerTime, mark_read and up_to_time are already in e1cee37).
-- iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
+#### Decisions waiting on Luiz
+- DL1: close a conversation's push notifications in the notification centre when it is opened. On hold until a device test shows why iPhone notifications are blank. Design 23.
+- DL2: show a subtle "checking connection" hint during the 4s foreground probe on return to the foreground (none today). Design 03.
+- DL3: re-allow codex launches via an allow rule in `.claude/settings.local.json` (the classifier denies the tmux launch). Memory.
+- DL4: notification title format for channels (offered, unanswered). Design 23.
+- DL5: where notification rules live: per-account on the server (`weblounge.org/notify-rules` Ergo extension) or device-local; deferred past v1. Design 23 §Later, design 29.
+- DL6: telemetry; the design is agreed, do not build it without talking to Luiz. Memory.
+- DL7: which shell tablets and iPad (with trackpad) get; mobile shell for now. Design 09, design 10.
+- DL8: small unanswered design questions: copying a partly selected message (whole row or substring), notice form `-nick- text` vs `<nick>` (design 15); whether durable drafts roam through an account service, and `/topic` with no text (design 13); account-wide push lease vs activity-based lease (design 23 decision 6).
+- DL9: papo gaps, on the papo agenda: typed `mute`, `BanTarget`, `motd()`/`whowas()`, typed CTCP are "later" in papo; search waits (soju-only); stabilise `unstable` in the order bouncer, persistence, webpush; ordered endpoint failover; filehost EXTJWT. `docs/design/commands-catalog.md` §Gaps, design 03.
+
+#### Features
+- F1: buffer events 5 (kicks, topic, modes, NOTICE variants; fixes the phone join-summary overflow where a wrapped "joined" overlaps the next row), 6 (invites with Join, renames, notes), 8 (tombstones, "Unverified", "Not sent, Retry"), 9 (server buffer). Design 26.
+- F2: buffer events 10 to 12: netsplit, cut-off multiline (needs a papo bump), send-path correctness. Design 26.
+- F3: the "Messages may be missing" gap line has no Retry button. Design 26, design 05.
+- F4: desktop wrapper phase 3, seamless title bar, after Luiz signs off its layout. Design 27.
+- F5: 7d mobile/PWA polish, 8 production-profile perf scenarios, 8b end-to-end perf. Milestone 2 tasks below.
+- F6: image viewer later: move between a conversation's images, Android back closes it, Copy link and Save in Tauri, Open original; close when the image's row is virtualised away fades instead of shrinking. Design 30 §Later.
+- F7: natural-size cache in the engine's `Space::Cache` (needs a protocol request and records) and `filehost_origin` persisted in the chat-list snapshot. Design 30 §Later.
+- F8: UI to forget remembered upload hosts (`ForgetUploadApprovals` exists, nothing calls it), in Networks settings. Design 31.
+- F9: uploads beyond v1: Attach button and picker, drag and drop, several images, arbitrary files, offline outbox, native Tauri uploader. Design 31 §Later, design 13.
+- F10: Settings beyond slice 1: Networks, Notifications, keyboard rebinding, quiet hours and per-sender rules, per-network overrides, search, import/export, cross-device sync, onboarding, native macOS Settings window, push-permission toggle. Design 29 §Out of scope.
+- F11: link previews (cards, proxy, per-channel toggle, Tauri direct fetch, link shimming of outbound clicks, IRCv3 previews extension); paused, and the "images from other sites" switch is left out of Settings. Memory, design 30, design 29.
+- F12: animate phone chat-list reorders (row slides to top); parked as finicky. If revisited: moved row, new row, off-screen row, bursts, reduced motion. Memory.
+- F13: keyboard follow-ups: rebinding and conflict UI, context-menu projections, native mobile shortcut bridges, optional Vim preset; palette commands with typed arguments stay hidden. Design 14 §Later, Known limits.
+- F14: split view on desktop: page notifications count only the focused pane as on-screen. `docs/reference/split-view.md`, design 23 addendum.
+- F15: reactions and replies later: swipe to reply, custom emoji text, Activity indexing, redaction interactions, moderation. Design 25.
+- F16: platform later bucket: search, around-message jumps, persistent timelines and history tails, offline read-marker queue, durable send queue, native TCP/TLS and Tauri iOS/Android, soju import, bouncer and Web Push after the `unstable` decision, remote engines. Designs 02, 03, 05, 17, 22, chat-list-snapshot.md.
+- F17: desktop release: in-app updater (signed Tauri feed), Intel/universal build, Windows and Linux, release builds in GitHub Actions (needs signing secrets). Design 28 §Later.
+- F18: push later: urgency filtering, app rate limits, stable network identity, an unmocked Ergo to relay to push-service delivery test, APNs/FCM/UnifiedPush for Tauri, a hosted members-only soju bouncer. Design 23 §Later.
+- F19: keyboard-open animation is off by default until Luiz approves a video; may return once glitch-free. Memory.
+- F20: multi-network generality: uploads, inline images and previews key off per-network capabilities, never weblounge hosts; hosted-web CSP `connect-src`/`img-src` list only weblounge hosts, so other filehosts need a CSP decision. Design 30, design 31.
+- F21: perf harness later: scroll/history, reconnect, navigation, six-pane, idle, hidden-tab and soak scenarios; memory targets (220MiB web, 350MiB desktop RSS); real-device and soju profiles; CI runner class. Design 21 §Later.
+
+#### Bugs
+- B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
+- B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
+- B3: `pagehide`/`freeze` listeners set the engine hidden without flipping the foreground signal; a resume could drain while it reads true. `app/src/App.tsx:948`.
+- B4: page notifications known limits: push and page can both notify while push re-registers; `registration === undefined` stays pending if the engine never emits `push_state_changed`; the two-tab election is only unit-tested. Design 23 addendum.
+- B5: stale-buffer and push follow-ups: clear `pushed_history_pending` when the last provisional record disappears (`crates/engine/src/state.rs:226`); stored push records are never pruned, so each cold start refetches Latest per buffer; a push refresh skips marker fetch if the DM opens mid-refresh (`runtime.rs:578`); no unit test for requeue in `restart_inflight_history`. Waits on a device test.
+- B6: iOS push lease not released on lock (needs an SSH device test); the lease still has its own lifecycle wiring and moves to the shared foreground signal in the push migration step. Known limits.
+- B7: WebKit bug 268797: a notification tap can leave the iOS Home Screen app on the chat list; we deliberately do not guess. Known limits.
+- B8: slow launch with many buffers: history replies trail papo's post-JOIN burst by ~1.5s; a no-cache launch sends 48 commands, 17 history commands exceed the budget by one; the 30-day TARGETS window can omit older DMs. Waits on papo. Known limits.
+- B9: the engine keeps its own "MONITOR offline" memory because papo keeps a held-direct-handle peer in monitor_online; `presence()` in newer papo replaces it; away for MONITOR-only peers needs extended-monitor. Waits on papo.
+
+#### Test flakes
+- T1: `spacing-audit.spec.ts:133` opens at the top of the transcript instead of the live edge (2 in ~80 main runs); under 10x CPU throttle three later steps also fail. Failures attach `transcript-geometry`; hypothesis: TanStack drops the in-flight `scrollToEnd` and MessageList never re-issues it.
+- T2: the Firefox badge test in `stale-snapshot.spec.ts` fails locally in isolation (once timed out waiting for network online); never failed in CI. Decide whether to drop it from the flaky list.
+- T3: `mobile-page-zoom.spec.ts:43` `[webkit-mobile-inputs]` failed once in CI, the "Search chats" searchbox never appeared; not reproduced.
+- T4: `production-older-history.spec.ts` showed a stale unread precondition (`data-unread="0"`) once locally; not reproduced.
+- T5: `connection-resilience.spec.ts:359` `[resilience-mobile-webkit]` fails locally, passes in CI; the dev-server harness has two wire/history failures; the spec's own wire scan is not on the `sentWireLines` helper.
+- T6: `mobile-push-motion` "released swipe did not transition" failed once in CI; `webkit-close-phone` times out locally at the default timeout.
+- T7: `stale-snapshot.spec.ts` around line 420 sends `bot.privmsgConfirmed(...)` right after closing the app, without waiting for detach (the close-before-detach race fixed elsewhere in that spec).
+- T8: committed screenshots (composer-completion, member-panel) are stale for the 224px sidebar and need regenerating on a quiet host; parallel agents clash on Ergo/forwarder/preview ports (6667, 8067, 8066, 8091, 4173) and orphaned vite preview processes block runs.
+- T9: e2e stability under load: native-feel idle, transcript-gaps, composer-anchor:38 and desktop-shell:87 still fail in heavy local runs; fix causes, never ease rules. `docs/design/e2e-isolation.md`, memory.
+
+#### Tech debt
+- TD1: engine cleanups from the batch 1b review: extract `push_record`, insert with `partition_point`, fold once per turn, `is_chat(&FoldedItem)`, dedupe the legacy membership helpers, replace the `system_server_times` parallel map with typed metadata, round-trip the own-kick reason, re-mark the dirty id when fold/diff fails, move `record.provisional_identity` to `chat_metadata`. Design 26.
+- TD2: design 26 should record that per-class prefix eviction can merge system runs once batch 3 folds runs.
+- TD3: refresh `crates/engine/data/public-suffixes.txt` (command in its header; vendored 2026-11-12).
+- TD4: upload residual risks: the Public Suffix List is the trust boundary; other ports on the same site get the password (only port 443 auto-releases); Bearer tokens go to whatever host a hosted server advertises (same-site check, no prompt); token-login uploads are covered only by unit tests. Design 31.
+- TD5: read-state risks to watch: TS formula drift (golden fixtures are mandatory), msgid/exact-time carry through the relay, a slow first launch after a schema migration, mention classification fixed at arrival. Design 24.
+- TD6: the Settings slice 1 browser tests were never compared against a base build. Design 29.
+
+#### Server-side asks
+- SV1: upload-scoped tokens from concierge instead of login tokens; the file host receives login-capable tokens today. Design 31.
+- SV2: command-budget bump (CHATHISTORY/MARKREAD 256, WHO/MONITOR 64) against Ergo's default fakelag needs Luiz's OK and an Ergo restart; the matching papo fakelag proposal is not delivered. Memory.
+- SV3: ask the weblounge-server session for a weblounge-client variant of the concierge/scrubber e2e (`tests/e2e/clients/`). Design 31.
+- SV4: Ergo DM history is disabled on weblounge, so client-side search cannot cover DMs; a link-preview proxy has no standard and would be an SSRF surface. `docs/design/commands-catalog.md` gap 5.
+
+#### Device checks
+- V1: upload paste: iPhone Photos (HEIC), Android Gboard/WebView and the Mac app's ⌘V; Firefox paste is only unit-tested. Design 31.
+- V2: image viewer on real devices: pinch quality in WKWebView and Android WebView, double-tap zoom on Android. Design 30.
+- V3: desktop wrapper phase 2 end to end in the Mac app (hidden-window DM notification, Dock badge, click opens the DM, reading clears both) and ⌃Tab moving one conversation in 0.1.2. Design 27.
+- V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
+- V5: compare the mention rule with the server's push matching (soju source not available locally). Design 17.
+
+#### Docs and housekeeping
+- DC1: remove stray worktrees and branches (`~/weblounge-client-*`, old `bump-previous-*` pins, `.claude/worktrees/agent-*`); keep `~/weblounge-client-tap-recovery` for reference.
+- DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-14: the image viewer's scrim is near-black (`viewerScrim`) in every theme; the phone filter
+  chips are 35px tall with a 44px tap target, and their layout-shift test now scopes to the chip
+  interaction.
+- 2026-11-13: closed DMs are tombstoned in the chat-list snapshot, so a closed conversation stays
+  closed across relaunches until new traffic reopens it.
+- 2026-11-13: `flake.lock` no longer nests `weblounge-client-previous` pins (`follows = ""`).
+- 2026-11-11: phone transcripts show a robot icon for bots (the sidebar bot icon is in progress).
+- 2026-11-08: push notifications no longer arrive blank on a locked iPhone: the route key is stored
+  as bytes instead of a `CryptoKey`.
 - 2026-11-14: transcript rows stay mounted when a row is inserted above them (the history edge
   appearing as a phone conversation opens, older history). The Solid virtualizer adapter rewrote
   its records' keys in place, so every visible row below an insert remounted; this caused the
