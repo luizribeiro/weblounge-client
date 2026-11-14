@@ -559,6 +559,7 @@ impl Runtime {
                 identity: running.identity.clone(),
                 filehost: filehost::upload_endpoint(&running.client.state()),
                 online: running.model.is_online(),
+                now_ms: time_millis(papo::time::now()),
             };
             (state.storage.clone(), context)
         };

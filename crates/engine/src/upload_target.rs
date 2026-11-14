@@ -50,6 +50,7 @@ pub(crate) struct UploadContext {
     pub(crate) identity: ConnectionIdentity,
     pub(crate) filehost: Option<UploadEndpoint>,
     pub(crate) online: bool,
+    pub(crate) now_ms: i64,
 }
 
 pub(crate) async fn resolve<B: KvBackend>(
@@ -75,7 +76,7 @@ pub(crate) async fn resolve<B: KvBackend>(
                 authority: filehost.authority.clone(),
                 account,
             };
-            let approval = approval(storage, requested, &key).await;
+            let approval = approval(storage, requested, &key, context.now_ms).await;
             let header = basic_header(&key.account, &password);
             (
                 CredentialKind::Basic,
@@ -112,14 +113,15 @@ async fn approval<B: KvBackend>(
     storage: &B,
     requested: Option<UploadApproval>,
     key: &ApprovalKey,
+    now_ms: i64,
 ) -> Approval {
     if let Some(requested) = requested.filter(|requested| requested.host == key.authority) {
         if requested.remember {
-            let _ = upload_approvals::remember(storage, key.clone()).await;
+            let _ = upload_approvals::remember(storage, key.clone(), now_ms).await;
         }
         return Approval::Granted;
     }
-    if upload_approvals::is_remembered(storage, key)
+    if upload_approvals::is_remembered(storage, key, now_ms)
         .await
         .unwrap_or(false)
     {
@@ -172,6 +174,7 @@ mod tests {
             identity,
             filehost: authority.map(filehost),
             online: true,
+            now_ms: NOW,
         }
     }
 
@@ -192,6 +195,41 @@ mod tests {
     }
 
     const IRC: &str = "wss://irc.example.org/socket";
+    const NOW: i64 = 1_794_600_000_000;
+    const DAY: i64 = 24 * 60 * 60 * 1_000;
+
+    #[tokio::test]
+    async fn a_lapsed_approval_asks_again_and_a_new_answer_renews_it() {
+        let storage = MemoryKv::default();
+        let at = |now_ms| UploadContext {
+            now_ms,
+            ..context(plain(IRC), Some("files.elsewhere.test"))
+        };
+        let asks = UploadResolution::ApprovalRequired {
+            host: "files.elsewhere.test".into(),
+        };
+        resolve(
+            &storage,
+            at(NOW),
+            Some(approval("files.elsewhere.test", true)),
+        )
+        .await;
+        assert_eq!(
+            resolve(&storage, at(NOW + 89 * DAY), None).await,
+            basic("https://files.elsewhere.test/upload")
+        );
+        assert_eq!(resolve(&storage, at(NOW + 90 * DAY), None).await, asks);
+        resolve(
+            &storage,
+            at(NOW + 90 * DAY),
+            Some(approval("files.elsewhere.test", true)),
+        )
+        .await;
+        assert_eq!(
+            resolve(&storage, at(NOW + 150 * DAY), None).await,
+            basic("https://files.elsewhere.test/upload")
+        );
+    }
 
     #[tokio::test]
     async fn offline_and_missing_filehosts_never_resolve() {

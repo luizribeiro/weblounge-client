@@ -101,7 +101,9 @@ fn release_credential(irc_host: &str, filehost_host: &str, credential: Credentia
 - **Remembered approvals** are a device-local `Space::Settings` record (design 22) keyed by the
   connection endpoint, the SASL account and the file host's authority (host and port, so approving
   `files.example.net:8443` does not cover `:443`). A one-time approval is not stored and covers only
-  the upload that asked. `ForgetUploadApprovals` clears every remembered approval; until the
+  the upload that asked. A remembered approval lapses 90 days after it was granted (each entry
+  stores its grant time; an entry without one counts as lapsed), and the next upload asks again.
+  `ForgetUploadApprovals` clears every remembered approval; until the
   Networks settings section brings its switch, nothing in the UI calls it, a deliberate v1 gap.
 - **Residual risk.** The PSL is the trust boundary: on a domain that hands out subdomains to other
   parties without being listed (some universities and companies), a sibling of the IRC host would
