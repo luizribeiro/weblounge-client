@@ -6,6 +6,7 @@ mod menu;
 mod navigation;
 mod notifications;
 mod security;
+mod shell;
 mod window;
 
 use tauri::{App, AppHandle, RunEvent, Wry, plugin::Plugin};
@@ -37,7 +38,7 @@ enum SetupError {
     Menu(#[from] tauri::Error),
     #[error(transparent)]
     Window(#[from] window::WindowError),
-    #[error("could not build the notification script: {0}")]
+    #[error("could not build a page script: {0}")]
     Script(#[from] serde_json::Error),
 }
 
@@ -56,11 +57,12 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 fn install(app: &App) -> Result<(), SetupError> {
     app.set_menu(menu::build(app.handle())?)?;
     notifications::install_click_delegate(app.handle());
+    let identity_script = shell::identity_script()?;
     let notification_script = notifications::init_script(notifications::initial_permission())?;
     window::create(
         app.handle(),
         !launch::starts_hidden(std::env::args()),
-        &[BADGE_SCRIPT, &notification_script],
+        &[&identity_script, BADGE_SCRIPT, &notification_script],
     )?;
     Ok(())
 }
