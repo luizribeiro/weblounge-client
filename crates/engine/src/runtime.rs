@@ -3405,8 +3405,9 @@ fn spawn_direct_resolution<T: papo::DirectSource + Send + 'static>(
         else {
             return;
         };
-        running.model.resolve_direct(buffer_id, availability);
+        let presence = resolve_direct(running, buffer_id, availability);
         drop(state);
+        send_events(&outbound, presence);
         if degraded {
             let _ = outbound.send(EngineToUi::notice(
                 EngineMessageKey::DirectPresenceUnavailable,
@@ -3940,6 +3941,16 @@ fn send_recent_directs_ready(
     update_chat_list(state, outbound, instance);
 }
 
+/// papo can learn a peer is online while resolving it, without emitting a presence event.
+fn resolve_direct(
+    running: &mut RunningNetwork,
+    buffer_id: BufferId,
+    availability: DirectAvailability,
+) -> Vec<EngineToUi> {
+    running.model.resolve_direct(buffer_id, availability);
+    running.model.sync_peer_presence(&running.client.state())
+}
+
 fn apply_direct_resolution(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -3952,7 +3963,7 @@ fn apply_direct_resolution(
         Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
         Err(_) => (DirectAvailability::Failed, false),
     };
-    let client = {
+    let (client, presence) = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -3961,14 +3972,14 @@ fn apply_direct_resolution(
         else {
             return;
         };
-        running.model.resolve_direct(buffer_id, availability);
-        if !running.pending_sends.is_empty() && !running.flushing_sends {
+        let presence = resolve_direct(running, buffer_id, availability);
+        let client = (!running.pending_sends.is_empty() && !running.flushing_sends).then(|| {
             running.flushing_sends = true;
-            Some(running.client.clone())
-        } else {
-            None
-        }
+            running.client.clone()
+        });
+        (client, presence)
     };
+    send_events(outbound, presence);
     if let Some(client) = client {
         spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
     }
@@ -6993,6 +7004,52 @@ async fn delay(duration: Duration) {
         assert_latest_window(&split, "left", 700, "u1198");
         assert_latest_window(&split, "right", 1_400, "u1899");
         drain.abort();
+    }
+
+    #[tokio::test]
+    async fn resolving_a_direct_publishes_the_presence_papo_learned_on_the_way() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+        let request = tokio::spawn({
+            let client = client.clone();
+            async move { client.direct("alice").await }
+        });
+        assert_eq!(wire.next_sent().await, "MONITOR + alice");
+        assert_eq!(wire.next_sent().await, "WHO alice %na");
+        wire.server(":offline.test 354 weblounge alice alice-account")
+            .await;
+        wire.server(":offline.test 315 weblounge alice :End of WHO list")
+            .await;
+        let direct = request
+            .await
+            .expect("direct task completes")
+            .expect("direct");
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let alice = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .open_direct(
+                direct.nick().clone(),
+                DirectAvailability::Pending,
+                &client.state(),
+            )
+            .0;
+
+        super::apply_direct_resolution(&state, &outbound, 1, alice, Ok(direct));
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == alice
+                    && buffer.peer_presence == Some(crate::PeerPresence::Online)
+        )));
     }
 
     #[tokio::test]
