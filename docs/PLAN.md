@@ -25,6 +25,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-14: transcript rows stay mounted when a row is inserted above them (the history edge
+  appearing as a phone conversation opens, older history). The Solid virtualizer adapter rewrote
+  its records' keys in place, so every visible row below an insert remounted; this caused the
+  mobile typing e2e's "geometry root was replaced" CI flake.
 - 2026-11-14: desktop sidebar polish, batch 3. The network row's highlight is now row-shaped
   (row height, radius and insets; the rows below sit one 6px lead lower) and its tile lines up
   with the `#` column as in the prototype. The network row shows a connection dot. DM rows show a

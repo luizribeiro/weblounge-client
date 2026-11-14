@@ -298,6 +298,11 @@ export function MessageList(props: MessageListProps) {
       props.filehostOrigin,
     ),
   );
+  // Virtual items reach their new index an effect after rows() changes, so an
+  // index lookup would briefly hand a mounted row its neighbour's content.
+  const rowsByKey = createMemo(
+    () => new Map(rows().map((row) => [row.key, row])),
+  );
   const newestOwnKickId = createMemo(() => {
     const items = orderedItems();
     for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -703,15 +708,15 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
-  const [virtualItems, setVirtualItems] = createStore([
-    ...virtualizer.getVirtualItems(),
-  ]);
+  // TanStack replaces measurement records even when their rows are unchanged,
+  // and the Solid adapter reconciles them by index, rewriting each record's
+  // key in place when a row is inserted above it. Copies reconciled by key
+  // keep Solid's keyed render attached to the timeline identity instead.
+  const ownedVirtualItems = () =>
+    virtualizer.getVirtualItems().map((item) => ({ ...item }));
+  const [virtualItems, setVirtualItems] = createStore(ownedVirtualItems());
   createEffect(() => {
-    // TanStack replaces measurement records even when their rows are unchanged.
-    // Keep Solid's keyed render attached to the timeline identity instead.
-    setVirtualItems(
-      reconcile([...virtualizer.getVirtualItems()], { key: "key" }),
-    );
+    setVirtualItems(reconcile(ownedVirtualItems(), { key: "key" }));
   });
   const scrollToLiveEdge = () => {
     if (list === undefined) return;
@@ -1345,7 +1350,7 @@ export function MessageList(props: MessageListProps) {
           >
             <For each={virtualItems}>
               {(virtualRow) => {
-                const row = () => rows()[virtualRow.index];
+                const row = () => rowsByKey().get(String(virtualRow.key));
                 const systemRow = () => {
                   const current = row();
                   return current?.kind === "system" ? current : undefined;

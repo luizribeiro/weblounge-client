@@ -181,6 +181,34 @@ it("keeps an unchanged visible row mounted when a message is appended", async ()
   ).toBe(original);
 });
 
+it("keeps visible rows mounted when the history edge is prepended", async () => {
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: false,
+  });
+  render(() => (
+    <MessageList
+      bufferKind="channel"
+      bufferTitle="#room"
+      historyState={historyState()}
+      messages={[message]}
+      presentation="mobile"
+    />
+  ));
+  const original = screen
+    .getByText("hello weblounge")
+    .closest("[data-message-row]");
+  if (original === null) throw new Error("message row is missing");
+
+  setHistoryState({ at_start: true, loading: false });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(screen.getByText("Beginning of #room")).toBeVisible();
+  expect(
+    screen.getByText("hello weblounge").closest("[data-message-row]"),
+  ).toBe(original);
+});
+
 it("updates a day divider when its relative label changes", () => {
   vi.useFakeTimers();
   try {

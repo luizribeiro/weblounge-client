@@ -180,6 +180,41 @@ test.describe("mobile shell against local Ergo", () => {
     ).toBe(true);
   });
 
+  test("keeps an opened conversation's rows mounted when its history edge arrives", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("edge");
+    const text = `before opening ${irc.id}`;
+    const selector = `[data-message-row][data-message-text="${text}"]`;
+    await page.addInitScript((rowSelector) => {
+      new MutationObserver((_records, observer) => {
+        const row = document.querySelector(rowSelector);
+        if (row === null) return;
+        Object.assign(window, { firstMountedRow: row });
+        observer.disconnect();
+      }).observe(document, { childList: true, subtree: true });
+    }, selector);
+    await page.goto(irc.url());
+    await peer.privmsgConfirmed(irc.channel, text);
+    const chatRow = page.getByRole("button", { name: irc.channel });
+    await expect(chatRow).toContainText(text);
+
+    await chatRow.click();
+    await expect(
+      page.getByText(`Beginning of ${irc.channel}`, { exact: true }),
+    ).toBeVisible();
+    const messageRow = page.locator(selector);
+    await expect(messageRow).toBeVisible();
+    expect(
+      await messageRow.evaluate(
+        (current) =>
+          current ===
+          (window as Window & { firstMountedRow?: Element }).firstMountedRow,
+      ),
+    ).toBe(true);
+  });
+
   test("navigates, swipes, and keeps state across shells", async ({
     page,
     irc,
