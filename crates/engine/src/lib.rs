@@ -23,6 +23,11 @@ mod state;
 pub mod storage;
 pub mod timeline;
 mod typing;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "upload resolution is its only caller")
+)]
+mod upload_policy;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use std::sync::Arc;
