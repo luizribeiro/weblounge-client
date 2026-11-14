@@ -5,6 +5,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { choose, settingsScreenshot } from "./settings-fixture";
+import { expectHeaderButtonsAtEnd } from "./sidebar-geometry";
 
 test.describe("desktop Settings against local Ergo", () => {
   test("opens from the header, changes appearance live and restores focus", async ({
@@ -158,17 +159,7 @@ test.describe("desktop Settings against local Ergo", () => {
     const search = drawer.getByRole("button", { name: "Jump to" });
     const settings = drawer.getByRole("button", { name: "Settings" });
     await expect(settings).toBeVisible();
-    const [title, searchBox, settingsBox] = await Promise.all([
-      drawer.locator("[data-connection-title]").boundingBox(),
-      search.boundingBox(),
-      settings.boundingBox(),
-    ]);
-    if (title === null || searchBox === null || settingsBox === null)
-      throw new Error("the drawer header is not rendered");
-    expect(title.x + title.width).toBeLessThanOrEqual(searchBox.x);
-    expect(
-      Math.abs(searchBox.x + searchBox.width - settingsBox.x),
-    ).toBeLessThanOrEqual(1);
+    await expectHeaderButtonsAtEnd([search, settings]);
     await settingsScreenshot(drawer, "narrow-drawer-light");
 
     await settings.click();

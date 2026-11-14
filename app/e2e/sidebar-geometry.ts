@@ -21,11 +21,16 @@ export async function expectHeaderButtonsAtEnd(
     const title = row?.querySelector("[data-connection-title]");
     if (row == null || title == null)
       throw new Error("header button is outside the sidebar brand row");
+    const line = title.querySelector<HTMLElement>("[data-line]");
+    if (line == null)
+      throw new Error("the brand title has no ellipsizing line");
     return {
       contentRight:
         row.getBoundingClientRect().right -
         Number.parseFloat(getComputedStyle(row).paddingRight),
       titleRight: title.getBoundingClientRect().right,
+      titleClientWidth: line.clientWidth,
+      titleScrollWidth: line.scrollWidth,
     };
   });
   for (const [index, edge] of edges.slice(1).entries())
@@ -34,6 +39,7 @@ export async function expectHeaderButtonsAtEnd(
     ).toBeLessThanOrEqual(1);
   expect(Math.abs(header.contentRight - lastEdge.right)).toBeLessThanOrEqual(1);
   expect(header.titleRight).toBeLessThanOrEqual(firstEdge.left);
+  expect(header.titleScrollWidth).toBeLessThanOrEqual(header.titleClientWidth);
 }
 
 // Pinned so restyling the network header never moves the rows under it.

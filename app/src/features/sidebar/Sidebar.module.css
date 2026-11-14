@@ -96,6 +96,11 @@
   align-items: center;
   display: flex;
   flex: 0 0 auto;
+  --wl-header-buttons-gap: 4px;
+  margin-inline-start: calc(
+    var(--wl-header-buttons-gap) -
+    var(--wl-connection-gap)
+  );
 }
 
 .brandText h1 {

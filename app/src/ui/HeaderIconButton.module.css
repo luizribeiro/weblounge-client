@@ -1,4 +1,5 @@
 .button {
+  --wl-header-icon-button-size: 28px;
   align-items: center;
   appearance: none;
   background: transparent;
@@ -6,19 +7,17 @@
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-panel-fg);
   display: flex;
-  flex: 0 0 32px;
+  flex: 0 0 var(--wl-header-icon-button-size);
   font: inherit;
-  height: 32px;
+  height: var(--wl-header-icon-button-size);
   justify-content: center;
   padding: 0;
-  width: 32px;
+  width: var(--wl-header-icon-button-size);
 }
 
 .button[data-size="touch"] {
+  --wl-header-icon-button-size: 44px;
   color: var(--wl-color-fg);
-  flex-basis: 44px;
-  height: 44px;
-  width: 44px;
 }
 
 .button:hover {
