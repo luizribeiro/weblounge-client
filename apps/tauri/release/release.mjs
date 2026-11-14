@@ -5,7 +5,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blockers, imageName, releaseTag, releaseVersion } from "./plan.mjs";
+import {
+  blockers,
+  foreignLibraries,
+  imageName,
+  releaseTag,
+  releaseVersion,
+} from "./plan.mjs";
 
 const IDENTITY = "Developer ID Application: LUIZ GUSTAVO CARDOSO RIBEIRO (JR4C2QJKWJ)";
 const BUNDLE_ID = "org.weblounge.desktop";
@@ -45,6 +51,14 @@ function preflight() {
 
 const sign = (path, extra = []) =>
   step("/usr/bin/codesign", ["--force", "--timestamp", ...extra, "--sign", IDENTITY, path]);
+
+function assertSystemLibrariesOnly(app) {
+  const binary = join(app, "Contents/MacOS/weblounge-desktop");
+  const foreign = foreignLibraries(run("/usr/bin/otool", ["-L", binary]));
+  if (foreign.length > 0) {
+    throw new Error(`${binary} links libraries other Macs lack: ${foreign.join(", ")}`);
+  }
+}
 
 function assertDeveloperIdSignature(app) {
   const details = spawnSync("/usr/bin/codesign", ["-dvv", app], { encoding: "utf8" }).stderr;
@@ -89,6 +103,7 @@ function notarizedApp(work) {
   const app = join(work, APP);
   copyBundle(join(built, "Applications", APP), app);
   step("/bin/chmod", ["-R", "u+w", app]);
+  assertSystemLibrariesOnly(app);
   sign(app, ["--options", "runtime"]);
   assertDeveloperIdSignature(app);
   const archive = join(work, "app.zip");

@@ -23,3 +23,13 @@ export function blockers({ status, head, originMain, tags, version }) {
       `${releaseTag(version)} already exists; bump the version first`,
   ].filter(Boolean);
 }
+
+const SYSTEM_LIBRARY_ROOTS = ["/System/Library/", "/usr/lib/"];
+
+export function foreignLibraries(otoolOutput) {
+  return otoolOutput
+    .split("\n")
+    .filter((line) => !line.endsWith(":"))
+    .map((line) => line.trim().split(" (")[0])
+    .filter((path) => path && !SYSTEM_LIBRARY_ROOTS.some((root) => path.startsWith(root)));
+}

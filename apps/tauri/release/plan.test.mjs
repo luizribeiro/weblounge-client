@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockers, imageName, releaseTag, releaseVersion } from "./plan.mjs";
+import {
+  blockers,
+  foreignLibraries,
+  imageName,
+  releaseTag,
+  releaseVersion,
+} from "./plan.mjs";
 
 const cargoToml = (version) => `[package]
 name = "weblounge-desktop"
@@ -79,5 +85,57 @@ test("reports every reason a release cannot start", () => {
       "HEAD is not origin/main",
       "desktop-v0.1.0 already exists; bump the version first",
     ],
+  );
+});
+
+const otool = (...libraries) =>
+  [
+    "/Volumes/weblounge/weblounge.app/Contents/MacOS/weblounge-desktop:",
+    ...libraries.map((path) => `\t${path} (compatibility version 1.0.0, current version 1.0.0)`),
+  ].join("\n");
+
+test("an app linking only macOS libraries has nothing foreign", () => {
+  assert.deepEqual(
+    foreignLibraries(
+      otool(
+        "/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
+        "/usr/lib/libiconv.2.dylib",
+        "/usr/lib/libSystem.B.dylib",
+      ),
+    ),
+    [],
+  );
+});
+
+test("reports libraries that other Macs do not have", () => {
+  assert.deepEqual(
+    foreignLibraries(
+      otool(
+        "/usr/lib/libSystem.B.dylib",
+        "/nix/store/jaixg82zxmqjbn2s6grpd31jq0yygzc1-libiconv-115.100.1/lib/libiconv.2.dylib",
+        "/opt/homebrew/lib/libssl.3.dylib",
+      ),
+    ),
+    [
+      "/nix/store/jaixg82zxmqjbn2s6grpd31jq0yygzc1-libiconv-115.100.1/lib/libiconv.2.dylib",
+      "/opt/homebrew/lib/libssl.3.dylib",
+    ],
+  );
+});
+
+test("the binary's own path on the first line is not a library", () => {
+  assert.deepEqual(foreignLibraries(otool()), []);
+});
+
+test("per-architecture headers of a universal binary are not libraries", () => {
+  const binary = "/Volumes/weblounge/weblounge.app/Contents/MacOS/weblounge-desktop";
+  const library = "\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)";
+  assert.deepEqual(
+    foreignLibraries(
+      [`${binary} (architecture x86_64):`, library, `${binary} (architecture arm64):`, library].join(
+        "\n",
+      ),
+    ),
+    [],
   );
 });
