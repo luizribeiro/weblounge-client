@@ -27,6 +27,11 @@ mod typing;
     not(test),
     expect(dead_code, reason = "upload resolution is its only caller")
 )]
+mod upload_approvals;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "upload resolution is its only caller")
+)]
 mod upload_policy;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
