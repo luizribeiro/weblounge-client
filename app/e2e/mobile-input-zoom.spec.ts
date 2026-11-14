@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
 import { waitForStableGeometry } from "./stable-geometry";
@@ -19,30 +19,31 @@ test.describe("mobile text field zoom", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test("keeps chat search at the initial scale", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
+  test("keeps chat search at the initial scale", async ({ page, irc }) => {
+    await page.goto(irc.url());
     await expect(
       page.getByRole("searchbox", { name: "Search chats" }),
     ).toBeVisible();
     await auditMobileTextFieldZoom(page);
   });
 
-  test("keeps the composer at the initial scale", async ({ page }) => {
-    await openChannel(page);
+  test("keeps the composer at the initial scale", async ({ page, irc }) => {
+    await openChannel(page, irc);
     await expect(
-      page.getByRole("textbox", { name: "Message #weblounge-test" }),
+      page.getByRole("textbox", { name: `Message ${irc.channel}` }),
     ).toBeVisible();
     await auditMobileTextFieldZoom(page);
   });
 
   test("keeps the composer still and focused when a suggestion is tapped", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page, true);
-    await openChannel(page);
+    await openChannel(page, irc);
     const root = page.locator("#root");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     await composer.tap();
     await expect(root).toHaveAttribute("data-keyboard", "open");
@@ -62,11 +63,12 @@ test.describe("mobile text field zoom", () => {
 
   test("keeps keyboard focus and touch drags from panning the app", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page, true);
-    await openChannel(page);
+    await openChannel(page, irc);
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const root = page.locator("#root");
 
@@ -196,12 +198,13 @@ test.describe("mobile text field zoom", () => {
 
   test("reconciles a focused cached layout to measured keyboard geometry", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, irc);
     const root = page.locator("#root");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const layoutHeight = await page.evaluate(() => innerHeight);
     const firstHeight = layoutHeight - 320;
@@ -234,12 +237,13 @@ test.describe("mobile text field zoom", () => {
 
   test("follows native composer focus when measured keyboard geometry arrives", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, irc);
     const root = page.locator("#root");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const openHeight = 471;
 
@@ -256,12 +260,13 @@ test.describe("mobile text field zoom", () => {
 
   test("follows pointerless composer focus through a silent late viewport step", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, irc);
     const root = page.locator("#root");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const openHeight = 471;
 
@@ -288,13 +293,14 @@ test.describe("mobile text field zoom", () => {
 
   test("reopens after sending the debug command and dismissing with Done", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page, "&debug=keyboard");
+    await openChannel(page, irc, "debug=keyboard");
     const root = page.locator("#root");
     const overlay = page.locator("[data-debug-overlay]");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const layoutHeight = await page.evaluate(() => innerHeight);
     const openHeight = 471;
@@ -325,101 +331,92 @@ test.describe("mobile text field zoom", () => {
 
   test("keeps the chat fixed while the member filter owns the keyboard", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page);
-    const suffix = Date.now().toString(36);
+    await openChannel(page, irc);
+    const suffix = irc.id;
     const bots = await Promise.all(
       Array.from({ length: 4 }, (_, index) =>
-        IrcClient.connect(
-          `drawer-keyboard-${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
-        ),
+        irc.peer(`drawer-keyboard-${index}`),
       ),
     );
-    try {
-      for (let round = 0; round < 8; round += 1)
-        await Promise.all(
-          bots.map((bot, index) =>
-            bot.privmsgConfirmed(
-              "#weblounge-test",
-              `drawer keyboard row ${round * bots.length + index} ${suffix}`,
-            ),
+    for (let round = 0; round < 8; round += 1)
+      await Promise.all(
+        bots.map((bot, index) =>
+          bot.privmsgConfirmed(
+            irc.channel,
+            `drawer keyboard row ${round * bots.length + index} ${suffix}`,
           ),
-        );
-      const root = page.locator("#root");
-      const messages = page.locator("[data-message-list]");
-      const drawer = page.getByRole("dialog", { name: "Members" });
-      const filter = page.getByRole("searchbox", { name: "Filter members" });
-      const layoutHeight = await page.evaluate(() => innerHeight);
-      const openHeight = layoutHeight - 358;
-      await messages.press("End");
-      await expect(
-        page.getByText(`drawer keyboard row 31 ${suffix}`, { exact: true }),
-      ).toBeVisible();
-      await root.evaluate((element) =>
-        element.style.setProperty("--wl-safe-bottom", "34px"),
+        ),
       );
-      await page.getByRole("button", { name: "Show members" }).click();
-      await expect(filter).toBeVisible();
-      const background = await readChatBackground(page);
+    const root = page.locator("#root");
+    const messages = page.locator("[data-message-list]");
+    const drawer = page.getByRole("dialog", { name: "Members" });
+    const filter = page.getByRole("searchbox", { name: "Filter members" });
+    const layoutHeight = await page.evaluate(() => innerHeight);
+    const openHeight = layoutHeight - 358;
+    await messages.press("End");
+    await expect(
+      page.getByText(`drawer keyboard row 31 ${suffix}`, { exact: true }),
+    ).toBeVisible();
+    await root.evaluate((element) =>
+      element.style.setProperty("--wl-safe-bottom", "34px"),
+    );
+    await page.getByRole("button", { name: "Show members" }).click();
+    await expect(filter).toBeVisible();
+    const background = await readChatBackground(page);
 
-      await filter.tap();
-      await expect(filter).toBeFocused();
-      await setVisualViewport(page, openHeight);
-      await expect(root).toHaveAttribute("data-keyboard", "open");
-      await expect(drawer).toHaveAttribute("data-keyboard-owner", "true");
-      await expect
-        .poll(() =>
-          root.evaluate((element) =>
-            element.style.getPropertyValue("--wl-app-height"),
-          ),
-        )
-        .toBe("");
-      await expect.poll(() => drawerKeyboardGap(drawer)).toBeLessThanOrEqual(1);
-      await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "0px");
-      await expect
-        .poll(() => fieldKeyboardOverlap(filter))
-        .toBeLessThanOrEqual(0);
-      await expect
-        .poll(() =>
-          fieldKeyboardOverlap(
-            drawer.locator('[data-member-row-kind="member"]').first(),
-          ),
-        )
-        .toBeLessThanOrEqual(0);
-      expect(await readChatBackground(page)).toEqual(background);
+    await filter.tap();
+    await expect(filter).toBeFocused();
+    await setVisualViewport(page, openHeight);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect(drawer).toHaveAttribute("data-keyboard-owner", "true");
+    await expect
+      .poll(() =>
+        root.evaluate((element) =>
+          element.style.getPropertyValue("--wl-app-height"),
+        ),
+      )
+      .toBe("");
+    await expect.poll(() => drawerKeyboardGap(drawer)).toBeLessThanOrEqual(1);
+    await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "0px");
+    await expect
+      .poll(() => fieldKeyboardOverlap(filter))
+      .toBeLessThanOrEqual(0);
+    await expect
+      .poll(() =>
+        fieldKeyboardOverlap(
+          drawer.locator('[data-member-row-kind="member"]').first(),
+        ),
+      )
+      .toBeLessThanOrEqual(0);
+    expect(await readChatBackground(page)).toEqual(background);
 
-      await filter.fill(`drawer-keyboard-0-${suffix}`);
-      await expect(
-        drawer.locator('[data-member-row-kind="member"]'),
-      ).not.toHaveCount(0);
-      expect(await readChatBackground(page)).toEqual(background);
+    await filter.fill(bots[0]?.nickname ?? "");
+    await expect(
+      drawer.locator('[data-member-row-kind="member"]'),
+    ).not.toHaveCount(0);
+    expect(await readChatBackground(page)).toEqual(background);
 
-      await filter.evaluate((field) => field.blur());
-      await expect(root).toHaveAttribute("data-keyboard", "closed");
-      await setVisualViewport(page, layoutHeight);
-      await expect(drawer).not.toHaveAttribute("data-keyboard-owner");
-      await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "34px");
-      expect(await readChatBackground(page)).toEqual(background);
-    } finally {
-      for (const bot of bots) bot.close();
-    }
+    await filter.evaluate((field) => field.blur());
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, layoutHeight);
+    await expect(drawer).not.toHaveAttribute("data-keyboard-owner");
+    await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "34px");
+    expect(await readChatBackground(page)).toEqual(background);
   });
 
   test("does not mount keyboard motion while the experiment is disabled", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, irc);
     const root = page.locator("#root");
     const openHeight = (await page.evaluate(() => innerHeight)) - 358;
 
-    await page
-      .getByRole("textbox", { name: "Message #weblounge-test" })
-      .focus();
+    await page.getByRole("textbox", { name: `Message ${irc.channel}` }).focus();
     await page.evaluate(
       (height) => window.__setVisualViewport?.(height),
       openHeight,
@@ -434,220 +431,196 @@ test.describe("mobile text field zoom", () => {
 
   test("animates cold and warm keyboard motion over one-step layout", async ({
     page,
+    irc,
   }) => {
     await installVisualViewportHook(page);
-    await openChannel(page, "&keyboard-motion=1");
-    const suffix = Date.now().toString(36);
+    await openChannel(page, irc, "keyboard-motion=1");
+    const suffix = irc.id;
     const bots = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
-        IrcClient.connect(
-          `keyboard-step-${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
-        ),
+        irc.peer(`keyboard-step-${index}`),
       ),
     );
-    try {
-      for (let round = 0; round < 4; round += 1)
-        await Promise.all(
-          bots.map((bot, index) =>
-            bot.privmsgConfirmed(
-              "#weblounge-test",
-              `keyboard step row ${round * bots.length + index} ${suffix}`,
-            ),
+    for (let round = 0; round < 4; round += 1)
+      await Promise.all(
+        bots.map((bot, index) =>
+          bot.privmsgConfirmed(
+            irc.channel,
+            `keyboard step row ${round * bots.length + index} ${suffix}`,
           ),
-        );
-      const barrier = `keyboard step barrier ${suffix}`;
-      const barrierSender = bots[0];
-      if (barrierSender === undefined)
-        throw new Error("keyboard motion barrier sender is missing");
-      await barrierSender.privmsgConfirmed("#weblounge-test", barrier);
-      const root = page.locator("#root");
-      const composer = page.locator("[data-composer]");
-      const messages = page.locator("[data-message-list]");
-      await messages.press("End");
-      await expect(page.getByText(barrier, { exact: true })).toBeVisible();
-      const messageListHeight = await messages.evaluate(
-        (element) => element.clientHeight,
+        ),
       );
-      await root.evaluate((element) => {
-        element.style.setProperty("--wl-safe-bottom", "34px");
-      });
-      await expect(root).toHaveAttribute("data-keyboard", "closed");
-      await expect(composer).toHaveCSS("padding-bottom", "34px");
-      await expect
-        .poll(() => messages.evaluate((element) => element.clientHeight))
-        .toBe(messageListHeight - 20);
-      await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
-      await waitForStableGeometry(messages, "[data-message-row]");
-      const layoutHeight = await page.evaluate(() => innerHeight);
-      const openHeight = layoutHeight - 358;
-      const coldOpening = await sampleKeyboardTransition(
-        page,
-        "open",
-        openHeight,
-      );
-      expectOpeningKeyboardMotion(coldOpening);
-      await expect(root).toHaveAttribute("data-keyboard", "open");
-      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-      await expect(composer).toHaveCSS("padding-bottom", "14px");
-      await expectTranscriptHitTarget(messages, "last");
+    const barrier = `keyboard step barrier ${suffix}`;
+    const barrierSender = bots[0];
+    if (barrierSender === undefined)
+      throw new Error("keyboard motion barrier sender is missing");
+    await barrierSender.privmsgConfirmed(irc.channel, barrier);
+    const root = page.locator("#root");
+    const composer = page.locator("[data-composer]");
+    const messages = page.locator("[data-message-list]");
+    await messages.press("End");
+    await expect(page.getByText(barrier, { exact: true })).toBeVisible();
+    const messageListHeight = await messages.evaluate(
+      (element) => element.clientHeight,
+    );
+    await root.evaluate((element) => {
+      element.style.setProperty("--wl-safe-bottom", "34px");
+    });
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await expect(composer).toHaveCSS("padding-bottom", "34px");
+    await expect
+      .poll(() => messages.evaluate((element) => element.clientHeight))
+      .toBe(messageListHeight - 20);
+    await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
+    await waitForStableGeometry(messages, "[data-message-row]");
+    const layoutHeight = await page.evaluate(() => innerHeight);
+    const openHeight = layoutHeight - 358;
+    const coldOpening = await sampleKeyboardTransition(
+      page,
+      "open",
+      openHeight,
+    );
+    expectOpeningKeyboardMotion(coldOpening);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    await expect(composer).toHaveCSS("padding-bottom", "14px");
+    await expectTranscriptHitTarget(messages, "last");
 
-      const coldClosing = await sampleKeyboardTransition(
-        page,
-        "close",
-        layoutHeight,
-      );
-      expectClosingKeyboardMotion(coldClosing);
-      await expect(root).toHaveAttribute("data-keyboard", "closed");
-      await expect(composer).toHaveCSS("padding-bottom", "34px");
-      await expectTranscriptHitTarget(messages, "last");
+    const coldClosing = await sampleKeyboardTransition(
+      page,
+      "close",
+      layoutHeight,
+    );
+    expectClosingKeyboardMotion(coldClosing);
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await expect(composer).toHaveCSS("padding-bottom", "34px");
+    await expectTranscriptHitTarget(messages, "last");
 
-      const warmOpening = await sampleKeyboardTransition(
-        page,
-        "open",
-        openHeight,
-      );
-      expectOpeningKeyboardMotion(warmOpening);
-      await expect(root).toHaveAttribute("data-keyboard", "open");
-      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-      await expectTranscriptHitTarget(messages, "last");
+    const warmOpening = await sampleKeyboardTransition(
+      page,
+      "open",
+      openHeight,
+    );
+    expectOpeningKeyboardMotion(warmOpening);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    await expectTranscriptHitTarget(messages, "last");
 
-      const warmClosing = await sampleKeyboardTransition(
-        page,
-        "close",
-        layoutHeight,
-      );
-      expectClosingKeyboardMotion(warmClosing);
-      await expect(root).toHaveAttribute("data-keyboard", "closed");
-      await expect(composer).toHaveCSS("transition-duration", "0s");
-      await expectTranscriptHitTarget(messages, "last");
-    } finally {
-      for (const bot of bots) bot.close();
-    }
+    const warmClosing = await sampleKeyboardTransition(
+      page,
+      "close",
+      layoutHeight,
+    );
+    expectClosingKeyboardMotion(warmClosing);
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await expect(composer).toHaveCSS("transition-duration", "0s");
+    await expectTranscriptHitTarget(messages, "last");
   });
 
   test("keeps keyboard motion immediate with reduced motion", async ({
     page,
+    irc,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await installVisualViewportHook(page);
-    await openChannel(page, "&keyboard-motion=1");
-    const suffix = Date.now().toString(36);
-    const bot = await IrcClient.connect(
-      `reduced-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
+    await openChannel(page, irc, "keyboard-motion=1");
+    const suffix = irc.id;
+    const bot = await irc.peer(`reduced`);
+    const marker = `reduced motion row ${suffix}`;
+    await bot.privmsgConfirmed(irc.channel, marker);
+    await expect(page.getByText(marker, { exact: true })).toBeVisible();
+    const openHeight = (await page.evaluate(() => innerHeight)) - 358;
+
+    const opening = await sampleKeyboardTransition(page, "open", openHeight);
+
+    expectReducedMotionKeyboardLayout(opening, "open");
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    const messages = page.locator("[data-message-list]");
+    await expectTranscriptHitTarget(messages, "last");
+
+    const closing = await sampleKeyboardTransition(
+      page,
+      "close",
+      await page.evaluate(() => innerHeight),
     );
-    try {
-      const marker = `reduced motion row ${suffix}`;
-      await bot.privmsgConfirmed("#weblounge-test", marker);
-      await expect(page.getByText(marker, { exact: true })).toBeVisible();
-      const openHeight = (await page.evaluate(() => innerHeight)) - 358;
 
-      const opening = await sampleKeyboardTransition(page, "open", openHeight);
-
-      expectReducedMotionKeyboardLayout(opening, "open");
-      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-      const messages = page.locator("[data-message-list]");
-      await expectTranscriptHitTarget(messages, "last");
-
-      const closing = await sampleKeyboardTransition(
-        page,
-        "close",
-        await page.evaluate(() => innerHeight),
-      );
-
-      expectReducedMotionKeyboardLayout(closing, "closed");
-      await expectTranscriptHitTarget(messages, "last");
-    } finally {
-      bot.close();
-    }
+    expectReducedMotionKeyboardLayout(closing, "closed");
+    await expectTranscriptHitTarget(messages, "last");
   });
 
   test("keeps every opening frame painted and hit-testable", async ({
     page,
+    irc,
   }) => {
     await installPausedKeyboardAnimations(page);
     await installVisualViewportHook(page);
-    await openChannel(page, "&keyboard-motion=1");
-    const suffix = Date.now().toString(36);
+    await openChannel(page, irc, "keyboard-motion=1");
+    const suffix = irc.id;
     const bots = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
-        IrcClient.connect(
-          `keyboard-paint-${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
+        irc.peer(`keyboard-paint-${index}`),
+      ),
+    );
+    await Promise.all(
+      bots.map((bot, index) =>
+        bot.privmsgConfirmed(
+          irc.channel,
+          `keyboard painted row ${index} ${suffix}`,
         ),
       ),
     );
-    try {
-      await Promise.all(
-        bots.map((bot, index) =>
-          bot.privmsgConfirmed(
-            "#weblounge-test",
-            `keyboard painted row ${index} ${suffix}`,
-          ),
-        ),
-      );
-      const last = page.getByText(`keyboard painted row 9 ${suffix}`, {
-        exact: true,
-      });
-      await expect(last).toBeVisible();
-      const messages = page.locator("[data-message-list]");
-      await messages.press("End");
-      await waitForStableGeometry(messages, "[data-message-row]");
-      const openHeight = (await page.evaluate(() => innerHeight)) - 358;
+    const last = page.getByText(`keyboard painted row 9 ${suffix}`, {
+      exact: true,
+    });
+    await expect(last).toBeVisible();
+    const messages = page.locator("[data-message-list]");
+    await messages.press("End");
+    await waitForStableGeometry(messages, "[data-message-row]");
+    const openHeight = (await page.evaluate(() => innerHeight)) - 358;
 
-      await pauseOpeningMotion(page, openHeight);
-      const root = page.locator("#root");
-      await expect(root).not.toHaveAttribute("data-keyboard-watch", "active");
-      await page.evaluate(() => {
-        window.__setVisualViewport?.(innerHeight, 0, "silent");
+    await pauseOpeningMotion(page, openHeight);
+    const root = page.locator("#root");
+    await expect(root).not.toHaveAttribute("data-keyboard-watch", "active");
+    await page.evaluate(() => {
+      window.__setVisualViewport?.(innerHeight, 0, "silent");
+    });
+    for (let frame = 0; frame < 24; frame += 1) {
+      const audit = await seekOpeningMotion(page, (frame * 380) / 23);
+      const screenshot = await page.screenshot({
+        animations: "allow",
+        clip: audit.clip,
+        scale: "css",
       });
-      for (let frame = 0; frame < 24; frame += 1) {
-        const audit = await seekOpeningMotion(page, (frame * 380) / 23);
-        const screenshot = await page.screenshot({
-          animations: "allow",
-          clip: audit.clip,
-          scale: "css",
-        });
-        expect(audit.composerHit, JSON.stringify(audit)).toBe(true);
-        expect(audit.transcriptHit, JSON.stringify(audit)).toBe(true);
-        expect(
-          Math.abs(audit.newestGap),
-          JSON.stringify(audit),
-        ).toBeLessThanOrEqual(1);
-        expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
-          1,
-        );
-      }
-      await page.evaluate((height) => {
-        window.__setVisualViewport?.(height, 0, "silent");
-        for (const animation of document.getAnimations()) {
-          const target = animation.effect?.target;
-          if (
-            target instanceof Element &&
-            target.matches(
-              "[data-composer], [data-keyboard-transcript-snapshot-layer]",
-            )
-          )
-            animation.play();
-        }
-      }, openHeight);
-      await expect(
-        page.locator("[data-keyboard-transcript-snapshot]"),
-      ).toHaveCount(0);
-    } finally {
-      for (const bot of bots) bot.close();
+      expect(audit.composerHit, JSON.stringify(audit)).toBe(true);
+      expect(audit.transcriptHit, JSON.stringify(audit)).toBe(true);
+      expect(
+        Math.abs(audit.newestGap),
+        JSON.stringify(audit),
+      ).toBeLessThanOrEqual(1);
+      expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
+        1,
+      );
     }
+    await page.evaluate((height) => {
+      window.__setVisualViewport?.(height, 0, "silent");
+      for (const animation of document.getAnimations()) {
+        const target = animation.effect?.target;
+        if (
+          target instanceof Element &&
+          target.matches(
+            "[data-composer], [data-keyboard-transcript-snapshot-layer]",
+          )
+        )
+          animation.play();
+      }
+    }, openHeight);
+    await expect(
+      page.locator("[data-keyboard-transcript-snapshot]"),
+    ).toHaveCount(0);
   });
 
-  test("keeps drawer fields at the initial scale", async ({ page }) => {
-    await openChannel(page);
+  test("keeps drawer fields at the initial scale", async ({ page, irc }) => {
+    await openChannel(page, irc);
     await page.getByRole("button", { name: "Show members" }).click();
     await expect(
       page.getByRole("searchbox", { name: "Filter members" }),
@@ -680,8 +653,9 @@ for (const layout of [
 
     test("asks WebKit for the full screen and keeps the composer whole", async ({
       page,
+      irc,
     }) => {
-      await openChannel(page);
+      await openChannel(page, irc);
       await expect(page.locator("#root")).toHaveAttribute(
         "data-keyboard",
         "closed",
@@ -699,12 +673,13 @@ for (const layout of [
 
     test("keeps the composer on the keyboard and the header on screen while iOS pans", async ({
       page,
+      irc,
     }) => {
-      await openChannel(page);
+      await openChannel(page, irc);
       const root = page.locator("#root");
       const composer = page.locator("[data-composer]");
       await page
-        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .getByRole("textbox", { name: `Message ${irc.channel}` })
         .focus();
 
       await setVisualViewport(page, 476, 336);
@@ -728,10 +703,11 @@ for (const layout of [
 
     test("settles on the keyboard when iOS reports it a frame late", async ({
       page,
+      irc,
     }) => {
-      await openChannel(page);
+      await openChannel(page, irc);
       await page
-        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .getByRole("textbox", { name: `Message ${irc.channel}` })
         .focus();
 
       await setVisualViewport(page, 476, 0, "stale");
@@ -757,8 +733,9 @@ test.describe("viewport diagnostics overlay", () => {
 
   test("shows live geometry behind ?debug=viewport until turned off", async ({
     page,
+    irc,
   }) => {
-    await openChannel(page, "&debug=viewport");
+    await openChannel(page, irc, "debug=viewport");
     const overlay = page.locator("[data-debug-overlay]");
     await expect(overlay).toContainText("inner: 402×874");
     await expect(overlay).toContainText("data-keyboard: closed");
@@ -776,28 +753,25 @@ test.describe("viewport diagnostics overlay", () => {
       overlayBounds.viewportWidth - 3,
     );
     expect(overlayBounds.contentOverflow).toBeLessThanOrEqual(0);
-    await page
-      .getByRole("textbox", { name: "Message #weblounge-test" })
-      .focus();
+    await page.getByRole("textbox", { name: `Message ${irc.channel}` }).focus();
     await expect(overlay).toContainText("event: focusin");
     await expect(overlay).toContainText(/composer: [\d.]+–[\d.]+/u);
 
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     await expect(overlay).toBeAttached();
-    await page.goto("/?irc-password=weblounge-test&debug=off");
-    await expect(
-      page.getByRole("button", { name: "#weblounge-test" }),
-    ).toBeVisible();
+    await page.goto(irc.url({ path: "/?debug=off" }));
+    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
     await expect(overlay).toHaveCount(0);
   });
 
   test("captures a copyable keyboard frame trace after a tap", async ({
     page,
+    irc,
   }) => {
-    await openChannel(page, "&debug=keyboard");
+    await openChannel(page, irc, "debug=keyboard");
     const overlay = page.locator("[data-debug-overlay]");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
 
     await composer.tap();
@@ -811,14 +785,14 @@ test.describe("viewport diagnostics overlay", () => {
     await expect(overlay).toHaveCSS("user-select", "text");
   });
 
-  test("tracks and focuses taps on composer padding", async ({ page }) => {
+  test("tracks and focuses taps on composer padding", async ({ page, irc }) => {
     await installVisualViewportHook(page, true);
-    await openChannel(page, "&debug=keyboard");
+    await openChannel(page, irc, "debug=keyboard");
     const root = page.locator("#root");
     const overlay = page.locator("[data-debug-overlay]");
     const surface = page.locator("[data-composer]");
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
 
     await surface.tap({ position: { x: 3, y: 3 } });
@@ -832,10 +806,10 @@ test.describe("viewport diagnostics overlay", () => {
   });
 });
 
-async function openChannel(page: Page, query = "") {
-  await page.goto(`/?irc-password=weblounge-test${query}`);
+async function openChannel(page: Page, irc: IrcTestAccount, query = "") {
+  await page.goto(irc.url({ path: `/?${query}` }));
   await waitForProductionWorkerControl(page);
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
+  await page.getByRole("button", { name: irc.channel }).click();
 }
 
 async function waitForProductionWorkerControl(page: Page): Promise<void> {
