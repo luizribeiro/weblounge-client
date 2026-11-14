@@ -62,6 +62,7 @@ const colorTokens = [
 const typographyTokens = [
   "ui",
   "mono",
+  "title",
   "base",
   "sectionFamily",
   "sectionSize",

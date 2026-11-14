@@ -33,6 +33,9 @@ describe("theme registry", () => {
       expect(block).toContain("--wl-color-viewer-scrim:rgba(0,0,0,.92)");
       expect(block).toContain("--wl-color-viewer-fg:#edefe5");
     }
+    expect(themeStyleSheet()).toContain(
+      "--wl-font-title:Inter, Inter Fallback, system-ui, sans-serif",
+    );
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
     expect(themes[1]?.onboarding).not.toHaveProperty("signal");
     expect(

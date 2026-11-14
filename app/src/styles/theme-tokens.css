@@ -45,6 +45,7 @@
   --wl-color-focus-ring: #4e6244;
   --wl-font-ui: Inter, Inter Fallback, system-ui, sans-serif;
   --wl-font-mono: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-title: Inter, Inter Fallback, system-ui, sans-serif;
   --wl-font-base: 14px;
   --wl-font-section-family:
     SFMono-Regular, Consolas, Liberation Mono, monospace;
@@ -98,6 +99,7 @@
   --wl-color-focus-ring: #bdd9a7;
   --wl-font-ui: Inter, Inter Fallback, system-ui, sans-serif;
   --wl-font-mono: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-title: Inter, Inter Fallback, system-ui, sans-serif;
   --wl-font-base: 14px;
   --wl-font-section-family:
     SFMono-Regular, Consolas, Liberation Mono, monospace;

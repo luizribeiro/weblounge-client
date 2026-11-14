@@ -36,6 +36,7 @@
   "typography": {
     "ui": "Inter, Inter Fallback, system-ui, sans-serif",
     "mono": "SFMono-Regular, Consolas, Liberation Mono, monospace",
+    "title": "Inter, Inter Fallback, system-ui, sans-serif",
     "base": "14px",
     "sectionFamily": "SFMono-Regular, Consolas, Liberation Mono, monospace",
     "sectionSize": "11px",
