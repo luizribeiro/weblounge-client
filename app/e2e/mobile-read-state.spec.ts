@@ -1,5 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
+import { expectSettled } from "./settled";
 
 test.describe("mobile read state against local Ergo", () => {
   test.skip(
@@ -9,43 +10,31 @@ test.describe("mobile read state against local Ergo", () => {
 
   test("clears a quiet chat while another channel stays busy", async ({
     page,
+    irc,
   }) => {
     await observeMarkReadRequests(page);
-    await page.goto("/?irc-password=weblounge-test");
-    const suffix = Date.now().toString(36);
-    const channel = `#read-${suffix}`;
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await page.goto(irc.url());
+    const channel = irc.channelNamed("read");
+    await page.getByRole("button", { name: irc.channel }).click();
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     await composer.fill(`/join ${channel}`);
     await composer.press("Enter");
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-    await expectScreensSettled(page);
+    await expectSettled(page);
     await page.getByRole("button", { name: "Back to chats" }).click();
-    await expectScreensSettled(page);
+    await expectSettled(page);
 
-    const quiet = await IrcClient.connect(
-      `quiet-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
+    const quiet = await irc.peer("quiet", [channel]);
     const busy = await Promise.all(
-      [0, 1, 2].map((index) =>
-        IrcClient.connect(
-          `busy${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
-        ),
-      ),
+      [0, 1, 2].map((index) => irc.peer(`busy${index}`)),
     );
     let chatting = true;
     const chatter = busy.map(async (bot, botIndex) => {
       for (let message = 0; chatting; message += 1)
         await bot.privmsgConfirmed(
-          "#weblounge-test",
+          irc.channel,
           `read dwell noise ${botIndex} ${message}`,
         );
     });
@@ -64,9 +53,9 @@ test.describe("mobile read state against local Ergo", () => {
         .poll(() => markReadRequestCount(page))
         .toBeGreaterThan(firstMarkerCount);
       await expect(row).toHaveAttribute("aria-label", channel);
-      await expectScreensSettled(page);
+      await expectSettled(page);
       await page.getByRole("button", { name: "Back to chats" }).click();
-      await expectScreensSettled(page);
+      await expectSettled(page);
       await expect(row).toHaveAccessibleName(channel);
 
       await quiet.privmsgConfirmed(channel, "yeah again");
@@ -78,16 +67,14 @@ test.describe("mobile read state against local Ergo", () => {
         .poll(() => markReadRequestCount(page))
         .toBeGreaterThan(secondMarkerCount);
       await expect(row).toHaveAttribute("aria-label", channel);
-      await expectScreensSettled(page);
+      await expectSettled(page);
       await completeBackSwipe(page);
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-      await expectScreensSettled(page);
+      await expectSettled(page);
       await expect(row).toHaveAccessibleName(channel);
     } finally {
       chatting = false;
       await Promise.allSettled(chatter);
-      quiet.close();
-      for (const bot of busy) bot.close();
     }
   });
 });
@@ -132,10 +119,6 @@ function markReadRequestCount(page: Page): Promise<number> {
   return page.evaluate(
     () => (window as Window & { markReadRequests: number }).markReadRequests,
   );
-}
-
-async function expectScreensSettled(page: Page): Promise<void> {
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
 }
 
 async function completeBackSwipe(page: Page): Promise<void> {

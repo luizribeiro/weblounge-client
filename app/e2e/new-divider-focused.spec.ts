@@ -1,16 +1,18 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import {
   captureHistoryWire,
   historyMessageUpdateCount,
   sentWireLines,
 } from "./history-wire-fixture";
-import { IrcClient } from "./irc-client";
+import { type IrcClient, serverTime } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import {
   installPageNotificationStub,
   postedPageNotifications,
 } from "./page-notification-stub";
+import { expectSettled } from "./settled";
 
 test.describe("New divider ownership", () => {
   test.skip(
@@ -37,52 +39,47 @@ test.describe("New divider ownership", () => {
   test("shows New when the DM arrives while the page is hidden", async ({
     isMobile,
     page,
+    irc,
   }) => {
-    const peer = await openDirect(page, "hidden", isMobile);
-    try {
-      await setPageHidden(page, true);
-      const text = `hidden DM arrival ${Date.now()}`;
-      await peer.privmsgConfirmed("weblounge", text);
-      await expectDeliveredToPage(page, text);
+    const peer = await openDirect(page, irc, "hidden", isMobile);
+    await setPageHidden(page, true);
+    const text = `hidden DM arrival ${Date.now()}`;
+    await peer.privmsgConfirmed(irc.account, text);
+    await expectDeliveredToPage(page, text);
 
-      await setPageHidden(page, false);
-      await expect(messageText(page, text)).toBeVisible();
-      await expect(page.locator("[data-new-line]")).toBeVisible();
-    } finally {
-      peer.close();
-    }
+    await setPageHidden(page, false);
+    await expect(messageText(page, text)).toBeVisible();
+    await expect(page.locator("[data-new-line]")).toBeVisible();
   });
 
   test("shows New when the DM follows an own send confirmed while hidden", async ({
     isMobile,
     page,
+    irc,
   }) => {
-    const peer = await openDirect(page, "own", isMobile);
-    try {
-      await setPageHidden(page, true);
-      const ownText = `own send before leaving ${Date.now()}`;
-      await submitComposer(page, ownText);
-      const ownLine = await peer.waitForPrivmsg(
-        peer.nickname,
-        ownText,
-        "weblounge",
-      );
-      await expectClockPast(serverTime(ownLine));
-      const text = `hidden DM after own send ${Date.now()}`;
-      await peer.privmsgConfirmed("weblounge", text);
-      await expectDeliveredToPage(page, text);
+    const peer = await openDirect(page, irc, "own", isMobile);
+    await setPageHidden(page, true);
+    const ownText = `own send before leaving ${Date.now()}`;
+    await submitComposer(page, ownText);
+    const ownLine = await peer.waitForPrivmsg(
+      peer.nickname,
+      ownText,
+      irc.account,
+    );
+    await expectClockPast(Date.parse(serverTime(ownLine)));
+    const text = `hidden DM after own send ${Date.now()}`;
+    await peer.privmsgConfirmed(irc.account, text);
+    await expectDeliveredToPage(page, text);
 
-      await setPageHidden(page, false);
-      await expect(messageText(page, text)).toBeVisible();
-      await expect(page.locator("[data-new-line]")).toBeVisible();
-    } finally {
-      peer.close();
-    }
+    await setPageHidden(page, false);
+    await expect(messageText(page, text)).toBeVisible();
+    await expect(page.locator("[data-new-line]")).toBeVisible();
   });
 
   test("renders a DM in a visible unfocused window and shows New on return", async ({
     isMobile,
     page,
+    irc,
   }) => {
     test.skip(isMobile, "installed phone apps are foreground without focus");
     await installFocusControl(page);
@@ -90,109 +87,79 @@ test.describe("New divider ownership", () => {
       permission: "granted",
       requestResult: "granted",
     });
-    const peer = await openDirect(page, "unfocused", isMobile);
-    try {
-      await setPageFocused(page, false);
-      const text = `unfocused DM arrival ${Date.now()}`;
-      const line = await peer.privmsgConfirmed("weblounge", text);
-      await expect(messageText(page, text)).toBeVisible();
-      await expect
-        .poll(async () =>
-          (await postedPageNotifications(page)).map(({ body }) => body),
-        )
-        .toContain(text);
+    const peer = await openDirect(page, irc, "unfocused", isMobile);
+    await setPageFocused(page, false);
+    const text = `unfocused DM arrival ${Date.now()}`;
+    const line = await peer.privmsgConfirmed(irc.account, text);
+    await expect(messageText(page, text)).toBeVisible();
+    await expect
+      .poll(async () =>
+        (await postedPageNotifications(page)).map(({ body }) => body),
+      )
+      .toContain(text);
 
-      const refocusedAt = await setPageFocused(page, true);
-      await expect(page.locator("[data-new-line]")).toBeVisible();
-      await expect
-        .poll(() => markReadSentAt(page, peer.nickname, serverTime(line)))
-        .toBeGreaterThan(refocusedAt);
-    } finally {
-      peer.close();
-    }
+    const refocusedAt = await setPageFocused(page, true);
+    await expect(page.locator("[data-new-line]")).toBeVisible();
+    await expect
+      .poll(() =>
+        markReadSentAt(page, peer.nickname, Date.parse(serverTime(line))),
+      )
+      .toBeGreaterThan(refocusedAt);
   });
 
   test("shows New when the reader is scrolled away from the live edge", async ({
     isMobile,
     page,
+    irc,
   }) => {
-    const peer = await openDirect(page, "scrolled", isMobile);
-    try {
-      const list = page.locator("[data-message-list]");
-      for (let index = 0; index < 30; index += 1)
-        await peer.privmsgConfirmed(
-          "weblounge",
-          `scroll seed ${index} ${"wrapped transcript line ".repeat(8)}`,
-        );
-      await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
-      await expect.poll(() => scrollRange(list)).toBeGreaterThan(100);
-      await scrollAwayFromLiveEdge(page, list, {
-        input: isMobile ? "touch" : "wheel",
-      });
+    const peer = await openDirect(page, irc, "scrolled", isMobile);
+    const list = page.locator("[data-message-list]");
+    for (let index = 0; index < 30; index += 1)
+      await peer.privmsgConfirmed(
+        irc.account,
+        `scroll seed ${index} ${"wrapped transcript line ".repeat(8)}`,
+      );
+    await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
+    await expect.poll(() => scrollRange(list)).toBeGreaterThan(100);
+    await scrollAwayFromLiveEdge(page, list, {
+      input: isMobile ? "touch" : "wheel",
+    });
 
-      const text = `scrolled DM arrival ${Date.now()}`;
-      await peer.privmsgConfirmed("weblounge", text);
-      await expect(
-        bufferRow(page, peer.nickname).getByRole("status"),
-      ).toBeHidden();
-      await expect(
-        page.getByRole("button", { name: /new message/ }),
-      ).toBeVisible();
-      await list.press("End");
-      await expect(messageText(page, text)).toBeVisible();
-      await expect(page.locator("[data-new-line]")).toBeVisible();
-    } finally {
-      peer.close();
-    }
+    const text = `scrolled DM arrival ${Date.now()}`;
+    await peer.privmsgConfirmed(irc.account, text);
+    await expect(
+      bufferRow(page, peer.nickname).getByRole("status"),
+    ).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: /new message/ }),
+    ).toBeVisible();
+    await list.press("End");
+    await expect(messageText(page, text)).toBeVisible();
+    await expect(page.locator("[data-new-line]")).toBeVisible();
   });
 });
 
 async function openDirect(
   page: Page,
+  irc: IrcTestAccount,
   scenario: string,
   isMobile: boolean,
 ): Promise<IrcClient> {
-  const suffix = `${scenario.slice(0, 1)}${Date.now().toString(36).slice(-6)}`;
-  const peer = await IrcClient.connectWithoutJoin(
-    `divider-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-  );
-  try {
-    await page.goto("/?irc-password=weblounge-test");
-    if (isMobile) {
-      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-      await page
-        .getByRole("button", { name: /^#weblounge-test(?:,|$)/ })
-        .click();
-      await expect(
-        page.getByRole("heading", { name: "#weblounge-test" }),
-      ).toBeVisible();
-    } else
-      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
-        1,
-      );
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    const seed = `open focused DM ${suffix}`;
-    await submitComposer(page, `/query ${peer.nickname} ${seed}`);
-    await expect(
-      page.getByRole("heading", { name: peer.nickname }),
-    ).toBeVisible();
-    if (isMobile) await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await expect(messageText(page, seed)).toBeVisible();
-    await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
-    await expect(page.locator("[data-new-line]")).toHaveCount(0);
-    return peer;
-  } catch (error) {
-    peer.close();
-    throw error;
+  const peer = await irc.peer(`divider-${scenario.slice(0, 1)}`, []);
+  await page.goto(irc.url());
+  if (isMobile) {
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expectSettled(page, { conversation: irc.channel });
   }
-}
-
-function serverTime(line: string): number {
-  const time = line.match(/(?:^@|;)time=([^; ]+)/u)?.[1];
-  if (time === undefined) throw new Error(`no server time in ${line}`);
-  return Date.parse(time);
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  const seed = `open focused DM ${irc.id}`;
+  await submitComposer(page, `/query ${peer.nickname} ${seed}`);
+  await expectSettled(page, { conversation: peer.nickname });
+  await expect(messageText(page, seed)).toBeVisible();
+  await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
+  await expect(page.locator("[data-new-line]")).toHaveCount(0);
+  return peer;
 }
 
 // Read marks compare millisecond server times, so a reply stamped in the same
