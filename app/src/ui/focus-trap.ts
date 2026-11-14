@@ -23,6 +23,21 @@ function focusable(root: HTMLElement | undefined): HTMLElement[] {
   return [
     ...root.querySelectorAll<HTMLElement>("a[href], button, input, [tabindex]"),
   ].filter(
-    (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0,
+    (element) =>
+      !element.hasAttribute("disabled") &&
+      element.tabIndex >= 0 &&
+      isTabStop(element),
   );
+}
+
+function isTabStop(element: HTMLElement): boolean {
+  if (!(element instanceof HTMLInputElement) || element.type !== "radio")
+    return true;
+  const group = [
+    ...element.ownerDocument.querySelectorAll<HTMLInputElement>(
+      'input[type="radio"]',
+    ),
+  ].filter((radio) => radio.name === element.name);
+  const checked = group.find((radio) => radio.checked);
+  return checked === undefined ? group[0] === element : checked === element;
 }

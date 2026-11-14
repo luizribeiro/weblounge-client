@@ -299,6 +299,8 @@ export const messages = {
   "notifications.new_message": "New message",
   "notifications.new_messages": "· {count} new messages",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
+  "settings.appearance": "Appearance",
+  "settings.close": "Close settings",
   "settings.conversation": "Conversation",
   "settings.density.comfortable": "Comfortable",
   "settings.density.compact": "Compact",
@@ -306,6 +308,7 @@ export const messages = {
   "settings.message_density": "Message density",
   "settings.message_density.description":
     "Spacing, text size and avatar size in the conversation.",
+  "settings.sections": "Settings sections",
   "settings.theme": "Theme",
   "settings.theme.system": "System",
   "settings.theme.system_description": "Lounge, or Lounge Night after dark",

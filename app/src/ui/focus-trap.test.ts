@@ -67,3 +67,20 @@ it("leaves Tab between inner controls and other keys to the browser", () => {
   expect(press(root, "Tab").defaultPrevented).toBe(false);
   expect(press(root, "Escape").defaultPrevented).toBe(false);
 });
+
+it("treats only the checked radio of a group as a tab stop", () => {
+  const root = document.createElement("div");
+  root.tabIndex = -1;
+  root.innerHTML = `
+    <button type="button">Close</button>
+    <input type="radio" name="density" value="compact" />
+    <input type="radio" name="density" value="cozy" checked />
+    <input type="radio" name="density" value="comfortable" />`;
+  document.body.append(root);
+  root.focus();
+
+  expect(press(root, "Tab", true).defaultPrevented).toBe(true);
+  expect((document.activeElement as HTMLInputElement).value).toBe("cozy");
+  expect(press(root, "Tab").defaultPrevented).toBe(true);
+  expect(document.activeElement?.textContent).toBe("Close");
+});
