@@ -1,6 +1,7 @@
+import { resolveTheme, type ThemePreference } from "./resolve-theme";
 import { type ThemeId, themes } from "./theme-registry";
 
-export type ThemePreference = "system" | ThemeId;
+export type { ThemePreference };
 
 export interface ThemeController {
   readonly activeTheme: () => ThemeId;
@@ -12,16 +13,16 @@ export interface ThemeController {
 export function installTheme(
   document: Document,
   initialSystemDark: boolean,
+  initialPreference: ThemePreference = "system",
 ): ThemeController {
-  let preference: ThemePreference = "system";
+  let preference = initialPreference;
   let systemDark = initialSystemDark;
-  let active = resolveSystemTheme(systemDark);
+  const resolveActive = () =>
+    registeredTheme(resolveTheme(preference, systemDark));
+  let active = resolveActive();
 
   const apply = () => {
-    active =
-      preference === "system" ? resolveSystemTheme(systemDark) : preference;
-    const theme = themes.find((candidate) => candidate.id === active);
-    if (theme === undefined) throw new Error(`unknown theme: ${active}`);
+    active = resolveActive();
     document.documentElement.dataset.theme = active;
   };
   apply();
@@ -39,9 +40,8 @@ export function installTheme(
   };
 }
 
-function resolveSystemTheme(dark: boolean): ThemeId {
-  const id = dark ? "lounge-night" : "lounge";
+function registeredTheme(id: string): ThemeId {
   const theme = themes.find((candidate) => candidate.id === id);
-  if (theme === undefined) throw new Error(`missing system theme: ${id}`);
+  if (theme === undefined) throw new Error(`unknown theme: ${id}`);
   return theme.id;
 }

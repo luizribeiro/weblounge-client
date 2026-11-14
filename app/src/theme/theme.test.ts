@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { themePreferences } from "../engine/decodeSettings";
+import { resolveTheme } from "./resolve-theme";
 import { installTheme } from "./theme-controller";
 import {
   motionTokens,
@@ -77,10 +79,41 @@ describe("theme controller", () => {
     controller.setSystemDark(true);
     expect(document.documentElement.dataset.theme).toBe("lounge-night");
 
-    controller.setPreference(themes[0]?.id ?? "system");
+    controller.setPreference("lounge");
     controller.setSystemDark(true);
     expect(document.documentElement.dataset.theme).toBe("lounge");
     controller.dispose();
+  });
+
+  it("starts from a remembered preference", () => {
+    installTheme(document, false, "lounge-night");
+
+    expect(document.documentElement.dataset.theme).toBe("lounge-night");
+  });
+
+  it("keeps a remembered fixed theme when the system changes", () => {
+    const controller = installTheme(document, false, "lounge-night");
+
+    controller.setSystemDark(true);
+    controller.setSystemDark(false);
+
+    expect(document.documentElement.dataset.theme).toBe("lounge-night");
+  });
+
+  it("registers every theme the engine can store", () => {
+    for (const preference of themePreferences) {
+      for (const systemDark of [false, true]) {
+        const theme = resolveTheme(preference, systemDark);
+        expect(themes.map((candidate) => candidate.id)).toContain(theme);
+      }
+    }
+  });
+
+  it("resolves System by appearance and fixed themes to themselves", () => {
+    expect(resolveTheme("system", false)).toBe("lounge");
+    expect(resolveTheme("system", true)).toBe("lounge-night");
+    expect(resolveTheme("lounge", true)).toBe("lounge");
+    expect(resolveTheme("lounge-night", false)).toBe("lounge-night");
   });
 
   it("can be disposed after installation", () => {
