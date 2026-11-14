@@ -18,6 +18,15 @@ pub(crate) enum Approval {
     Granted,
 }
 
+/// A lowercase host and the port a connection to it uses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Address {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+}
+
+const HTTPS_PORT: u16 = 443;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Release {
     Send,
@@ -26,21 +35,31 @@ pub(crate) enum Release {
     Refuse,
 }
 
+// The password goes unasked only to the IRC server's own host and port, or to the default HTTPS
+// port of its site: another port on the site may be another service.
 pub(crate) fn release_credential(
-    irc_host: &str,
-    filehost_host: &str,
+    irc: &Address,
+    filehost: &Address,
     credential: CredentialKind,
     approval: Approval,
 ) -> Release {
+    let site = same_site(&irc.host, &filehost.host);
     match (credential, approval) {
-        (CredentialKind::Bearer, _) if same_site(irc_host, filehost_host) => Release::Send,
+        (CredentialKind::Bearer, _) if site => Release::Send,
         (CredentialKind::Bearer, _) => Release::Refuse,
         (CredentialKind::Basic, Approval::Granted) => Release::Send,
-        (CredentialKind::Basic, Approval::Absent) if same_site(irc_host, filehost_host) => {
+        (CredentialKind::Basic, Approval::Absent)
+            if same_service(irc, filehost) || (site && filehost.port == HTTPS_PORT) =>
+        {
             Release::Send
         }
         (CredentialKind::Basic, Approval::Absent) => Release::Ask,
     }
+}
+
+fn same_service(first: &Address, second: &Address) -> bool {
+    let host = normalize(&first.host);
+    !host.is_empty() && host == normalize(&second.host) && first.port == second.port
 }
 
 /// Equal hosts, or host names sharing one registrable domain by the Public Suffix List.
@@ -83,7 +102,14 @@ fn is_comparable_name(host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Approval, CredentialKind, Release, release_credential, same_site};
+    use super::{Address, Approval, CredentialKind, Release, release_credential, same_site};
+
+    fn at(host: &str, port: u16) -> Address {
+        Address {
+            host: host.into(),
+            port,
+        }
+    }
 
     #[test]
     fn bearer_goes_only_to_its_own_site_whatever_the_approval() {
@@ -96,7 +122,12 @@ mod tests {
         ] {
             for approval in [Approval::Absent, Approval::Granted] {
                 assert_eq!(
-                    release_credential(irc, filehost, CredentialKind::Bearer, approval),
+                    release_credential(
+                        &at(irc, 443),
+                        &at(filehost, 443),
+                        CredentialKind::Bearer,
+                        approval
+                    ),
                     expected,
                     "{irc} {filehost} {approval:?}"
                 );
@@ -115,7 +146,12 @@ mod tests {
             ("irc.example.co.uk", "files.other.co.uk", Release::Ask),
         ] {
             assert_eq!(
-                release_credential(irc, filehost, CredentialKind::Basic, Approval::Absent),
+                release_credential(
+                    &at(irc, 443),
+                    &at(filehost, 443),
+                    CredentialKind::Basic,
+                    Approval::Absent
+                ),
                 expected,
                 "{irc} {filehost}"
             );
@@ -126,13 +162,58 @@ mod tests {
     fn an_approval_releases_basic_anywhere() {
         assert_eq!(
             release_credential(
-                "irc.example.org",
-                "files.attacker.test",
+                &at("irc.example.org", 443),
+                &at("files.attacker.test", 8443),
                 CredentialKind::Basic,
                 Approval::Granted,
             ),
             Release::Send
         );
+    }
+
+    #[test]
+    fn basic_goes_unasked_only_to_the_default_https_port_or_the_irc_service_itself() {
+        for (irc, filehost, expected) in [
+            (
+                at("irc.example.org", 443),
+                at("files.example.org", 443),
+                Release::Send,
+            ),
+            (
+                at("irc.example.org", 6697),
+                at("files.example.org", 443),
+                Release::Send,
+            ),
+            (
+                at("irc.example.org", 443),
+                at("files.example.org", 9999),
+                Release::Ask,
+            ),
+            (
+                at("irc.example.org", 443),
+                at("irc.example.org", 9999),
+                Release::Ask,
+            ),
+            (
+                at("irc.example.org", 8097),
+                at("IRC.example.org.", 8097),
+                Release::Send,
+            ),
+            (at("127.0.0.1", 4175), at("127.0.0.1", 4175), Release::Send),
+            (at("127.0.0.1", 4173), at("127.0.0.1", 4175), Release::Ask),
+            (
+                at("irc.example.org", 8097),
+                at("files.example.net", 8097),
+                Release::Ask,
+            ),
+            (at("", 443), at("", 443), Release::Ask),
+        ] {
+            assert_eq!(
+                release_credential(&irc, &filehost, CredentialKind::Basic, Approval::Absent),
+                expected,
+                "{irc:?} {filehost:?}"
+            );
+        }
     }
 
     #[test]

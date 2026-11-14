@@ -73,6 +73,7 @@ test.describe("image uploads against local Ergo", () => {
       await composer.fill("look at this");
       const sendStarted = await now(page);
       await composer.press("Enter");
+      await approveUpload(page);
       await expect(chip).toHaveAttribute("data-state", "uploading");
       await expect(chip).toHaveAttribute("aria-busy", "true");
       await expect(
@@ -124,6 +125,7 @@ test.describe("image uploads against local Ergo", () => {
         withGpsExif: true,
       });
       await composer.press("Enter");
+      await approveUpload(page);
       await peer.waitForPrivmsg(
         peer.nickname,
         `${E2E_FILEHOST_ORIGIN}/`,
@@ -210,6 +212,7 @@ test.describe("image uploads against local Ergo", () => {
       await pasteImage(composer, { width: 1000, height: 1000, noise: true });
       await composer.fill("smaller");
       await composer.press("Enter");
+      await approveUpload(page);
       await peer.waitForPrivmsg(
         peer.nickname,
         `smaller ${E2E_FILEHOST_ORIGIN}/`,
@@ -233,6 +236,7 @@ test.describe("image uploads against local Ergo", () => {
       await pasteImage(composer, { width: 320, height: 200 });
       await control(page.request, "next", { status: "415" });
       await composer.press("Enter");
+      await approveUpload(page);
       await expect(chip).toContainText("Can’t upload this kind of image.");
       await control(page.request, "next", { status: "429" });
       await chip.getByRole("button", { name: "Retry" }).click();
@@ -337,6 +341,7 @@ test.describe("image uploads against local Ergo", () => {
       await control(page.request, "hold", { key });
       const sendStarted = await now(page);
       await page.locator("[data-composer-send]").first().tap();
+      await approveUpload(page);
       await expect(chip).toHaveAttribute("data-state", "uploading");
       await captureThemes(page, "phone-uploading");
       const release = await page.request.get(
@@ -583,4 +588,16 @@ async function expectOnlyComposerShifts(
 
 function now(page: Page): Promise<number> {
   return page.evaluate(() => performance.now());
+}
+
+// The fake file host is on the IRC endpoint's host but another port, so the password asks first.
+async function approveUpload(page: Page): Promise<void> {
+  const dialog = page.getByRole("alertdialog", {
+    name: "Allow upload to 127.0.0.1:4175",
+  });
+  await dialog
+    .getByRole("checkbox", { name: "Remember for this network" })
+    .check();
+  await dialog.getByRole("button", { name: "Upload" }).click();
+  await expect(dialog).toHaveCount(0);
 }

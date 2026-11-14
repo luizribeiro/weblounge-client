@@ -5,7 +5,7 @@ use crate::{
     filehost::{self, UploadEndpoint},
     storage::KvBackend,
     upload_approvals::{self, ApprovalKey},
-    upload_policy::{Approval, CredentialKind, Release, release_credential},
+    upload_policy::{Address, Approval, CredentialKind, Release, release_credential},
 };
 
 /// The configured endpoint and the credential an upload to the network's file host may use.
@@ -64,7 +64,10 @@ pub(crate) async fn resolve<B: KvBackend>(
         return UploadResolution::Unavailable;
     };
     let identity = context.identity;
-    let irc_host = filehost::endpoint_host(&identity.endpoint).unwrap_or_default();
+    let irc = filehost::endpoint_address(&identity.endpoint).unwrap_or(Address {
+        host: String::new(),
+        port: 0,
+    });
     let (kind, approval, authorization) = match identity.credential {
         UploadCredential::Basic { account, password } => {
             let key = ApprovalKey {
@@ -86,7 +89,7 @@ pub(crate) async fn resolve<B: KvBackend>(
             UploadAuthorization::HostBearer,
         ),
     };
-    match release_credential(&irc_host, &filehost.host, kind, approval) {
+    match release_credential(&irc, &filehost.address, kind, approval) {
         Release::Send => ready(filehost, authorization),
         Release::Ask => UploadResolution::ApprovalRequired {
             host: filehost.authority,
@@ -155,7 +158,12 @@ mod tests {
         UploadEndpoint {
             url: format!("https://{authority}/upload"),
             authority: authority.into(),
-            host: authority.split(':').next().unwrap_or(authority).into(),
+            address: crate::upload_policy::Address {
+                host: authority.split(':').next().unwrap_or(authority).into(),
+                port: authority
+                    .split_once(':')
+                    .map_or(443, |(_, port)| port.parse().expect("test port")),
+            },
         }
     }
 

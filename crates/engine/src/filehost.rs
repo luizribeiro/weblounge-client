@@ -3,11 +3,13 @@ pub(crate) fn origin(state: &papo::State) -> Option<String> {
     state.filehost().and_then(https_origin)
 }
 
-/// The advertised upload URL, with the authority and host the credential rules compare.
+use crate::upload_policy::Address;
+
+/// The advertised upload URL, with the authority and address the credential rules compare.
 pub(crate) struct UploadEndpoint {
     pub(crate) url: String,
     pub(crate) authority: String,
-    pub(crate) host: String,
+    pub(crate) address: Address,
 }
 
 pub(crate) fn upload_endpoint(state: &papo::State) -> Option<UploadEndpoint> {
@@ -31,18 +33,31 @@ fn upload_endpoint_from(url: &str) -> Option<UploadEndpoint> {
     let authority = https_origin(url)?.strip_prefix("https://")?.to_owned();
     Some(UploadEndpoint {
         url: url.to_owned(),
-        host: host_of(&authority).to_owned(),
+        address: address_of(&authority, 443)?,
         authority,
     })
 }
 
-/// The lowercase host of a `ws://` or `wss://` connection endpoint.
-pub(crate) fn endpoint_host(endpoint: &str) -> Option<String> {
-    let rest = endpoint
+/// The lowercase host and port of a `ws://` or `wss://` connection endpoint.
+pub(crate) fn endpoint_address(endpoint: &str) -> Option<Address> {
+    let (rest, default_port) = endpoint
         .strip_prefix("wss://")
-        .or_else(|| endpoint.strip_prefix("ws://"))?;
-    let host = host_of(authority(rest));
-    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+        .map(|rest| (rest, 443))
+        .or_else(|| endpoint.strip_prefix("ws://").map(|rest| (rest, 80)))?;
+    let address = address_of(&authority(rest).to_ascii_lowercase(), default_port)?;
+    (!address.host.is_empty()).then_some(address)
+}
+
+fn address_of(authority: &str, default_port: u16) -> Option<Address> {
+    let host = host_of(authority);
+    let port = match &authority[host.len()..] {
+        "" => default_port,
+        explicit => explicit.strip_prefix(':')?.parse().ok()?,
+    };
+    Some(Address {
+        host: host.to_owned(),
+        port,
+    })
 }
 
 fn https_origin(url: &str) -> Option<String> {
@@ -83,7 +98,8 @@ fn is_plain_ascii_host(host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{endpoint_host, host_of, https_origin, upload_endpoint_from};
+    use super::{endpoint_address, host_of, https_origin, upload_endpoint_from};
+    use crate::upload_policy::Address;
 
     #[test]
     fn upload_endpoints_keep_the_authority_the_browser_will_use() {
@@ -91,12 +107,20 @@ mod tests {
             upload_endpoint_from("https://Files.Example.org:8443/upload?x=1").expect("valid");
         assert_eq!(endpoint.url, "https://Files.Example.org:8443/upload?x=1");
         assert_eq!(endpoint.authority, "files.example.org:8443");
-        assert_eq!(endpoint.host, "files.example.org");
-        let default_port = upload_endpoint_from("https://files.example.org:443").expect("valid");
-        assert_eq!(default_port.authority, "files.example.org");
+        assert_eq!(endpoint.address.host, "files.example.org");
+        assert_eq!(endpoint.address.port, 8443);
+        for url in [
+            "https://files.example.org:443/upload",
+            "https://files.example.org/upload",
+        ] {
+            let default_port = upload_endpoint_from(url).expect("valid");
+            assert_eq!(default_port.authority, "files.example.org", "{url}");
+            assert_eq!(default_port.address.port, 443, "{url}");
+        }
+        let ipv6 = upload_endpoint_from("https://[::1]:9443/upload").expect("valid");
         assert_eq!(
-            upload_endpoint_from("https://[::1]:9443/upload").map(|e| e.host),
-            Some("[::1]".into())
+            (ipv6.address.host.as_str(), ipv6.address.port),
+            ("[::1]", 9443)
         );
     }
 
@@ -118,19 +142,27 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_host_drops_scheme_credentials_port_and_path() {
+    fn endpoint_addresses_default_their_port_by_scheme() {
+        let at = |host: &str, port| {
+            Some(Address {
+                host: host.into(),
+                port,
+            })
+        };
         for (endpoint, expected) in [
-            ("wss://IRC.Example.org/socket", Some("irc.example.org")),
-            ("ws://127.0.0.1:4173/socket", Some("127.0.0.1")),
+            ("wss://IRC.Example.org/socket", at("irc.example.org", 443)),
+            ("ws://127.0.0.1:4173/socket", at("127.0.0.1", 4173)),
+            ("ws://irc.example.org/socket", at("irc.example.org", 80)),
             (
                 "wss://user:pw@irc.example.org:8097",
-                Some("irc.example.org"),
+                at("irc.example.org", 8097),
             ),
-            ("wss://[::1]:8097/socket", Some("[::1]")),
+            ("wss://[::1]:8097/socket", at("[::1]", 8097)),
+            ("wss://irc.example.org:notaport/socket", None),
             ("https://irc.example.org", None),
             ("wss:///socket", None),
         ] {
-            assert_eq!(endpoint_host(endpoint).as_deref(), expected, "{endpoint}");
+            assert_eq!(endpoint_address(endpoint), expected, "{endpoint}");
         }
     }
 

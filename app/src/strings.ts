@@ -88,7 +88,7 @@ export const messages = {
   "upload.approval_label": "Allow upload to {host}",
   "upload.approval_title": "Send your password to {host}?",
   "upload.approval_explanation":
-    "This network’s file host is on another site. It receives your account name and password with the image.",
+    "This network’s file host isn’t the server you signed in to. It receives your account name and password with the image.",
   "upload.approval_action": "Upload",
   "upload.approval_remember": "Remember for this network",
   "upload.failed.offline": "You’re offline.",
