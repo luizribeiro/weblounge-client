@@ -5,6 +5,7 @@
   --wl-density-message-divider-top-padding: 10px;
   --wl-density-message-font-delta: -1px;
   --wl-density-message-group-top-padding: 5px;
+  --wl-density-message-image-slot-height: 160px;
   --wl-density-message-line-height: 1.4;
   --wl-density-message-mobile-continuation-padding: 4px;
   --wl-density-message-mobile-divider-bottom-padding: 6px;
@@ -13,6 +14,7 @@
   --wl-density-message-mobile-group-top-padding: 12px;
   --wl-density-message-mobile-group-highlight-inset: 6px;
   --wl-density-message-mobile-header-gap: 3px;
+  --wl-density-message-mobile-image-slot-height: 160px;
   --wl-density-message-mobile-line-gap-padding: 2px;
   --wl-density-message-mobile-line-top-padding: 8px;
   --wl-density-message-one-line-row-padding: 1px;
@@ -34,6 +36,7 @@
   --wl-density-message-divider-top-padding: 14px;
   --wl-density-message-font-delta: 0px;
   --wl-density-message-group-top-padding: 10px;
+  --wl-density-message-image-slot-height: 240px;
   --wl-density-message-line-height: 1.5;
   --wl-density-message-mobile-continuation-padding: 6px;
   --wl-density-message-mobile-divider-bottom-padding: 8px;
@@ -42,6 +45,7 @@
   --wl-density-message-mobile-group-top-padding: 16px;
   --wl-density-message-mobile-group-highlight-inset: 8px;
   --wl-density-message-mobile-header-gap: 4px;
+  --wl-density-message-mobile-image-slot-height: 200px;
   --wl-density-message-mobile-line-gap-padding: 4px;
   --wl-density-message-mobile-line-top-padding: 12px;
   --wl-density-message-one-line-row-padding: 3px;
@@ -63,6 +67,7 @@
   --wl-density-message-divider-top-padding: 18px;
   --wl-density-message-font-delta: 1px;
   --wl-density-message-group-top-padding: 15px;
+  --wl-density-message-image-slot-height: 240px;
   --wl-density-message-line-height: 1.6;
   --wl-density-message-mobile-continuation-padding: 8px;
   --wl-density-message-mobile-divider-bottom-padding: 10px;
@@ -71,6 +76,7 @@
   --wl-density-message-mobile-group-top-padding: 20px;
   --wl-density-message-mobile-group-highlight-inset: 10px;
   --wl-density-message-mobile-header-gap: 5px;
+  --wl-density-message-mobile-image-slot-height: 200px;
   --wl-density-message-mobile-line-gap-padding: 6px;
   --wl-density-message-mobile-line-top-padding: 16px;
   --wl-density-message-one-line-row-padding: 5px;

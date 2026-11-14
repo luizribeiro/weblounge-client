@@ -1,5 +1,6 @@
 import {
   type DensityId,
+  type DensityPreset,
   densityDefaults,
   densityPresets,
 } from "../../density/density";
@@ -32,8 +33,12 @@ export function estimateMessageHeight(
   presentation: "desktop" | "mobile" = "desktop",
   startsMobileGroup = true,
   lineSpacing: LineSpacing = "after-message",
+  inlineImage = false,
 ): number {
   const preset = densityPresets[density];
+  const imageBlockHeight = inlineImage
+    ? inlineImageBlockHeight(preset, presentation)
+    : 0;
   const fontSize = baseFontSize + Number.parseFloat(preset.fontDelta);
   const lineHeight = fontSize * Number.parseFloat(preset.lineHeight);
   const oneLinePadding = Number.parseFloat(preset.oneLineRowPadding);
@@ -103,6 +108,7 @@ export function estimateMessageHeight(
       topPadding +
       headerHeight +
       textHeight +
+      imageBlockHeight +
       estimatedReactionHeight(message, textWidth, presentation)
     );
   }
@@ -118,10 +124,15 @@ export function estimateMessageHeight(
     Math.floor(textWidth / (fontSize * estimatedCharacterWidthFactor)),
   );
   const lines = estimatedLines(message.text, charactersPerLine);
-  const textHeight = Math.max(
-    28 - (lineSpacing === "after-divider" ? oneLinePadding : 0),
-    Math.ceil(lines * lineHeight + verticalPadding),
+  const contentHeight = Math.ceil(
+    lines * lineHeight + verticalPadding + imageBlockHeight,
   );
+  const textHeight = inlineImage
+    ? contentHeight
+    : Math.max(
+        28 - (lineSpacing === "after-divider" ? oneLinePadding : 0),
+        contentHeight,
+      );
   const deliveryHeight =
     message.kind === "action" &&
     message.delivery !== "received" &&
@@ -135,8 +146,23 @@ export function estimateMessageHeight(
   );
 }
 
+function inlineImageBlockHeight(
+  preset: DensityPreset,
+  presentation: "desktop" | "mobile",
+): number {
+  const contentGap = 4;
+  return (
+    contentGap +
+    Number.parseFloat(
+      presentation === "mobile"
+        ? preset.mobileImageSlotHeight
+        : preset.imageSlotHeight,
+    )
+  );
+}
+
 function mobileLineTopPadding(
-  preset: (typeof densityPresets)[DensityId],
+  preset: DensityPreset,
   spacing: LineSpacing,
 ): number {
   if (spacing === "after-divider") return 0;

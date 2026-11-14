@@ -32,6 +32,8 @@ export interface DensityPreset {
   readonly mobileContinuationPadding: string;
   readonly mobileGroupTopPadding: string;
   readonly mobileHeaderGap: string;
+  readonly imageSlotHeight: string;
+  readonly mobileImageSlotHeight: string;
   readonly mobilePreviews: boolean;
 }
 
@@ -54,6 +56,7 @@ export function densityStyleSheet(): string {
         dividerTopPadding: preset.dividerTopPadding,
         fontDelta: preset.fontDelta,
         groupTopPadding: preset.groupTopPadding,
+        imageSlotHeight: preset.imageSlotHeight,
         lineHeight: preset.lineHeight,
         mobileContinuationPadding: preset.mobileContinuationPadding,
         mobileDividerBottomPadding: preset.mobileDividerBottomPadding,
@@ -64,6 +67,7 @@ export function densityStyleSheet(): string {
         mobileGroupTopPadding: preset.mobileGroupTopPadding,
         mobileGroupHighlightInset: halfPixels(preset.mobileGroupTopPadding),
         mobileHeaderGap: preset.mobileHeaderGap,
+        mobileImageSlotHeight: preset.mobileImageSlotHeight,
         mobileLineGapPadding: preset.mobileLineGapPadding,
         mobileLineTopPadding: preset.mobileLineTopPadding,
         oneLineRowPadding: preset.oneLineRowPadding,

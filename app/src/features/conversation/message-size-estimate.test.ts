@@ -101,6 +101,86 @@ describe("estimateMessageHeight", () => {
     ).toBe(estimateMessageHeight(message, 1_280, "cozy") - 3);
   });
 
+  it.each([
+    ["compact", 185],
+    ["cozy", 271],
+    ["comfortable", 278],
+  ] as const)(
+    "adds the %s desktop image slot under the text",
+    (density, height) => {
+      const message = {
+        delivery: "received" as const,
+        kind: "text" as const,
+        text: "https://files.example.test/a.png",
+      };
+      expect(
+        estimateMessageHeight(
+          message,
+          1_280,
+          density,
+          "desktop",
+          true,
+          "after-message",
+          true,
+        ),
+      ).toBe(height);
+    },
+  );
+
+  it.each([
+    ["wrapped text", "text", false],
+    ["a failed action", "action", false],
+    ["reactions", "text", true],
+  ] as const)("adds the desktop slot on top of %s", (_label, kind, reacted) => {
+    const message = {
+      delivery: kind === "action" ? ("failed" as const) : ("received" as const),
+      kind,
+      reactions: reacted ? [{ text: "👍", mine: false, actors: [] }] : [],
+      text: `${"wrapping words ".repeat(40)}https://files.example.test/a.png`,
+    };
+    const withImage = (inlineImage: boolean) =>
+      estimateMessageHeight(
+        message,
+        1_280,
+        "cozy",
+        "desktop",
+        true,
+        "after-message",
+        inlineImage,
+      );
+    expect(withImage(true) - withImage(false)).toBe(244);
+  });
+
+  it.each([
+    ["compact", 164],
+    ["cozy", 204],
+    ["comfortable", 204],
+  ] as const)(
+    "adds the %s phone image slot under the text",
+    (density, block) => {
+      const message = {
+        delivery: "received" as const,
+        kind: "text" as const,
+        text: "https://files.example.test/a.png",
+      };
+      for (const startsGroup of [true, false])
+        expect(
+          estimateMessageHeight(
+            message,
+            390,
+            density,
+            "mobile",
+            startsGroup,
+            "after-message",
+            true,
+          ),
+        ).toBe(
+          estimateMessageHeight(message, 390, density, "mobile", startsGroup) +
+            block,
+        );
+    },
+  );
+
   it("uses the notice-line rhythm for IRC notice estimates", () => {
     const notice = {
       delivery: "received" as const,

@@ -21,6 +21,8 @@
     "mobileContinuationPadding": "4px",
     "mobileGroupTopPadding": "12px",
     "mobileHeaderGap": "3px",
+    "imageSlotHeight": "160px",
+    "mobileImageSlotHeight": "160px",
     "mobilePreviews": false
   },
   "cozy": {
@@ -45,6 +47,8 @@
     "mobileContinuationPadding": "6px",
     "mobileGroupTopPadding": "16px",
     "mobileHeaderGap": "4px",
+    "imageSlotHeight": "240px",
+    "mobileImageSlotHeight": "200px",
     "mobilePreviews": true
   },
   "comfortable": {
@@ -69,6 +73,8 @@
     "mobileContinuationPadding": "8px",
     "mobileGroupTopPadding": "20px",
     "mobileHeaderGap": "5px",
+    "imageSlotHeight": "240px",
+    "mobileImageSlotHeight": "200px",
     "mobilePreviews": true
   }
 }
