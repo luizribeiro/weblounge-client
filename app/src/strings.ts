@@ -300,6 +300,8 @@ export const messages = {
   "notifications.new_messages": "· {count} new messages",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "settings.appearance": "Appearance",
+  "settings.appearance.summary": "{theme} · {density}",
+  "settings.back_to_settings": "Back to Settings",
   "settings.close": "Close settings",
   "settings.conversation": "Conversation",
   "settings.density.comfortable": "Comfortable",
