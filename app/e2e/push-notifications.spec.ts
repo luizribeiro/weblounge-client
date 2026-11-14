@@ -1,4 +1,4 @@
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import {
   closeEngineDatabase,
   ENGINE_DATABASE_NAME,
@@ -7,6 +7,7 @@ import {
   openEngineDatabase,
 } from "./engine-database";
 import { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { deliverPush, deliverPushes } from "./push-delivery";
 import { deliverStablePushBatch } from "./stable-push-batch";
 
@@ -665,6 +666,7 @@ test("shows one generic notification without replacing keys when parsing fails",
 test("shows a cold pushed notice before IRC and deduplicates its history copy", async ({
   context,
   page,
+  irc,
 }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -677,67 +679,55 @@ test("shows a cold pushed notice before IRC and deduplicates its history copy", 
     });
   });
   await prepareServiceWorker(context, page);
-  const bot = await IrcClient.connect(
-    "weblounge-bot",
-    "weblounge-bot",
-    "weblounge-bot-test",
-    "#weblounge-test",
+  const bot = await irc.peer("push-notice");
+  const text = `pushed notice before history ${irc.id}`;
+  const line = await bot.noticeConfirmed(irc.channel, text);
+  const envelope = await seedRouteAndEncrypt(page, line, {
+    networkLabel: "Local Ergo",
+    nickname: irc.account,
+  });
+  await deliverPush(context, page, envelope);
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+  await replaceWithConversationNotification(page, `Local Ergo/${irc.channel}`);
+
+  await page.close();
+  await context.setOffline(true);
+  const coldPage = await context.newPage();
+  await coldPage.goto(
+    irc.url({ path: `/Local%20Ergo/${irc.channel.slice(1)}` }),
   );
-  const text = `pushed notice before history ${Date.now()}`;
-  try {
-    const line = await bot.noticeConfirmed("#weblounge-test", text);
-    const envelope = await seedRouteAndEncrypt(page, line, {
-      networkLabel: "Local Ergo",
-      nickname: "weblounge",
-    });
-    await deliverPush(context, page, envelope);
-    await expect.poll(() => notifications(page)).toHaveLength(1);
-    await replaceWithConversationNotification(
-      page,
-      "Local Ergo/#weblounge-test",
-    );
 
-    await page.close();
-    await context.setOffline(true);
-    const coldPage = await context.newPage();
-    await coldPage.goto(
-      "/Local%20Ergo/weblounge-test?irc-password=weblounge-test",
-    );
+  const notice = coldPage.locator(
+    `[data-message-row][data-message-text="${text}"]`,
+  );
+  await expect(notice).toHaveAttribute("data-irc-notice", "true");
+  await expect(notice.getByRole("img", { name: "Notice" })).toBeVisible();
+  const sender = notice.getByText(bot.nickname, { exact: true });
+  await expect(sender).toBeVisible();
+  await expect(sender).toHaveCSS("font-weight", "650");
+  await expect(notice.getByText(text, { exact: true })).toHaveCSS(
+    "font-style",
+    "normal",
+  );
+  await expect.poll(() => notifications(coldPage)).toEqual([]);
+  await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+    0,
+  );
 
-    const notice = coldPage.locator(
-      `[data-message-row][data-message-text="${text}"]`,
-    );
-    await expect(notice).toHaveAttribute("data-irc-notice", "true");
-    await expect(notice.getByRole("img", { name: "Notice" })).toBeVisible();
-    const sender = notice.getByText(bot.nickname, { exact: true });
-    await expect(sender).toBeVisible();
-    await expect(sender).toHaveCSS("font-weight", "650");
-    await expect(notice.getByText(text, { exact: true })).toHaveCSS(
-      "font-style",
-      "normal",
-    );
-    await expect.poll(() => notifications(coldPage)).toEqual([]);
-    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
-      0,
-    );
-
-    await context.setOffline(false);
-    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
-      1,
-    );
-    const marker = `history settled ${Date.now()}`;
-    bot.privmsg("#weblounge-test", marker);
-    await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
-    await expect(notice).toHaveCount(1);
-  } finally {
-    await context.setOffline(false);
-    bot.close();
-  }
+  await context.setOffline(false);
+  await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+    1,
+  );
+  const marker = `history settled ${Date.now()}`;
+  bot.privmsg(irc.channel, marker);
+  await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+  await expect(notice).toHaveCount(1);
 });
 
 test("reconciles a restored pushed direct message with history", async ({
   context,
   page,
+  irc,
 }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -763,115 +753,88 @@ test("reconciles a restored pushed direct message with history", async ({
     });
   });
   await prepareServiceWorker(context, page);
-  const suffix = Date.now().toString(36);
-  const appAccount = `push-user-${suffix}`;
-  const appPassword = `test-${appAccount}`;
-  const botNickname = `push-bot-${suffix}`;
-  const text = `pushed direct before history ${Date.now()}`;
-  let accountRegistered = false;
-  let bot: IrcClient | undefined;
-  let deliveryPage: Page | undefined;
-  try {
-    const accountSeed = await IrcClient.connectIsolated(
-      appAccount,
-      "#weblounge-test",
-    );
-    accountRegistered = true;
-    accountSeed.close();
-    await accountSeed.waitForDisconnect();
-    bot = await IrcClient.connectIsolated(botNickname, "#weblounge-test");
-    await page.goto(startUrlForAccount(appAccount, appPassword));
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    await expect
-      .poll(() => snapshotContainsBuffer(page, "#weblounge-test"))
-      .toBe(true);
-    const departed = bot.waitForNickDeparture(appAccount);
-    await page.close();
-    await departed;
-    await setTestAccountAlwaysOn(appAccount, appPassword, true);
-    blockIrc = true;
-    deliveryPage = await context.newPage();
-    await deliveryPage.goto("/config.json");
-    await expect
-      .poll(() => pushDeliveryPageState(deliveryPage))
-      .toEqual({ controller: "activated", online: true });
-    await context.setOffline(true);
-    await expect
-      .poll(() => pushDeliveryPageState(deliveryPage))
-      .toEqual({ controller: "activated", online: false });
-    const echoed = await bot.privmsgConfirmed(appAccount, text);
-    const line = echoed.replace(/^@/u, `@account=${botNickname};`);
-    const envelope = await seedRouteAndEncrypt(deliveryPage, line, {
-      networkLabel: "Local Ergo",
-      nickname: appAccount,
-    });
-    await deliverPush(context, deliveryPage, envelope);
-    await expect
-      .poll(() => notifications(deliveryPage))
-      .toEqual([
-        {
-          title: botNickname,
-          body: text,
-          tag: `Local Ergo/${botNickname}`,
-          route: `/Local%20Ergo/@${botNickname}`,
-        },
-      ]);
-    await deliveryPage.close();
-    deliveryPage = undefined;
-    const coldPage = await context.newPage();
-    let documentRequests = 0;
-    coldPage.on("request", (request) => {
-      if (
-        request.isNavigationRequest() &&
-        request.frame() === coldPage.mainFrame()
-      ) {
-        documentRequests += 1;
-      }
-    });
-    await coldPage.goto(startUrlForAccount(appAccount, appPassword));
-
-    const directBuffer = coldPage
-      .locator("[data-buffer-id]")
-      .filter({ hasText: botNickname });
-    await expect(directBuffer).toHaveAttribute("data-unread", "1");
-    await directBuffer.click();
-    const row = coldPage.locator("[data-message-row]", { hasText: text });
-    await expect(row).toBeVisible();
-    await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
-    await expect(directBuffer).toHaveAttribute("data-unread", "0");
-    await expect(coldPage.locator("[data-direct-identity-banner]")).toHaveCount(
-      0,
-    );
-    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
-      0,
-    );
-
-    blockIrc = false;
-    await context.setOffline(false);
-    await releaseBlockedIrc?.();
-    releaseBlockedIrc = undefined;
-    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
-      1,
-    );
-    const marker = `direct history settled ${Date.now()}`;
-    await bot.privmsgConfirmed(appAccount, marker);
-    await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
-    expect(documentRequests).toBe(1);
-    await expect(row).toHaveCount(1);
-    // The plaintext fixture turns the provisional row into an unverified authoritative row.
-    await expect(row).toHaveAttribute("data-unverified-sender", "true");
-  } finally {
-    blockIrc = false;
-    await context.setOffline(false);
-    await releaseBlockedIrc?.();
-    if (deliveryPage !== undefined && !deliveryPage.isClosed()) {
-      await deliveryPage.close();
+  const appAccount = irc.account;
+  const appPassword = irc.password;
+  const bot = await irc.peer("push-bot");
+  const botNickname = bot.nickname;
+  const text = `pushed direct before history ${botNickname}`;
+  await page.goto(irc.url());
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  await expect.poll(() => snapshotContainsBuffer(page, irc.channel)).toBe(true);
+  const departed = bot.waitForNickDeparture(appAccount);
+  await page.close();
+  await departed;
+  await setTestAccountAlwaysOn(appAccount, appPassword, true);
+  blockIrc = true;
+  const deliveryPage = await context.newPage();
+  await deliveryPage.goto("/config.json");
+  await expect
+    .poll(() => pushDeliveryPageState(deliveryPage))
+    .toEqual({ controller: "activated", online: true });
+  await context.setOffline(true);
+  await expect
+    .poll(() => pushDeliveryPageState(deliveryPage))
+    .toEqual({ controller: "activated", online: false });
+  const echoed = await bot.privmsgConfirmed(appAccount, text);
+  const line = echoed.replace(/^@/u, `@account=${botNickname};`);
+  const envelope = await seedRouteAndEncrypt(deliveryPage, line, {
+    networkLabel: "Local Ergo",
+    nickname: appAccount,
+  });
+  await deliverPush(context, deliveryPage, envelope);
+  await expect
+    .poll(() => notifications(deliveryPage))
+    .toEqual([
+      {
+        title: botNickname,
+        body: text,
+        tag: `Local Ergo/${botNickname}`,
+        route: `/Local%20Ergo/@${botNickname}`,
+      },
+    ]);
+  await deliveryPage.close();
+  const coldPage = await context.newPage();
+  let documentRequests = 0;
+  coldPage.on("request", (request) => {
+    if (
+      request.isNavigationRequest() &&
+      request.frame() === coldPage.mainFrame()
+    ) {
+      documentRequests += 1;
     }
-    bot?.close();
-    if (accountRegistered) {
-      await setTestAccountAlwaysOn(appAccount, appPassword, false);
-    }
-  }
+  });
+  await coldPage.goto(irc.url());
+
+  const directBuffer = coldPage
+    .locator("[data-buffer-id]")
+    .filter({ hasText: botNickname });
+  await expect(directBuffer).toHaveAttribute("data-unread", "1");
+  await directBuffer.click();
+  const row = coldPage.locator("[data-message-row]", { hasText: text });
+  await expect(row).toBeVisible();
+  await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
+  await expect(directBuffer).toHaveAttribute("data-unread", "0");
+  await expect(coldPage.locator("[data-direct-identity-banner]")).toHaveCount(
+    0,
+  );
+  await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+    0,
+  );
+
+  blockIrc = false;
+  await context.setOffline(false);
+  await releaseBlockedIrc?.();
+  releaseBlockedIrc = undefined;
+  await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+    1,
+  );
+  const marker = `direct history settled ${Date.now()}`;
+  await bot.privmsgConfirmed(appAccount, marker);
+  await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+  expect(documentRequests).toBe(1);
+  await expect(row).toHaveCount(1);
+  // The plaintext fixture turns the provisional row into an unverified authoritative row.
+  await expect(row).toHaveAttribute("data-unverified-sender", "true");
 });
 
 async function trackDedicatedEngine(page: Page): Promise<void> {
@@ -992,15 +955,6 @@ async function setTestAccountAlwaysOn(
     client.close();
     await client.waitForDisconnect();
   }
-}
-
-function startUrlForAccount(account: string, password: string): string {
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": password,
-  });
-  return `/?${params.toString()}`;
 }
 
 async function snapshotContainsBuffer(
