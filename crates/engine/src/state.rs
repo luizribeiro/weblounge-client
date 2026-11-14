@@ -3302,6 +3302,7 @@ impl NetworkModel {
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             advance_incoming_cursor(buffer, &incoming, cursor);
+            note_peer_bot(buffer, &incoming);
         }
         let added = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
@@ -3992,6 +3993,18 @@ fn begin_pushed_history(buffer: &mut BufferState, target: HistoryTarget) -> Opti
     };
     set_history_state(buffer, next);
     Some(fetch)
+}
+
+/// papo keeps no record of a peer that shares no channel with us until `MONITOR` reports it, so
+/// the bot tag on the peer's own lines is the only report for a stranger's first message.
+fn note_peer_bot(buffer: &mut BufferState, incoming: &Incoming) {
+    let from_direct_peer = matches!(
+        incoming.destination,
+        IncomingDestination::Conversation(NameKey::Direct(_))
+    ) && incoming.authorship != MessageAuthorship::Own;
+    if let Some(bot) = incoming.bot.filter(|_| from_direct_peer) {
+        buffer.projection.peer_bot = bot;
+    }
 }
 
 fn advance_incoming_cursor(
@@ -6105,6 +6118,47 @@ mod tests {
             received_at_ms: server_time_ms,
             origin: TimelineOrigin::Live,
         }
+    }
+
+    #[test]
+    fn only_a_direct_peers_own_bot_tag_marks_its_buffer_as_a_bot() {
+        let (mut model, state) = model(10);
+        let human = direct_incoming(&state, "ana", "hello", 10);
+        let bot = Incoming {
+            bot: Some(true),
+            ..direct_incoming(&state, "concierge", "beep", 20)
+        };
+        let own_reply = Incoming {
+            bot: Some(false),
+            authorship: MessageAuthorship::Own,
+            ..direct_incoming(&state, "concierge", "thanks", 30)
+        };
+        let channel_bot = Incoming {
+            bot: Some(true),
+            author: "ana".into(),
+            ..incoming(
+                &state,
+                "beep",
+                Some("room-1"),
+                Some(40),
+                40,
+                TimelineOrigin::Live,
+            )
+        };
+
+        for message in [human, bot, own_reply, channel_bot] {
+            model.receive_incoming(message, &state);
+        }
+
+        let peer_bot = |title: &str| {
+            model
+                .buffers
+                .values()
+                .find(|buffer| buffer.projection.title == title)
+                .map(|buffer| buffer.projection.peer_bot)
+        };
+        assert_eq!(peer_bot("ana"), Some(false));
+        assert_eq!(peer_bot("concierge"), Some(true));
     }
 
     fn notified_texts(events: &[EngineToUi]) -> Vec<(BufferKind, String)> {
