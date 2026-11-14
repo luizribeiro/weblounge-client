@@ -214,6 +214,7 @@ test.describe("connection resilience against local Ergo", () => {
       await setVisibility(page, true);
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
+      await waitForForegroundProbeToGiveUp(page, testInfo.project.name);
       await expectTransientConnectionPresentation(
         page,
         isMobile(testInfo.project.name),
@@ -221,7 +222,6 @@ test.describe("connection resilience against local Ergo", () => {
       await irc.forwarder.restore();
       dropped = false;
 
-      await expect.poll(() => currentNetworkState(page)).not.toBe("online");
       await expectOnline(page, testInfo.project.name);
       await expect.poll(() => sentWireLineCount(page, text)).toBe(1);
       await expect(messageRow(page, text, "failed")).toHaveCount(1);
@@ -779,11 +779,18 @@ async function sentWireLineCount(page: Page, text: string): Promise<number> {
   }, text);
 }
 
-function currentNetworkState(page: Page): Promise<string | null> {
-  return page
-    .locator("[data-network-state]")
-    .first()
-    .getAttribute("data-network-state");
+// The engine's foreground probe waits FOREGROUND_PROBE_TIMEOUT (4s) before
+// reconnecting, which is when the network leaves online; the test timeout
+// bounds this wait.
+async function waitForForegroundProbeToGiveUp(
+  page: Page,
+  projectName: string,
+): Promise<void> {
+  await page
+    .locator(
+      `${networkStateSelector(projectName)}:not([data-network-state="online"])`,
+    )
+    .waitFor({ state: "attached" });
 }
 
 async function scrollDesktopBetweenEdges(
@@ -857,10 +864,17 @@ async function expectShellToRemain(page: Page, heading: string): Promise<void> {
 }
 
 async function expectOnline(page: Page, projectName: string): Promise<void> {
-  const online = isMobile(projectName)
-    ? page.locator('[data-mobile-chat][data-network-state="online"]')
-    : page.locator('[data-network-state="online"]');
-  await expect(online).toHaveCount(1);
+  await expect(
+    page.locator(
+      `${networkStateSelector(projectName)}[data-network-state="online"]`,
+    ),
+  ).toHaveCount(1);
+}
+
+function networkStateSelector(projectName: string): string {
+  return isMobile(projectName)
+    ? "[data-mobile-chat][data-network-state]"
+    : "[data-network-state]";
 }
 
 async function expectErgoReady(): Promise<void> {
