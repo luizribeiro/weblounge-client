@@ -335,6 +335,12 @@ export default defineConfig({
                 reuseExistingServer: false,
                 url: "http://127.0.0.1:4174/health",
               },
+              {
+                command: "node e2e/fake-filehost-server.mjs",
+                ignoreHTTPSErrors: true,
+                reuseExistingServer: false,
+                url: "https://127.0.0.1:4175/health",
+              },
             ]),
       ],
 });

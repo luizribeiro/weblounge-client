@@ -6,6 +6,8 @@ let
   botAccount = "weblounge-bot";
   botPassword = "weblounge-bot-test";
   apiToken = "weblounge-local-api-token";
+  # Must match app/e2e/fake-filehost-server.mjs and E2E_FILEHOST_ORIGIN in app/csp.ts.
+  fakeFilehost = "https://127.0.0.1:4175";
   config = pkgs.runCommand "weblounge-ergo.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
     ${pkgs.lib.getExe pkgs.ergochat} defaultconfig > "$out"
     yq --inplace '
@@ -17,6 +19,7 @@ let
       } |
       .server.websockets.allowed-origins = [] |
       .server.motd = "" |
+      .server.additional-isupport = {"draft/FILEHOST": "${fakeFilehost}/upload"} |
       .accounts.registration.enabled = false |
       .accounts.require-sasl.enabled = true |
       .accounts.require-sasl.exempted = [] |
