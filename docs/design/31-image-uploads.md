@@ -100,14 +100,17 @@ fn release_credential(irc_host: &str, filehost_host: &str, credential: Credentia
   Networks settings section brings its switch, nothing in the UI calls it, a deliberate v1 gap.
 - **Residual risk.** The PSL is the trust boundary: on a domain that hands out subdomains to other
   parties without being listed (some universities and companies), a sibling of the IRC host would
-  receive the password. The rule also trusts names, not DNS or certificates beyond HTTPS. Browsers
-  remove `Authorization` on a cross-origin redirect (Fetch), and `XMLHttpRequest` cannot refuse
-  redirects, so a same-origin redirect stays on the approved host; the uploader also requires the
-  final `responseURL` to be the endpoint's origin before trusting a `201`.
-  Ports are ignored for the site test, so another service on the IRC host's own site also
-  qualifies. A Bearer token goes to whatever file host the hosted server advertises: the engine
-  checks neither its audience nor its lifetime, and relies on the deployment minting short-lived
-  tokens for its own concierge.
+  receive the password. The rule also trusts names, not DNS or certificates beyond HTTPS.
+- **Redirects.** `XMLHttpRequest` cannot refuse a redirect. The guards are the CORS preflight,
+  which the `Authorization` header forces before any body is sent, and the browser removing
+  `Authorization` when a redirect crosses origins (Fetch). The uploader's check that the final
+  `responseURL` is on the endpoint's origin runs after the fact: it only stops a `201` from a
+  redirected request being trusted, and protects no credential. A native (Tauri) uploader has no
+  such browser rules and must refuse redirects outright.
+- **More residual risk.** Ports are ignored for the site test, so another service on the IRC
+  host's own site also qualifies. A Bearer token goes to whatever file host the hosted server
+  advertises: the engine checks neither its audience nor its lifetime, and relies on the
+  deployment minting short-lived tokens for its own concierge.
 - **Parsing.** The engine accepts an advertised upload URL only when its authority is a plain host
   name, an IPv6 literal and an optional port: userinfo, percent-escapes, backslashes, spaces and
   other characters are refused, so the host it judges is the host the browser will contact.
