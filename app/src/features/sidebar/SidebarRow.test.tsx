@@ -244,9 +244,67 @@ describe("SidebarRow", () => {
     ));
 
     expect(container.querySelector("[data-presence]")).toBeNull();
+    expect(container.querySelector("[data-peer-bot]")).toBeNull();
     expect(
       screen.getByRole("button", {
         name: "alice, 4 unread, including mentions",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["online", "online", "concierge, bot, online"],
+    ["away", "away", "concierge, bot, away"],
+    ["unknown", undefined, "concierge, bot"],
+  ] as const)(
+    "marks a bot peer whose presence is %s with the robot instead of a dot",
+    (_, presence, label) => {
+      const { container } = render(() => (
+        <SidebarRow
+          active={false}
+          buffer={{
+            ...buffer,
+            kind: "direct",
+            title: "concierge",
+            unread: 0,
+            mentions: 0,
+            peer_bot: true,
+            ...(presence === undefined ? {} : { peer_presence: presence }),
+          }}
+          onClick={() => {}}
+          tabIndex={0}
+        />
+      ));
+
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+      const markers = container.querySelectorAll("[data-sidebar-prefix] > *");
+      expect(markers).toHaveLength(1);
+      expect(markers[0]).toHaveAttribute("data-peer-bot", "true");
+      if (presence === undefined)
+        expect(markers[0]).not.toHaveAttribute("data-presence");
+      else expect(markers[0]).toHaveAttribute("data-presence", presence);
+    },
+  );
+
+  it("names a bot row with its kind before its badge and presence", () => {
+    render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{
+          ...buffer,
+          kind: "direct",
+          title: "concierge",
+          peer_bot: true,
+          peer_presence: "online",
+        }}
+        onClick={() => {}}
+        tabIndex={0}
+      />
+    ));
+
+    expect(
+      screen.getByRole("button", {
+        name: "concierge, bot, 4 unread, including mentions, online",
       }),
     ).toBeInTheDocument();
   });

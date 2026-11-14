@@ -52,6 +52,21 @@
   border-color: var(--wl-color-panel-muted);
 }
 
+.prefix > .peerBot {
+  --wl-size-bot-icon: var(--wl-sidebar-prefix-width);
+
+  color: var(--wl-color-panel-muted);
+  vertical-align: middle;
+}
+
+.prefix > .peerBot[data-presence="online"] {
+  color: var(--wl-color-online);
+}
+
+.prefix > .peerBot[data-presence="away"] {
+  opacity: 0.5;
+}
+
 .row:hover {
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);

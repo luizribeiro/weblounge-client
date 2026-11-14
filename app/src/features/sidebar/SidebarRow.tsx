@@ -1,6 +1,7 @@
 import { createSignal, type JSX, onCleanup } from "solid-js";
-import type { BufferProjection, PeerPresence } from "../../engine/protocol";
+import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
+import { BotIcon } from "../../ui/BotIcon";
 import {
   type ContextMenuRequest,
   contextMenuRegistry,
@@ -78,7 +79,7 @@ export function SidebarRow(props: SidebarRowProps) {
       onPointerLeave={() => setPointerInside(false)}
     >
       <button
-        aria-label={rowLabel(props.buffer.title, badge()?.label, presence())}
+        aria-label={rowLabel(props.buffer, badge()?.label)}
         aria-current={props.active ? "page" : undefined}
         class={styles.open}
         data-buffer-id={props.buffer.id}
@@ -108,8 +109,16 @@ export function SidebarRow(props: SidebarRowProps) {
           data-sidebar-prefix="true"
         >
           {prefix()}
-          {presence() !== undefined && (
-            <span class={styles.presence} data-presence={presence()} />
+          {props.buffer.peer_bot === true ? (
+            <BotIcon
+              class={styles.peerBot}
+              data-peer-bot="true"
+              data-presence={presence()}
+            />
+          ) : (
+            presence() !== undefined && (
+              <span class={styles.presence} data-presence={presence()} />
+            )
           )}
         </span>
         <Line
@@ -184,10 +193,11 @@ function closeCopy(buffer: BufferProjection): {
 }
 
 function rowLabel(
-  title: string,
+  buffer: BufferProjection,
   badgeLabel: string | undefined,
-  presence: PeerPresence | undefined,
 ): string {
+  const presence = buffer.peer_presence;
+  const title = rowTitleLabel(buffer);
   const label =
     badgeLabel === undefined
       ? title
@@ -198,4 +208,13 @@ function rowLabel(
         label,
         presence: t(`sidebar.presence.${presence}`),
       });
+}
+
+function rowTitleLabel(buffer: BufferProjection): string {
+  return buffer.peer_bot === true
+    ? t("sidebar.row_bot_label", {
+        title: buffer.title,
+        bot: t("common.bot_icon"),
+      })
+    : buffer.title;
 }

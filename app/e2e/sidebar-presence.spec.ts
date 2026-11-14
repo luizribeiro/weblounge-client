@@ -101,6 +101,72 @@ test.describe("sidebar presence against local Ergo", () => {
       peer.close();
     }
   });
+
+  test("shows a bot DM peer's presence as a tinted robot in the leading column", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("concierge", []);
+    const human = await irc.peer("ana", []);
+    try {
+      await bot.mode(bot.nickname, "+B");
+      await installNativeFeelInstrumentation(page);
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
+      await bot.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+      await human.privmsgConfirmed(irc.account, `hello ${irc.id}`);
+
+      const botRow = await directRow(
+        page,
+        `${bot.nickname}, bot, 1 unread, including mentions, online`,
+      );
+      const humanRow = await directRow(
+        page,
+        `${human.nickname}, 1 unread, including mentions, online`,
+      );
+      const robot = botRow.locator("[data-sidebar-prefix] [data-peer-bot]");
+      await expect(robot).toHaveAttribute("data-presence", "online");
+      await expect(robot).toHaveCSS(
+        "color",
+        await tokenColour(page, "--wl-color-online"),
+      );
+      await expect(robot).toHaveCSS("opacity", "1");
+      await expect(botRow.locator("[data-presence]")).toHaveCount(1);
+      await expect(
+        humanRow.locator("[data-sidebar-prefix] [data-peer-bot]"),
+      ).toHaveCount(0);
+      await expect(humanRow.locator("[data-presence]")).toHaveAttribute(
+        "data-presence",
+        "online",
+      );
+      await expectFillsPrefix(robot, botRow);
+      const channel = page.getByRole("button", { name: irc.channel });
+      expect(await nameLeft(botRow)).toBeCloseTo(await nameLeft(channel), 1);
+
+      await bot.setAway("recharging");
+      await expect(botRow).toHaveAccessibleName(
+        `${bot.nickname}, bot, 1 unread, including mentions, away`,
+      );
+      await expect(robot).toHaveAttribute("data-presence", "away");
+      await expect(robot).toHaveCSS(
+        "color",
+        await tokenColour(page, "--wl-color-panel-muted"),
+      );
+      await expect(robot).toHaveCSS("opacity", "0.5");
+
+      bot.close();
+      await bot.waitForDisconnect();
+      await expect(botRow).toHaveAccessibleName(
+        `${bot.nickname}, bot, 1 unread, including mentions`,
+      );
+      await expect(robot).not.toHaveAttribute("data-presence");
+      await expect(robot).toHaveCSS("opacity", "1");
+      await nativeFeelAudit(page);
+    } finally {
+      bot.close();
+      human.close();
+    }
+  });
 });
 
 async function nameLeft(row: Locator): Promise<number> {
@@ -115,4 +181,15 @@ async function directRow(page: Page, name: string): Promise<Locator> {
   return page.locator(
     `[data-buffer-id="${await direct.getAttribute("data-buffer-id")}"]`,
   );
+}
+
+async function expectFillsPrefix(icon: Locator, row: Locator): Promise<void> {
+  const [iconBox, prefixBox] = await Promise.all([
+    icon.boundingBox(),
+    row.locator("[data-sidebar-prefix]").boundingBox(),
+  ]);
+  if (iconBox === null || prefixBox === null)
+    throw new Error("bot icon or prefix has no box");
+  expect(iconBox.width).toBeCloseTo(prefixBox.width, 1);
+  expect(iconBox.x).toBeCloseTo(prefixBox.x, 1);
 }

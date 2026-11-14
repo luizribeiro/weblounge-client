@@ -332,6 +332,7 @@ export const messages = {
   "sidebar.network_state.registering": "registering",
   "sidebar.network_label": "{network}, {state}",
   "sidebar.row_label": "{title}, {badge}",
+  "sidebar.row_bot_label": "{title}, {bot}",
   "sidebar.row_presence_label": "{label}, {presence}",
   "sidebar.presence.online": "online",
   "sidebar.presence.away": "away",
