@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -19,9 +20,10 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
   for (const { platform, chord } of webChords) {
     test(`jumps to the Nth row with ${chord}+digit on ${platform}`, async ({
       page,
+      irc,
     }) => {
       await emulatePlatform(page, platform);
-      await openWithExtraChannel(page);
+      await openWithExtraChannel(page, irc);
       const ids = await conversationRowIds(page);
       const composer = page.locator("[data-composer] textarea");
 
@@ -37,11 +39,14 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
 
   test("numbers the first nine rows while the jump modifier is held", async ({
     page,
+    irc,
   }) => {
     await emulatePlatform(page, "Linux x86_64");
     await installNativeFeelInstrumentation(page);
-    await openWithExtraChannel(page, 2);
+    await openWithExtraChannel(page, irc, 2);
+    await seedDirectRows(page, irc, 8);
     const ids = await conversationRowIds(page);
+    expect(ids.length).toBeGreaterThan(9);
     const numbered = ids.slice(0, 9);
     const first = sidebarRow(page, ids[0]);
     const restingEdge = await rightEdge(first.locator("[data-sidebar-name]"));
@@ -89,14 +94,14 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
     await releaseJumpModifier(page);
   });
 
-  test("the Mac app jumps and hints with Command", async ({ page }) => {
+  test("the Mac app jumps and hints with Command", async ({ page, irc }) => {
     await emulatePlatform(page, "MacIntel");
     await page.addInitScript(() => {
       Object.defineProperty(globalThis, "__WEBLOUNGE_SHELL__", {
         value: Object.freeze({ kind: "macos-app", version: "e2e" }),
       });
     });
-    await openWithExtraChannel(page);
+    await openWithExtraChannel(page, irc);
     const ids = await conversationRowIds(page);
 
     await page.keyboard.press("Meta+2");
@@ -113,9 +118,10 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
 
   test("the Mac browser keeps Command+digit for the browser", async ({
     page,
+    irc,
   }) => {
     await emulatePlatform(page, "MacIntel");
-    await openWithExtraChannel(page);
+    await openWithExtraChannel(page, irc);
     await page.evaluate(() => {
       const state = window as Window & { __lastDigitPrevented?: boolean };
       window.addEventListener("keydown", (event) => {
@@ -148,20 +154,37 @@ async function emulatePlatform(page: Page, platform: string): Promise<void> {
 
 async function openWithExtraChannel(
   page: Page,
+  irc: IrcTestAccount,
   extraChannels = 1,
 ): Promise<void> {
-  await page.goto("/?irc-password=weblounge-test");
-  const home = page.getByRole("button", { name: /^#weblounge-test/u });
+  await page.goto(irc.url());
+  const home = page.getByRole("button", { name: irc.channel });
   await home.click();
   const composer = page.getByRole("textbox", {
-    name: "Message #weblounge-test",
+    name: `Message ${irc.channel}`,
   });
   for (let index = 0; index < extraChannels; index += 1) {
-    const channel = `#jump-${Date.now().toString(36)}-${index}`;
+    const channel = irc.channelNamed(`jump-${index}`);
     await composer.fill(`/join ${channel}`);
     await composer.press("Enter");
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     await home.click();
+  }
+}
+
+async function seedDirectRows(
+  page: Page,
+  irc: IrcTestAccount,
+  count: number,
+): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    const peer = await irc.peer(`jump-dm${index}`, []);
+    await peer.privmsgConfirmed(irc.account, `jump row ${index}`);
+    await expect(
+      page.getByRole("button", {
+        name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+      }),
+    ).toBeVisible();
   }
 }
 
