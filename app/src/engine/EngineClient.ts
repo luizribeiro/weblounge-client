@@ -967,6 +967,10 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.label !== "string" ||
     typeof value.nickname !== "string" ||
+    !(
+      value.filehost_origin === undefined ||
+      typeof value.filehost_origin === "string"
+    ) ||
     state === undefined
   ) {
     return undefined;
@@ -976,6 +980,9 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     label: value.label,
     nickname: value.nickname,
     state,
+    ...(typeof value.filehost_origin === "string"
+      ? { filehost_origin: value.filehost_origin }
+      : {}),
   };
 }
 

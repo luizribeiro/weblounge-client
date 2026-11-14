@@ -374,6 +374,39 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(patch);
   });
 
+  it("decodes a network's optional file host origin", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const network = {
+      id: 1,
+      label: "Local Ergo",
+      nickname: "weblounge",
+      state: "online",
+    };
+
+    port.emit({ type: "network_state_changed", network });
+    port.emit({
+      type: "network_state_changed",
+      network: { ...network, filehost_origin: "https://files.example.test" },
+    });
+    expect(() =>
+      port.emit({
+        type: "network_state_changed",
+        network: { ...network, filehost_origin: 42 },
+      }),
+    ).toThrow("invalid engine message");
+    frames[0]?.(0);
+
+    expect(listener.mock.calls.map(([message]) => message)).toEqual([
+      { type: "network_state_changed", network },
+      {
+        type: "network_state_changed",
+        network: { ...network, filehost_origin: "https://files.example.test" },
+      },
+    ]);
+  });
+
   it("decodes the engine runtime command registry", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
