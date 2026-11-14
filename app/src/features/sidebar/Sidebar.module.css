@@ -188,12 +188,9 @@
   border-color: var(--wl-color-online);
 }
 
-.networkHeader:is(
-    [data-network-state="connecting"],
-    [data-network-state="registering"],
-    [data-network-state="reconnecting"]
-  )
-  .connectionDot {
+.networkHeader[data-network-state="connecting"] .connectionDot,
+.networkHeader[data-network-state="registering"] .connectionDot,
+.networkHeader[data-network-state="reconnecting"] .connectionDot {
   background: transparent;
   border-color: var(--wl-color-panel-muted);
 }
