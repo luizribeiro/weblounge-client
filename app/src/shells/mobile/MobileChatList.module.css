@@ -54,6 +54,7 @@
   min-width: 0;
 }
 .identity h1 {
+  font-family: var(--wl-font-title);
   font-size: 18px;
   margin: 0;
 }

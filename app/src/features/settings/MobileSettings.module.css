@@ -18,6 +18,7 @@
 
 .header h1 {
   flex: 1;
+  font-family: var(--wl-font-title);
   font-size: 17px;
   font-weight: 600;
   margin: 0;

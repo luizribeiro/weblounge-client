@@ -22,6 +22,7 @@
   --wl-connection-fg: var(--wl-color-fg);
   --wl-connection-sweep-end: calc(100% + 30px);
   flex: 0 0 auto;
+  font-family: var(--wl-font-title);
   font-size: 15px;
   margin: 0;
   max-width: 42%;

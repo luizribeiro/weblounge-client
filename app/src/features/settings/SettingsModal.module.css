@@ -45,6 +45,7 @@
 
 .head h2 {
   flex: 1;
+  font-family: var(--wl-font-title);
   font-size: 18px;
   font-weight: 600;
   margin: 0;
