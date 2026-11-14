@@ -58,8 +58,6 @@ async function createIrcTestAccount(
       throw new Error(`test nick ${nick} exceeds ${maximumNickLength} bytes`);
     return nick;
   };
-  // The engine only highlights an own nick made of word characters, so the
-  // app's account avoids the hyphen that peer names use.
   const account = `me${id}`;
   const password = isolatedPassword(account);
   const channel = `#${nickNamed("room")}`;

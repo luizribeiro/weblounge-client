@@ -27,8 +27,7 @@ Ergo's HTTP API (`/v1/saregister`, already enabled in the local Ergo and already
 one local HTTP call.
 
 Names are `<label>-<id>` where `id` is 8 random hex digits, kept under Ergo's 32-byte nick limit.
-The app account is `me<id>` and its nickname equals it: the engine only highlights an own nick made
-of word characters, so a hyphenated own nick would hide every mention (an app bug, reported).
+The app account is `me<id>` and its nickname equals it.
 
 The app autojoins a build-time default channel (`#weblounge-test`). The debug harness gains one
 URL parameter, `irc-channel`, which replaces that default for the session, the same way
