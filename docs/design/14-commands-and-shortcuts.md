@@ -211,6 +211,39 @@ metadata includes it but do not receive global chords.
 Controls without a bespoke global chord remain reachable by Tab plus Enter/Space and appear in the
 switcher when their action exists. Frequent actions in the table also have a chord in every shell.
 
+### Conversation slots and number hints
+
+`buffer.jump-N` opens the Nth conversation row of the desktop sidebar, counted top to bottom
+across networks in the order the sidebar draws them. Network header rows (server buffers) never
+take a number, and neither does anything the sidebar does not draw: closed DMs and unavailable
+buffers. The sidebar has no collapsible sections today; if sections become collapsible, hidden rows
+are skipped too. Numbers always match what the user can see and shift when a row closes or joins.
+A slot with no row is not captured, so the keystroke reaches the page.
+
+The native keymap (`⌘1…9` on macOS, `Ctrl+1…9` elsewhere) applies in Tauri and in the Mac app,
+which identifies itself by injecting `globalThis.__WEBLOUNGE_SHELL__ = { kind: "macos-app", … }`
+before any page script. `platform/host-shell.ts` is the only reader. The marker only picks a
+presentation, because any page script could set it, so it must never gate a security decision.
+Without it the app uses the web keymap, and the browser target never binds `Mod+digits`.
+
+While the user holds exactly the jump chord (`⌘`, `Ctrl`, `⌥`/`Alt` or `Ctrl+Alt`, as in the
+table), each of the first nine rows shows its number after `--wl-time-hint-hold` (400ms), so quick
+chords such as `⌘C` never flash numbers. The hint fades in with `--wl-motion-fade`, which reduced
+motion zeroes; the hold delay is a time token, not motion, so it stays. Releasing a modifier,
+pressing any other key or modifier, window blur, or the page becoming hidden hides the hints at
+once. Modifier auto-repeat never brings them back, and `AltGraph` never shows them.
+
+Each sidebar row has one fixed-width trailing slot that shows at most one item, in this order:
+
+1. the number hint, while the jump chord is held (rows 1–9);
+2. the close button, while a closable row (a DM) is hovered or has focus;
+3. the unread or mention badge;
+4. nothing.
+
+Rows past the ninth keep their badge or close button while the chord is held. The slot width
+never changes, so the name's ellipsis stays put. Hidden items keep their DOM and the row's
+accessible name still says "N unread"; hints are `aria-hidden`.
+
 ## Command palette
 
 The command palette is a mode of the quick-switcher omnibar, retaining its dialog, combobox,
@@ -402,6 +435,9 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
   sequences and single-letter message actions in an optional later preset only.
 - Luiz, 2026-10-27: Up in an empty composer selects the latest visible own message for navigation;
   it does not simulate an IRC message edit.
+- Luiz, 2026-11-13: number `buffer.jump-N` by visible sidebar conversation rows, show the
+  numbers while the jump chord is held, give each row one trailing slot (hint, then close, then
+  badge), and use the native keymap in the Mac app.
 
 ## Questions for Luiz
 

@@ -24,6 +24,12 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: numbered conversation jumps on desktop (`⌘1…9` in Tauri and the Mac app,
+  `Alt+1…9` on web macOS/Windows, `Ctrl+Alt+1…9` on web Linux). They count the visible sidebar
+  conversation rows top to bottom, and holding the jump modifier shows each row's number. Sidebar
+  rows now have one fixed trailing slot (number hint, then close, then badge), so the name no
+  longer shifts when the close button shows on hover. The Mac app's `__WEBLOUNGE_SHELL__` marker
+  selects the native keymap.
 - 2026-11-13: the live-preview relaunch e2e keeps its same-account client attached and waits for
   the closed app to detach before sending the missed line, so it really arrives through catch-up.
 - 2026-11-13: the fetched-server-marker relaunch e2e waits for the closed app to detach before
