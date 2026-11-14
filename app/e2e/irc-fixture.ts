@@ -26,7 +26,11 @@ export interface IrcTestAccount {
 }
 
 export const test = base.extend<{ irc: IrcTestAccount }>({
-  irc: async ({ baseURL, context }, use) => {
+  irc: async ({ baseURL, context }, use, testInfo) => {
+    testInfo.skip(
+      process.env.WEBLOUNGE_E2E_ERGO !== "1",
+      "requires the flake's local Ergo fixture",
+    );
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
     const clients: IrcClient[] = [];
