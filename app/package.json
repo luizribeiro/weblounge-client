@@ -9,7 +9,7 @@
     "e2e": "playwright test",
     "icons": "node scripts/generate-icons.mjs",
     "startup-images": "node scripts/generate-startup-images.mjs",
-    "test": "vitest run && node --test e2e/socket-forwarder.test.mjs e2e/self-signed-certificate.test.mjs e2e/socket-forwarder-scope.test.mjs",
+    "test": "vitest run && node --test e2e/socket-forwarder.test.mjs e2e/self-signed-certificate.test.mjs e2e/socket-forwarder-scope.node-test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
