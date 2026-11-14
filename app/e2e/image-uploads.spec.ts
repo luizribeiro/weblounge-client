@@ -80,6 +80,10 @@ test.describe("image uploads against local Ergo", () => {
         page.locator("[data-composer-send][data-busy='true']").last(),
       ).toBeVisible();
       await expect.poll(async () => progressOf(chip)).toBeGreaterThan(0.4);
+      await expect(chip.locator("[data-upload-progress]")).toHaveCSS(
+        "height",
+        "4px",
+      );
       await captureThemes(page, "desktop-uploading");
 
       const release = await page.request.get(

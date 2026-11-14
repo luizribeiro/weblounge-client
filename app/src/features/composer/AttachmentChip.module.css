@@ -85,7 +85,7 @@
 .progress {
   background: var(--wl-color-border);
   bottom: 0;
-  height: 3px;
+  height: var(--wl-size-upload-progress);
   inset-inline: 0;
   position: absolute;
 }
