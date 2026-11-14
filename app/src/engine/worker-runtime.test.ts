@@ -200,6 +200,44 @@ it("routes an upload's credentials and result only to the requesting port", asyn
   expect(first.sent).toEqual([]);
 });
 
+it("answers a settings load to its tab and broadcasts settings changes", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  let requestHandled = false;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return {
+      handle: () => {
+        requestHandled = true;
+        return "[]";
+      },
+    };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  second.receive({ type: "request", payload: { id: "load-settings" } });
+  await vi.waitFor(() => expect(requestHandled).toBe(true));
+  const settings = { app: { theme: "lounge", message_density: "cozy" } };
+
+  emit?.(
+    JSON.stringify({
+      type: "settings_loaded",
+      command_id: "load-settings",
+      settings,
+    }),
+  );
+  emit?.(JSON.stringify({ type: "command_result", id: "load-settings" }));
+  emit?.(JSON.stringify({ type: "settings_changed", settings }));
+
+  expect(first.sent).toEqual([{ type: "settings_changed", settings }]);
+  expect(second.sent).toEqual([
+    { type: "settings_loaded", command_id: "load-settings", settings },
+    { type: "command_result", id: "load-settings" },
+    { type: "settings_changed", settings },
+  ]);
+});
+
 it("routes activation to one tab while broadcasting push state", async () => {
   const first = new FakePort();
   const second = new FakePort();

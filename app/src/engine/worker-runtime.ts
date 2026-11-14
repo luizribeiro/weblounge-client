@@ -299,6 +299,7 @@ function requestCorrelation(
     case "focus_buffer_requested":
     case "push_device_loaded":
     case "upload_resolved":
+    case "settings_loaded":
       return { requestId: event.command_id, final: false };
     default:
       return undefined;
@@ -314,6 +315,7 @@ function isSharedStateEvent(event: unknown): boolean {
   return (
     event.type === "network_state_changed" ||
     event.type === "push_state_changed" ||
+    event.type === "settings_changed" ||
     event.type === "buffers_changed" ||
     event.type === "buffer_added" ||
     event.type === "buffer_removed" ||
