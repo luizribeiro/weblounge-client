@@ -368,7 +368,7 @@ Pass-through commands (`ns`, `cs`, `hs`, `histserv`, `bs`, `quote`) are ordinary
 5. **Search.** papo-core routes `soju.im/search` batches (unstable only; `tests/soju_search.rs` only tests batch routing). There is no `Client` API, and Ergo has no search extension. weblounge's Ergo also has DM history disabled (PLAN task 8), so client-side search can't cover DMs. Should `Client::search` be exposed? On Ergo, is client-side search over fetched channel history acceptable?
 6. **Services replies.** Settings pages for NS SET/GET, sessions, AMODE and BouncerServ sasl/certfp/channel detach all mean parsing NOTICE text. Should papo offer typed service wrappers, using labeled-response to correlate replies, or should the engine own this?
 7. **Unstable modules.** Bouncer networks (`Feature::Bouncer`), relay (`Feature::Relay`), persistence and webpush are behind papo's `unstable` feature. M3 multi-network on soju and M5 Web Push both depend on them. When should they stabilize, or should the engine enable `unstable` for now?
-8. **Filehost.** There is no `soju.im/FILEHOST` support, and Ergo has no filehost. Does `/upload` wait for an external weblounge filehost (EXTJWT)?
+8. **Filehost.** Answered below: papo exposes the advertised file host, and EXTJWT is not needed. Image uploads from the composer are design 31.
 9. **Where the table lives.** Doc 14 defines the registry in TS. Is a Rust derive that generates the TS unions (and TS-only UI commands alongside them) acceptable, or should the macro idea stay TS-side as codegen from a single table?
 
 ### papo's answers (2026-10-28)
