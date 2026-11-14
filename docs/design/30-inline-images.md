@@ -1,7 +1,8 @@
 # 30 — Inline images
 
-Status: product decisions signed off by Luiz on 2026-11-13; slice 1 (this doc) implements file host
-images.
+Status: product decisions signed off by Luiz on 2026-11-13; slice 1 implements file host images;
+slice 2 adds the full-size viewer (its library choice signed off by Luiz on 2026-11-13; see
+"Viewer").
 
 ## Problem
 
@@ -47,8 +48,8 @@ hardcoded domain.
 - **Animated images autoplay.** Under `prefers-reduced-motion: reduce`, a loaded GIF or WebP is
   replaced by a canvas holding its first frame. Drawing a cross-origin image onto a canvas only
   taints it, and the canvas is never read, so this needs no proxy or CORS.
-- **Activation opens the URL in a new tab**, as the text link does. The full-size viewer replaces
-  this in the next slice.
+- **Activation opens the full-size viewer** (slice 2, below). A modified or middle click keeps the
+  link's native new-tab behaviour, and the error tile still opens the link.
 - No spoiler or NSFW handling, and no per-message collapse (a collapse is a deliberate jump).
   Compact density uses the compact height rather than dropping images.
 
@@ -96,9 +97,93 @@ hardcoded domain.
   same-shaped image URL on another host does not inline; compact density uses its height; the
   phone layout fits the content width; reduced motion shows a still frame.
 
+## Viewer (slice 2)
+
+Luiz: "click on the image to see it larger with support for zoom/pan/etc in an elegant view".
+
+### Decisions
+
+- **Library: PhotoSwipe 5.4.4 core** (MIT, ~16KB gzip JS + ~2KB CSS), loaded only when a viewer
+  first opens. It provides pointer pinch, pan with momentum, double-tap zoom, ctrl+wheel and wheel
+  zoom, swipe-down close and a zoom-from-thumbnail transition that animates only `transform` and
+  `opacity`. Its own UI (buttons, counter, preloader), keyboard, focus trap and focus return are
+  disabled; ours replace them. Its core stylesheet is imported by the lazy module, and its
+  `--pswp-*` variables are set from our tokens.
+- **Opening.** A click or tap on a loaded inline image, or Enter/Space when it is focused, opens the
+  viewer. The slot keeps its `href`, so a modified or middle click still opens a new tab. Its
+  accessible name is "Image from {nick}, open viewer". The viewer shows the same URL the slot
+  loaded; there is no proxy.
+- **One image at a time.** Moving between a conversation's images is a later idea.
+- **Motion.** The image grows from the slot's on-screen rect to its fitted rect over
+  `--wl-motion-push-in` with the push curve, and shrinks back over `--wl-motion-pop`. The slot is
+  cover-cropped, so the transition starts from the cropped rect. Durations are read from the tokens
+  when the viewer opens, so reduced motion (every duration token `0ms`) opens and closes instantly;
+  PhotoSwipe also switches to no animation under `prefers-reduced-motion`. An animated image plays
+  in the viewer even under reduced motion: opening it is an explicit request to see it.
+- **Zoom.** The image opens at fit, which never upscales past natural size. Double-click and
+  double-tap toggle fit and the secondary level at the pointer: `max(1, 2 × fit)`, that is actual
+  pixels, or twice the fit when actual pixels would be less than that. Pinch, ctrl+wheel (Chromium
+  and Firefox trackpad pinch), plain wheel and Safari/WKWebView `gesturechange` (the Mac app's
+  trackpad pinch) zoom between fit and `max(4, secondary)`. `+`/`=` and `-` step by 1.5× around the
+  centre, clamped to that range; `0` returns to fit. A single click on the image does nothing.
+- **Pan.** Drag when zoomed, with PhotoSwipe's momentum; arrow keys pan by 80px.
+- **Closing.** Escape, the close button, a click or tap on the backdrop, and a vertical swipe on
+  touch, which fades the backdrop as it moves. Focus returns to the slot that opened the viewer if it
+  is still mounted; otherwise the normal composer rules apply.
+- **Chrome.** An opaque top bar with the sender's nick, the message time, an "Open original" link
+  (new tab, like message links) and a close button, in theme tokens. The backdrop is
+  `--wl-color-bg` at full opacity. The image fits inside a CSS fit box below the bar, with a 24px
+  margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures that box
+  rather than reading safe areas itself.
+- **Accessibility.** The viewer root is `role="dialog"`, `aria-modal="true"`, labelled "Image from
+  {nick}". Opening it focuses the dialog with `preventScroll`; Tab cycles inside it through the
+  shared trap extracted from `OmnibarOverlay`; the rest of the app root is `inert` while it is open;
+  a polite status says "Image from {nick}. Press Escape to close." PhotoSwipe's nested `role` and
+  carousel descriptions are removed, since there is one image.
+- **Keyboard ownership.** The viewer handles every keydown inside it and stops propagation, so
+  application shortcuts and printable-key forwarding do not reach the shell behind a modal. It is
+  the top overlay of design 14's Escape cascade.
+- **Idle.** No frame or timer runs while the open viewer is still: PhotoSwipe schedules rAF only
+  during gestures and animations, and its one-shot timers (transition start, placeholder removal
+  one second after load) end once the image settles. The viewer unmounts on close and removes its
+  listeners.
+
+### Types and boundaries
+
+- `features/image-viewer/image-viewer-context.tsx`: `ImageViewerProvider` (inside the app root) and
+  `useImageViewer()`. `open(request)` takes
+  `{ url, author, time, naturalWidth, naturalHeight, origin: HTMLElement }`; one request is current
+  at a time. Without a provider, an inline image stays a plain link.
+- `features/image-viewer/ImageViewer.tsx`: the dialog, top bar, status and focus handling; loaded
+  with `lazy()`, so it and PhotoSwipe form their own chunk.
+- `features/image-viewer/photoswipe-viewer.ts`: creates and configures the PhotoSwipe instance and
+  exposes `close`, `zoomBy`, `reset` and `pan`.
+- `features/image-viewer/viewer-zoom.ts` and `viewer-keys.ts`: pure zoom levels and steps, token
+  duration parsing, and the key → command map.
+- `ui/focus-trap.ts`: `trapTab(event, root)`, shared by the omnibar and the viewer.
+- `InlineImage` gains `time` and opens the viewer once it has loaded; loading and failed slots keep
+  their link.
+
+### Testing
+
+- Unit: zoom levels and steps, duration parsing, the key map, the focus trap, InlineImage's open
+  request (click, Enter/Space, modified click, failed tile), and the dialog's labels, status, focus
+  and close button with PhotoSwipe stubbed.
+- Playwright against local Ergo and the fake file host: open by click and by keyboard; `+`, `-`,
+  `0` and double-click change the scale; a drag pans when zoomed; Escape and the close button close
+  it and return focus; phone tap opens and a swipe down closes; reduced motion opens with no
+  running animation; `nativeFeelAudit` (idle and hidden page) passes with the viewer open and after
+  close; the viewer chunk is fetched only when it first opens.
+- Screenshots: desktop 1280 light and dark at fit and zoomed, and phone.
+
+### Later ideas
+
+- Moving between the conversation's images (arrows, swipe).
+- Android hardware back closing the viewer through the navigation stack.
+- Copy link and Save (Tauri) in the top bar.
+
 ## Out of scope (next slices)
 
-- The full-size zoom and pan viewer.
 - A natural-size cache in the engine's `Space::Cache` (needs a new protocol request and records),
   so first paint after reload already has the final width.
 - Persisting `filehost_origin` in the chat-list snapshot: until a network connects, its images
