@@ -19,6 +19,7 @@ describe("theme registry", () => {
       "lounge",
       "lounge-night",
       "modern",
+      "terminal",
     ]);
     expect(themes[0]?.nickPalette).toHaveLength(6);
     expect(nickPaletteSize).toBe(6);
@@ -56,6 +57,7 @@ describe("theme registry", () => {
       lounge: "light",
       "lounge-night": "dark",
       modern: "light",
+      terminal: "dark",
     });
   });
 

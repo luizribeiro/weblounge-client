@@ -1,0 +1,68 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "order": 5,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#101112",
+    "surface": "#121314",
+    "panel": "#0b0c0d",
+    "panelFg": "#c9c5ba",
+    "panelMuted": "#8a867d",
+    "panelBorder": "#1d1f21",
+    "panelAlt": "#0f1011",
+    "fg": "#d9d5ca",
+    "muted": "#8a867d",
+    "border": "#26282a",
+    "accent": "#e6b450",
+    "accentFg": "#121314",
+    "selection": "#22252a",
+    "selectionFg": "#f4efe2",
+    "mentionBg": "#262113",
+    "mentionBadge": "#f28779",
+    "mentionBadgeFg": "#121314",
+    "overlayScrim": "rgba(0,0,0,.6)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#edefe5",
+    "unread": "#e6b450",
+    "inputBg": "#0e0f10",
+    "chip": "#1a1c1e",
+    "codeBg": "#0b0c0d",
+    "online": "#7cc47a",
+    "selfNick": "#e6b450",
+    "error": "#f28779",
+    "focusRing": "#e6b450"
+  },
+  "typography": {
+    "ui": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "mono": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "title": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "base": "13px",
+    "sectionFamily": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "sectionSize": "12px",
+    "sectionTransform": "none",
+    "sectionTracking": "0"
+  },
+  "shape": {
+    "control": "2px",
+    "avatar": "2px",
+    "icon": "2px",
+    "composer": "2px",
+    "palette": "2px",
+    "pill": "2px",
+    "round": "2px"
+  },
+  "effects": {
+    "overlayShadow": "none",
+    "tooltipShadow": "none",
+    "iconRing": "inset 0 0 0 1px rgba(255,255,255,.14)"
+  },
+  "nickPalette": [
+    "#7fd1b9",
+    "#e08fbf",
+    "#9ab8f2",
+    "#f28779",
+    "#c3a6ff",
+    "#b8cc52"
+  ]
+}

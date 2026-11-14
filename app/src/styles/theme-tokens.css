@@ -185,6 +185,69 @@
   --wl-nick-4: #7048c8;
   --wl-nick-5: #4d7c0f;
 }
+:root[data-theme="terminal"] {
+  color-scheme: dark;
+  --wl-color-bg: #101112;
+  --wl-color-surface: #121314;
+  --wl-color-panel: #0b0c0d;
+  --wl-color-panel-fg: #c9c5ba;
+  --wl-color-panel-muted: #8a867d;
+  --wl-color-panel-border: #1d1f21;
+  --wl-color-panel-alt: #0f1011;
+  --wl-color-fg: #d9d5ca;
+  --wl-color-muted: #8a867d;
+  --wl-color-border: #26282a;
+  --wl-color-accent: #e6b450;
+  --wl-color-accent-fg: #121314;
+  --wl-color-selection: #22252a;
+  --wl-color-selection-fg: #f4efe2;
+  --wl-color-mention-bg: #262113;
+  --wl-color-mention-badge: #f28779;
+  --wl-color-mention-badge-fg: #121314;
+  --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
+  --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
+  --wl-color-viewer-fg: #edefe5;
+  --wl-color-unread: #e6b450;
+  --wl-color-input-bg: #0e0f10;
+  --wl-color-chip: #1a1c1e;
+  --wl-color-code-bg: #0b0c0d;
+  --wl-color-online: #7cc47a;
+  --wl-color-self-nick: #e6b450;
+  --wl-color-error: #f28779;
+  --wl-color-focus-ring: #e6b450;
+  --wl-font-ui:
+    IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular,
+    Consolas, monospace;
+  --wl-font-mono:
+    IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular,
+    Consolas, monospace;
+  --wl-font-title:
+    IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular,
+    Consolas, monospace;
+  --wl-font-base: 13px;
+  --wl-font-section-family:
+    IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular,
+    Consolas, monospace;
+  --wl-font-section-size: 12px;
+  --wl-font-section-transform: none;
+  --wl-font-section-tracking: 0;
+  --wl-radius-control: 2px;
+  --wl-radius-avatar: 2px;
+  --wl-radius-icon: 2px;
+  --wl-radius-composer: 2px;
+  --wl-radius-palette: 2px;
+  --wl-radius-pill: 2px;
+  --wl-radius-round: 2px;
+  --wl-effect-overlay-shadow: none;
+  --wl-effect-tooltip-shadow: none;
+  --wl-effect-icon-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  --wl-nick-0: #7fd1b9;
+  --wl-nick-1: #e08fbf;
+  --wl-nick-2: #9ab8f2;
+  --wl-nick-3: #f28779;
+  --wl-nick-4: #c3a6ff;
+  --wl-nick-5: #b8cc52;
+}
 @media (prefers-reduced-motion: reduce) {
   :root {
     --wl-motion-drawer-close: 0ms;
