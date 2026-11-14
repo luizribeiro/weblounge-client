@@ -6,6 +6,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { choice, settingsScreenshot } from "./settings-fixture";
+import { expectSettled } from "./settled";
 
 test.beforeEach(async ({ irc, page }) => {
   await emulateStandalone(page);
@@ -13,6 +14,8 @@ test.beforeEach(async ({ irc, page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(irc.url());
   await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expectSettled(page);
 });
 
 test("opens Settings from Chats and changes appearance live", async ({
@@ -28,7 +31,7 @@ test("opens Settings from Chats and changes appearance live", async ({
 
   await gear.tap();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await settled(page);
+  await expectSettled(page);
   await settingsScreenshot(settingsPage(page), "phone-root-light");
   await openAppearance(page);
   await expect(page.getByRole("radio", { name: "System" })).toBeChecked();
@@ -57,12 +60,12 @@ test("goes back with Back, then swipes back to Chats", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: /System · Compact/u }),
   ).toBeVisible();
-  await settled(page);
+  await expectSettled(page);
 
   await swipeBack(page);
   await expect(page.getByRole("region", { name: "Chats" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Settings" })).toHaveCount(0);
-  await settled(page);
+  await expectSettled(page);
   await nativeFeelAudit(page);
 });
 
@@ -78,7 +81,7 @@ test("swipes back from the Appearance page to the Settings root", async ({
   await expect(page.getByRole("heading", { name: "Appearance" })).toHaveCount(
     0,
   );
-  await settled(page);
+  await expectSettled(page);
   await page.getByRole("button", { name: "Back to chats" }).tap();
   await expect(page.getByRole("region", { name: "Chats" })).toBeVisible();
 });
@@ -93,17 +96,13 @@ async function openSettings(page: Page): Promise<void> {
     .getByRole("button", { name: "Settings" })
     .tap();
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await settled(page);
+  await expectSettled(page);
 }
 
 async function openAppearance(page: Page): Promise<void> {
   await page.getByRole("button", { name: /^Appearance/u }).tap();
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
-  await settled(page);
-}
-
-async function settled(page: Page): Promise<void> {
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
 }
 
 async function swipeBack(page: Page): Promise<void> {
