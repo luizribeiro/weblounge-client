@@ -30,7 +30,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &[
             &Submenu::with_items(
                 app,
-                "weblounge",
+                &app.package_info().name,
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, None)?,

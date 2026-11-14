@@ -40,7 +40,7 @@ pub fn create(
     let navigating = app.clone();
     let opening = app.clone();
     let mut builder = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
-        .title("weblounge")
+        .title(&app.package_info().name)
         .visible(false);
     for script in page_scripts {
         builder = builder.initialization_script(*script);
