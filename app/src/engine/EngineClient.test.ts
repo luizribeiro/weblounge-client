@@ -969,6 +969,41 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("decodes a direct peer's reported presence and rejects unknown values", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const ana = {
+      id: 5,
+      network_id: 1,
+      sync_state: "synced" as const,
+      kind: "direct",
+      title: "ana",
+      draft_key: "5:Local:rfc1459:nick=ana",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+    };
+
+    port.emit({
+      type: "buffer_updated",
+      buffer: { ...ana, peer_presence: "away" },
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buffer: expect.objectContaining({ peer_presence: "away" }),
+      }),
+    );
+    expect(() =>
+      port.emit({
+        type: "buffer_updated",
+        buffer: { ...ana, peer_presence: "offline" },
+      }),
+    ).toThrow("invalid engine message");
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

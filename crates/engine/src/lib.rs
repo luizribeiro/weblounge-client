@@ -7,6 +7,7 @@ mod filehost;
 mod members;
 mod name_key;
 mod notification_settings;
+mod peer_presence;
 mod protocol;
 mod public_suffix;
 mod push_device;
@@ -42,7 +43,7 @@ pub use protocol::{
     MemberGroup, MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship,
     MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
-    PushDeploymentConfig, PushDeviceCredentials, PushFailure, PushRoute, PushState,
+    PeerPresence, PushDeploymentConfig, PushDeviceCredentials, PushFailure, PushRoute, PushState,
     PushUnsupportedReason, ReactionActorProjection, ReactionProjection, RedactedSecret,
     SaslCredentials, ShellKind, TypingProjection, UiToEngine, UploadApproval, UploadAuthorization,
     UploadResolution,

@@ -460,6 +460,16 @@ pub enum ChannelStatus {
     Kicked,
 }
 
+/// Presence the network reports for a direct-message peer through `MONITOR`.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerPresence {
+    /// The peer is connected and not marked away.
+    Online,
+    /// The peer is connected and marked away.
+    Away,
+}
+
 /// Identity state for a direct-message peer.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -507,6 +517,10 @@ pub struct BufferProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub direct_identity: Option<DirectIdentityState>,
+    /// Network-reported presence of a direct-message peer; absent when the network reports none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub peer_presence: Option<PeerPresence>,
     /// Session draft identity derived from the network and durable conversation identity.
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.

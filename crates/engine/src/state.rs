@@ -9,7 +9,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
     EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, PeerPresence,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -522,6 +522,7 @@ impl NetworkModel {
                 title: label.clone(),
                 nick_color_index: None,
                 direct_identity: None,
+                peer_presence: None,
                 draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
                 member_count: None,
@@ -2568,8 +2569,34 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
+        buffer.projection.peer_presence = None;
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
+    }
+
+    pub(crate) fn sync_peer_presence(&mut self, state: &papo::State) -> Vec<EngineToUi> {
+        let reported: HashMap<BufferId, PeerPresence> = crate::peer_presence::reported(state)
+            .filter_map(|(conversation, presence)| {
+                Some((self.buffer_id_for_conversation(&conversation)?, presence))
+            })
+            .collect();
+        let shown: HashSet<BufferId> = self.buffer_order.iter().copied().collect();
+        self.buffers
+            .values_mut()
+            .filter(|buffer| {
+                buffer.projection.kind == BufferKind::Direct
+                    && shown.contains(&buffer.projection.id)
+            })
+            .filter_map(|buffer| {
+                let presence = reported.get(&buffer.projection.id).copied();
+                (buffer.projection.peer_presence != presence).then(|| {
+                    buffer.projection.peer_presence = presence;
+                    EngineToUi::BufferUpdated {
+                        buffer: buffer.projection.clone(),
+                    }
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn invalidate_direct_handles(&mut self) {
@@ -3654,6 +3681,7 @@ impl NetworkModel {
                 .then(|| nick_color_index(self.casemapping, &key.title())),
             direct_identity: (kind == BufferKind::Direct)
                 .then_some(DirectIdentityState::Unverified),
+            peer_presence: None,
             draft_key: projected_draft_key,
             topic,
             member_count: (kind == BufferKind::Channel).then_some(0),

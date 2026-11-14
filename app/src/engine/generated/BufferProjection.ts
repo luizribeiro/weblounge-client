@@ -6,6 +6,7 @@ import type { ChannelStatus } from "./ChannelStatus";
 import type { DirectIdentityState } from "./DirectIdentityState";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
+import type { PeerPresence } from "./PeerPresence";
 
 /**
  * UI projection of one engine buffer.
@@ -47,6 +48,10 @@ nick_color_index?: number,
  * Current verification state for a direct-message peer.
  */
 direct_identity?: DirectIdentityState,
+/**
+ * Network-reported presence of a direct-message peer; absent when the network reports none.
+ */
+peer_presence?: PeerPresence,
 /**
  * Session draft identity derived from the network and durable conversation identity.
  */

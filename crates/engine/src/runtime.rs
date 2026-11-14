@@ -1890,7 +1890,7 @@ impl Runtime {
                 };
                 let snapshot = running.client.state();
                 let (buffer_id, mut output) =
-                    open_direct_with_typing(&mut running.model, nick, direct, &snapshot);
+                    open_direct_with_live_state(&mut running.model, nick, direct, &snapshot);
                 running.record_direct_presence(buffer_id);
                 if degraded {
                     output.push(EngineToUi::notice(
@@ -4009,7 +4009,11 @@ fn process_event_with_direct(
         return Vec::new();
     };
     let mut output = Vec::new();
+    let presence_may_change = crate::peer_presence::may_change(&event);
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
+    if presence_may_change || output.iter().any(crate::peer_presence::reveals_buffers) {
+        output.extend(running.model.sync_peer_presence(&snapshot));
+    }
     if effects.clear_hosted_authentication {
         output.extend(running.model.take_timeline_changes(false));
         state.network = None;
@@ -4209,7 +4213,7 @@ fn typing_snapshot_events(model: &NetworkModel, state: &papo::State) -> Vec<Engi
         .collect()
 }
 
-fn open_direct_with_typing(
+fn open_direct_with_live_state(
     model: &mut NetworkModel,
     nick: papo::Nick,
     direct: DirectAvailability,
@@ -4218,6 +4222,7 @@ fn open_direct_with_typing(
     let conversation = papo::Conversation::Private(nick.clone());
     let (buffer_id, mut output) = model.open_direct(nick, direct, state);
     output.extend(typing_snapshot_event(model, state, &conversation));
+    output.extend(model.sync_peer_presence(state));
     (buffer_id, output)
 }
 
@@ -6988,6 +6993,48 @@ async fn delay(duration: Duration) {
         assert_latest_window(&split, "left", 700, "u1198");
         assert_latest_window(&split, "right", 1_400, "u1899");
         drain.abort();
+    }
+
+    #[tokio::test]
+    async fn monitor_presence_reaches_the_ui_as_a_direct_buffer_update() {
+        let (client, mut events, mut wire, nick) =
+            crate::peer_presence::test_support::monitoring_alice().await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let alice = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .0;
+        let presence_updates = |receiver: &mut mpsc::UnboundedReceiver<EngineToUi>| {
+            collect(receiver)
+                .into_iter()
+                .filter_map(|event| match event {
+                    EngineToUi::BufferUpdated { buffer } if buffer.id == alice => {
+                        Some(buffer.peer_presence)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for (line, presence) in [
+            (
+                ":offline.test 730 weblounge :alice!~alice@cloak.example",
+                Some(crate::PeerPresence::Online),
+            ),
+            (
+                ":alice!~alice@cloak.example AWAY :lunch",
+                Some(crate::PeerPresence::Away),
+            ),
+            (":offline.test 731 weblounge :alice", None),
+        ] {
+            wire.server(line).await;
+            let event = next_matching(&mut events, crate::peer_presence::may_change).await;
+            process_event(&state, &outbound, &client, 1, event);
+            assert_eq!(presence_updates(&mut receiver), [presence], "after {line}");
+        }
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]

@@ -1084,6 +1084,10 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
         "deferred_cannot_verify",
       ])
     ) ||
+    !(
+      value.peer_presence === undefined ||
+      isOneOf(value.peer_presence, ["online", "away"])
+    ) ||
     !(value.topic === null || typeof value.topic === "string") ||
     !(
       value.member_count === undefined || typeof value.member_count === "number"
@@ -1116,6 +1120,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ...(value.direct_identity === undefined
       ? {}
       : { direct_identity: value.direct_identity }),
+    ...(value.peer_presence === undefined
+      ? {}
+      : { peer_presence: value.peer_presence }),
     draft_key: value.draft_key,
     topic: value.topic,
     ...(value.member_count === undefined
