@@ -25,6 +25,13 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-14: desktop sidebar polish, batch 3. The network row's highlight is now row-shaped
+  (row height, radius and insets; the rows below sit one 6px lead lower) and its tile lines up
+  with the `#` column as in the prototype. The network row shows a connection dot. DM rows show a
+  presence dot in their leading column (filled online, muted ring for away) and end their
+  accessible name with ", online"/", away". The engine projects `peer_presence` only from what
+  the network tells papo (MONITOR, a shared channel, away-notify); with no report it shows
+  nothing, never "offline". Gap: away for a MONITOR-only peer needs `extended-monitor`.
 - 2026-11-14: desktop sidebar navigation polish. Channel rows now show the hover/focus close ×
   too ("Leave channel", which asks before PART); DMs keep the instant close with undo. Middle-
   clicking a conversation row closes it the same way, without autoscroll or paste. In the Mac
