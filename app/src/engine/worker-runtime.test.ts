@@ -161,6 +161,45 @@ it("routes durable push credentials only to the requesting port", async () => {
   expect(second.sent).toEqual([]);
 });
 
+it("routes an upload's credentials and result only to the requesting port", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  let requestHandled = false;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return {
+      handle: () => {
+        requestHandled = true;
+        return "[]";
+      },
+    };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  second.receive({ type: "request", payload: { id: "upload-1" } });
+  await vi.waitFor(() => expect(requestHandled).toBe(true));
+
+  emit?.(
+    JSON.stringify({
+      type: "upload_resolved",
+      command_id: "upload-1",
+      resolution: {
+        kind: "ready",
+        endpoint: "https://files.weblounge.org/upload",
+        authorization: { kind: "basic", header: "Basic d2VibG91bmdlOng=" },
+      },
+    }),
+  );
+  emit?.(JSON.stringify({ type: "command_result", id: "upload-1" }));
+
+  expect(second.sent).toEqual([
+    expect.objectContaining({ type: "upload_resolved" }),
+    { type: "command_result", id: "upload-1" },
+  ]);
+  expect(first.sent).toEqual([]);
+});
+
 it("routes activation to one tab while broadcasting push state", async () => {
   const first = new FakePort();
   const second = new FakePort();

@@ -208,27 +208,14 @@ export class EngineWorkerRuntime {
       (callingPort ?? this.#activePort)?.postMessage(event);
       return;
     }
-    if (
-      isRecord(event) &&
-      (event.type === "command_result" ||
-        event.type === "command_rejected" ||
-        event.type === "focus_buffer_requested" ||
-        event.type === "push_device_loaded")
-    ) {
-      const requestId =
-        event.type === "focus_buffer_requested" ||
-        event.type === "push_device_loaded"
-          ? event.command_id
-          : event.id;
+    const correlated = requestCorrelation(event);
+    if (correlated !== undefined) {
       const port =
-        typeof requestId === "string"
-          ? this.#requestPorts.get(requestId)
+        typeof correlated.requestId === "string"
+          ? this.#requestPorts.get(correlated.requestId)
           : undefined;
-      if (
-        event.type !== "focus_buffer_requested" &&
-        typeof requestId === "string"
-      )
-        this.#requestPorts.delete(requestId);
+      if (correlated.final && typeof correlated.requestId === "string")
+        this.#requestPorts.delete(correlated.requestId);
       (port ?? callingPort)?.postMessage(event);
     } else if (isSharedStateEvent(event)) {
       for (const port of this.#ports) port.postMessage(event);
@@ -297,6 +284,25 @@ function hostedTokenNetwork(event: unknown): number | undefined {
 
 function isPushRouteRequired(event: unknown): boolean {
   return isRecord(event) && event.type === "push_route_required";
+}
+
+// Replies that may carry secrets or tab-local focus go only to the tab that asked. The
+// request's port mapping lives until its terminal result.
+function requestCorrelation(
+  event: unknown,
+): { readonly requestId: unknown; readonly final: boolean } | undefined {
+  if (!isRecord(event)) return undefined;
+  switch (event.type) {
+    case "command_result":
+    case "command_rejected":
+      return { requestId: event.id, final: true };
+    case "focus_buffer_requested":
+    case "push_device_loaded":
+    case "upload_resolved":
+      return { requestId: event.command_id, final: false };
+    default:
+      return undefined;
+  }
 }
 
 function isHostDetach(message: unknown): boolean {
