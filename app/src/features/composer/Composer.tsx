@@ -1,8 +1,10 @@
 import {
+  createComputed,
   createEffect,
   createMemo,
   createSignal,
   type JSX,
+  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -93,6 +95,36 @@ export function Composer(props: ComposerProps) {
     attachments.remove();
     setUploadsUnavailable(false);
   };
+  // The chip, the note and the replace question resize the composer like a new text line, so
+  // the message list keeps its live edge through the same geometry events: the computation
+  // announces the change before Solid updates the DOM, the effect after it.
+  const uploadSurfaces = createMemo(
+    () =>
+      [
+        attachments.attachment() !== undefined,
+        uploadsUnavailable(),
+        attachments.pendingReplacement() !== undefined,
+      ] as const,
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous.every((shown, index) => shown === next[index]),
+    },
+  );
+  const announceGeometry = (event: string) =>
+    textarea?.dispatchEvent(new Event(event, { bubbles: true }));
+  createComputed(
+    on(
+      uploadSurfaces,
+      () => announceGeometry(composerGeometryWillChangeEvent),
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(uploadSurfaces, () => announceGeometry(composerGeometryChangeEvent), {
+      defer: true,
+    }),
+  );
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
   const suggestions = createMemo(() => {

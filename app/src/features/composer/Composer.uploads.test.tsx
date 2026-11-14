@@ -6,6 +6,10 @@ import type {
   UploadResult,
 } from "../uploads/types";
 import { Composer } from "./Composer";
+import {
+  composerGeometryChangeEvent,
+  composerGeometryWillChangeEvent,
+} from "./geometry";
 
 const url = "https://files.weblounge.org/AbCdEfGhIjKlMnOpQrStUv.png";
 
@@ -173,4 +177,25 @@ it("asks before sending the password to another site and passes the answer", asy
   fireEvent.click(screen.getByText("Upload"));
   await expect(answer).resolves.toEqual({ allow: true, remember: true });
   expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+it("announces the chip's geometry change before and after it renders", () => {
+  const { input } = renderComposer(new ControlledUploads());
+  const seen: string[] = [];
+  const record = (event: Event) =>
+    seen.push(
+      `${event.type}:${document.querySelector("[data-attachment-chip]") !== null}`,
+    );
+  input.addEventListener(composerGeometryWillChangeEvent, record);
+  input.addEventListener(composerGeometryChangeEvent, record);
+
+  pasteImage(input);
+  fireEvent.click(screen.getByLabelText("Remove image"));
+
+  expect(seen).toEqual([
+    `${composerGeometryWillChangeEvent}:false`,
+    `${composerGeometryChangeEvent}:true`,
+    `${composerGeometryWillChangeEvent}:true`,
+    `${composerGeometryChangeEvent}:false`,
+  ]);
 });
