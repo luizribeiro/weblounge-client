@@ -1,5 +1,9 @@
 import { createSignal } from "solid-js";
 import type { CommandSpec } from "../../engine/protocol";
+import {
+  createImagePreviewUrl,
+  revokeImagePreviewUrl,
+} from "../../platform/object-url";
 import type {
   ApprovalAnswer,
   NetworkUploads,
@@ -35,8 +39,8 @@ const declined: ApprovalAnswer = { allow: false, remember: false };
 export function createAttachmentController(
   options: AttachmentControllerOptions,
 ) {
-  const createUrl = options.createUrl ?? ((file) => URL.createObjectURL(file));
-  const revokeUrl = options.revokeUrl ?? ((url) => URL.revokeObjectURL(url));
+  const createUrl = options.createUrl ?? createImagePreviewUrl;
+  const revokeUrl = options.revokeUrl ?? revokeImagePreviewUrl;
   const [attachment, setAttachment] = createSignal<Attachment>();
   const [pendingReplacement, setPendingReplacement] = createSignal<File>();
   const [pendingApproval, setPendingApproval] = createSignal<PendingApproval>();

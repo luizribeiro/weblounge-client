@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { inflateSync } from "node:zlib";
+import { unguardedBlobUrls } from "./blob-url-policy.mjs";
 
 const outputDirectory = resolve(import.meta.dirname, "../dist");
 
@@ -61,8 +62,11 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
         `production bundle references a TypeScript asset: ${file}`,
       );
     }
-    if (text.includes("URL.createObjectURL(")) {
-      throw new Error(`production bundle creates a blob URL: ${file}`);
+    const blobUrls = unguardedBlobUrls(text);
+    if (blobUrls.length > 0) {
+      throw new Error(
+        `production bundle creates a blob URL outside the image preview: ${file}: ${blobUrls.join(" | ")}`,
+      );
     }
   }
   const workerAssets = files.filter((file) =>
