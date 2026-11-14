@@ -1,8 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
-import { IrcClient } from "./irc-client";
+import type { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -20,182 +21,156 @@ for (const [layout, viewport] of [
     });
 
     test(`renders runs, expands them, and rejoins after an own kick`, async ({
-      baseURL,
       page,
+      irc,
     }) => {
-      const suffix = `${layout[0]}${Date.now().toString(36).slice(-5)}`;
-      const account = `sl-own-${suffix}`;
-      const operatorNick = `sl-op-${suffix}`;
-      const channel = `#sl-${suffix}`;
-      const registration = await IrcClient.connectIsolated(
-        account,
-        `#reg-${suffix}`,
-      );
-      registration.close();
-      await registration.waitForDisconnect();
-      const operator = await IrcClient.connectIsolated(operatorNick, channel);
+      const suffix = irc.id;
+      const account = irc.account;
+      const channel = irc.channelNamed("sl");
+      const operator = await irc.peer("sl-op", [channel]);
+      const operatorNick = operator.nickname;
       const joiners: IrcClient[] = [];
-      const joinerNicks = ["kiwi", "zed", "ana", "tomo", "bob", "eve"].map(
-        (name) => `${name}-${suffix}`,
-      );
+      const joinerLabels = ["kiwi", "zed", "ana", "tomo", "bob", "eve"];
+      const joinerNicks = joinerLabels.map((label) => irc.nickNamed(label));
       const [opTarget, voiceTarget] = joinerNicks;
       if (opTarget === undefined || voiceTarget === undefined)
         throw new Error("mode targets are missing");
-      try {
-        await page.goto(accountUrl(baseURL, account));
-        await joinChannel(page, channel);
-        const directSeed = `direct before rename ${suffix}`;
-        await operator.privmsgConfirmed(account, directSeed);
+      await page.goto(irc.url());
+      await joinChannel(page, irc.channel, channel);
+      const directSeed = `direct before rename ${suffix}`;
+      await operator.privmsgConfirmed(account, directSeed);
 
-        const joinBreaker = `join breaker ${suffix}`;
-        await operator.privmsgConfirmed(channel, joinBreaker);
+      const joinBreaker = `join breaker ${suffix}`;
+      await operator.privmsgConfirmed(channel, joinBreaker);
+      await expect(page.getByText(joinBreaker, { exact: true })).toBeVisible();
+
+      for (const label of joinerLabels)
+        joiners.push(await irc.peer(label, [channel]));
+      const renamedNick = irc.nickNamed("sl-new");
+      await operator.nick(renamedNick);
+
+      const collapsed = systemLine(page, "joined", joinerNicks.slice(0, 3));
+      await expect(collapsed).toContainText("3 others");
+      await expect(collapsed).toContainText(
+        `${operatorNick} is now ${renamedNick}`,
+      );
+      await expectSystemGeometry(collapsed, layout);
+      if (layout === "desktop")
+        await expectDesktopColumnAlignment(page, collapsed, joinBreaker);
+      await captureNick(page, layout);
+      await capture(page, layout, "collapsed");
+
+      if (layout === "phone")
+        await page.getByRole("button", { name: "Back to chats" }).click();
+      await page
+        .getByRole("button", {
+          name: new RegExp(`^${operatorNick}(?:,|$)`, "u"),
+        })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: operatorNick }),
+      ).toBeVisible();
+      await expect(
+        systemLine(page, "is now", [operatorNick, renamedNick]),
+      ).toBeVisible();
+      if (layout === "phone")
+        await page.getByRole("button", { name: "Back to chats" }).click();
+      await page.getByRole("button", { name: channel }).click();
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+
+      await collapsed.getByRole("button", { name: "Show 3 others" }).click();
+      const expanded = page.locator('[data-system-line][data-expanded="true"]');
+      await expect(expanded).toContainText("6 people joined");
+      await expect(expanded.locator("[data-system-detail]")).toHaveCount(7);
+      for (const nick of joinerNicks)
         await expect(
-          page.getByText(joinBreaker, { exact: true }),
+          expanded.locator("[data-system-detail]").filter({ hasText: nick }),
         ).toBeVisible();
+      await capture(page, layout, "expanded");
+      await expanded.getByRole("button", { name: "Show less" }).click();
 
-        for (const nick of joinerNicks)
-          joiners.push(await IrcClient.connectIsolated(nick, channel));
-        const renamedNick = `sl-new-${suffix}`;
-        await operator.nick(renamedNick);
-
-        const collapsed = systemLine(page, "joined", joinerNicks.slice(0, 3));
-        await expect(collapsed).toContainText("3 others");
-        await expect(collapsed).toContainText(
-          `${operatorNick} is now ${renamedNick}`,
+      const modeBreaker = `mode breaker ${suffix}`;
+      await operator.privmsgConfirmed(channel, modeBreaker);
+      const banMask = `blocked-${suffix}!*@*`;
+      await operator.mode(channel, "+ovb", opTarget, voiceTarget, banMask);
+      const modes = systemLine(page, "gave op", [
+        renamedNick,
+        opTarget,
+        voiceTarget,
+        banMask,
+      ]);
+      await expect(modes).toContainText("voice to");
+      await expect(modes).toContainText("banned");
+      if (layout === "desktop") {
+        await expect(modes).toContainText(
+          `+ovb ${opTarget} ${voiceTarget} ${banMask}`,
         );
-        await expectSystemGeometry(collapsed, layout);
-        if (layout === "desktop")
-          await expectDesktopColumnAlignment(page, collapsed, joinBreaker);
-        await captureNick(page, layout);
-        await capture(page, layout, "collapsed");
-
-        if (layout === "phone")
-          await page.getByRole("button", { name: "Back to chats" }).click();
-        await page
-          .getByRole("button", {
-            name: new RegExp(`^${operatorNick}(?:,|$)`, "u"),
-          })
-          .click();
-        await expect(
-          page.getByRole("heading", { name: operatorNick }),
-        ).toBeVisible();
-        await expect(
-          systemLine(page, "is now", [operatorNick, renamedNick]),
-        ).toBeVisible();
-        if (layout === "phone")
-          await page.getByRole("button", { name: "Back to chats" }).click();
-        await page.getByRole("button", { name: channel }).click();
-        await expect(
-          page.getByRole("heading", { name: channel }),
-        ).toBeVisible();
-
-        await collapsed.getByRole("button", { name: "Show 3 others" }).click();
-        const expanded = page.locator(
-          '[data-system-line][data-expanded="true"]',
-        );
-        await expect(expanded).toContainText("6 people joined");
-        await expect(expanded.locator("[data-system-detail]")).toHaveCount(7);
-        for (const nick of joinerNicks)
-          await expect(
-            expanded.locator("[data-system-detail]").filter({ hasText: nick }),
-          ).toBeVisible();
-        await capture(page, layout, "expanded");
-        await expanded.getByRole("button", { name: "Show less" }).click();
-
-        const modeBreaker = `mode breaker ${suffix}`;
-        await operator.privmsgConfirmed(channel, modeBreaker);
-        const banMask = `blocked-${suffix}!*@*`;
-        await operator.mode(channel, "+ovb", opTarget, voiceTarget, banMask);
-        const modes = systemLine(page, "gave op", [
-          renamedNick,
-          opTarget,
-          voiceTarget,
-          banMask,
-        ]);
-        await expect(modes).toContainText("voice to");
-        await expect(modes).toContainText("banned");
-        if (layout === "desktop") {
-          await expect(modes).toContainText(
-            `+ovb ${opTarget} ${voiceTarget} ${banMask}`,
-          );
-        } else {
-          await expect(modes).not.toContainText("+ovb");
-        }
-        await capture(page, layout, "modes-alone");
-
-        await operator.privmsgConfirmed(
-          channel,
-          `mixed mode breaker ${suffix}`,
-        );
-        const mixedNick = `mix-${suffix}`;
-        const mixedJoiner = await IrcClient.connectIsolated(mixedNick, channel);
-        joiners.push(mixedJoiner);
-        await operator.mode(channel, "+v", mixedNick);
-        const mixedModes = systemLine(page, "joined", [
-          mixedNick,
-          renamedNick,
-        ]).filter({ hasText: "gave voice" });
-        await expect(mixedModes).toBeVisible();
-        await capture(page, layout, "modes-mixed");
-        mixedJoiner.close();
-        joiners.pop();
-
-        const breaker = `run breaker ${suffix}`;
-        await operator.privmsgConfirmed(channel, breaker);
-        await expect(page.getByText(breaker, { exact: true })).toBeVisible();
-        for (const joiner of joiners.slice(0, 2)) await joiner.part(channel);
-        await expect(
-          systemLine(page, "left", joinerNicks.slice(0, 2)),
-        ).toBeVisible();
-        await operator.privmsgConfirmed(channel, `quit breaker ${suffix}`);
-        for (const joiner of joiners.slice(2)) joiner.close();
-        const quit = systemLine(page, "quit", joinerNicks.slice(2));
-        await expect(quit).toBeVisible();
-        await expect(quit).not.toContainText("others");
-
-        await operator.kick(channel, account, "testing rejoin");
-        const warning = page
-          .locator('[data-system-line][data-warning="true"]')
-          .filter({ hasText: "testing rejoin" });
-        await expect(warning).toContainText(`${renamedNick} kicked you`);
-        await expect(
-          warning.getByRole("img", { name: "Warning" }),
-        ).toBeVisible();
-        await expect(
-          warning.getByRole("button", { name: "Rejoin channel" }),
-        ).toBeVisible();
-        await capture(page, layout, "own-kick");
-
-        const rejoined = operator.waitForNextJoin(channel, account);
-        await warning.getByRole("button", { name: "Rejoin channel" }).click();
-        await rejoined;
-        await expect(
-          page.getByRole("textbox", { name: "Message" }),
-        ).toBeEnabled();
-        await expect(
-          page.getByRole("button", { name: "Rejoin channel" }),
-        ).toHaveCount(0);
-      } finally {
-        operator.close();
-        for (const joiner of joiners) joiner.close();
+      } else {
+        await expect(modes).not.toContainText("+ovb");
       }
+      await capture(page, layout, "modes-alone");
+
+      await operator.privmsgConfirmed(channel, `mixed mode breaker ${suffix}`);
+      const mixedJoiner = await irc.peer("mix", [channel]);
+      const mixedNick = mixedJoiner.nickname;
+      joiners.push(mixedJoiner);
+      await operator.mode(channel, "+v", mixedNick);
+      const mixedModes = systemLine(page, "joined", [
+        mixedNick,
+        renamedNick,
+      ]).filter({ hasText: "gave voice" });
+      await expect(mixedModes).toBeVisible();
+      await capture(page, layout, "modes-mixed");
+      mixedJoiner.close();
+      await mixedJoiner.waitForDisconnect();
+      joiners.pop();
+
+      const breaker = `run breaker ${suffix}`;
+      await operator.privmsgConfirmed(channel, breaker);
+      await expect(page.getByText(breaker, { exact: true })).toBeVisible();
+      for (const joiner of joiners.slice(0, 2)) await joiner.part(channel);
+      await expect(
+        systemLine(page, "left", joinerNicks.slice(0, 2)),
+      ).toBeVisible();
+      await operator.privmsgConfirmed(channel, `quit breaker ${suffix}`);
+      for (const joiner of joiners.slice(2)) joiner.close();
+      for (const joiner of joiners.slice(2)) await joiner.waitForDisconnect();
+      const quit = systemLine(page, "quit", joinerNicks.slice(2));
+      await expect(quit).toBeVisible();
+      await expect(quit).not.toContainText("others");
+
+      await operator.kick(channel, account, "testing rejoin");
+      const warning = page
+        .locator('[data-system-line][data-warning="true"]')
+        .filter({ hasText: "testing rejoin" });
+      await expect(warning).toContainText(`${renamedNick} kicked you`);
+      await expect(warning.getByRole("img", { name: "Warning" })).toBeVisible();
+      await expect(
+        warning.getByRole("button", { name: "Rejoin channel" }),
+      ).toBeVisible();
+      await capture(page, layout, "own-kick");
+
+      const rejoined = operator.waitForNextJoin(channel, account);
+      await warning.getByRole("button", { name: "Rejoin channel" }).click();
+      await rejoined;
+      await expect(
+        page.getByRole("textbox", { name: "Message" }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Rejoin channel" }),
+      ).toHaveCount(0);
     });
   });
 }
 
-function accountUrl(baseURL: string | undefined, account: string): string {
-  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
-  const url = new URL("/", baseURL);
-  url.searchParams.set("irc-password", `test-${account}`);
-  url.searchParams.set("irc-account", account);
-  url.searchParams.set("irc-nickname", account);
-  return url.href;
-}
-
-async function joinChannel(page: Page, channel: string): Promise<void> {
+async function joinChannel(
+  page: Page,
+  home: string,
+  channel: string,
+): Promise<void> {
   const composer = page.getByRole("textbox", { name: "Message" });
   if (!(await composer.isVisible()))
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await page.getByRole("button", { name: home }).click();
   await expect(composer).toBeEnabled();
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
