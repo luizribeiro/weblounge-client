@@ -297,6 +297,21 @@ export default defineConfig({
       use: { browserName: "chromium" },
     },
     {
+      name: "webkit-uploads",
+      testMatch: "**/image-uploads.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-uploads-phone",
+      testMatch: "**/image-uploads.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-uploads-phone",
+      testMatch: "**/image-uploads.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
       name: "resilience-desktop-chromium",
       testMatch: "**/connection-resilience.spec.ts",
       use: { browserName: "chromium" },
