@@ -87,7 +87,9 @@ function identifyScope(connection, data) {
   connection.scope = scope;
   connection.requestHead = undefined;
   if (dropped.has(scope)) {
-    closeConnection(connection);
+    connections.delete(connection);
+    connection.upstream?.destroy();
+    connection.client.resetAndDestroy();
     return undefined;
   }
   if (incomingPaused.has(scope)) connection.upstream?.pause();
