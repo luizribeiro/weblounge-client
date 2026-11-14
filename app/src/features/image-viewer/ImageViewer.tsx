@@ -76,7 +76,7 @@ export default function ImageViewer(props: {
     >
       <div class={styles.stage} ref={stage} />
       <div aria-hidden="true" class={styles.fitBox} ref={fitBox} />
-      <header class={styles.bar}>
+      <header class={styles.controls}>
         <div class={styles.identity}>
           <span class={styles.author}>{props.request.author}</span>
           <time

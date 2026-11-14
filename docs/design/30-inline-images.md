@@ -131,12 +131,21 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   touch, which fades the backdrop as it moves. Focus returns to the slot that opened the viewer if it
   is still mounted; if virtualisation removed it, focus stays on the document, where typing still
   reaches the composer, and the close fades instead of shrinking to the slot.
-- **Chrome.** A top bar on `--wl-color-surface` with a `--wl-color-border` rule, holding the
-  sender's nick, the message time, an "Open original" link (new tab, like message links) and a
-  close button, so its text stays legible over the backdrop. The backdrop is
-  `--wl-color-overlay-scrim`, as for the omnibar, drawers and confirmations, so the app stays
-  visible and dimmed behind the image. The image fits inside a CSS fit box below the bar, with a
-  24px margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures
+- **Chrome.** No bar: the sender's nick, the message time, an "Open original" link (new tab,
+  like message links) and a close button sit straight on the backdrop along the top edge, inside
+  the safe areas. The backdrop is `--wl-color-overlay-scrim`, as for the omnibar, drawers and
+  confirmations, so the app stays visible and dimmed behind the image.
+- **Legibility.** The scrim is translucent, so what shows through under the controls varies: the
+  app's own text, accent rows, or the image when zoomed. No text token holds 4.5:1 against the
+  scrim over every theme colour (`--wl-color-fg` falls to 1.1:1 over light-theme text and 3.6:1
+  over dark-theme text). The controls therefore carry a soft halo in `--wl-color-surface` (a
+  text-shadow on the text, a drop-shadow on the close icon), which brings each glyph close to
+  its contrast on the surface (fg 13.4:1 light, 14.1:1 dark) whatever is behind it. The close icon
+  uses `--wl-color-fg`.
+- **Zoomed in.** The image may pan under the controls. They stay put and visible, with no fade
+  while dragging, so Close is always one tap away; the halo keeps them readable over the image.
+  At fit, the image sits inside a CSS fit box below the controls' 48px (44px on phone) row, with
+  a 24px margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures
   that box rather than reading safe areas itself.
 - **Accessibility.** The viewer root is `role="dialog"`, `aria-modal="true"`, labelled "Image from
   {nick}". Opening it focuses the dialog with `preventScroll`; Tab cycles inside it through the
@@ -157,7 +166,7 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   `{ url, author, time, naturalWidth, naturalHeight, origin: HTMLElement }`, with
   `openImageViewer` (ignored while a viewer is open) and `closeImageViewer`.
   `ImageViewerOutlet`, the last child of the app root, renders the viewer for it.
-- `features/image-viewer/ImageViewer.tsx`: the dialog, top bar, status and focus handling; loaded
+- `features/image-viewer/ImageViewer.tsx`: the dialog, its controls, status and focus handling; loaded
   with `lazy()`, so it and PhotoSwipe form their own chunk.
 - `features/image-viewer/photoswipe-viewer.ts`: creates and configures the PhotoSwipe instance and
   exposes `close`, `destroy` and `run(command)` for the key commands.
@@ -186,7 +195,7 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
 
 - Moving between the conversation's images (arrows, swipe).
 - Android hardware back closing the viewer through the navigation stack.
-- Copy link and Save (Tauri) in the top bar.
+- Copy link and Save (Tauri) beside Open original.
 
 ## Out of scope (next slices)
 

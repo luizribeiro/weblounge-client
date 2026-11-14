@@ -61,6 +61,12 @@ test.describe("full-size image viewer against local Ergo", () => {
         const image = viewerImage(page);
         await image.dblclick();
         await expectScale(page, 2);
+        const close = viewer.getByRole("button", { name: "Close image" });
+        await expect(viewer.locator("header")).toHaveCSS(
+          "background-color",
+          "rgba(0, 0, 0, 0)",
+        );
+        await expect(close).toBeVisible();
         await captureThemes(page, "desktop-zoomed");
         const before = await image.boundingBox();
         if (before === null) throw new Error("viewer image is not visible");

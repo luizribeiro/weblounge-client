@@ -1,5 +1,5 @@
 .viewer {
-  --wl-image-viewer-bar-height: 48px;
+  --wl-image-viewer-controls-height: 48px;
   --wl-image-viewer-margin: 24px;
   color: var(--wl-color-fg);
   font-family: var(--wl-font-ui);
@@ -10,14 +10,14 @@
 }
 
 :global(#root[data-shell="mobile"]) .viewer {
-  --wl-image-viewer-bar-height: 44px;
+  --wl-image-viewer-controls-height: 44px;
   --wl-image-viewer-margin: 0px;
 }
 
 .fitBox {
   inset: calc(
       var(--wl-safe-top) +
-      var(--wl-image-viewer-bar-height) +
+      var(--wl-image-viewer-controls-height) +
       var(--wl-image-viewer-margin)
     )
     calc(var(--wl-safe-right) + var(--wl-image-viewer-margin))
@@ -28,11 +28,13 @@
   visibility: hidden;
 }
 
-.bar {
+/* The controls sit straight on the scrim, over whatever the app or a panned
+   image shows there; a halo in the surface colour keeps them at the
+   text-on-surface contrast against any backdrop. */
+.controls {
+  --wl-image-viewer-halo: var(--wl-color-surface);
   align-items: center;
-  background: var(--wl-color-surface);
-  border-bottom: 1px solid var(--wl-color-border);
-  block-size: calc(var(--wl-safe-top) + var(--wl-image-viewer-bar-height));
+  block-size: calc(var(--wl-safe-top) + var(--wl-image-viewer-controls-height));
   box-sizing: border-box;
   display: flex;
   gap: 12px;
@@ -41,11 +43,15 @@
   padding: var(--wl-safe-top) calc(var(--wl-safe-right) + 8px) 0
     calc(var(--wl-safe-left) + 16px);
   position: absolute;
+  text-shadow:
+    0 0 1px var(--wl-image-viewer-halo),
+    0 0 2px var(--wl-image-viewer-halo),
+    0 0 6px var(--wl-image-viewer-halo);
   transition: opacity var(--wl-motion-fade) var(--wl-motion-standard-curve);
   z-index: 1;
 }
 
-.viewer[data-image-viewer="open"] .bar {
+.viewer[data-image-viewer="open"] .controls {
   opacity: 1;
 }
 
@@ -93,7 +99,7 @@
   background: transparent;
   border: 0;
   border-radius: var(--wl-radius-control);
-  color: var(--wl-color-muted);
+  color: var(--wl-color-fg);
   display: flex;
   block-size: 36px;
   inline-size: 36px;
@@ -103,12 +109,13 @@
 
 .close:hover {
   background: var(--wl-color-chip);
-  color: var(--wl-color-fg);
 }
 
 .close svg {
   block-size: 20px;
   fill: none;
+  filter: drop-shadow(0 0 1px var(--wl-image-viewer-halo))
+    drop-shadow(0 0 2px var(--wl-image-viewer-halo));
   inline-size: 20px;
   stroke: currentColor;
   stroke-linecap: round;

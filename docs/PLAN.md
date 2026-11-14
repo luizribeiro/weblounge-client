@@ -29,9 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
   Enter/Space on a loaded inline image opens a PhotoSwipe 5.4.4 viewer, lazy-loaded in its own
   ~19KB gzip chunk, that grows from the slot, zooms (pinch, ctrl/plain wheel, Safari gesture
   pinch, double-click/tap, `+`/`-`/`0`) and pans with momentum. It closes on Escape, its button,
-  the backdrop, or a swipe down, and returns focus to the image. Its top bar shows the sender, the
-  time and Open original. Specs cover Chromium desktop and phone and WebKit phone. Later: moving
-  between a conversation's images, Android back, Copy link/Save.
+  the backdrop, or a swipe down, and returns focus to the image. The sender, the time and Open
+  original sit on the overlay scrim with a surface-colour halo. Specs cover Chromium desktop and
+  phone and WebKit phone. Later: moving between a conversation's images, Android back, Copy
+  link/Save.
 - 2026-11-13: image uploads from the composer (design 31). Pasting an image attaches a chip
   (thumbnail, size, ×) inside the field; Enter uploads it to the network's advertised FILEHOST
   with progress and sends one `caption URL` message, which renders inline. The engine resolves
