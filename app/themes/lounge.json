@@ -46,6 +46,7 @@
   "shape": {
     "control": "3px",
     "avatar": "6px",
+    "icon": "6px",
     "composer": "6px",
     "palette": "6px",
     "pill": "3px"

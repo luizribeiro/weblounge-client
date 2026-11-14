@@ -72,6 +72,7 @@ const typographyTokens = [
 const shapeTokens = [
   "control",
   "avatar",
+  "icon",
   "composer",
   "palette",
   "pill",

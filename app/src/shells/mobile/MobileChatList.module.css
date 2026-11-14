@@ -29,7 +29,7 @@
 .logo {
   align-items: center;
   background: var(--wl-color-fg);
-  border-radius: var(--wl-radius-avatar);
+  border-radius: var(--wl-radius-icon);
   display: flex;
   flex: 0 0 36px;
   height: 36px;
