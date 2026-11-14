@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import { SidebarRow } from "./SidebarRow";
@@ -61,6 +61,66 @@ describe("SidebarRow", () => {
       expect(screen.getAllByRole("button")).toHaveLength(1);
     },
   );
+
+  describe("middle-click", () => {
+    const click = (target: Element, init: MouseEventInit) => {
+      const event = new MouseEvent("auxclick", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+    const renderRow = (onClose?: () => void) => {
+      render(() => (
+        <SidebarRow
+          active={false}
+          buffer={buffer}
+          onClick={() => {}}
+          onClose={onClose}
+          tabIndex={0}
+        />
+      ));
+      return screen.getByRole("button", { name: /^#lounge/u });
+    };
+
+    it("closes the row, like its close button, without autoscroll or paste", () => {
+      const close = vi.fn();
+      const row = renderRow(close);
+
+      expect(fireEvent.mouseDown(row, { button: 1 })).toBe(false);
+      expect(click(row, { button: 1 }).defaultPrevented).toBe(true);
+      expect(close).toHaveBeenCalledOnce();
+    });
+
+    it("ignores other buttons and a middle press during a drag", () => {
+      const close = vi.fn();
+      const row = renderRow(close);
+
+      expect(fireEvent.mouseDown(row, { button: 0 })).toBe(true);
+      click(row, { button: 2 });
+      click(row, { button: 1, buttons: 1 });
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it("still swallows the middle press on a row that cannot close", () => {
+      const row = renderRow();
+
+      expect(fireEvent.mouseDown(row, { button: 1 })).toBe(false);
+      expect(click(row, { button: 1 }).defaultPrevented).toBe(true);
+    });
+
+    it("closes once from a middle-click on the close button itself", () => {
+      const close = vi.fn();
+      renderRow(close);
+      const closeButton = screen.getByRole("button", { name: "Leave channel" });
+
+      expect(fireEvent.mouseDown(closeButton, { button: 1 })).toBe(false);
+      click(closeButton, { button: 1 });
+      expect(close).toHaveBeenCalledOnce();
+    });
+  });
 
   it("keeps the row's text to its name while a jump number waits in the slot", () => {
     render(() => (

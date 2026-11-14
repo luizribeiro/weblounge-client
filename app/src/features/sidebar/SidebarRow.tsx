@@ -34,6 +34,16 @@ export function SidebarRow(props: SidebarRowProps) {
   const [focusInside, setFocusInside] = createSignal(false);
   const closable = () => props.onClose !== undefined;
   const copy = () => closeCopy(props.buffer);
+  const middleClickClose = {
+    onAuxClick: (event: MouseEvent) => {
+      if (!isMiddleButton(event)) return;
+      event.preventDefault();
+      if (!dragInProgress(event)) props.onClose?.();
+    },
+    onMouseDown: (event: MouseEvent) => {
+      if (isMiddleButton(event)) event.preventDefault();
+    },
+  };
   const slot = () =>
     trailingSlot({
       badge: badge() !== undefined,
@@ -75,6 +85,7 @@ export function SidebarRow(props: SidebarRowProps) {
         data-muted={props.muted === true ? "true" : undefined}
         data-unread={visibleUnread()}
         onClick={props.onClick}
+        {...middleClickClose}
         onFocus={props.onFocus}
         ref={(element) => {
           props.ref?.(element);
@@ -131,6 +142,7 @@ export function SidebarRow(props: SidebarRowProps) {
           aria-label={copy().label}
           class={styles.close}
           onClick={props.onClose}
+          {...middleClickClose}
           tabIndex={-1}
           title={copy().tooltip}
           type="button"
@@ -142,6 +154,14 @@ export function SidebarRow(props: SidebarRowProps) {
       )}
     </div>
   );
+}
+
+function isMiddleButton(event: MouseEvent): boolean {
+  return event.button === 1;
+}
+
+function dragInProgress(event: MouseEvent): boolean {
+  return event.buttons !== 0;
 }
 
 function closeCopy(buffer: BufferProjection): {

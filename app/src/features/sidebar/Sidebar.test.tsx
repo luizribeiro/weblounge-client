@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { ActionRegistry } from "../../actions/action-registry";
 import type { CommandSpec } from "../../engine/protocol";
 import { installContextMenuHandler } from "../../ui/context-menu";
+import type { SidebarBuffer } from "./NetworkSection";
 import type { SidebarListController } from "./Sidebar";
 import { Sidebar } from "./Sidebar";
 
@@ -262,17 +263,57 @@ it("offers no leave button while the channel's network is not connected", () => 
   ).toBeInTheDocument();
 });
 
+it("middle-click closes any conversation row, past the ninth too, but never the network row", () => {
+  const closeDirect = vi.fn(async () => true);
+  const registry = new ActionRegistry(
+    {},
+    "other",
+    [destructiveCommand("part"), destructiveCommand("close")],
+    vi.fn(),
+  );
+  const channels = Array.from({ length: 10 }, (_, index) =>
+    buffer(10 + index, "channel", `#room${index}`, 0),
+  );
+  renderTargetSidebar(registry, closeDirect, "online", [
+    { ...buffer(1, "channel", "Local Ergo", 0), kind: "server" },
+    ...channels,
+    buffer(3, "direct", "alice", 0),
+  ]);
+  const middleClick = (name: string) =>
+    fireEvent(
+      screen.getByRole("button", { name }),
+      new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+    );
+
+  middleClick("Local Ergo, online");
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+  middleClick("#room9");
+  expect(
+    screen.getByRole("alertdialog", { name: "Leave #room9?" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+  middleClick("alice");
+  const rowAboveAlice = channels.at(-1)?.id;
+  expect(closeDirect).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 3 }),
+    rowAboveAlice,
+  );
+});
+
 function renderTargetSidebar(
   registry: ActionRegistry,
   closeDirect: () => Promise<boolean>,
   state: "connecting" | "online" = "online",
+  buffers: readonly SidebarBuffer[] = [
+    buffer(2, "channel", "#lounge", 3),
+    buffer(3, "direct", "alice", 0),
+  ],
 ) {
   return render(() => (
     <Sidebar
-      buffers={[
-        buffer(2, "channel", "#lounge", 3),
-        buffer(3, "direct", "alice", 0),
-      ]}
+      buffers={buffers}
       commandContext={{ bufferCount: 2, connected: true, listActive: true }}
       networks={[
         {

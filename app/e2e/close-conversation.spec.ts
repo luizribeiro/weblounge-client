@@ -125,6 +125,49 @@ test.describe("desktop conversation closing against local Ergo", () => {
     await parted;
     await expect(channelRow).toHaveCount(0);
   });
+
+  test("middle-click closes a DM with undo, asks before leaving a channel, and ignores the network row", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("middle-peer");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    const channelRow = page.getByRole("button", {
+      name: irc.channel,
+      exact: true,
+    });
+    await channelRow.click();
+    await peer.privmsgConfirmed(irc.account, "middle direct");
+    const directRow = page.getByRole("button", {
+      name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+    });
+    const networkRow = page.locator("[data-network-state]");
+    await expect(directRow).toBeVisible();
+
+    await networkRow.click({ button: "middle" });
+    await directRow.click({ button: "middle" });
+    await expect(directRow).toHaveCount(0);
+    const toast = page.getByRole("status").filter({
+      hasText: `Closed chat with ${peer.nickname}`,
+    });
+    await expect(toast).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(networkRow).toBeVisible();
+    await expect(networkRow).not.toHaveAttribute("aria-current", "page");
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(directRow).toBeVisible();
+
+    await channelRow.click({ button: "middle" });
+    const confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${irc.channel}?`,
+    });
+    await expect(confirmation).toBeVisible();
+    await nativeFeelAudit(page);
+    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toBeHidden();
+    await expect(channelRow).toBeVisible();
+  });
 });
 
 async function expectUndoToastLayout(
