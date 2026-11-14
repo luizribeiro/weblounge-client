@@ -196,9 +196,10 @@ from the brief's and prototype's 256px on 2026-11-12. The sidebar has no footer:
 prototype's own-nick footer was dropped in the same sign-off, and account or settings controls may
 later join the header row. As in the prototype, the brand text takes the header row's free space
 and ellipsizes, so header buttons such as the switcher launcher sit at the row's right padding.
-A network header's highlight has equal padding above and below its label; the space that separates
-it from the brand sits in a margin outside the highlight, so the header still spans one row height
-and the rows under it keep their place. Luiz signed off this departure on 2026-11-13.
+A network header's highlight has the same height, corner radius and inline insets as a conversation
+row, with its label centred; the space that separates it from the brand sits in a 6px margin outside
+the highlight, so the rows under it start one margin lower than a bare row would. Luiz signed off the
+margin on 2026-11-13 and the row-shaped highlight on 2026-11-14.
 Member lists independently use the existing pane calculation of a 232px list beside at least a
 320px conversation. The minimum supported desktop viewport is `360px`.
 

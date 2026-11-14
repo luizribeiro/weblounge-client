@@ -44,9 +44,9 @@ export async function expectHeaderButtonsAtEnd(
 
 // Pinned so restyling the network header never moves the rows under it.
 const firstRowOffsetByDensity = {
-  compact: 34,
-  cozy: 38,
-  comfortable: 44,
+  compact: 38,
+  cozy: 44,
+  comfortable: 50,
 } as const;
 
 export async function expectBalancedNetworkHeaderAtEachDensity(
@@ -82,7 +82,13 @@ async function expectBalancedNetworkHeader(
     const headerBox = element.getBoundingClientRect();
     const nameBox = name.getBoundingClientRect();
     const rowBox = firstRow.getBoundingClientRect();
+    const radius = (box: Element) =>
+      Number.parseFloat(getComputedStyle(box).borderTopLeftRadius);
     return {
+      headerHeight: headerBox.height,
+      headerRadius: radius(element),
+      rowHeight: rowBox.height,
+      rowRadius: radius(firstRow),
       headerCenter: (headerBox.top + headerBox.bottom) / 2,
       headerLeft: headerBox.left,
       headerRight: headerBox.right,
@@ -96,6 +102,12 @@ async function expectBalancedNetworkHeader(
     Math.abs(geometry.nameCenter - geometry.headerCenter),
   ).toBeLessThanOrEqual(1);
   expect(geometry.rowOffset).toBeCloseTo(firstRowOffset, 1);
+  expect(
+    Math.abs(geometry.headerHeight - geometry.rowHeight),
+  ).toBeLessThanOrEqual(0.5);
+  expect(
+    Math.abs(geometry.headerRadius - geometry.rowRadius),
+  ).toBeLessThanOrEqual(0.5);
   expect(geometry.headerLeft).toBeCloseTo(geometry.rowLeft, 1);
   expect(geometry.headerRight).toBeCloseTo(geometry.rowRight, 1);
 }
