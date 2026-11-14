@@ -5,9 +5,16 @@ const idle: TrailingSlotState = {
   badge: false,
   closable: false,
   engaged: false,
+  hint: false,
 };
 
 describe("sidebar trailing slot", () => {
+  it("shows the number hint over both the close button and the badge", () => {
+    expect(
+      trailingSlot({ badge: true, closable: true, engaged: true, hint: true }),
+    ).toBe("hint");
+  });
+
   it("swaps the badge for the close button while a closable row is hovered or focused", () => {
     expect(
       trailingSlot({ ...idle, badge: true, closable: true, engaged: true }),

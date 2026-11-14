@@ -1,4 +1,8 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
 
 const webChords = [
   { platform: "Linux x86_64", chord: "Control+Alt" },
@@ -30,6 +34,48 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
       await expect(row(page, ids[0])).toHaveAttribute("aria-current", "page");
     });
   }
+
+  test("numbers the first nine rows while the jump modifier is held", async ({
+    page,
+  }) => {
+    await emulatePlatform(page, "Linux x86_64");
+    await installNativeFeelInstrumentation(page);
+    await openWithExtraChannel(page);
+    const ids = await conversationRowIds(page);
+    const numbered = ids.slice(0, 9);
+    const first = sidebarRow(page, ids[0]);
+    const restingEdge = await rightEdge(first.locator("[data-sidebar-name]"));
+
+    await holdJumpModifier(page);
+    for (const [index, id] of numbered.entries()) {
+      const hint = sidebarRow(page, id).locator("[data-jump-hint]");
+      await expect(hint).toBeVisible();
+      await expect(hint).toHaveText(String(index + 1));
+      await expect(hint).toHaveCSS("opacity", "1");
+      await expect(
+        sidebarRow(page, id).locator("[data-badge-kind]"),
+      ).toBeHidden();
+    }
+    expect(await rightEdge(first.locator("[data-sidebar-name]"))).toBe(
+      restingEdge,
+    );
+    await nativeFeelAudit(page);
+
+    await releaseJumpModifier(page);
+    await expect(first.locator("[data-jump-hint]")).toBeHidden();
+
+    await holdJumpModifier(page);
+    await expect(first.locator("[data-jump-hint]")).toBeVisible();
+    await page.keyboard.press("c");
+    await expect(first.locator("[data-jump-hint]")).toBeHidden();
+    await releaseJumpModifier(page);
+
+    await holdJumpModifier(page);
+    await expect(first.locator("[data-jump-hint]")).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(first.locator("[data-jump-hint]")).toBeHidden();
+    await releaseJumpModifier(page);
+  });
 });
 
 async function emulatePlatform(page: Page, platform: string): Promise<void> {
@@ -65,4 +111,26 @@ async function conversationRowIds(page: Page): Promise<string[]> {
 
 function row(page: Page, bufferId: string | undefined) {
   return page.locator(`[data-sidebar-row] [data-buffer-id="${bufferId}"]`);
+}
+
+function sidebarRow(page: Page, bufferId: string | undefined): Locator {
+  return page
+    .locator('[data-sidebar-row="true"]')
+    .filter({ has: page.locator(`[data-buffer-id="${bufferId}"]`) });
+}
+
+async function holdJumpModifier(page: Page): Promise<void> {
+  await page.keyboard.down("Control");
+  await page.keyboard.down("Alt");
+}
+
+async function releaseJumpModifier(page: Page): Promise<void> {
+  await page.keyboard.up("Alt");
+  await page.keyboard.up("Control");
+}
+
+async function rightEdge(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("element has no box");
+  return box.x + box.width;
 }

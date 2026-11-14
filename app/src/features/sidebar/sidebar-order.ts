@@ -44,6 +44,18 @@ export function sidebarRowIds(
   });
 }
 
+export function jumpSlotsById(
+  networks: readonly OrderedNetwork[],
+  buffers: readonly OrderedBuffer[],
+  slotCount: number,
+): ReadonlyMap<number, number> {
+  return new Map(
+    conversationRowIds(networks, buffers)
+      .slice(0, slotCount)
+      .map((id, index) => [id, index + 1]),
+  );
+}
+
 export function conversationRowIds(
   networks: readonly OrderedNetwork[],
   buffers: readonly OrderedBuffer[],

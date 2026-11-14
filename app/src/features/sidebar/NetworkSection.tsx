@@ -19,6 +19,8 @@ interface NetworkSectionProps {
   readonly activeBufferId: number | undefined;
   readonly rovingId: number | undefined;
   readonly visibleBufferIds: ReadonlySet<number>;
+  readonly jumpSlotFor?: ((bufferId: number) => number | undefined) | undefined;
+  readonly jumpHintsShown?: boolean;
   readonly onFocus: (bufferId: number | undefined) => void;
   readonly onOpenBuffer: (buffer: SidebarBuffer) => void;
   readonly onCloseBuffer?: ((buffer: SidebarBuffer) => void) | undefined;
@@ -83,6 +85,8 @@ export function NetworkSection(props: NetworkSectionProps) {
                     active={props.activeBufferId === current().id}
                     badgesSuppressed={props.visibleBufferIds.has(current().id)}
                     buffer={current()}
+                    jumpHintShown={props.jumpHintsShown === true}
+                    jumpSlot={props.jumpSlotFor?.(current().id)}
                     muted={current().muted === true}
                     onClick={() => props.onOpenBuffer(current())}
                     {...(props.onCloseBuffer === undefined

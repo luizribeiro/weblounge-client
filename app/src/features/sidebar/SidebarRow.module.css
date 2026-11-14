@@ -69,6 +69,10 @@
   justify-items: end;
 }
 
+.slot > * {
+  grid-area: 1 / 1;
+}
+
 .badge {
   align-items: center;
   background: var(--wl-color-accent);
@@ -126,4 +130,34 @@
   stroke-linecap: round;
   stroke-width: 1.6;
   width: 12px;
+}
+
+.hint {
+  align-items: center;
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-panel-muted);
+  display: flex;
+  font-family: var(--wl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  height: 17px;
+  justify-content: center;
+  min-width: 17px;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.row[data-trailing="hint"] .hint {
+  opacity: 1;
+  transition:
+    opacity var(--wl-motion-fade) var(--wl-motion-standard-curve)
+    var(--wl-time-hint-hold),
+    visibility 0s linear var(--wl-time-hint-hold);
+  visibility: visible;
+}
+
+.row[data-trailing="hint"] .badge,
+.row[data-trailing="hint"] .close {
+  transition: visibility 0s linear var(--wl-time-hint-hold);
 }

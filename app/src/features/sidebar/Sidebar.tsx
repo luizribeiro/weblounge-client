@@ -1,9 +1,18 @@
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import type {
-  ActionContext,
-  ActionEntry,
-  ActionRegistry,
-  UiActionId,
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
+import {
+  type ActionContext,
+  type ActionEntry,
+  type ActionRegistry,
+  jumpActionId,
+  jumpSlots,
+  type UiActionId,
 } from "../../actions/action-registry";
 import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
@@ -22,6 +31,7 @@ import {
   NotificationPrompt,
   type NotificationPromptControls,
 } from "../notifications/NotificationPrompt";
+import { createModifierHold } from "./modifier-hold";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
 import {
@@ -29,7 +39,7 @@ import {
   SwitcherLauncher,
 } from "./SwitcherLauncher";
 import { focusAfterClose } from "./sidebar-close";
-import { networkBuffers, sidebarRowIds } from "./sidebar-order";
+import { jumpSlotsById, networkBuffers, sidebarRowIds } from "./sidebar-order";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -77,6 +87,13 @@ export function Sidebar(props: SidebarProps) {
   }>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => sidebarRowIds(props.networks, props.buffers);
+  const jumpHintsHeld = createModifierHold(
+    window,
+    props.registry.modifierChord(jumpActionId(1)),
+  );
+  const jumpSlotsByBuffer = createMemo(() =>
+    jumpSlotsById(props.networks, props.buffers, jumpSlots.length),
+  );
   const connection = () => connectionPresentation(props.networks);
   const switcherAvailable = () =>
     props.registry.availability("switcher.open", props.commandContext).state ===
@@ -270,6 +287,8 @@ export function Sidebar(props: SidebarProps) {
             <NetworkSection
               activeBufferId={props.activeBufferId}
               buffers={networkBuffers(network, props.buffers)}
+              jumpHintsShown={jumpHintsHeld()}
+              jumpSlotFor={(id) => jumpSlotsByBuffer().get(id)}
               network={network}
               onFocus={setRovingId}
               onCloseBuffer={(buffer) => void closeDirect(buffer)}

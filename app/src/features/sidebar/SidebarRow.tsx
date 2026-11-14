@@ -14,6 +14,8 @@ export interface SidebarRowProps {
   readonly buffer: BufferProjection;
   readonly active: boolean;
   readonly badgesSuppressed?: boolean;
+  readonly jumpSlot?: number | undefined;
+  readonly jumpHintShown?: boolean;
   readonly muted?: boolean;
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
@@ -37,6 +39,7 @@ export function SidebarRow(props: SidebarRowProps) {
       badge: badge() !== undefined,
       closable: closable(),
       engaged: pointerInside() || focusInside(),
+      hint: props.jumpHintShown === true && props.jumpSlot !== undefined,
     });
   const visibleUnread = () => (showBadges() ? props.buffer.unread : 0);
   const visibleMentions = () => (showBadges() ? props.buffer.mentions : 0);
@@ -113,6 +116,11 @@ export function SidebarRow(props: SidebarRowProps) {
             >
               {badge()?.count}
             </Line>
+          )}
+          {props.jumpSlot !== undefined && (
+            <span aria-hidden="true" class={styles.hint} data-jump-hint="true">
+              {props.jumpSlot}
+            </span>
           )}
         </span>
       </button>
