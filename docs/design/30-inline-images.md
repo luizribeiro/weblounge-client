@@ -133,17 +133,20 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   reaches the composer, and the close fades instead of shrinking to the slot.
 - **Chrome.** No bar: the sender's nick, the message time, an "Open original" link (new tab,
   like message links) and a close button sit straight on the backdrop along the top edge, inside
-  the safe areas. The backdrop is `--wl-color-overlay-scrim`, as for the omnibar, drawers and
-  confirmations, so the app stays visible and dimmed behind the image.
-- **Legibility.** The scrim is translucent, so what shows through under the controls varies: the
-  app's own text, accent rows, or the image when zoomed. No text token holds 4.5:1 against the
-  scrim over every theme colour (`--wl-color-fg` falls to 1.1:1 over light-theme text and 3.6:1
-  over dark-theme text). The controls therefore carry a soft halo in `--wl-color-surface` (a
-  text-shadow on the text, a drop-shadow on the close icon), which brings each glyph close to
-  its contrast on the surface (fg 13.4:1 light, 14.1:1 dark) whatever is behind it. The close icon
-  uses `--wl-color-fg`.
+  the safe areas. The backdrop is its own theme token, `--wl-color-viewer-scrim`: the theme's
+  background colour at 88% (Lounge) or 75% (Lounge Night), so the app stays faintly visible
+  behind the image, as in photo viewers, while the controls keep their contrast. It is tinted
+  with the theme background rather than black because the controls use the theme's own text
+  tokens, which are dark in light themes.
+- **Legibility.** The scrim strength is set by the controls' contrast against the worst app
+  colour showing through: the nick, the time and the close icon in `--wl-color-fg` stay above
+  6.6:1 and Open original in `--wl-color-accent` above 4.6:1 (targets: 4.5:1 text, 3:1 icon),
+  over every theme colour in both themes. The time uses `--wl-color-fg` because `--wl-color-muted` would need an almost opaque
+  scrim. A zoomed image can pan above the scrim and under the controls, so they keep a faint halo
+  in `--wl-color-surface` (a 1–3px text-shadow, a 1px drop-shadow on the icon) for that case.
 - **Zoomed in.** The image may pan under the controls. They stay put and visible, with no fade
-  while dragging, so Close is always one tap away; the halo keeps them readable over the image.
+  while dragging, so Close is always one tap away; the faint halo keeps them readable over the
+  image.
   At fit, the image sits inside a CSS fit box below the controls' 48px (44px on phone) row, with
   a 24px margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures
   that box rather than reading safe areas itself.

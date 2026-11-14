@@ -28,9 +28,8 @@
   visibility: hidden;
 }
 
-/* The controls sit straight on the scrim, over whatever the app or a panned
-   image shows there; a halo in the surface colour keeps them at the
-   text-on-surface contrast against any backdrop. */
+/* A zoomed image can pan above the scrim and under the controls; a faint
+   halo in the surface colour keeps them readable over its pixels. */
 .controls {
   --wl-image-viewer-halo: var(--wl-color-surface);
   align-items: center;
@@ -45,8 +44,7 @@
   position: absolute;
   text-shadow:
     0 0 1px var(--wl-image-viewer-halo),
-    0 0 2px var(--wl-image-viewer-halo),
-    0 0 6px var(--wl-image-viewer-halo);
+    0 0 3px var(--wl-image-viewer-halo);
   transition: opacity var(--wl-motion-fade) var(--wl-motion-standard-curve);
   z-index: 1;
 }
@@ -72,7 +70,7 @@
 }
 
 .time {
-  color: var(--wl-color-muted);
+  color: var(--wl-color-fg);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -114,8 +112,7 @@
 .close svg {
   block-size: 20px;
   fill: none;
-  filter: drop-shadow(0 0 1px var(--wl-image-viewer-halo))
-    drop-shadow(0 0 2px var(--wl-image-viewer-halo));
+  filter: drop-shadow(0 0 1px var(--wl-image-viewer-halo));
   inline-size: 20px;
   stroke: currentColor;
   stroke-linecap: round;
@@ -123,7 +120,7 @@
 }
 
 .stage :global(.pswp) {
-  --pswp-bg: var(--wl-color-overlay-scrim);
+  --pswp-bg: var(--wl-color-viewer-scrim);
   --pswp-placeholder-bg: transparent;
   --pswp-root-z-index: 0;
 }

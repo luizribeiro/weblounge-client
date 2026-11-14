@@ -30,7 +30,7 @@ The single place a fresh session reads to know where the project stands. Update 
   ~19KB gzip chunk, that grows from the slot, zooms (pinch, ctrl/plain wheel, Safari gesture
   pinch, double-click/tap, `+`/`-`/`0`) and pans with momentum. It closes on Escape, its button,
   the backdrop, or a swipe down, and returns focus to the image. The sender, the time and Open
-  original sit on the overlay scrim with a surface-colour halo. Specs cover Chromium desktop and
+  original sit on a stronger, theme-tinted viewer scrim. Specs cover Chromium desktop and
   phone and WebKit phone. Later: moving between a conversation's images, Android back, Copy
   link/Save.
 - 2026-11-13: image uploads from the composer (design 31). Pasting an image attaches a chip

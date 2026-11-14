@@ -34,6 +34,7 @@ const colorTokens = [
   "mentionBadge",
   "mentionBadgeFg",
   "overlayScrim",
+  "viewerScrim",
   "unread",
   "inputBg",
   "chip",

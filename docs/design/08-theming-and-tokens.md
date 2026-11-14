@@ -40,6 +40,9 @@ milestone 1 has no Rust theme registry.
 The schema covers the appendix token set plus an explicit `focusRing` semantic colour and
 `mentionBadge` / `mentionBadgeFg` pair. The pair gives mention-severity count badges their red
 treatment without coupling them to error UI. Initial `focusRing` values use each theme's accent.
+`viewerScrim` is the image viewer's backdrop (design 30): stronger than `overlayScrim` and tinted
+with the theme's background, so the viewer's controls keep text contrast in the theme's own text
+colours over any app content behind it.
 The accepted milestone-1 colour grammar is the appendix formats (hex and `rgb[a]` where needed);
 arbitrary CSS and `oklch` are not accepted.
 
