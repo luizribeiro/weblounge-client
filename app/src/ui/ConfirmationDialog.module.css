@@ -50,3 +50,18 @@
   background: var(--wl-color-error);
   color: var(--wl-color-accent-fg);
 }
+
+.remember {
+  align-items: center;
+  color: var(--wl-color-panel-fg);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  margin: -6px 0 16px;
+  min-height: 32px;
+}
+
+.remember input {
+  accent-color: var(--wl-color-accent);
+  margin: 0;
+}

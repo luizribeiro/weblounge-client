@@ -331,6 +331,7 @@ export function Sidebar(props: SidebarProps) {
       <Show when={confirmation()} keyed>
         {(pending) => (
           <ConfirmationDialog
+            explanation={t("sidebar.leave_explanation")}
             action={translate(pending.entry.command?.confirmation_action ?? "")}
             label={translate(pending.entry.command?.confirmation_prompt ?? "", {
               text: pending.title,

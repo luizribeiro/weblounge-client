@@ -798,6 +798,7 @@ export function MobileShell(props: MobileShellProps) {
       )}
       {confirmationBuffer()?.kind === "channel" && (
         <ConfirmationDialog
+          explanation={t("sidebar.leave_explanation")}
           action={t("cmd.part.confirmation_action")}
           label={t("cmd.part.confirmation_prompt", {
             text: confirmationBuffer()?.title ?? "",
