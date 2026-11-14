@@ -83,6 +83,31 @@ export async function expectBalancedNetworkHeaderAtEachDensity(
   );
 }
 
+export async function expectNetworkDotOnTrailingColumnAtEachDensity(
+  page: Page,
+  header: Locator,
+): Promise<void> {
+  await atEachDensity(page, async (density) => {
+    const centres = await header.evaluate((element) => {
+      const dot = element.querySelector("[data-network-dot]");
+      const slot = element
+        .closest("section")
+        ?.querySelector("[data-sidebar-row] [data-sidebar-slot]");
+      if (dot == null || slot == null)
+        throw new Error("network dot or row trailing slot is missing");
+      const centre = (box: DOMRect) => (box.left + box.right) / 2;
+      return {
+        dot: centre(dot.getBoundingClientRect()),
+        slot: centre(slot.getBoundingClientRect()),
+      };
+    });
+    expect(
+      Math.abs(centres.dot - centres.slot),
+      `network dot centre at ${density} density`,
+    ).toBeLessThanOrEqual(0.5);
+  });
+}
+
 async function expectBalancedNetworkHeader(
   header: Locator,
   firstRowOffset: number,

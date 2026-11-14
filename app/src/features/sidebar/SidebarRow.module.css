@@ -1,6 +1,4 @@
 .row {
-  --wl-sidebar-slot-width: 28px;
-
   align-items: center;
   background: transparent;
   border-radius: var(--wl-radius-control);

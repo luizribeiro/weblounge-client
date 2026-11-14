@@ -5,7 +5,10 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { expectSettled } from "./settled";
-import { tokenColour } from "./sidebar-geometry";
+import {
+  expectNetworkDotOnTrailingColumnAtEachDensity,
+  tokenColour,
+} from "./sidebar-geometry";
 
 test.describe("sidebar presence against local Ergo", () => {
   test("marks the connected network with the online colour", async ({
@@ -23,6 +26,25 @@ test.describe("sidebar presence against local Ergo", () => {
       "background-color",
       await tokenColour(page, "--wl-color-online"),
     );
+    await nativeFeelAudit(page);
+  });
+
+  test("centres the network dot on the rows' trailing column", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const network = page.getByRole("button", { name: "Local Ergo, online" });
+    await expectNetworkDotOnTrailingColumnAtEachDensity(page, network);
+
+    await page.setViewportSize({ width: 700, height: 800 });
+    await page.getByRole("button", { name: "Toggle channel list" }).click();
+    await expect(page.locator("[data-overlay-drawer]")).toBeVisible();
+    await expect(network).toBeVisible();
+    await expectNetworkDotOnTrailingColumnAtEachDensity(page, network);
     await nativeFeelAudit(page);
   });
 

@@ -140,7 +140,9 @@
   font-size: var(--wl-font-section-size);
   font-weight: 500;
   gap: var(--wl-space-list-gap);
-  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr) auto;
+  grid-template-columns:
+    var(--wl-sidebar-prefix-width) minmax(0, 1fr)
+    var(--wl-sidebar-slot-width);
   letter-spacing: var(--wl-font-section-tracking);
   height: var(--wl-density-sidebar-row-height);
   margin-top: var(--wl-network-header-lead);
@@ -181,6 +183,7 @@
   border: var(--wl-size-presence-ring) solid var(--wl-color-panel-border);
   border-radius: 50%;
   height: var(--wl-size-presence-dot);
+  justify-self: center;
   width: var(--wl-size-presence-dot);
 }
 
