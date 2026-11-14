@@ -4,6 +4,7 @@ import {
   createSignal,
   type JSX,
   onCleanup,
+  Show,
 } from "solid-js";
 import type {
   CommandSpec,
@@ -19,15 +20,21 @@ import {
 import { reportKeyboardInteraction } from "../../platform/keyboard-debug";
 import { t, translate } from "../../strings";
 import styles from "../conversation/SimpleComposer.module.css";
+import type { NetworkUploads } from "../uploads/types";
+import { AttachmentChip } from "./AttachmentChip";
+import { createAttachmentController } from "./attachment-controller";
+import { imageFromClipboard } from "./clipboard-image";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
 } from "./geometry";
+import { InlineConfirmation } from "./InlineConfirmation";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
+import { UploadOverlays } from "./UploadOverlays";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -48,6 +55,7 @@ interface ComposerProps {
     text: string,
   ) => boolean | undefined | Promise<boolean | undefined>;
   readonly typers?: readonly TypingProjection[] | undefined;
+  readonly uploads?: NetworkUploads | undefined;
 }
 
 interface TabCycle {
@@ -73,6 +81,18 @@ export function Composer(props: ComposerProps) {
   const [dismissedInput, setDismissedInput] = createSignal<string>();
   const [pendingConfirmation, setPendingConfirmation] =
     createSignal<CommandSpec>();
+  const [uploadsUnavailable, setUploadsUnavailable] = createSignal(false);
+  const attachments = createAttachmentController({
+    uploads: () => props.uploads,
+  });
+  const focusAfterOverlay = () => {
+    if (platform.environment().input !== "touch")
+      queueMicrotask(() => textarea?.focus({ preventScroll: true }));
+  };
+  const dropAttachment = () => {
+    attachments.remove();
+    setUploadsUnavailable(false);
+  };
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
   const suggestions = createMemo(() => {
@@ -148,6 +168,7 @@ export function Composer(props: ComposerProps) {
 
   onCleanup(() => {
     if (caretScrollFrame !== undefined) cancelAnimationFrame(caretScrollFrame);
+    dropAttachment();
   });
 
   createEffect(() => {
@@ -175,6 +196,7 @@ export function Composer(props: ComposerProps) {
     setSelected(-1);
     setDismissedInput(undefined);
     setPendingConfirmation(undefined);
+    dropAttachment();
     pendingTabInput = undefined;
     tabCycle = undefined;
   });
@@ -186,13 +208,39 @@ export function Composer(props: ComposerProps) {
     }
     setText(value);
     setPendingConfirmation(undefined);
+    setUploadsUnavailable(false);
     setSelected(-1);
     if (dismissedInput() !== value) setDismissedInput(undefined);
   };
+  const deliver = (
+    submitted: string,
+    message = submitted,
+    submittedBuffer = currentBuffer,
+    submittedDraftKey = currentDraftKey,
+  ) =>
+    Promise.resolve(props.onSend(message))
+      .then((accepted) => {
+        if (accepted === false) return false;
+        if (readDraft(submittedDraftKey) === submitted) {
+          removeDraft(submittedDraftKey);
+        }
+        if (currentBuffer === submittedBuffer && text() === submitted) {
+          setText("");
+          setSelected(-1);
+        }
+        return true;
+      })
+      .catch(() => false);
   const submit = (confirmed = false) => {
     const submitted = text();
-    const submittedBuffer = currentBuffer;
-    const submittedDraftKey = currentDraftKey;
+    if (attachments.attachment() !== undefined) {
+      const buffer = currentBuffer;
+      const draftKey = currentDraftKey;
+      void attachments.send(submitted, props.commandSpecs ?? [], (message) =>
+        deliver(submitted, message, buffer, draftKey),
+      );
+      return;
+    }
     if (submitted.trim() === "") return;
     const command = commandForInput(submitted, props.commandSpecs ?? []);
     if (
@@ -207,20 +255,21 @@ export function Composer(props: ComposerProps) {
     }
     setPendingConfirmation(undefined);
     if (confirmed) queueMicrotask(() => textarea?.focus());
-    void Promise.resolve(props.onSend(submitted))
-      .then((accepted) => {
-        if (accepted === false) return;
-        if (readDraft(submittedDraftKey) === submitted) {
-          removeDraft(submittedDraftKey);
-        }
-        if (currentBuffer === submittedBuffer && text() === submitted) {
-          setText("");
-          setSelected(-1);
-        }
-      })
-      .catch(() => undefined);
+    void deliver(submitted);
   };
-  const sendEmpty = () => text().trim() === "";
+  const sendEmpty = () =>
+    text().trim() === "" && attachments.attachment() === undefined;
+  const paste = (event: ClipboardEvent) => {
+    const image = imageFromClipboard(event.clipboardData);
+    if (image === undefined) return;
+    if (props.uploads === undefined) {
+      setUploadsUnavailable(true);
+      return;
+    }
+    if (!image.hasText) event.preventDefault();
+    setUploadsUnavailable(false);
+    attachments.attach(image.file);
+  };
   const send = () => {
     submit();
     textarea?.focus();
@@ -299,6 +348,13 @@ export function Composer(props: ComposerProps) {
       event.preventDefault();
       setDismissedInput(text());
       setSelected(-1);
+    } else if (
+      event.key === "Escape" &&
+      text() === "" &&
+      attachments.attachment() !== undefined
+    ) {
+      event.preventDefault();
+      dropAttachment();
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!accept(undefined, false)) submit();
@@ -391,41 +447,27 @@ export function Composer(props: ComposerProps) {
         />
       )}
       <TypingIndicator typers={props.typers ?? []} />
+      <UploadOverlays
+        attachments={attachments}
+        onSettled={focusAfterOverlay}
+        unavailable={uploadsUnavailable()}
+      />
       {pendingConfirmation() !== undefined && (
-        <div
-          aria-label={t("composer.confirm", {
+        <InlineConfirmation
+          action={translate(pendingConfirmation()?.confirmation_action ?? "")}
+          confirmRef={(button) => {
+            confirmButton = button;
+          }}
+          label={t("composer.confirm", {
             command: pendingConfirmation()?.name ?? "",
           })}
-          class={styles.confirmation}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
+          message={confirmationText()}
+          onCancel={() => {
             setPendingConfirmation(undefined);
             queueMicrotask(() => textarea?.focus());
           }}
-          role="alertdialog"
-        >
-          <span>{confirmationText()}</span>
-          <button
-            class={styles.confirm}
-            onClick={() => submit(true)}
-            onPointerDown={(event) => event.preventDefault()}
-            ref={confirmButton}
-            type="button"
-          >
-            {translate(pendingConfirmation()?.confirmation_action ?? "")}
-          </button>
-          <button
-            class={styles.cancel}
-            onClick={() => {
-              setPendingConfirmation(undefined);
-              textarea?.focus();
-            }}
-            onPointerDown={(event) => event.preventDefault()}
-            type="button"
-          >
-            {t("common.cancel")}
-          </button>
-        </div>
+          onConfirm={() => submit(true)}
+        />
       )}
       <div
         aria-activedescendant={
@@ -441,7 +483,23 @@ export function Composer(props: ComposerProps) {
         role="combobox"
         tabIndex={-1}
       >
-        <div class={styles.field} data-composer-field="true">
+        <div
+          class={styles.field}
+          data-composer-field="true"
+          data-attachment={attachments.attachment() !== undefined}
+        >
+          <Show when={attachments.attachment()}>
+            {(attachment) => (
+              <AttachmentChip
+                attachment={attachment()}
+                onRemove={() => {
+                  dropAttachment();
+                  focusAfterOverlay();
+                }}
+                onRetry={() => submit()}
+              />
+            )}
+          </Show>
           <div class={styles.entryRow}>
             <textarea
               aria-label={t("composer.input", { target: props.bufferTitle })}
@@ -467,6 +525,7 @@ export function Composer(props: ComposerProps) {
                 }
               }}
               onKeyDown={keydown}
+              onPaste={paste}
               placeholder={t("composer.input", { target: props.bufferTitle })}
               ref={(element) => {
                 textarea = element;
@@ -483,6 +542,7 @@ export function Composer(props: ComposerProps) {
               aria-label={t("common.send")}
               class={`${styles.send} ${styles.touchSend}`}
               data-composer-send="true"
+              data-busy={attachments.busy()}
               data-empty={sendEmpty()}
               disabled={props.disabled}
               onClick={send}
@@ -504,6 +564,8 @@ export function Composer(props: ComposerProps) {
         <button
           class={`${styles.send} ${styles.desktopSend}`}
           data-composer-send="true"
+          aria-busy={attachments.busy()}
+          data-busy={attachments.busy()}
           data-empty={sendEmpty()}
           disabled={props.disabled}
           onClick={send}

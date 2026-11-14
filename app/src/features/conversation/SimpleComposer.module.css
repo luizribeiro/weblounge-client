@@ -75,6 +75,21 @@ textarea.input {
   min-height: var(--wl-size-composer-single-line);
 }
 
+.field[data-attachment="true"] {
+  background: var(--wl-color-input-bg);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-composer);
+}
+
+.field[data-attachment="true"]:focus-within {
+  border-color: var(--wl-color-focus-ring);
+}
+
+.field[data-attachment="true"] .input {
+  background: transparent;
+  border-color: transparent;
+}
+
 .candidates {
   max-height: calc(6 * var(--wl-density-sidebar-row-height));
   overscroll-behavior: contain;
@@ -285,4 +300,15 @@ textarea.input {
 :global(#root[data-input="touch"]) .touchSend[data-empty="true"] span {
   background: var(--wl-color-chip);
   color: var(--wl-color-muted);
+}
+
+.send[data-busy="true"] {
+  opacity: 0.55;
+}
+
+.uploadNote {
+  color: var(--wl-color-muted);
+  font-size: var(--wl-font-section-size);
+  margin: 0 0 8px;
+  padding-inline: var(--wl-composer-typing-inset, 12px);
 }
