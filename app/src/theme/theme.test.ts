@@ -22,12 +22,13 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain(
       "--wl-color-overlay-scrim:rgba(0,0,0,.48)",
     );
-    expect(themeStyleSheet()).toContain(
-      "--wl-color-viewer-scrim:rgba(243,241,233,.88)",
-    );
-    expect(themeStyleSheet()).toContain(
-      "--wl-color-viewer-scrim:rgba(24,34,30,.75)",
-    );
+    for (const theme of ["lounge", "lounge-night"]) {
+      const block = themeStyleSheet()
+        .split(`[data-theme="${theme}"]`)[1]
+        ?.split("}")[0];
+      expect(block).toContain("--wl-color-viewer-scrim:rgba(24,34,30,.88)");
+      expect(block).toContain("--wl-color-viewer-fg:#edefe5");
+    }
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
     expect(themes[1]?.onboarding).not.toHaveProperty("signal");
     expect(

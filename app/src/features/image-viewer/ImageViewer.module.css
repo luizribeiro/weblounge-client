@@ -1,7 +1,8 @@
 .viewer {
   --wl-image-viewer-controls-height: 48px;
   --wl-image-viewer-margin: 24px;
-  color: var(--wl-color-fg);
+  --wl-color-focus-ring: var(--wl-color-viewer-fg);
+  color: var(--wl-color-viewer-fg);
   font-family: var(--wl-font-ui);
   inset: 0;
   outline: none;
@@ -29,9 +30,9 @@
 }
 
 /* A zoomed image can pan above the scrim and under the controls; a faint
-   halo in the surface colour keeps them readable over its pixels. */
+   halo in the scrim colour keeps them readable over its pixels. */
 .controls {
-  --wl-image-viewer-halo: var(--wl-color-surface);
+  --wl-image-viewer-halo: var(--wl-color-viewer-scrim);
   align-items: center;
   block-size: calc(var(--wl-safe-top) + var(--wl-image-viewer-controls-height));
   box-sizing: border-box;
@@ -70,7 +71,6 @@
 }
 
 .time {
-  color: var(--wl-color-fg);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -79,7 +79,7 @@
 .original {
   -webkit-user-drag: none;
   border-radius: var(--wl-radius-control);
-  color: var(--wl-color-accent);
+  color: inherit;
   cursor: pointer;
   font-size: 13px;
   padding: 6px 8px;
@@ -88,7 +88,7 @@
 }
 
 .original:hover {
-  background: var(--wl-color-chip);
+  text-decoration: underline;
 }
 
 .close {
@@ -97,16 +97,12 @@
   background: transparent;
   border: 0;
   border-radius: var(--wl-radius-control);
-  color: var(--wl-color-fg);
+  color: inherit;
   display: flex;
   block-size: 36px;
   inline-size: 36px;
   justify-content: center;
   padding: 0;
-}
-
-.close:hover {
-  background: var(--wl-color-chip);
 }
 
 .close svg {
