@@ -1,16 +1,17 @@
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { E2E_FILEHOST_ORIGIN } from "../csp";
-import { screenshotWithInter } from "./inter-font";
-import type { IrcClient } from "./irc-client";
-import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
-  installNativeFeelInstrumentation,
+  rowFor,
+  settledScreenshot,
+  slotIn,
+  withDirectPeer,
+} from "./filehost-peer";
+import { expect, test } from "./irc-fixture";
+import {
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
-import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 
 const screenshots = path.join(
@@ -155,36 +156,6 @@ test.describe("inline file host images against local Ergo", () => {
   });
 });
 
-async function withDirectPeer(
-  page: Page,
-  irc: IrcTestAccount,
-  label: string,
-  body: (peer: IrcClient, suffix: string) => Promise<void>,
-): Promise<void> {
-  const suffix = `${label}${irc.id}`;
-  await installNativeFeelInstrumentation(page);
-  await page.goto(irc.url());
-  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
-  const peer = await irc.peer(`img-${label}`, [
-    irc.channelNamed(`img-${label}`),
-  ]);
-  await peer.privmsgConfirmed(irc.account, `images ${suffix}`);
-  const direct = page.getByRole("button", {
-    name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
-  });
-  await direct.click();
-  await expectSettled(page, { conversation: peer.nickname });
-  await body(peer, suffix);
-}
-
-function rowFor(page: Page, url: string): Locator {
-  return page.locator("[data-message-row]").filter({ hasText: url });
-}
-
-function slotIn(page: Page, url: string): Locator {
-  return rowFor(page, url).locator("[data-inline-image]");
-}
-
 async function expectSlotSize(
   slot: Locator,
   height: number,
@@ -219,17 +190,5 @@ async function captureThemes(page: Page, name: string): Promise<void> {
 }
 
 async function screenshot(page: Page, name: string): Promise<void> {
-  await mkdir(screenshots, { recursive: true });
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        document
-          .getAnimations()
-          .every((animation) => animation.playState === "finished"),
-      ),
-    )
-    .toBe(true);
-  await screenshotWithInter(page.locator("[data-app-root]"), {
-    path: path.join(screenshots, `${name}.png`),
-  });
+  await settledScreenshot(page, screenshots, name);
 }
