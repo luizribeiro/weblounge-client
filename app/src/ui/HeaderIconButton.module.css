@@ -1,0 +1,52 @@
+.button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-panel-fg);
+  display: flex;
+  flex: 0 0 32px;
+  font: inherit;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.button[data-size="touch"] {
+  color: var(--wl-color-fg);
+  flex-basis: 44px;
+  height: 44px;
+  width: 44px;
+}
+
+.button:hover {
+  background: var(--wl-color-chip);
+}
+
+.button:active {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
+}
+
+.button:focus-visible {
+  outline-offset: -2px;
+}
+
+.button svg {
+  fill: none;
+  flex: 0 0 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 16px;
+}
+
+.button[data-size="touch"] svg {
+  flex-basis: 20px;
+  height: 20px;
+  width: 20px;
+}

@@ -1,4 +1,6 @@
 import { Show } from "solid-js";
+import { HeaderIconButton, labelWithShortcut } from "../../ui/HeaderIconButton";
+import { SearchIcon } from "../../ui/icons/SearchIcon";
 import styles from "./SwitcherLauncher.module.css";
 
 type SwitcherLauncherVariant = "button" | "icon";
@@ -13,29 +15,34 @@ interface SwitcherLauncherProps {
 
 export function SwitcherLauncher(props: SwitcherLauncherProps) {
   const variant = (): SwitcherLauncherVariant => SWITCHER_LAUNCHER_VARIANT;
-  const tooltip = () =>
-    props.shortcut === undefined
-      ? props.label
-      : `${props.label} (${props.shortcut})`;
   return (
-    <button
-      aria-label={props.label}
-      class={variant() === "icon" ? styles.iconButton : styles.button}
-      data-switcher-launcher={variant()}
-      onClick={props.onClick}
-      title={tooltip()}
-      type="button"
+    <Show
+      fallback={
+        <HeaderIconButton
+          data-switcher-launcher="icon"
+          label={props.label}
+          onClick={props.onClick}
+          shortcut={props.shortcut}
+        >
+          <SearchIcon />
+        </HeaderIconButton>
+      }
+      when={variant() === "button"}
     >
-      <svg aria-hidden="true" class={styles.icon} viewBox="0 0 24 24">
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-3.5-3.5" />
-      </svg>
-      <Show when={variant() === "button"}>
+      <button
+        aria-label={props.label}
+        class={styles.button}
+        data-switcher-launcher="button"
+        onClick={props.onClick}
+        title={labelWithShortcut(props.label, props.shortcut)}
+        type="button"
+      >
+        <SearchIcon class={styles.icon} />
         <span class={styles.label}>{props.label}…</span>
         <Show when={props.shortcut} keyed>
           {(shortcut) => <kbd>{shortcut}</kbd>}
         </Show>
-      </Show>
-    </button>
+      </button>
+    </Show>
   );
 }

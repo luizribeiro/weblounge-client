@@ -1,27 +1,12 @@
-.iconButton,
 .button {
   align-items: center;
   appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: var(--wl-radius-control);
-  color: var(--wl-color-panel-fg);
-  display: flex;
-  font: inherit;
-}
-
-.iconButton {
-  flex: 0 0 32px;
-  height: 32px;
-  justify-content: center;
-  padding: 0;
-  width: 32px;
-}
-
-.button {
   background: var(--wl-color-panel-alt);
   border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-control);
   color: var(--wl-color-panel-muted);
+  display: flex;
+  font: inherit;
   gap: 8px;
   height: 32px;
   margin: 0 10px 10px;
@@ -30,7 +15,6 @@
   width: calc(100% - 20px);
 }
 
-.iconButton:hover,
 .button:hover {
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);
