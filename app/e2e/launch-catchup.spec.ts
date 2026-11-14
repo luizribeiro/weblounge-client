@@ -19,11 +19,9 @@ const channelCount = 7;
 const directCount = 9;
 const snapshotFixtureSchema = 6;
 
-test("launch reconciles sixteen cached buffers within stock fakelag budgets", async ({
-  baseURL,
-  page,
-  irc,
-}) => {
+test("launch reconciles sixteen cached buffers within stock fakelag budgets", {
+  tag: "@serial",
+}, async ({ baseURL, page, irc }) => {
   if (baseURL === undefined) throw new Error("Playwright base URL is missing");
   const suffix = irc.id;
   const account = irc.account;

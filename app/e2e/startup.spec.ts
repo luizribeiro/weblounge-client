@@ -745,9 +745,9 @@ test("drops legacy saved counts while keeping the restored list interactive", {
   }
 });
 
-test("reveals restored rows without waiting for stalled history", async ({
-  page,
-}) => {
+test("reveals restored rows without waiting for stalled history", {
+  tag: "@serial",
+}, async ({ page }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's startup connection configuration",
