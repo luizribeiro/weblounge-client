@@ -3948,7 +3948,7 @@ fn resolve_direct(
     availability: DirectAvailability,
 ) -> Vec<EngineToUi> {
     running.model.resolve_direct(buffer_id, availability);
-    running.model.sync_peer_presence(&running.client.state())
+    running.model.sync_direct_peers(&running.client.state())
 }
 
 fn apply_direct_resolution(
@@ -4020,11 +4020,11 @@ fn process_event_with_direct(
         return Vec::new();
     };
     let mut output = Vec::new();
-    let presence_may_change = crate::peer_presence::may_change(&event);
+    let peer_facts_may_change = crate::direct_peer::may_change(&event);
     running.model.observe_monitor(&event);
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
-    if presence_may_change || output.iter().any(crate::peer_presence::reveals_buffers) {
-        output.extend(running.model.sync_peer_presence(&snapshot));
+    if peer_facts_may_change || output.iter().any(crate::direct_peer::reveals_buffers) {
+        output.extend(running.model.sync_direct_peers(&snapshot));
     }
     if effects.clear_hosted_authentication {
         output.extend(running.model.take_timeline_changes(false));
@@ -4234,7 +4234,7 @@ fn open_direct_with_live_state(
     let conversation = papo::Conversation::Private(nick.clone());
     let (buffer_id, mut output) = model.open_direct(nick, direct, state);
     output.extend(typing_snapshot_event(model, state, &conversation));
-    output.extend(model.sync_peer_presence(state));
+    output.extend(model.sync_direct_peers(state));
     (buffer_id, output)
 }
 
@@ -7056,7 +7056,7 @@ async fn delay(duration: Duration) {
     #[tokio::test]
     async fn monitor_presence_reaches_the_ui_as_a_direct_buffer_update() {
         let (client, mut events, mut wire, nick) =
-            crate::peer_presence::test_support::monitoring_alice().await;
+            crate::direct_peer::test_support::monitoring_alice().await;
         let (state, outbound, mut receiver) = harness(client.clone());
         let alice = lock(&state)
             .network
@@ -7089,7 +7089,7 @@ async fn delay(duration: Duration) {
             (":offline.test 731 weblounge :alice", None),
         ] {
             wire.server(line).await;
-            let event = next_matching(&mut events, crate::peer_presence::may_change).await;
+            let event = next_matching(&mut events, crate::direct_peer::may_change).await;
             process_event(&state, &outbound, &client, 1, event);
             assert_eq!(presence_updates(&mut receiver), [presence], "after {line}");
         }

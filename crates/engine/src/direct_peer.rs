@@ -135,7 +135,7 @@ mod tests {
 
         fn sync(&mut self) -> Vec<(BufferId, Option<PeerPresence>)> {
             self.model
-                .sync_peer_presence(&self.client.state())
+                .sync_direct_peers(&self.client.state())
                 .into_iter()
                 .map(|event| match event {
                     EngineToUi::BufferUpdated { buffer } => (buffer.id, buffer.peer_presence),
@@ -256,7 +256,7 @@ mod tests {
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
 
-        let updates = model.sync_peer_presence(&client.state());
+        let updates = model.sync_direct_peers(&client.state());
 
         assert!(matches!(
             updates.as_slice(),
@@ -292,7 +292,7 @@ mod tests {
         let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
         let presence = |model: &mut NetworkModel| {
             model
-                .sync_peer_presence(&client.state())
+                .sync_direct_peers(&client.state())
                 .into_iter()
                 .map(|event| match event {
                     EngineToUi::BufferUpdated { buffer } => (buffer.id, buffer.peer_presence),

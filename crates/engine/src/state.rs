@@ -2593,7 +2593,7 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn sync_peer_presence(&mut self, state: &papo::State) -> Vec<EngineToUi> {
+    pub(crate) fn sync_direct_peers(&mut self, state: &papo::State) -> Vec<EngineToUi> {
         let shown: HashSet<BufferId> = self.buffer_order.iter().copied().collect();
         self.buffers
             .values_mut()
@@ -2603,7 +2603,7 @@ impl NetworkModel {
                     return None;
                 };
                 let presence =
-                    crate::peer_presence::of(state, nick, self.reported_offline.contains(nick));
+                    crate::direct_peer::of(state, nick, self.reported_offline.contains(nick));
                 (buffer.projection.peer_presence != presence).then(|| {
                     buffer.projection.peer_presence = presence;
                     EngineToUi::BufferUpdated {

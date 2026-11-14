@@ -3,11 +3,11 @@
 mod chat_list_snapshot;
 /// Runtime slash-command metadata and registration.
 pub mod commands;
+mod direct_peer;
 mod filehost;
 mod members;
 mod name_key;
 mod notification_settings;
-mod peer_presence;
 mod protocol;
 mod public_suffix;
 mod push_device;
