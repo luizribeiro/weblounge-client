@@ -24,6 +24,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13 Ergo e2e specs get a fresh account, channel and
+  forwarder scope per test (`irc` fixture) and one `expectSettled` helper; CI shards run two workers
+  plus a single-worker `@serial` lane (Ergo restarts, fixed-name committed screenshots). See
+  docs/design/e2e-isolation.md.
 - 2026-11-13: own-nick highlights and mentions now work for nicks with IRC special characters
   (`foo-bar`, `[away]`, `nick|afk`, `a^b`): the nick matches as a whole token under the network's
   casemapping, bounded by text edges or characters that can't appear in a nick.

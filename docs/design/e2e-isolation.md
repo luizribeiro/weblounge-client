@@ -26,8 +26,9 @@ Ergo's HTTP API (`/v1/saregister`, already enabled in the local Ergo and already
 `IrcClient.connectIsolated`). No Ergo config change and no pre-seeded accounts: registration is
 one local HTTP call.
 
-Names are `<label>-<id>` where `id` is the worker's parallel index plus a random base36 tail, kept
-under Ergo's 32-byte nick limit. The app account's nickname equals its account.
+Names are `<label>-<id>` where `id` is 8 random hex digits, kept under Ergo's 32-byte nick limit.
+The app account is `me<id>` and its nickname equals it: the engine only highlights an own nick made
+of word characters, so a hyphenated own nick would hide every mention (an app bug, reported).
 
 The app autojoins a build-time default channel (`#weblounge-test`). The debug harness gains one
 URL parameter, `irc-channel`, which replaces that default for the session, the same way
@@ -42,8 +43,8 @@ the forwarder reads it from the upgrade request before forwarding anything. Ever
 (a scoped `/drop` refuses that scope's new sockets exactly as the global one refuses all). The app
 is unchanged by this. IRC peers connect straight to Ergo and never pass the forwarder.
 
-Two tests restart Ergo itself (`startup` handshake-pending, `connection-resilience` restarts).
-They are tagged `@ergo-restart` and run in their own single-worker pass after the parallel pass.
+Tests that restart Ergo, and the few that write committed screenshots showing fixed names, are
+tagged `@serial` and run in their own single-worker pass after the parallel pass.
 
 ### 2. One settled helper
 
@@ -96,7 +97,7 @@ into `irc-client.ts`.
    native-feel, desktop-shell, channel-part, push-notifications, launch-catchup,
    timeline-jump-count.
 6. The remaining Ergo specs.
-7. Tag the restart tests, then run Ergo shards with two workers in CI.
+7. Tag the `@serial` tests, then run Ergo shards with two workers in CI.
 
 A spec that fails more often once isolated exposes a real bug; it is reported, not papered over.
 No assertion is weakened and no retry, sleep or timeout is added.
