@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import {
   distanceFromBottom,
   scrollAwayFromLiveEdge,
@@ -38,6 +38,7 @@ for (const shell of [
   test(`anchors the ${shell.name} transcript while the composer resizes`, async ({
     browser,
     baseURL,
+    irc,
   }) => {
     const context = await browser.newContext({
       baseURL,
@@ -47,15 +48,11 @@ for (const shell of [
         ? { width: 402, height: 874 }
         : { width: 1_200, height: 800 },
     });
+    await irc.scope(context);
     const page = await context.newPage();
-    const suffix = `${shell.name}-${Date.now().toString(36)}`;
-    const channel = `#resize-${suffix}`;
-    const bot = await IrcClient.connect(
-      `resize-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
+    const channel = irc.channelNamed("resize");
+    const bot = await irc.peer("resize", [channel]);
+    const suffix = `${shell.name}-${bot.nickname}`;
     try {
       for (let index = 0; index < 10; index += 1)
         bot.privmsg(
@@ -65,11 +62,11 @@ for (const shell of [
       const lastSeed = `composer anchor last ${suffix}`;
       await bot.privmsgConfirmed(channel, lastSeed);
 
-      await page.goto("/?irc-password=weblounge-test");
+      await page.goto(irc.url());
       if (shell.touch)
-        await page.getByRole("button", { name: "#weblounge-test" }).click();
+        await page.getByRole("button", { name: irc.channel }).click();
       const launchComposer = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
+        name: `Message ${irc.channel}`,
       });
       await launchComposer.fill(`/join ${channel}`);
       await launchComposer.press("Enter");
@@ -119,7 +116,6 @@ for (const shell of [
       );
       await expect(composer).toHaveValue("");
     } finally {
-      bot.close();
       await context.close();
     }
   });

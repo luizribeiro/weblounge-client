@@ -1,5 +1,5 @@
-import { devices, expect, type Locator, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import { devices, type Locator } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { waitForStableGeometry } from "./stable-geometry";
 import {
   expectTranscriptHitTarget,
@@ -24,17 +24,13 @@ for (const shell of [
   test(`paints several screens of history at every ${shell.name} scroll position`, async ({
     baseURL,
     browser,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#paint-${suffix}`;
+    const channel = irc.channelNamed("paint");
+    const suffix = irc.id;
     const bots = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
-        IrcClient.connect(
-          `paint${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          channel,
-        ),
+        irc.peer(`paint${index}`, [channel]),
       ),
     );
     const messages = Array.from(
@@ -42,6 +38,7 @@ for (const shell of [
       (_, index) => `painted history ${suffix} ${index}`,
     );
     const context = await browser.newContext({ baseURL, ...shell.context });
+    await irc.scope(context);
     const page = await context.newPage();
     try {
       const firstBot = bots[0];
@@ -59,11 +56,11 @@ for (const shell of [
         channel,
         `painted history ready ${suffix}`,
       );
-      await page.goto("/?irc-password=weblounge-test");
+      await page.goto(irc.url());
       if (shell.name === "mobile")
-        await page.getByRole("button", { name: "#weblounge-test" }).click();
+        await page.getByRole("button", { name: irc.channel }).click();
       const composer = page.getByRole("textbox", {
-        name: shell.name === "mobile" ? "Message #weblounge-test" : "Message",
+        name: shell.name === "mobile" ? `Message ${irc.channel}` : "Message",
       });
       await composer.fill(`/join ${channel}`);
       await composer.press("Enter");
@@ -91,7 +88,6 @@ for (const shell of [
       await expectTranscriptHitTarget(list);
       await expectTranscriptPixelVariance(list);
     } finally {
-      for (const bot of bots) bot.close();
       await context.close();
     }
   });
