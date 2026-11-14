@@ -53,6 +53,10 @@ direct_identity?: DirectIdentityState,
  */
 peer_presence?: PeerPresence,
 /**
+ * Whether IRC metadata identifies a direct-message peer as a bot.
+ */
+peer_bot?: boolean,
+/**
  * Session draft identity derived from the network and durable conversation identity.
  */
 draft_key: string,

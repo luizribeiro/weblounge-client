@@ -521,6 +521,10 @@ pub struct BufferProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub peer_presence: Option<PeerPresence>,
+    /// Whether IRC metadata identifies a direct-message peer as a bot.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub peer_bot: bool,
     /// Session draft identity derived from the network and durable conversation identity.
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.

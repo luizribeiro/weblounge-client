@@ -524,6 +524,7 @@ impl NetworkModel {
                 nick_color_index: None,
                 direct_identity: None,
                 peer_presence: None,
+                peer_bot: false,
                 draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
                 member_count: None,
@@ -2604,12 +2605,15 @@ impl NetworkModel {
                 };
                 let presence =
                     crate::direct_peer::of(state, nick, self.reported_offline.contains(nick));
-                (buffer.projection.peer_presence != presence).then(|| {
-                    buffer.projection.peer_presence = presence;
-                    EngineToUi::BufferUpdated {
-                        buffer: buffer.projection.clone(),
-                    }
-                })
+                let bot = crate::direct_peer::bot(state, nick, buffer.projection.peer_bot);
+                (buffer.projection.peer_presence != presence || buffer.projection.peer_bot != bot)
+                    .then(|| {
+                        buffer.projection.peer_presence = presence;
+                        buffer.projection.peer_bot = bot;
+                        EngineToUi::BufferUpdated {
+                            buffer: buffer.projection.clone(),
+                        }
+                    })
             })
             .collect()
     }
@@ -3697,6 +3701,7 @@ impl NetworkModel {
             direct_identity: (kind == BufferKind::Direct)
                 .then_some(DirectIdentityState::Unverified),
             peer_presence: None,
+            peer_bot: false,
             draft_key: projected_draft_key,
             topic,
             member_count: (kind == BufferKind::Channel).then_some(0),

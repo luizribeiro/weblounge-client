@@ -22,11 +22,22 @@ pub(crate) fn of(
     })
 }
 
+/// papo forgets a peer once it leaves our view, so an unknown answer keeps what was last reported:
+/// being a bot is part of who the peer is, not of whether it is connected.
+pub(crate) fn bot(state: &papo::State, nick: &papo::Nick, last_reported: bool) -> bool {
+    state
+        .user(nick)
+        .and_then(papo::User::is_bot)
+        .unwrap_or(last_reported)
+}
+
 pub(crate) const fn may_change(event: &papo::Event) -> bool {
     matches!(
         event,
         papo::Event::MonitorOnline(_)
             | papo::Event::MonitorOffline(_)
+            | papo::Event::Message(_)
+            | papo::Event::Notice(_)
             | papo::Event::AwayChanged(_)
             | papo::Event::NickChanged(_)
             | papo::Event::Quit(_)
@@ -92,7 +103,7 @@ mod tests {
 
     use super::test_support::{monitoring_alice, next};
     use crate::{
-        BufferId, EngineToUi, NetworkId, PeerPresence,
+        BufferId, BufferProjection, EngineToUi, NetworkId, PeerPresence,
         state::{DirectAvailability, NetworkModel},
     };
 
@@ -134,12 +145,20 @@ mod tests {
         }
 
         fn sync(&mut self) -> Vec<(BufferId, Option<PeerPresence>)> {
+            self.sync_fact(|buffer| buffer.peer_presence)
+        }
+
+        fn sync_bot(&mut self) -> Vec<(BufferId, bool)> {
+            self.sync_fact(|buffer| buffer.peer_bot)
+        }
+
+        fn sync_fact<T>(&mut self, fact: impl Fn(&BufferProjection) -> T) -> Vec<(BufferId, T)> {
             self.model
                 .sync_direct_peers(&self.client.state())
                 .into_iter()
                 .map(|event| match event {
-                    EngineToUi::BufferUpdated { buffer } => (buffer.id, buffer.peer_presence),
-                    other => panic!("unexpected presence event {other:?}"),
+                    EngineToUi::BufferUpdated { buffer } => (buffer.id, fact(&buffer)),
+                    other => panic!("unexpected peer event {other:?}"),
                 })
                 .collect()
         }
@@ -151,6 +170,59 @@ mod tests {
 
     fn away_changed(event: &papo::Event) -> bool {
         matches!(event, papo::Event::AwayChanged(_))
+    }
+
+    fn message(event: &papo::Event) -> bool {
+        matches!(event, papo::Event::Message(_))
+    }
+
+    #[tokio::test]
+    async fn the_bot_tag_on_a_peers_messages_marks_its_direct_as_a_bot() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        _ = peer.sync();
+
+        peer.server(
+            "@msgid=human;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        assert_eq!(peer.sync_bot(), []);
+
+        peer.server(
+            "@bot;msgid=bot;time=2026-11-14T12:01:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :I am a bot",
+            message,
+        )
+        .await;
+        assert_eq!(peer.sync_bot(), [(peer.alice, true)]);
+        assert_eq!(peer.sync_bot(), []);
+    }
+
+    #[tokio::test]
+    async fn a_bot_that_goes_offline_is_still_shown_as_a_bot() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        peer.server(
+            "@bot;msgid=bot;time=2026-11-14T12:01:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :I am a bot",
+            message,
+        )
+        .await;
+        _ = peer.sync();
+
+        peer.server(":offline.test 731 weblounge :alice", |event| {
+            matches!(event, papo::Event::MonitorOffline(_))
+        })
+        .await;
+
+        assert_eq!(peer.sync_bot(), [(peer.alice, true)]);
     }
 
     #[tokio::test]

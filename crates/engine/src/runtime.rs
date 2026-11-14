@@ -7095,6 +7095,33 @@ async fn delay(duration: Duration) {
         }
     }
 
+    #[tokio::test]
+    async fn a_bot_tagged_direct_message_marks_the_direct_as_a_bot() {
+        let (client, mut events, mut wire, nick) =
+            crate::direct_peer::test_support::monitoring_alice().await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let alice = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .0;
+
+        for line in [
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            "@bot;msgid=beep;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :beep",
+        ] {
+            wire.server(line).await;
+            let event = next_matching(&mut events, crate::direct_peer::may_change).await;
+            process_event(&state, &outbound, &client, 1, event);
+        }
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::BufferUpdated { buffer } if buffer.id == alice && buffer.peer_bot
+        )));
+    }
+
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn channel_typing_projects_multiple_users_transitions_and_expiry() {
         let (client, mut events, mut wire) =
