@@ -104,6 +104,13 @@ fn release_credential(irc_host: &str, filehost_host: &str, credential: Credentia
   remove `Authorization` on a cross-origin redirect (Fetch), and `XMLHttpRequest` cannot refuse
   redirects, so a same-origin redirect stays on the approved host; the uploader also requires the
   final `responseURL` to be the endpoint's origin before trusting a `201`.
+  Ports are ignored for the site test, so another service on the IRC host's own site also
+  qualifies. A Bearer token goes to whatever file host the hosted server advertises: the engine
+  checks neither its audience nor its lifetime, and relies on the deployment minting short-lived
+  tokens for its own concierge.
+- **Parsing.** The engine accepts an advertised upload URL only when its authority is a plain host
+  name, an IPv6 literal and an optional port: userinfo, percent-escapes, backslashes, spaces and
+  other characters are refused, so the host it judges is the host the browser will contact.
 
 ## Types and boundaries
 
