@@ -1,5 +1,6 @@
 import type { EngineClient } from "../../engine/EngineClient";
 import type { PushDeviceCredentials } from "../../engine/generated/PushDeviceCredentials";
+import { requestReply } from "../../engine/request-reply";
 
 export interface PushDeviceStore {
   load(relay: string): Promise<PushDeviceCredentials | undefined>;
@@ -11,27 +12,15 @@ export class EnginePushDeviceStore implements PushDeviceStore {
   constructor(private readonly engine: EngineClient) {}
 
   load(relay: string): Promise<PushDeviceCredentials | undefined> {
-    const commandId = crypto.randomUUID();
-    return new Promise((resolve, reject) => {
-      const unsubscribe = this.engine.subscribe((message) => {
-        if (
-          message.type === "push_device_loaded" &&
-          message.command_id === commandId
-        ) {
-          unsubscribe();
-          resolve(message.credentials ?? undefined);
-        }
-      });
-      void this.engine
-        .send({
-          id: commandId,
-          request: { type: "load_push_device", relay },
-        })
-        .catch((error: unknown) => {
-          unsubscribe();
-          reject(error);
-        });
-    });
+    return requestReply(
+      this.engine,
+      { type: "load_push_device", relay },
+      (message, commandId) =>
+        message.type === "push_device_loaded" &&
+        message.command_id === commandId
+          ? { value: message.credentials ?? undefined }
+          : undefined,
+    );
   }
 
   async store(credentials: PushDeviceCredentials): Promise<void> {
