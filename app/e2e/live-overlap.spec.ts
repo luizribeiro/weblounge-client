@@ -1,6 +1,6 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { captureHistoryWire } from "./history-wire-fixture";
-import { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { firstLongMessage, secondLongMessage } from "./timeline-fixtures";
 import {
@@ -16,57 +16,47 @@ test.skip(
 
 test("keeps long live messages apart when the read boundary passes one", async ({
   page,
+  irc,
 }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await captureHistoryWire(page);
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(irc.url());
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-  const channel = `#overlap-${Date.now()}`;
+  const channel = irc.channelNamed("overlap");
   const composer = page.getByRole("textbox", { name: "Message" });
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-  const bot = await IrcClient.connect(
-    "overlap-bot",
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const bot = await irc.peer("overlap-bot", [channel]);
   const list = page.locator("[data-message-list]");
   const active = page.locator('[data-buffer-id][aria-current="page"]');
-  try {
-    for (let index = 0; index < 30; index += 1)
-      await bot.privmsgConfirmed(channel, `earlier chatter ${index}`);
-    await expect(page.getByText("earlier chatter 29")).toBeVisible();
-    await list.press("End");
-    await expect(active).toHaveAttribute("data-unread", "0");
+  for (let index = 0; index < 30; index += 1)
+    await bot.privmsgConfirmed(channel, `earlier chatter ${index}`);
+  await expect(page.getByText("earlier chatter 29")).toBeVisible();
+  await list.press("End");
+  await expect(active).toHaveAttribute("data-unread", "0");
 
-    await scrollAwayFromLiveEdge(page, list, {
-      distance: 3,
-      wheelDelta: 40,
-    });
-    await bot.privmsgConfirmed(channel, firstLongMessage);
-    await expect(messageRow(page, firstLongMessage)).toBeVisible();
-    await expect(page.getByText("New", { exact: true })).toBeVisible();
-    await expect.poll(() => projectedUnread(page, channel)).toBeGreaterThan(0);
+  await scrollAwayFromLiveEdge(page, list, {
+    distance: 3,
+    wheelDelta: 40,
+  });
+  await bot.privmsgConfirmed(channel, firstLongMessage);
+  await expect(messageRow(page, firstLongMessage)).toBeVisible();
+  await expect(page.getByText("New", { exact: true })).toBeVisible();
+  await expect.poll(() => projectedUnread(page, channel)).toBeGreaterThan(0);
 
-    await list.press("End");
-    await expect.poll(() => projectedUnread(page, channel)).toBe(0);
-    await scrollAwayFromLiveEdge(page, list, {
-      distance: 3,
-      wheelDelta: 40,
-    });
-    await bot.privmsgConfirmed(channel, secondLongMessage);
+  await list.press("End");
+  await expect.poll(() => projectedUnread(page, channel)).toBe(0);
+  await scrollAwayFromLiveEdge(page, list, {
+    distance: 3,
+    wheelDelta: 40,
+  });
+  await bot.privmsgConfirmed(channel, secondLongMessage);
 
-    await expect(
-      page.getByRole("button", { name: /new message/ }),
-    ).toBeVisible();
-    await expect(messageRow(page, secondLongMessage)).toBeAttached();
-    await expectNewDividerBefore(page, firstLongMessage);
-    expect(await timelineOverlapsOverFrames(list, framesPerSecond)).toEqual([]);
-  } finally {
-    bot.close();
-  }
+  await expect(page.getByRole("button", { name: /new message/ })).toBeVisible();
+  await expect(messageRow(page, secondLongMessage)).toBeAttached();
+  await expectNewDividerBefore(page, firstLongMessage);
+  expect(await timelineOverlapsOverFrames(list, framesPerSecond)).toEqual([]);
 });
 
 async function expectNewDividerBefore(
