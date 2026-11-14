@@ -15,7 +15,11 @@ import {
 
 describe("theme registry", () => {
   it("loads Lounge themes and emits their tokens", () => {
-    expect(themes.map((theme) => theme.id)).toEqual(["lounge", "lounge-night"]);
+    expect(themes.map((theme) => theme.id)).toEqual([
+      "lounge",
+      "lounge-night",
+      "modern",
+    ]);
     expect(themes[0]?.nickPalette).toHaveLength(6);
     expect(nickPaletteSize).toBe(6);
     expect(themeStyleSheet()).toContain("--wl-color-bg:#f3f1e9");
@@ -43,6 +47,16 @@ describe("theme registry", () => {
     expect(
       compactCss(readFileSync("src/styles/theme-tokens.css", "utf8")),
     ).toBe(compactCss(themeStyleSheet()));
+  });
+
+  it("declares each theme's appearance", () => {
+    expect(
+      Object.fromEntries(themes.map((theme) => [theme.id, theme.appearance])),
+    ).toEqual({
+      lounge: "light",
+      "lounge-night": "dark",
+      modern: "light",
+    });
   });
 
   it("owns motion tokens and their reduced-motion override", () => {

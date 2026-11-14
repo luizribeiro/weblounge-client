@@ -1,0 +1,68 @@
+{
+  "id": "modern",
+  "name": "Modern",
+  "order": 4,
+  "appearance": "light",
+  "colors": {
+    "bg": "#ffffff",
+    "surface": "#ffffff",
+    "panel": "#f4f4f6",
+    "panelFg": "#1c1c1e",
+    "panelMuted": "#64646c",
+    "panelBorder": "#e4e4e9",
+    "panelAlt": "#fafafb",
+    "fg": "#1c1c1e",
+    "muted": "#64646c",
+    "border": "#e4e4e9",
+    "accent": "#2f5bea",
+    "accentFg": "#ffffff",
+    "selection": "#e3e9fd",
+    "selectionFg": "#1a3bb0",
+    "mentionBg": "#fff5dc",
+    "mentionBadge": "#c2410c",
+    "mentionBadgeFg": "#ffffff",
+    "overlayScrim": "rgba(20,20,28,.32)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#edefe5",
+    "unread": "#c2410c",
+    "inputBg": "#ffffff",
+    "chip": "#f0f0f3",
+    "codeBg": "#f6f6f8",
+    "online": "#2f9e44",
+    "selfNick": "#2f5bea",
+    "error": "#c0264b",
+    "focusRing": "#2f5bea"
+  },
+  "typography": {
+    "ui": "Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif",
+    "mono": "Geist Mono, Geist Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "title": "Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif",
+    "base": "14px",
+    "sectionFamily": "Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif",
+    "sectionSize": "11px",
+    "sectionTransform": "uppercase",
+    "sectionTracking": "0.06em"
+  },
+  "shape": {
+    "control": "8px",
+    "avatar": "50%",
+    "icon": "9px",
+    "composer": "12px",
+    "palette": "14px",
+    "pill": "12px",
+    "round": "999px"
+  },
+  "effects": {
+    "overlayShadow": "0 24px 64px rgba(20,20,40,.18)",
+    "tooltipShadow": "0 8px 24px rgba(20,20,40,.14)",
+    "iconRing": "none"
+  },
+  "nickPalette": [
+    "#0b7a75",
+    "#b5520a",
+    "#a3367c",
+    "#c0264b",
+    "#7048c8",
+    "#4d7c0f"
+  ]
+}

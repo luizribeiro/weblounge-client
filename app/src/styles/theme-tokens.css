@@ -125,6 +125,66 @@
   --wl-nick-4: #c6aee8;
   --wl-nick-5: #d9d48a;
 }
+:root[data-theme="modern"] {
+  color-scheme: light;
+  --wl-color-bg: #ffffff;
+  --wl-color-surface: #ffffff;
+  --wl-color-panel: #f4f4f6;
+  --wl-color-panel-fg: #1c1c1e;
+  --wl-color-panel-muted: #64646c;
+  --wl-color-panel-border: #e4e4e9;
+  --wl-color-panel-alt: #fafafb;
+  --wl-color-fg: #1c1c1e;
+  --wl-color-muted: #64646c;
+  --wl-color-border: #e4e4e9;
+  --wl-color-accent: #2f5bea;
+  --wl-color-accent-fg: #ffffff;
+  --wl-color-selection: #e3e9fd;
+  --wl-color-selection-fg: #1a3bb0;
+  --wl-color-mention-bg: #fff5dc;
+  --wl-color-mention-badge: #c2410c;
+  --wl-color-mention-badge-fg: #ffffff;
+  --wl-color-overlay-scrim: rgba(20, 20, 28, 0.32);
+  --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
+  --wl-color-viewer-fg: #edefe5;
+  --wl-color-unread: #c2410c;
+  --wl-color-input-bg: #ffffff;
+  --wl-color-chip: #f0f0f3;
+  --wl-color-code-bg: #f6f6f8;
+  --wl-color-online: #2f9e44;
+  --wl-color-self-nick: #2f5bea;
+  --wl-color-error: #c0264b;
+  --wl-color-focus-ring: #2f5bea;
+  --wl-font-ui:
+    Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif;
+  --wl-font-mono:
+    Geist Mono, Geist Mono Fallback, ui-monospace, SFMono-Regular, Consolas,
+    monospace;
+  --wl-font-title:
+    Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif;
+  --wl-font-base: 14px;
+  --wl-font-section-family:
+    Geist, Geist Fallback, system-ui, -apple-system, Segoe UI, sans-serif;
+  --wl-font-section-size: 11px;
+  --wl-font-section-transform: uppercase;
+  --wl-font-section-tracking: 0.06em;
+  --wl-radius-control: 8px;
+  --wl-radius-avatar: 50%;
+  --wl-radius-icon: 9px;
+  --wl-radius-composer: 12px;
+  --wl-radius-palette: 14px;
+  --wl-radius-pill: 12px;
+  --wl-radius-round: 999px;
+  --wl-effect-overlay-shadow: 0 24px 64px rgba(20, 20, 40, 0.18);
+  --wl-effect-tooltip-shadow: 0 8px 24px rgba(20, 20, 40, 0.14);
+  --wl-effect-icon-ring: none;
+  --wl-nick-0: #0b7a75;
+  --wl-nick-1: #b5520a;
+  --wl-nick-2: #a3367c;
+  --wl-nick-3: #c0264b;
+  --wl-nick-4: #7048c8;
+  --wl-nick-5: #4d7c0f;
+}
 @media (prefers-reduced-motion: reduce) {
   :root {
     --wl-motion-drawer-close: 0ms;
