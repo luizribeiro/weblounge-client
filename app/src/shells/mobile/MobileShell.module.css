@@ -205,7 +205,7 @@
 .undoToast {
   align-items: center;
   background: var(--wl-color-fg);
-  border-radius: 8px;
+  border-radius: min(8px, var(--wl-radius-round));
   bottom: calc(14px + var(--wl-safe-bottom));
   box-shadow: var(--wl-effect-tooltip-shadow);
   color: var(--wl-color-surface);

@@ -1,5 +1,5 @@
 .lifted {
-  border-radius: 12px;
+  border-radius: min(12px, var(--wl-radius-round));
   box-shadow: var(--wl-effect-overlay-shadow);
   left: calc(var(--wl-safe-left) + 8px);
   overflow: hidden;
@@ -16,7 +16,7 @@
 .group,
 .cancel {
   background: var(--wl-color-panel-alt);
-  border-radius: 12px;
+  border-radius: min(12px, var(--wl-radius-round));
   overflow: hidden;
 }
 

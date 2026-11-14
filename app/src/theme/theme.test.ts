@@ -37,6 +37,7 @@ describe("theme registry", () => {
       "--wl-font-title:Inter, Inter Fallback, system-ui, sans-serif",
     );
     expect(themeStyleSheet()).toContain("--wl-radius-icon:6px");
+    expect(themeStyleSheet()).toContain("--wl-radius-round:999px");
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
     expect(themes[1]?.onboarding).not.toHaveProperty("signal");
     expect(

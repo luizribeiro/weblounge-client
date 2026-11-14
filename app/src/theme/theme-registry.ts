@@ -76,6 +76,7 @@ const shapeTokens = [
   "composer",
   "palette",
   "pill",
+  "round",
 ] as const;
 const effectTokens = ["overlayShadow", "tooltipShadow", "iconRing"] as const;
 const onboardingTokens = [

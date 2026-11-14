@@ -277,7 +277,7 @@
 .jump {
   background: var(--wl-color-accent);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--wl-radius-round);
   bottom: 12px;
   color: var(--wl-color-accent-fg);
   font: inherit;

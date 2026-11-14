@@ -238,7 +238,10 @@ textarea.input {
 :global(#root[data-input="touch"]) .field {
   background: var(--wl-color-input-bg);
   border: 1px solid var(--wl-color-border);
-  border-radius: calc(var(--wl-size-touch-target) / 2);
+  border-radius: min(
+    calc(var(--wl-size-touch-target) / 2),
+    var(--wl-radius-round)
+  );
   overflow: hidden;
 }
 
@@ -279,7 +282,7 @@ textarea.input {
 :global(#root[data-input="touch"]) .touchSend span {
   align-items: center;
   background: var(--wl-color-accent);
-  border-radius: 50%;
+  border-radius: var(--wl-radius-round);
   display: grid;
   height: var(--wl-size-composer-send);
   justify-items: center;

@@ -49,7 +49,8 @@
     "icon": "6px",
     "composer": "6px",
     "palette": "6px",
-    "pill": "3px"
+    "pill": "3px",
+    "round": "999px"
   },
   "effects": {
     "overlayShadow": "0 20px 60px rgba(0,0,0,.45)",

@@ -15,7 +15,8 @@
 
 .panel {
   background: var(--wl-color-panel-alt);
-  border-radius: 14px 14px 0 0;
+  border-radius: min(14px, var(--wl-radius-round))
+    min(14px, var(--wl-radius-round)) 0 0;
   bottom: 0;
   box-shadow: var(--wl-effect-overlay-shadow);
   color: var(--wl-color-fg);
