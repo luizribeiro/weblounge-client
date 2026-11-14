@@ -543,6 +543,163 @@ describe("ActionRegistry", () => {
     expect(registry.runInput("/debug invalid", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith(context);
   });
+
+  describe("buffer cycling", () => {
+    const cyclingRegistry = (platform: Platform, shell: ActionShell) => {
+      const next = vi.fn();
+      const previous = vi.fn();
+      const registry = new ActionRegistry(
+        { "buffer.next": next, "buffer.previous": previous },
+        platform,
+        [],
+        undefined,
+        shell,
+      );
+      return { next, previous, registry };
+    };
+    const press = (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      Object.defineProperty(event, "target", {
+        value: document.createElement("textarea"),
+      });
+      return event;
+    };
+    const ctrlTab = { key: "Tab", ctrlKey: true };
+    const ctrlShiftTab = { key: "Tab", ctrlKey: true, shiftKey: true };
+    const cmdShiftRight = {
+      key: "}",
+      code: "BracketRight",
+      metaKey: true,
+      shiftKey: true,
+    };
+    const cmdShiftLeft = {
+      key: "{",
+      code: "BracketLeft",
+      metaKey: true,
+      shiftKey: true,
+    };
+
+    it.each([
+      ["⌃Tab", "macos", ctrlTab, "next"],
+      ["⌃⇧Tab", "macos", ctrlShiftTab, "previous"],
+      ["⇧⌘]", "macos", cmdShiftRight, "next"],
+      ["⇧⌘[", "macos", cmdShiftLeft, "previous"],
+      ["Ctrl+Tab", "linux", ctrlTab, "next"],
+      ["Ctrl+Shift+Tab", "other", ctrlShiftTab, "previous"],
+    ] as const)(
+      "cycles from the composer with %s in the %s native shell",
+      (_label, platform, init, direction) => {
+        const cycling = cyclingRegistry(platform, "tauri");
+        const event = press(init);
+
+        expect(cycling.registry.handleKeydown(event, context)).toBe(true);
+        expect(event.defaultPrevented).toBe(true);
+        expect(cycling[direction]).toHaveBeenCalledOnce();
+      },
+    );
+
+    it.each([
+      ["⌃Tab", "macos", ctrlTab],
+      ["⇧⌘]", "macos", cmdShiftRight],
+      ["Ctrl+Tab", "other", ctrlTab],
+      ["Ctrl+Shift+Tab", "linux", ctrlShiftTab],
+    ] as const)(
+      "leaves %s to the browser on %s web",
+      (_label, platform, init) => {
+        const cycling = cyclingRegistry(platform, "web");
+        const event = press(init);
+
+        expect(cycling.registry.handleKeydown(event, context)).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+        expect(cycling.next).not.toHaveBeenCalled();
+        expect(cycling.previous).not.toHaveBeenCalled();
+      },
+    );
+
+    it("keeps Option-arrows on the web, outside text", () => {
+      const cycling = cyclingRegistry("macos", "web");
+
+      expect(
+        cycling.registry.handleKeydown(
+          new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true }),
+          context,
+        ),
+      ).toBe(true);
+      expect(cycling.next).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+      [
+        "Ctrl+Shift+]",
+        "linux",
+        { ...cmdShiftRight, metaKey: false, ctrlKey: true },
+      ],
+      ["Super+Shift+]", "linux", cmdShiftRight],
+      ["⌃⌘Tab", "macos", { ...ctrlTab, metaKey: true }],
+      ["⌃⌥Tab", "macos", { ...ctrlTab, altKey: true }],
+      ["Tab", "other", { key: "Tab" }],
+    ] as const)(
+      "does not cycle on %s in the %s native shell",
+      (_label, platform, init) => {
+        const cycling = cyclingRegistry(platform, "tauri");
+
+        expect(cycling.registry.handleKeydown(press(init), context)).toBe(
+          false,
+        );
+        expect(cycling.next).not.toHaveBeenCalled();
+      },
+    );
+
+    it("passes the chord through with nothing to cycle to", () => {
+      const cycling = cyclingRegistry("macos", "tauri");
+      const event = press(ctrlTab);
+
+      expect(
+        cycling.registry.handleKeydown(event, { ...context, bufferCount: 1 }),
+      ).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("never cycles while composing, on a dead key or with AltGraph", () => {
+      const { next, registry } = cyclingRegistry("other", "tauri");
+      const altGraph = press(ctrlTab);
+      Object.defineProperty(altGraph, "getModifierState", {
+        value: (key: string) => key === "AltGraph",
+      });
+
+      expect(registry.matchesBinding("buffer.next", press(ctrlTab))).toBe(true);
+      expect(registry.matchesBinding("buffer.next", altGraph)).toBe(false);
+      expect(
+        registry.handleKeydown(
+          press({ ...ctrlTab, isComposing: true }),
+          context,
+        ),
+      ).toBe(false);
+      expect(
+        registry.handleKeydown(press({ ...ctrlTab, key: "Dead" }), context),
+      ).toBe(false);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["macos", "tauri", "⌥↓ / ⌃Tab / ⇧⌘]", "⌥↑ / ⌃⇧Tab / ⇧⌘["],
+      ["linux", "tauri", "Alt+↓ / Ctrl+Tab", "Alt+↑ / Ctrl+Shift+Tab"],
+      ["macos", "web", "⌥↓", "⌥↑"],
+      ["other", "web", "Alt+↓", "Alt+↑"],
+    ] as const)(
+      "lists every %s %s chord in the palette",
+      (platform, shell, nextChord, previousChord) => {
+        const chords = new Map(
+          cyclingRegistry(platform, shell)
+            .registry.palette(context)
+            .map((entry) => [entry.id, entry.chord]),
+        );
+
+        expect(chords.get("buffer.next")).toBe(nextChord);
+        expect(chords.get("buffer.previous")).toBe(previousChord);
+      },
+    );
+  });
 });
 
 function keydown(key: string, target: Element): KeyboardEvent {

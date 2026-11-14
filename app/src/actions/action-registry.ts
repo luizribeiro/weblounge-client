@@ -86,6 +86,7 @@ interface Binding {
   readonly key: string;
   readonly code?: string;
   readonly alt?: boolean;
+  readonly ctrl?: boolean;
   readonly mod?: boolean;
   readonly shift?: boolean;
   readonly scope: ActionScope;
@@ -203,18 +204,14 @@ const specs: readonly ActionSpec[] = [
     ...command("pane.show-buffer", t("action.show_buffer"), alwaysAvailable),
     surfaces: ["help"],
   },
-  command(
-    "buffer.previous",
-    t("action.previous_buffer"),
-    needsBuffers,
+  command("buffer.previous", t("action.previous_buffer"), needsBuffers, [
     altKey("ArrowUp", "⌥↑", "Alt+↑", "desktop"),
-  ),
-  command(
-    "buffer.next",
-    t("action.next_buffer"),
-    needsBuffers,
+    ...browserTabBindings("previous"),
+  ]),
+  command("buffer.next", t("action.next_buffer"), needsBuffers, [
     altKey("ArrowDown", "⌥↓", "Alt+↓", "desktop"),
-  ),
+    ...browserTabBindings("next"),
+  ]),
   ...jumpSlots.map((slot) => ({
     ...command(
       jumpActionId(slot),
@@ -327,9 +324,9 @@ export class ActionRegistry {
   }
 
   matchesBinding(id: UiActionId, event: KeyboardEvent): boolean {
-    const binding = this.#binding(findSpec(id));
     return (
-      binding !== undefined && !producesText(event) && matches(event, binding)
+      !producesText(event) &&
+      this.#bindings(findSpec(id)).some((binding) => matches(event, binding))
     );
   }
 
@@ -339,7 +336,7 @@ export class ActionRegistry {
     const mod = binding.mod === true;
     return {
       alt: binding.alt === true,
-      ctrl: mod && this.#platform !== "macos",
+      ctrl: binding.ctrl === true || (mod && this.#platform !== "macos"),
       meta: mod && this.#platform === "macos",
       shift: binding.shift === true,
     };
@@ -349,12 +346,11 @@ export class ActionRegistry {
     if (producesText(event)) return false;
     const scopes = activeScopes(event.target);
     const match = specs
-      .flatMap(
-        (spec) => spec.bindings?.map((binding) => ({ binding, spec })) ?? [],
+      .flatMap((spec) =>
+        this.#bindings(spec).map((binding) => ({ binding, spec })),
       )
       .find(
         ({ binding, spec }) =>
-          this.#bindingApplies(binding) &&
           scopes.includes(binding.scope) &&
           matches(event, binding) &&
           this.availability(spec.id, context).state === "available",
@@ -442,8 +438,10 @@ export class ActionRegistry {
           spec.availability(context).state === "available",
       )
       .map((spec) => {
-        const binding = this.#binding(spec);
-        const chord = binding === undefined ? undefined : this.#label(binding);
+        const labels = this.#bindings(spec).map((binding) =>
+          this.#label(binding),
+        );
+        const chord = labels.length === 0 ? undefined : labels.join(" / ");
         return {
           id: spec.id,
           title:
@@ -485,7 +483,13 @@ export class ActionRegistry {
   }
 
   #binding(spec: ActionSpec): Binding | undefined {
-    return spec.bindings?.find((binding) => this.#bindingApplies(binding));
+    return this.#bindings(spec)[0];
+  }
+
+  #bindings(spec: ActionSpec): readonly Binding[] {
+    return (
+      spec.bindings?.filter((binding) => this.#bindingApplies(binding)) ?? []
+    );
   }
 
   #bindingApplies(binding: Binding): boolean {
@@ -652,6 +656,39 @@ function jumpBindings(slot: JumpSlot): readonly Binding[] {
   ];
 }
 
+// Browsers own these tab chords and never reliably deliver them to a page, so only native shells bind them.
+function browserTabBindings(
+  direction: "next" | "previous",
+): readonly Binding[] {
+  const previous = direction === "previous";
+  const bracket = previous ? "[" : "]";
+  const native = {
+    scope: "global",
+    input: "always",
+    shells: ["tauri"],
+  } as const;
+  return [
+    {
+      ...native,
+      key: "Tab",
+      ctrl: true,
+      shift: previous,
+      label: previous
+        ? { macos: "⌃⇧Tab", other: "Ctrl+Shift+Tab" }
+        : { macos: "⌃Tab", other: "Ctrl+Tab" },
+    },
+    {
+      ...native,
+      key: bracket,
+      code: previous ? "BracketLeft" : "BracketRight",
+      mod: true,
+      shift: true,
+      platforms: ["macos"],
+      label: { macos: `⇧⌘${bracket}`, other: `Ctrl+Shift+${bracket}` },
+    },
+  ];
+}
+
 function key(keyValue: string, label: string, scope: ActionScope): Binding {
   return {
     key: keyValue,
@@ -683,11 +720,8 @@ function producesText(event: KeyboardEvent): boolean {
 }
 
 function matches(event: KeyboardEvent, binding: Binding): boolean {
-  const modPressed = binding.mod
-    ? event.metaKey || event.ctrlKey
-    : !event.metaKey && !event.ctrlKey;
   return (
-    modPressed &&
+    commandModifiersMatch(event, binding) &&
     event.altKey === (binding.alt ?? false) &&
     event.shiftKey === (binding.shift ?? false) &&
     (binding.code === undefined
@@ -695,6 +729,16 @@ function matches(event: KeyboardEvent, binding: Binding): boolean {
       : event.code === binding.code) &&
     inputPolicyAllows(event.target, binding.input)
   );
+}
+
+function commandModifiersMatch(
+  event: KeyboardEvent,
+  binding: Binding,
+): boolean {
+  if (binding.ctrl === true) return event.ctrlKey && !event.metaKey;
+  return binding.mod === true
+    ? event.metaKey || event.ctrlKey
+    : !event.metaKey && !event.ctrlKey;
 }
 
 function inputPolicyAllows(
