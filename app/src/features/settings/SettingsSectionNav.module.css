@@ -1,0 +1,86 @@
+.nav {
+  --wl-settings-nav-width: 188px;
+  --wl-settings-rail-width: 52px;
+  background: var(--wl-color-panel-alt);
+  border-right: 1px solid var(--wl-color-border);
+  display: flex;
+  flex: 0 0 var(--wl-settings-nav-width);
+  user-select: none;
+}
+
+.panel {
+  background: var(--wl-color-panel-alt);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px 10px;
+}
+
+.section {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-fg);
+  display: flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  text-align: left;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.section[aria-current="page"] {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
+  font-weight: 600;
+}
+
+.section svg {
+  fill: none;
+  flex: 0 0 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 16px;
+}
+
+.label {
+  min-width: 0;
+}
+
+.nav[data-rail] {
+  border-right: 0;
+  flex-basis: var(--wl-settings-rail-width);
+  position: relative;
+}
+
+.nav[data-rail] .panel {
+  border-right: 1px solid var(--wl-color-border);
+  inset-block: 0;
+  inset-inline-start: 0;
+  padding-inline: 8px;
+  position: absolute;
+  transition:
+    width var(--wl-motion-rail-expand) var(--wl-motion-standard-curve),
+    box-shadow var(--wl-motion-rail-expand) var(--wl-motion-standard-curve);
+  width: var(--wl-settings-rail-width);
+  z-index: 1;
+}
+
+.nav[data-expanded] .panel {
+  box-shadow: var(--wl-effect-overlay-shadow);
+  width: var(--wl-settings-nav-width);
+}

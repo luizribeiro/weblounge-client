@@ -94,6 +94,7 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:280ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:0ms");
     expect(themeStyleSheet()).toContain("--wl-motion-suggestions:0ms");
+    expect(themeStyleSheet()).toContain("--wl-motion-rail-expand:0ms");
     expect(themeStyleSheet()).toContain("--wl-motion-drawer-open:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-drawer-curve:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-push-curve:0ms");
@@ -102,6 +103,8 @@ describe("theme registry", () => {
 
   it("keeps time tokens when motion is reduced, since a hold delay is not motion", () => {
     expect(timeTokens.hintHold).toBe("400ms");
+    expect(timeTokens.railHoverIntent).toBe("150ms");
+    expect(themeStyleSheet()).toContain("--wl-time-rail-hover-intent:150ms");
     expect(themeStyleSheet()).toContain("--wl-time-hint-hold:400ms");
     expect(themeStyleSheet()).not.toContain("--wl-time-hint-hold:0ms");
   });

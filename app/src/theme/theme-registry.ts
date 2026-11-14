@@ -113,6 +113,7 @@ export const motionTokens = {
   pop: "280ms",
   popCurve: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
   previewFade: "420ms",
+  railExpand: "160ms",
   pushCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   pushIn: "280ms",
   suggestions: "120ms",
@@ -121,6 +122,7 @@ export const motionTokens = {
 
 export const timeTokens = {
   hintHold: "400ms",
+  railHoverIntent: "150ms",
 } as const;
 
 export const themes = buildRegistry(themeFiles);

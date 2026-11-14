@@ -7,11 +7,13 @@
   --wl-motion-pop: 280ms;
   --wl-motion-pop-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --wl-motion-preview-fade: 420ms;
+  --wl-motion-rail-expand: 160ms;
   --wl-motion-push-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
   --wl-motion-push-in: 280ms;
   --wl-motion-suggestions: 120ms;
   --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
   --wl-time-hint-hold: 400ms;
+  --wl-time-rail-hover-intent: 150ms;
 }
 :root[data-theme="lounge"] {
   color-scheme: light;
@@ -370,6 +372,7 @@
     --wl-motion-fade: 0ms;
     --wl-motion-pop: 0ms;
     --wl-motion-preview-fade: 0ms;
+    --wl-motion-rail-expand: 0ms;
     --wl-motion-push-in: 0ms;
     --wl-motion-suggestions: 0ms;
   }
