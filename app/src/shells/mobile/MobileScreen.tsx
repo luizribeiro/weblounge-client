@@ -12,6 +12,7 @@ import type {
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
+import type { NetworkUploads } from "../../features/uploads/types";
 import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
@@ -26,6 +27,9 @@ import {
 
 export interface MobileShellData extends NotificationPromptControls {
   readonly foreground?: boolean | undefined;
+  readonly uploadsFor?:
+    | ((network: NetworkProjection) => NetworkUploads | undefined)
+    | undefined;
   readonly foregroundExitEpoch?: number | undefined;
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
@@ -179,6 +183,7 @@ export function MobileScreen(props: MobileScreenProps) {
           network={props.networks.find(
             (network) => network.id === buffer()?.network_id,
           )}
+          uploadsFor={props.uploadsFor}
           onBack={props.onBack}
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}

@@ -44,6 +44,8 @@ import {
   shouldShowNotificationPrompt,
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
+import { CanvasImageCodec } from "./features/uploads/image-codec";
+import { networkUploads } from "./features/uploads/network-uploads";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
 import {
@@ -105,6 +107,7 @@ import {
   ensurePushSubscription,
   type WebPushTarget,
 } from "./platform/push/subscription";
+import { XhrUploader } from "./platform/upload/uploader";
 import {
   onServiceWorkerUpdateReady,
   serviceWorkerUpdateIsReady,
@@ -240,6 +243,20 @@ export function App(props: AppProps) {
   );
   let pageNotifications: PageNotifications | undefined;
   let client: EngineClient | undefined;
+  const uploadTransfer = {
+    uploader: new XhrUploader(),
+    codec: new CanvasImageCodec(),
+  };
+  const hostedUploadSession = props.hostedSession;
+  const uploadBearer =
+    hostedUploadSession === undefined
+      ? undefined
+      : async () =>
+          (
+            await new SessionTokenProvider(
+              hostedUploadSession.sessionTokenEndpoint,
+            ).acquire()
+          ).accessToken;
   let reportedVisibility: VisibilityState | undefined;
   // Render visibility follows document.hidden alone: an unfocused window
   // is still on screen and must keep drawing.
@@ -1557,6 +1574,15 @@ export function App(props: AppProps) {
           }}
           onTurnOnNotifications={turnOnNotifications}
           pathForBuffer={pathForBuffer}
+          uploadsFor={(network) =>
+            client === undefined
+              ? undefined
+              : networkUploads(network, {
+                  ...uploadTransfer,
+                  engine: client,
+                  bearer: uploadBearer,
+                })
+          }
           onSend={(bufferId, text) => {
             if (client === undefined) return Promise.resolve(false);
             setComposerNotice(undefined);

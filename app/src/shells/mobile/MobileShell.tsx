@@ -714,6 +714,7 @@ export function MobileShell(props: MobileShellProps) {
             networks={props.networks}
             timelines={props.timelines}
             typers={props.typers}
+            uploadsFor={props.uploadsFor}
             notificationPromptVisible={props.notificationPromptVisible}
             onDismissNotificationPrompt={props.onDismissNotificationPrompt}
             onBack={requestBack}

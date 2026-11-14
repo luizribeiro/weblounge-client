@@ -62,6 +62,7 @@ import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
+import type { NetworkUploads } from "../../features/uploads/types";
 import { platformEnvironment } from "../../platform/environment";
 import { t, translate } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
@@ -70,6 +71,9 @@ import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
 export interface DesktopShellProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
+  readonly uploadsFor?:
+    | ((network: NetworkProjection) => NetworkUploads | undefined)
+    | undefined;
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
@@ -648,6 +652,12 @@ export function DesktopShell(props: DesktopShellProps) {
                       }
                       focusOnMount={!retainSidebarFocus()}
                       typers={props.typers?.get(bufferId)}
+                      uploads={(() => {
+                        const network = activeNetwork();
+                        return network === undefined
+                          ? undefined
+                          : props.uploadsFor?.(network);
+                      })()}
                       onRequestCandidates={(input, cursor, explicit) =>
                         props.onRequestCompletion(
                           bufferId,

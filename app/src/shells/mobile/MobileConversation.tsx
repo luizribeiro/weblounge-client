@@ -31,6 +31,7 @@ import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
+import type { NetworkUploads } from "../../features/uploads/types";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
@@ -51,6 +52,9 @@ export interface MobileConversationProps {
   readonly historyState?: HistoryState | undefined;
   readonly typers?: readonly TypingProjection[] | undefined;
   readonly network?: NetworkProjection | undefined;
+  readonly uploadsFor?:
+    | ((network: NetworkProjection) => NetworkUploads | undefined)
+    | undefined;
   readonly onBack: () => void;
   readonly onLoadHistory: (
     bufferId: number,
@@ -279,6 +283,11 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             onSend={(text) => props.onSend(props.buffer.id, text)}
             typers={props.typers}
+            uploads={
+              props.network === undefined
+                ? undefined
+                : props.uploadsFor?.(props.network)
+            }
           />
         </Show>
       </div>
