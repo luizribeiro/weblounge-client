@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import type { BufferProjection, HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import type { MobileSettingsPage } from "../../features/settings/MobileSettings";
 import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -38,6 +39,7 @@ import {
   popChat,
   previousScreen,
   pushChat,
+  pushScreen,
 } from "./mobile-navigation";
 import {
   type PushMotion,
@@ -223,12 +225,24 @@ export function MobileShell(props: MobileShellProps) {
       ),
     );
   };
+  const openSettings = (page: MobileSettingsPage) => {
+    const state = mobileHistoryState(true, false);
+    if (historyPolicy === "stack") window.history.pushState(state, "");
+    else window.history.replaceState(state, "");
+    setStack((current) =>
+      pushScreen(
+        current,
+        { kind: "settings", page },
+        platform.prefersReducedMotion(),
+      ),
+    );
+  };
   const dispatchBack = (instant = reducedMotion()) =>
     setStack((current) => {
       const next = popChat(current, instant);
       if (historyPolicy === "replace") {
         window.history.replaceState(
-          mobileHistoryState(next.active.kind === "chat", false),
+          mobileHistoryState(next.active.kind !== "chats", false),
           "",
           next.active.kind === "chat"
             ? props.pathForBuffer?.(next.active.bufferId)
@@ -445,7 +459,7 @@ export function MobileShell(props: MobileShellProps) {
     const currentSwipe = swipe();
     const canStartSwipe =
       event.clientX <= swipeBackActivationWidth &&
-      active.kind === "chat" &&
+      active.kind !== "chats" &&
       stack().transition === undefined &&
       (currentSwipe === undefined || currentSwipe.phase === "returning") &&
       drawerBufferId() === undefined &&
@@ -639,7 +653,7 @@ export function MobileShell(props: MobileShellProps) {
       if (
         event.defaultPrevented ||
         drawerBufferId() !== undefined ||
-        stack().active.kind !== "chat" ||
+        stack().active.kind === "chats" ||
         stack().transition !== undefined ||
         swipe() !== undefined ||
         !isKeyboardBack(event, platform.shortcutPlatform)
@@ -652,9 +666,9 @@ export function MobileShell(props: MobileShellProps) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     document.addEventListener("keydown", handleKeydown);
     shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);
-    if (historyPolicy === "replace") {
+    if (historyPolicy === "replace" || stack().active.kind === "chats") {
       window.history.replaceState(
-        mobileHistoryState(stack().active.kind === "chat", false),
+        mobileHistoryState(stack().active.kind !== "chats", false),
         "",
       );
     }
@@ -750,6 +764,11 @@ export function MobileShell(props: MobileShellProps) {
             }}
             onSend={props.onSend}
             onTurnOnNotifications={props.onTurnOnNotifications}
+            onOpenSettings={
+              props.onChangeSetting === undefined ? undefined : openSettings
+            }
+            settings={props.settings}
+            onChangeSetting={props.onChangeSetting}
             motion={screen === movingScreen() ? motion() : undefined}
             onMotionEnd={settleMotion}
             query={query()}
@@ -872,7 +891,7 @@ function swipeNotStartedReason(
   drawerBufferId: number | undefined,
   excluded: boolean,
 ): string {
-  if (activeKind !== "chat") return "not-chat";
+  if (activeKind === "chats") return "at-root";
   if (transition !== undefined) return "transition";
   if (swipe !== undefined && swipe.phase !== "returning") return "swipe-active";
   if (drawerBufferId !== undefined) return "drawer-open";

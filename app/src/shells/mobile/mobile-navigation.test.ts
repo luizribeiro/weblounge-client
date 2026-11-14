@@ -6,6 +6,7 @@ import {
   popChat,
   previousScreen,
   pushChat,
+  pushScreen,
   swipeBackCompletes,
 } from "./mobile-navigation";
 
@@ -65,5 +66,33 @@ describe("mobile stack navigation", () => {
     expect(swipeBackCompletes(202, 402, -0.05)).toBe(true);
     expect(swipeBackCompletes(202, 402, -0.06)).toBe(false);
     expect(swipeBackCompletes(-20, 402, 1)).toBe(false);
+  });
+
+  it("stacks Settings pages over Chats and pops them one at a time", () => {
+    const root = { kind: "settings", page: "root" } as const;
+    const appearance = { kind: "settings", page: "appearance" } as const;
+    const settings = pushScreen(createMobileStack(), root, true);
+    const page = pushScreen(settings, appearance, false);
+
+    expect(page).toEqual({
+      active: appearance,
+      back: [{ kind: "chats" }, root],
+      transition: {
+        direction: "push",
+        from: root,
+        to: appearance,
+        duration: 280,
+      },
+    });
+    const backToRoot = popChat(finishTransition(page), true);
+    expect(backToRoot).toEqual({ active: root, back: [{ kind: "chats" }] });
+    expect(popChat(backToRoot, true)).toEqual({
+      active: { kind: "chats" },
+      back: [],
+    });
+    expect(pushChat(finishTransition(page), 4, true)).toEqual({
+      active: { kind: "chat", bufferId: 4 },
+      back: [{ kind: "chats" }],
+    });
   });
 });

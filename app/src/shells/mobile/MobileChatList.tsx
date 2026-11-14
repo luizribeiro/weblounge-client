@@ -28,6 +28,8 @@ import {
   connectionSweepAtRest,
   createConnectionProgress,
 } from "../../ui/connection-progress";
+import { HeaderIconButton } from "../../ui/HeaderIconButton";
+import { GearIcon } from "../../ui/icons/GearIcon";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatList.module.css";
 import { MobileChatRow } from "./MobileChatRow";
@@ -62,6 +64,7 @@ interface MobileChatListProps extends NotificationPromptControls {
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly showConnectionError?: boolean | undefined;
   readonly onScroll: (scrollTop: number) => void;
+  readonly onOpenSettings?: (() => void) | undefined;
 }
 
 export function MobileChatList(props: MobileChatListProps) {
@@ -188,6 +191,17 @@ export function MobileChatList(props: MobileChatListProps) {
             <Line>{t("common.weblounge")}</Line>
           </h1>
         </span>
+        <Show when={props.onOpenSettings} keyed>
+          {(openSettings) => (
+            <HeaderIconButton
+              label={t("action.settings")}
+              onClick={() => openSettings()}
+              size="touch"
+            >
+              <GearIcon />
+            </HeaderIconButton>
+          )}
+        </Show>
       </header>
       <Show
         when={props.showConnectionError !== false && connection().error}

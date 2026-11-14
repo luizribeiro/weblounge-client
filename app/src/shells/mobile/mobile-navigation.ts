@@ -1,8 +1,10 @@
+import type { MobileSettingsPage } from "../../features/settings/MobileSettings";
 import { panCommits } from "../../ui/horizontal-pan";
 
 export type MobileScreen =
   | { readonly kind: "chats" }
-  | { readonly kind: "chat"; readonly bufferId: number };
+  | { readonly kind: "chat"; readonly bufferId: number }
+  | { readonly kind: "settings"; readonly page: MobileSettingsPage };
 
 export interface MobileTransition {
   readonly direction: "push" | "pop";
@@ -33,7 +35,21 @@ export function pushChat(
       ? [state.active]
       : preserveCurrent
         ? [...state.back, state.active]
-        : state.back;
+        : state.back.filter((screen) => screen.kind !== "settings");
+  if (reducedMotion) return { active: to, back };
+  return {
+    active: to,
+    back,
+    transition: { direction: "push", from: state.active, to, duration: 280 },
+  };
+}
+
+export function pushScreen(
+  state: MobileStack,
+  to: MobileScreen,
+  reducedMotion: boolean,
+): MobileStack {
+  const back = [...state.back, state.active];
   if (reducedMotion) return { active: to, back };
   return {
     active: to,

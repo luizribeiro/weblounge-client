@@ -22,6 +22,65 @@ const buffer: BufferProjection = {
 
 afterEach(() => window.history.replaceState({}, "", "/"));
 
+it("pushes Settings and its Appearance page over Chats and pops them with Back", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof matchMedia,
+  );
+  installPlatformEnvironment(document.body, window);
+  const onChangeSetting = vi.fn();
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onChangeSetting={onChangeSetting}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+      settings={{ app: { theme: "lounge-night", message_density: "cozy" } }}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", { name: /Appearance.*Lounge Night · Cozy/ }),
+  );
+  expect(screen.getByRole("heading", { name: "Appearance" })).toBeVisible();
+  expect(screen.getByRole("radio", { name: "Lounge Night" })).toBeChecked();
+  fireEvent.click(screen.getByRole("radio", { name: "Compact" }));
+  expect(onChangeSetting).toHaveBeenCalledWith({
+    scope: "app",
+    setting: { key: "message_density", value: "compact" },
+  });
+
+  expect(window.history.state).toMatchObject({ webloungeMobileChat: true });
+  fireEvent.click(screen.getByRole("button", { name: "Back to Settings" }));
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Chats" })).toBeVisible(),
+  );
+  expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
+});
+
 it("clips the shell instead of letting focus reveal scroll it", () => {
   const css = readFileSync("src/shells/mobile/MobileShell.module.css", "utf8");
   expect(css).toMatch(/\.shell \{[^}]*overflow: clip;/u);

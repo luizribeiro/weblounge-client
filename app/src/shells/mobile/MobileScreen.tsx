@@ -1,4 +1,6 @@
 import { type Accessor, createEffect, on } from "solid-js";
+import type { SettingChange } from "../../engine/generated/SettingChange";
+import type { Settings } from "../../engine/generated/Settings";
 import type {
   BufferProjection,
   CommandSpec,
@@ -12,6 +14,10 @@ import type {
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
+import {
+  MobileSettings,
+  type MobileSettingsPage,
+} from "../../features/settings/MobileSettings";
 import type { NetworkUploads } from "../../features/uploads/types";
 import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
@@ -66,6 +72,8 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
+  readonly settings?: Settings | undefined;
+  readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
 
 interface MobileScreenProps extends MobileShellData {
@@ -95,6 +103,7 @@ interface MobileScreenProps extends MobileShellData {
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onMotionEnd: () => void;
+  readonly onOpenSettings?: ((page: MobileSettingsPage) => void) | undefined;
 }
 
 export function MobileScreen(props: MobileScreenProps) {
@@ -157,12 +166,25 @@ export function MobileScreen(props: MobileScreenProps) {
           onRequestActions={props.onRequestChatActions}
           onRequestClose={props.onRequestClose}
           onRetryNetwork={props.onRetryNetwork}
+          onOpenSettings={
+            props.onOpenSettings === undefined
+              ? undefined
+              : () => props.onOpenSettings?.("root")
+          }
           onTurnOnNotifications={props.onTurnOnNotifications}
           showConnectionError={!props.retained}
           onScroll={props.onScroll}
           query={props.query}
           restoreScroll={() => props.chatsScrollTop() ?? 0}
           restoreVersion={props.chatsScrollVersion}
+        />
+      ) : props.screen.kind === "settings" ? (
+        <MobileSettings
+          onBack={props.onBack}
+          onChange={(change) => props.onChangeSetting?.(change)}
+          onOpenPage={(page) => props.onOpenSettings?.(page)}
+          page={props.screen.page}
+          settings={props.settings?.app}
         />
       ) : buffer() !== undefined ? (
         <MobileConversation
