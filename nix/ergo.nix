@@ -31,6 +31,7 @@ let
       .history.chathistory-maxmessages = 100 |
       .history.znc-maxmessages = 100 |
       .history.persistent.enabled = false |
+      .history.retention.allow-individual-delete = true |
       .history.tagmsg-storage.whitelist += ["+draft/unreact", "+unreact"] |
       .languages.enabled = false |
       .api.enabled = true |
