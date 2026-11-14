@@ -1,0 +1,68 @@
+{
+  "id": "retro",
+  "name": "Retro",
+  "order": 6,
+  "appearance": "light",
+  "colors": {
+    "bg": "#f6efe1",
+    "surface": "#f6efe1",
+    "panel": "#2e2119",
+    "panelFg": "#f1e6d0",
+    "panelMuted": "#b8a58a",
+    "panelBorder": "#4a3527",
+    "panelAlt": "#efe5d2",
+    "fg": "#2b1f17",
+    "muted": "#6e5a45",
+    "border": "#d9c8aa",
+    "accent": "#b5471d",
+    "accentFg": "#fff8ee",
+    "selection": "#4a3527",
+    "selectionFg": "#fff3dc",
+    "mentionBg": "#f1dcb9",
+    "mentionBadge": "#b5471d",
+    "mentionBadgeFg": "#fff8ee",
+    "overlayScrim": "rgba(46,33,25,.45)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#edefe5",
+    "unread": "#b5471d",
+    "inputBg": "#fffaf0",
+    "chip": "#efe3cc",
+    "codeBg": "#efe3cc",
+    "online": "#9bc26b",
+    "selfNick": "#b5471d",
+    "error": "#9a2b45",
+    "focusRing": "#b5471d"
+  },
+  "typography": {
+    "ui": "Work Sans, Work Sans Fallback, system-ui, -apple-system, Segoe UI, sans-serif",
+    "mono": "Courier Prime, Courier Prime Fallback, Courier New, ui-monospace, monospace",
+    "title": "Fraunces, Fraunces Fallback, Georgia, serif",
+    "base": "14px",
+    "sectionFamily": "Fraunces, Fraunces Fallback, Georgia, serif",
+    "sectionSize": "15px",
+    "sectionTransform": "none",
+    "sectionTracking": "0"
+  },
+  "shape": {
+    "control": "4px",
+    "avatar": "4px",
+    "icon": "4px",
+    "composer": "4px",
+    "palette": "4px",
+    "pill": "4px",
+    "round": "4px"
+  },
+  "effects": {
+    "overlayShadow": "6px 6px 0 #2e2119",
+    "tooltipShadow": "3px 3px 0 #2e2119",
+    "iconRing": "inset 0 0 0 1px rgba(255,255,255,.12)"
+  },
+  "nickPalette": [
+    "#2f6b5e",
+    "#7a5d0f",
+    "#3c5a9a",
+    "#9a2b45",
+    "#6d4a8c",
+    "#5d6b16"
+  ]
+}
