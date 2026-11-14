@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
+import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { IrcClient } from "./irc-client";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
@@ -256,7 +256,7 @@ test("paints message and member bot icons under the beta CSP", async ({
     await page.setViewportSize({ width: 1440, height: 900 });
     const response = await page.goto(startUrl);
     expect(response?.headers()["content-security-policy"]).toBe(
-      BETA_CONTENT_SECURITY_POLICY,
+      E2E_CONTENT_SECURITY_POLICY,
     );
     await page.getByRole("button", { name: channel }).click();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();

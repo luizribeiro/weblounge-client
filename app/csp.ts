@@ -1,13 +1,43 @@
-export const BETA_CONTENT_SECURITY_POLICY = [
-  "base-uri 'none'",
-  "connect-src 'self' wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload https://push.weblounge.org",
-  "default-src 'none'",
-  "font-src 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "img-src 'self'",
-  "manifest-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "style-src 'self'",
-  "worker-src 'self'",
-].join("; ");
+interface PolicySources {
+  readonly connect: readonly string[];
+  readonly images: readonly string[];
+}
+
+function contentSecurityPolicy(sources: PolicySources): string {
+  return [
+    "base-uri 'none'",
+    ["connect-src 'self'", ...sources.connect].join(" "),
+    "default-src 'none'",
+    "font-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    ["img-src 'self'", ...sources.images].join(" "),
+    "manifest-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self'",
+    "worker-src 'self'",
+  ].join("; ");
+}
+
+const betaFilehost = "https://files.weblounge.org";
+
+// Mirrors the hosted beta's server-side policy; the e2e preview serves it with
+// the fake file host added so browser specs catch policy violations.
+const betaSources: PolicySources = {
+  connect: [
+    "wss://beta.weblounge.org/socket",
+    "https://members.weblounge.org",
+    `${betaFilehost}/upload`,
+    "https://push.weblounge.org",
+  ],
+  images: ["blob:", betaFilehost],
+};
+
+// Local Ergo advertises this as FILEHOST (nix/ergo.nix), and
+// e2e/fake-filehost-server.mjs serves it.
+export const E2E_FILEHOST_ORIGIN = "https://127.0.0.1:4175";
+
+export const E2E_CONTENT_SECURITY_POLICY = contentSecurityPolicy({
+  ...betaSources,
+  images: [...betaSources.images, E2E_FILEHOST_ORIGIN],
+});

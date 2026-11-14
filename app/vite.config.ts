@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { type Plugin, build as viteBuild } from "vite";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
-import { BETA_CONTENT_SECURITY_POLICY } from "./csp.ts";
+import { E2E_CONTENT_SECURITY_POLICY } from "./csp.ts";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 import { messages } from "./src/strings.ts";
 
@@ -134,13 +134,13 @@ export default defineConfig(({ mode }) => {
       : {
           server: {
             headers: {
-              "Content-Security-Policy": BETA_CONTENT_SECURITY_POLICY,
+              "Content-Security-Policy": E2E_CONTENT_SECURITY_POLICY,
             },
             proxy: testWebSocketProxy(),
           },
           preview: {
             headers: {
-              "Content-Security-Policy": BETA_CONTENT_SECURITY_POLICY,
+              "Content-Security-Policy": E2E_CONTENT_SECURITY_POLICY,
             },
             proxy: testWebSocketProxy(),
           },

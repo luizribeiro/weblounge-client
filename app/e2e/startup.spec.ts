@@ -5,7 +5,7 @@ import {
   type Route,
   test,
 } from "@playwright/test";
-import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
+import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 
@@ -47,7 +47,7 @@ test("starts under the beta CSP without a policy violation", async ({
   const response = await page.goto("/");
 
   expect(response?.headers()["content-security-policy"]).toBe(
-    BETA_CONTENT_SECURITY_POLICY,
+    E2E_CONTENT_SECURITY_POLICY,
   );
   await expect(page.locator("[data-app-root]")).toBeVisible();
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);

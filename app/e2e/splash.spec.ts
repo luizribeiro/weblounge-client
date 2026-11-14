@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
+import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 
 const fontAssetPattern =
   process.env.WEBLOUNGE_E2E_DEV === "1"
@@ -176,7 +176,7 @@ async function verifySplash(
   try {
     const response = await page.goto("/");
     expect(response?.headers()["content-security-policy"]).toBe(
-      BETA_CONTENT_SECURITY_POLICY,
+      E2E_CONTENT_SECURITY_POLICY,
     );
     const splash = page.locator("[data-initial-splash]");
     await expect(splash).toBeVisible();
