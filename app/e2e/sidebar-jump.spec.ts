@@ -76,6 +76,53 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
     await expect(first.locator("[data-jump-hint]")).toBeHidden();
     await releaseJumpModifier(page);
   });
+
+  test("the Mac app jumps and hints with Command", async ({ page }) => {
+    await emulatePlatform(page, "MacIntel");
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis, "__WEBLOUNGE_SHELL__", {
+        value: Object.freeze({ kind: "macos-app", version: "e2e" }),
+      });
+    });
+    await openWithExtraChannel(page);
+    const ids = await conversationRowIds(page);
+
+    await page.keyboard.press("Meta+2");
+    await expect(row(page, ids[1])).toHaveAttribute("aria-current", "page");
+    await page.keyboard.down("Meta");
+    await expect(
+      sidebarRow(page, ids[0]).locator("[data-jump-hint]"),
+    ).toBeVisible();
+    await page.keyboard.up("Meta");
+    await expect(
+      sidebarRow(page, ids[0]).locator("[data-jump-hint]"),
+    ).toBeHidden();
+  });
+
+  test("the Mac browser keeps Command+digit for the browser", async ({
+    page,
+  }) => {
+    await emulatePlatform(page, "MacIntel");
+    await openWithExtraChannel(page);
+    await page.evaluate(() => {
+      const state = window as Window & { __lastDigitPrevented?: boolean };
+      window.addEventListener("keydown", (event) => {
+        if (event.code === "Digit2")
+          state.__lastDigitPrevented = event.defaultPrevented;
+      });
+    });
+
+    await page.keyboard.press("Meta+2");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { __lastDigitPrevented?: boolean })
+              .__lastDigitPrevented,
+        ),
+      )
+      .toBe(false);
+  });
 });
 
 async function emulatePlatform(page: Page, platform: string): Promise<void> {

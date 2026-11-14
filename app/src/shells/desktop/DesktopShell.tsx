@@ -377,7 +377,7 @@ export function DesktopShell(props: DesktopShellProps) {
         void props.onSend(bufferId, `/${command.name}`);
       }
     },
-    platform.environment().display === "tauri" ? "tauri" : "web",
+    platform.shortcutShell === "native" ? "tauri" : "web",
   );
   createEffect(() => registry.updateCommands(props.commandSpecs ?? []));
   const run = (id: UiActionId) => registry.run(id, context());

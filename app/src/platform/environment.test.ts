@@ -4,6 +4,7 @@ import {
   installPlatformEnvironment,
   resolveEnvironment,
   resolveShortcutPlatform,
+  resolveShortcutShell,
 } from "./environment";
 
 class FakeMediaQuery {
@@ -67,6 +68,12 @@ describe("platform environment", () => {
         desktopPanels: "overlay",
       },
     );
+  });
+
+  it("uses the native keymap in Tauri and the Mac app, and the web keymap elsewhere", () => {
+    expect(resolveShortcutShell("web", "web")).toBe("web");
+    expect(resolveShortcutShell("web", "macos-app")).toBe("native");
+    expect(resolveShortcutShell("tauri-desktop", "web")).toBe("native");
   });
 
   it("centralizes shortcut-label platform adaptation", () => {

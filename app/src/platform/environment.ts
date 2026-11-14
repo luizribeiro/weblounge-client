@@ -1,4 +1,5 @@
 import { type Accessor, createSignal } from "solid-js";
+import { type HostShell, hostShell } from "./host-shell";
 import { observeKeyboardMotion } from "./keyboard-motion";
 import { observeTouchMoveLock } from "./touch-move-lock";
 import { observeViewportGeometry } from "./viewport-geometry";
@@ -11,6 +12,7 @@ export type Shell = "mobile" | "desktop";
 export type DesktopPanels = "inline" | "overlay";
 export type PlatformTarget = "web" | "tauri-desktop" | "tauri-mobile";
 export type ShortcutPlatform = "macos" | "linux" | "other";
+export type ShortcutShell = "native" | "web";
 
 export interface PlatformEnvironment {
   readonly input: PrimaryInput;
@@ -25,6 +27,7 @@ export interface PlatformController {
   readonly prefersDark: Accessor<boolean>;
   readonly prefersReducedMotion: Accessor<boolean>;
   readonly shortcutPlatform: ShortcutPlatform;
+  readonly shortcutShell: ShortcutShell;
   dispose(): void;
 }
 
@@ -116,6 +119,7 @@ export function installPlatformEnvironment(
     prefersDark,
     prefersReducedMotion,
     shortcutPlatform: resolveShortcutPlatform(browserWindow.navigator),
+    shortcutShell: resolveShortcutShell(target, hostShell(browserWindow)),
     dispose() {
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
@@ -181,6 +185,13 @@ export function resolveShortcutPlatform(
 ): ShortcutPlatform {
   if (/Mac|iPhone|iPad/u.test(browserNavigator.platform)) return "macos";
   return /Linux/u.test(browserNavigator.platform) ? "linux" : "other";
+}
+
+export function resolveShortcutShell(
+  target: PlatformTarget,
+  host: HostShell,
+): ShortcutShell {
+  return target === "web" && host === "web" ? "web" : "native";
 }
 
 function panelsForWidth(width: number): DesktopPanels {
