@@ -4021,6 +4021,7 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let presence_may_change = crate::peer_presence::may_change(&event);
+    running.model.observe_monitor(&event);
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
     if presence_may_change || output.iter().any(crate::peer_presence::reveals_buffers) {
         output.extend(running.model.sync_peer_presence(&snapshot));

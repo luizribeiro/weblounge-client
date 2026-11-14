@@ -2,12 +2,17 @@ use crate::{EngineToUi, PeerPresence};
 
 /// Presence the network vouches for: the peer shares a channel with us or `MONITOR` reports it
 /// online. Anything else, including a `MONITOR` offline reply, is no presence at all.
-pub(crate) fn of(state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
+pub(crate) fn of(
+    state: &papo::State,
+    nick: &papo::Nick,
+    reported_offline: bool,
+) -> Option<PeerPresence> {
     let user = state.user(nick)?;
     let visible = user.channels().len() != 0
-        || state
-            .monitor_online()
-            .any(|online| online.nick() == user.nick());
+        || (!reported_offline
+            && state
+                .monitor_online()
+                .any(|online| online.nick() == user.nick()));
     visible.then(|| {
         if matches!(user.away(), papo::Away::Away { .. }) {
             PeerPresence::Away
@@ -115,7 +120,17 @@ mod tests {
 
         async fn server(&mut self, line: &str, until: impl Fn(&papo::Event) -> bool) {
             self.wire.server(line).await;
-            next(&mut self.events, until).await;
+            loop {
+                let event = self
+                    .events
+                    .next()
+                    .await
+                    .expect("papo event stream remains open");
+                self.model.observe_monitor(&event);
+                if until(&event) {
+                    return;
+                }
+            }
         }
 
         fn sync(&mut self) -> Vec<(BufferId, Option<PeerPresence>)> {
@@ -291,5 +306,38 @@ mod tests {
         wire.server(":alice!u@h PART #room").await;
         next(&mut events, |event| matches!(event, papo::Event::Parted(_))).await;
         assert_eq!(presence(&mut model), [(alice, None)]);
+    }
+
+    #[tokio::test]
+    async fn a_peer_held_by_a_direct_handle_still_goes_offline_on_a_731() {
+        let mut peer = Peer::monitored().await;
+        let request = tokio::spawn({
+            let client = peer.client.clone();
+            async move { client.direct("alice").await }
+        });
+        assert_eq!(peer.wire.next_sent().await, "WHO alice %na");
+        peer.wire
+            .server(":offline.test 354 weblounge alice alice-account")
+            .await;
+        peer.wire
+            .server(":offline.test 315 weblounge alice :End of WHO list")
+            .await;
+        let _held = request
+            .await
+            .expect("direct task completes")
+            .expect("direct");
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+
+        peer.server(":offline.test 731 weblounge :alice", |event| {
+            matches!(event, papo::Event::MonitorOffline(_))
+        })
+        .await;
+
+        assert_eq!(peer.sync(), [(peer.alice, None)]);
     }
 }

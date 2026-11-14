@@ -488,6 +488,7 @@ pub(crate) struct NetworkModel {
     pending_target_sync: Option<PendingTargetSync>,
     #[cfg(test)]
     name_rebuilds: usize,
+    reported_offline: HashSet<papo::Nick>,
 }
 
 impl NetworkModel {
@@ -594,6 +595,7 @@ impl NetworkModel {
             pending_target_sync: None,
             #[cfg(test)]
             name_rebuilds: 0,
+            reported_offline: HashSet::new(),
         }
     }
 
@@ -2574,6 +2576,23 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
+    /// papo keeps a peer with a live direct handle in its `MONITOR` online set after a `731`,
+    /// so the offline reply is remembered here until the network reports the peer again.
+    pub(crate) fn observe_monitor(&mut self, event: &papo::Event) {
+        match event {
+            papo::Event::MonitorOffline(offline) => {
+                self.reported_offline.insert(offline.subject.clone());
+            }
+            papo::Event::MonitorOnline(online) => {
+                self.reported_offline.remove(online.subject.nick());
+            }
+            papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
+                self.reported_offline.clear();
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn sync_peer_presence(&mut self, state: &papo::State) -> Vec<EngineToUi> {
         let shown: HashSet<BufferId> = self.buffer_order.iter().copied().collect();
         self.buffers
@@ -2583,7 +2602,8 @@ impl NetworkModel {
                 let Some(NameKey::Direct(nick)) = buffer.key.as_ref() else {
                     return None;
                 };
-                let presence = crate::peer_presence::of(state, nick);
+                let presence =
+                    crate::peer_presence::of(state, nick, self.reported_offline.contains(nick));
                 (buffer.projection.peer_presence != presence).then(|| {
                     buffer.projection.peer_presence = presence;
                     EngineToUi::BufferUpdated {
