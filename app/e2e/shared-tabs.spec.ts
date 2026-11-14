@@ -1,8 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
-
-const channel = "#weblounge-test";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -11,31 +9,24 @@ test.skip(
 
 test("a second tab sharing the engine shows the rows the first tab loaded", async ({
   context,
+  irc,
 }) => {
-  const bot = await IrcClient.connect(
-    `shared-tabs-${Date.now().toString().slice(-6)}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
-  try {
-    const history = `before both tabs ${Date.now()}`;
-    await bot.privmsgConfirmed(channel, history);
-    const first = await context.newPage();
-    await first.goto("/?irc-password=weblounge-test");
-    await expectAtLiveEdge(first, history);
+  const channel = irc.channel;
+  const bot = await irc.peer("shared-tabs");
+  const history = `before both tabs ${Date.now()}`;
+  await bot.privmsgConfirmed(channel, history);
+  const first = await context.newPage();
+  await first.goto(irc.url());
+  await expectAtLiveEdge(first, history);
 
-    const live = `after the first tab ${Date.now()}`;
-    await bot.privmsgConfirmed(channel, live);
-    await expectAtLiveEdge(first, live);
+  const live = `after the first tab ${Date.now()}`;
+  await bot.privmsgConfirmed(channel, live);
+  await expectAtLiveEdge(first, live);
 
-    const second = await context.newPage();
-    await second.goto("/?irc-password=weblounge-test");
-    await expectAtLiveEdge(second, live);
-    await expect(productionMessageRow(second, history)).toHaveCount(1);
-  } finally {
-    bot.close();
-  }
+  const second = await context.newPage();
+  await second.goto(irc.url());
+  await expectAtLiveEdge(second, live);
+  await expect(productionMessageRow(second, history)).toHaveCount(1);
 });
 
 async function expectAtLiveEdge(page: Page, text: string): Promise<void> {

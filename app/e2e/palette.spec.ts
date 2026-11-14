@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
+import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -22,13 +22,14 @@ test.describe("command palette against local Ergo", () => {
 
   test("opens with the web chord and switcher prefix, then runs an action", async ({
     page,
+    irc,
   }) => {
     await installNativeFeelInstrumentation(page);
     await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: /^#weblounge-test/u }).click();
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     await composer.focus();
 
@@ -66,7 +67,7 @@ test.describe("command palette against local Ergo", () => {
     await expect(toggle).toContainText("Ctrl+.");
     await prefixedCommandQuery.press("Enter");
     await expect(
-      page.getByRole("complementary", { name: "Members of #weblounge-test" }),
+      page.getByRole("complementary", { name: `Members of ${irc.channel}` }),
     ).toBeVisible();
     await expect(dialog).toHaveCount(0);
   });

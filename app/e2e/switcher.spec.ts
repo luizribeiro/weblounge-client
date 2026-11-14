@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
+import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -22,16 +22,16 @@ test.describe("buffer switcher against local Ergo", () => {
 
   test("opens, filters, switches, restores focus, and launches", async ({
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#switcher-${suffix}`;
+    const channel = irc.channelNamed("switcher");
     await installNativeFeelInstrumentation(page);
     await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/?irc-password=weblounge-test");
-    const home = page.getByRole("button", { name: /^#weblounge-test/u });
+    await page.goto(irc.url());
+    const home = page.getByRole("button", { name: irc.channel });
     await home.click();
     const homeComposer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     await homeComposer.fill(`/join ${channel}`);
     await homeComposer.press("Enter");
@@ -41,7 +41,7 @@ test.describe("buffer switcher against local Ergo", () => {
     await page.keyboard.press("Control+K");
     const query = page.getByRole("combobox", { name: "Jump to" });
     await expect(query).toBeFocused();
-    await query.fill(`switcher-${suffix}`);
+    await query.fill(channel.slice(1));
     const result = page.getByRole("option", { name: new RegExp(channel, "u") });
     await expect(result).toHaveCount(1);
     await query.press("Enter");
@@ -85,10 +85,12 @@ test.describe("buffer switcher against local Ergo", () => {
       },
     );
 
-    await query.fill("weblounge-test");
-    await page.getByRole("option", { name: /#weblounge-test/u }).click();
+    await query.fill(irc.channel.slice(1));
+    await page
+      .getByRole("option", { name: new RegExp(irc.channel, "u") })
+      .click();
     await expect(
-      page.getByRole("heading", { name: "#weblounge-test" }),
+      page.getByRole("heading", { name: irc.channel }),
     ).toBeVisible();
   });
 });
