@@ -211,6 +211,7 @@ export function MobileConversation(props: MobileConversationProps) {
             bufferKind={props.buffer.kind}
             bufferTitle={props.buffer.title}
             channelStatus={props.buffer.channel_status}
+            filehostOrigin={props.network?.filehost_origin}
             foregroundExitEpoch={props.foregroundExitEpoch}
             messages={props.messages}
             timeline={props.timeline}

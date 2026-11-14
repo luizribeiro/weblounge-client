@@ -234,6 +234,10 @@
 .actionReactions {
   padding-left: 58px;
 }
+.actionMedia {
+  padding-block-start: 4px;
+  padding-inline-start: 58px;
+}
 .actionStar {
   color: var(--wl-color-muted);
 }
@@ -390,6 +394,7 @@
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;
 }
-.list[data-presentation="mobile"] .actionReactions {
+.list[data-presentation="mobile"] .actionReactions,
+.list[data-presentation="mobile"] .actionMedia {
   padding-inline-start: 0;
 }

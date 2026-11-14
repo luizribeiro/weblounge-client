@@ -190,14 +190,15 @@ export function DesktopShell(props: DesktopShellProps) {
       props.messageFailureNotices?.get(activeBufferId() ?? -1) ??
       props.composerNotice,
   );
+  const activeNetwork = createMemo(() => {
+    const networkId = activeBuffer()?.network_id;
+    return props.networks.find((network) => network.id === networkId);
+  });
   const activeBufferSync = createMemo(() => {
     const buffer = activeBuffer();
     return buffer === undefined
       ? { interrupted: false, progressing: false }
-      : bufferSyncPresentation(
-          buffer,
-          props.networks.find((network) => network.id === buffer.network_id),
-        );
+      : bufferSyncPresentation(buffer, activeNetwork());
   });
   const newestMessageIds = createMemo(() => {
     const messages = props.messages;
@@ -567,6 +568,7 @@ export function DesktopShell(props: DesktopShellProps) {
                 bufferKind={activeBuffer()?.kind}
                 bufferTitle={activeBuffer()?.title}
                 channelStatus={activeBuffer()?.channel_status}
+                filehostOrigin={activeNetwork()?.filehost_origin}
                 foregroundExitEpoch={props.foregroundExitEpoch}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
                 timeline={props.timelines?.get(activeBuffer()?.id ?? -1)}

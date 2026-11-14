@@ -47,6 +47,8 @@ import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
 } from "../composer/geometry";
+import { InlineImage } from "./InlineImage";
+import { inlineImageUrl } from "./inline-image-url";
 import styles from "./MessageList.module.css";
 import { MessageText, Nickname } from "./MessageText";
 import {
@@ -81,6 +83,7 @@ interface MessageListProps {
   readonly bufferTitle?: string | undefined;
   readonly channelStatus?: BufferProjection["channel_status"] | undefined;
   readonly foreground?: boolean | undefined;
+  readonly filehostOrigin?: string | undefined;
   readonly foregroundExitEpoch?: number | undefined;
   readonly historyState?: HistoryState | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
@@ -160,6 +163,7 @@ type TimelineRow =
       readonly kind: "message";
       readonly key: string;
       readonly message: MessageProjection;
+      readonly inlineImage: string | undefined;
       readonly startsMobileGroup: boolean;
       readonly engineOrder: TimelineItem["order"];
     };
@@ -213,6 +217,7 @@ export function MessageList(props: MessageListProps) {
     string,
     {
       readonly groupStart: boolean | undefined;
+      readonly inlineImage: string | undefined;
       readonly revision: string;
       readonly source: object | string;
       readonly spacing: LineSpacing | undefined;
@@ -290,6 +295,7 @@ export function MessageList(props: MessageListProps) {
       props.historyState,
       props.bufferKind,
       props.bufferTitle,
+      props.filehostOrigin,
     ),
   );
   const newestOwnKickId = createMemo(() => {
@@ -322,17 +328,19 @@ export function MessageList(props: MessageListProps) {
     const source = rowRevisionSource(row);
     const groupStart =
       row.kind === "message" ? row.startsMobileGroup : undefined;
+    const inlineImage = row.kind === "message" ? row.inlineImage : undefined;
     const cached = rowRevisionCache.get(row.key);
     if (
       row.kind !== "system" &&
       cached?.source === source &&
       cached.groupStart === groupStart &&
+      cached.inlineImage === inlineImage &&
       cached.spacing === spacing
     )
       return cached.revision;
     const revision =
       row.kind === "message"
-        ? messageSizeRevision(row.message, groupStart)
+        ? `${messageSizeRevision(row.message, groupStart)}\u0000${inlineImage !== undefined}`
         : row.kind === "system"
           ? systemLineSizeRevision(
               row.itemId,
@@ -347,6 +355,7 @@ export function MessageList(props: MessageListProps) {
     const value = `${revision}\u0000${spacing}`;
     rowRevisionCache.set(row.key, {
       groupStart,
+      inlineImage,
       revision: value,
       source,
       spacing,
@@ -668,6 +677,7 @@ export function MessageList(props: MessageListProps) {
         props.presentation,
         row.startsMobileGroup,
         spacing,
+        row.inlineImage !== undefined,
       );
       estimatedSizes.set(row.key, { revision, size: estimated });
       return estimated;
@@ -1511,6 +1521,7 @@ function TimelineRowView(props: {
             {row.kind === "message" && (
               <MessageRow
                 index={props.index}
+                inlineImage={row.inlineImage}
                 message={row.message}
                 nickLookup={props.nickLookup}
                 onOpenChannel={props.onOpenChannel}
@@ -1567,6 +1578,7 @@ function TimelineRowView(props: {
 
 function MessageRow(props: {
   readonly index: number;
+  readonly inlineImage: string | undefined;
   readonly message: MessageProjection;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
@@ -1632,6 +1644,13 @@ function MessageRow(props: {
                 text={message.text}
               />
             </Selectable>
+            <MessageImage
+              class={styles.actionMedia}
+              message={message}
+              onOpenExternal={props.onOpenExternal}
+              presentation={props.presentation}
+              url={props.inlineImage}
+            />
             <div class={styles.actionReactions}>
               <ReactionChips
                 presentation={props.presentation}
@@ -1682,6 +1701,12 @@ function MessageRow(props: {
                 text={message.text}
               />
             </Selectable>
+            <MessageImage
+              message={message}
+              onOpenExternal={props.onOpenExternal}
+              presentation={props.presentation}
+              url={props.inlineImage}
+            />
             <ReactionChips
               presentation={props.presentation}
               reactions={message.reactions}
@@ -1691,6 +1716,29 @@ function MessageRow(props: {
         </>
       )}
     </div>
+  );
+}
+
+function MessageImage(props: {
+  readonly class?: string | undefined;
+  readonly message: MessageProjection;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly presentation?: "desktop" | "mobile" | undefined;
+  readonly url: string | undefined;
+}) {
+  return (
+    <Show when={props.url} keyed>
+      {(url) => (
+        <div class={props.class}>
+          <InlineImage
+            author={props.message.author}
+            onOpenExternal={props.onOpenExternal}
+            presentation={props.presentation ?? "desktop"}
+            url={url}
+          />
+        </div>
+      )}
+    </Show>
   );
 }
 
@@ -1831,6 +1879,7 @@ function timelineRows(
   historyState?: HistoryState,
   bufferKind?: BufferProjection["kind"],
   bufferTitle?: string,
+  filehostOrigin?: string,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   if (historyState?.loading === true) {
@@ -1896,6 +1945,7 @@ function timelineRows(
         kind: "message",
         key: `message-${message.id}`,
         message,
+        inlineImage: rowInlineImage(message, filehostOrigin),
         engineOrder: item.order,
         startsMobileGroup: startsMobileMessageGroup(
           previousGroupMessage,
@@ -1933,6 +1983,15 @@ function timelineRows(
     }
   }
   return rows;
+}
+
+function rowInlineImage(
+  message: MessageProjection,
+  filehostOrigin: string | undefined,
+): string | undefined {
+  return message.kind === "text" || message.kind === "action"
+    ? inlineImageUrl(message.text, filehostOrigin)
+    : undefined;
 }
 
 function projectDisplayItems(
@@ -2217,7 +2276,8 @@ function sameRenderedRow(left: TimelineRow, right: TimelineRow): boolean {
     rowRevisionSource(left) === rowRevisionSource(right) &&
     (left.kind !== "message" ||
       (right.kind === "message" &&
-        left.startsMobileGroup === right.startsMobileGroup))
+        left.startsMobileGroup === right.startsMobileGroup &&
+        left.inlineImage === right.inlineImage))
   );
 }
 

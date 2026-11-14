@@ -118,6 +118,35 @@ it("marks received reactions for mobile touch sizing", () => {
   ).toHaveAttribute("data-presentation", "mobile");
 });
 
+it("inlines only the network's file host images and follows its origin", () => {
+  const [origin, setOrigin] = createSignal<string | undefined>();
+  const image = "https://files.example.test/aZ09.png";
+  render(() => (
+    <MessageList
+      filehostOrigin={origin()}
+      messages={[
+        { ...message, id: 1, text: `look ${image}` },
+        { ...message, id: 2, text: "https://elsewhere.example.test/b.png" },
+        { ...message, id: 3, kind: "action", text: `waves ${image}` },
+      ]}
+    />
+  ));
+  const slots = () => document.querySelectorAll("[data-inline-image]");
+  expect(slots()).toHaveLength(0);
+
+  setOrigin("https://files.example.test");
+
+  expect([...slots()].map((slot) => slot.getAttribute("href"))).toEqual([
+    image,
+    image,
+  ]);
+  expect(
+    slots()[0]
+      ?.closest("[data-message-row]")
+      ?.querySelector("[data-selectable]"),
+  ).not.toContainElement(slots()[0] as HTMLElement);
+});
+
 it("marks a direct row whose sender identity is unverified", () => {
   render(() => (
     <MessageList messages={[{ ...message, unverified_sender: true }]} />
