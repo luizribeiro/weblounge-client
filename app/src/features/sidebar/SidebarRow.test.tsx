@@ -48,6 +48,22 @@ describe("SidebarRow", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the row's text to its name while a jump number waits in the slot", () => {
+    render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{ ...buffer, unread: 0, mentions: 0 }}
+        jumpSlot={1}
+        onClick={() => {}}
+        tabIndex={0}
+      />
+    ));
+
+    expect(screen.getByRole("button", { name: "#lounge" })).toHaveTextContent(
+      /^#lounge$/u,
+    );
+  });
+
   it("suppresses badges for a buffer rendered in a visible pane", () => {
     const onClick = vi.fn();
     render(() => (

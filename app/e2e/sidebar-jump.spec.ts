@@ -50,7 +50,12 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
     for (const [index, id] of numbered.entries()) {
       const hint = sidebarRow(page, id).locator("[data-jump-hint]");
       await expect(hint).toBeVisible();
-      await expect(hint).toHaveText(String(index + 1));
+      await expect(hint).toHaveAttribute("data-jump-hint", String(index + 1));
+      expect(
+        await hint.evaluate(
+          (element) => getComputedStyle(element, "::after").content,
+        ),
+      ).toBe(`"${index + 1}"`);
       await expect(hint).toHaveCSS("opacity", "1");
       await expect(
         sidebarRow(page, id).locator("[data-badge-kind]"),

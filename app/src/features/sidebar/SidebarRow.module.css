@@ -148,6 +148,10 @@
   visibility: hidden;
 }
 
+.hint::after {
+  content: attr(data-jump-hint);
+}
+
 .row[data-trailing="hint"] .hint {
   opacity: 1;
   transition:

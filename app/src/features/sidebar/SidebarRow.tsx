@@ -118,9 +118,11 @@ export function SidebarRow(props: SidebarRowProps) {
             </Line>
           )}
           {props.jumpSlot !== undefined && (
-            <span aria-hidden="true" class={styles.hint} data-jump-hint="true">
-              {props.jumpSlot}
-            </span>
+            <span
+              aria-hidden="true"
+              class={styles.hint}
+              data-jump-hint={props.jumpSlot}
+            />
           )}
         </span>
       </button>
