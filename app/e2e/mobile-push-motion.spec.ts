@@ -19,7 +19,9 @@ test.beforeEach(async ({ page }) => {
   await emulateStandalone(page);
 });
 
-test("push slides the chat over a still chats list", async ({ page, irc }) => {
+test("push slides the chat over a still chats list", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openShell(page, irc);
   const frames = await recordMotion(page, () =>
     page.getByRole("button", { name: irc.channel }).click(),
@@ -36,10 +38,9 @@ test("push slides the chat over a still chats list", async ({ page, irc }) => {
   expect(moving.at(-1)?.chatLeft).toBe(0);
 });
 
-test("tap Back slides the chat off a still chats list", async ({
-  page,
-  irc,
-}) => {
+test("tap Back slides the chat off a still chats list", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openShell(page, irc);
   await openChat(page, irc);
   const frames = await recordMotion(page, () =>
@@ -60,7 +61,10 @@ test("tap Back slides the chat off a still chats list", async ({
   expect(frames.at(-1)?.chatLeft).toBeNull();
 });
 
-test("reduced motion pushes and pops instantly", async ({ page, irc }) => {
+test("reduced motion pushes and pops instantly", { tag: "@serial" }, async ({
+  page,
+  irc,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openShell(page, irc);
   const pushed = await recordMotion(page, () =>
@@ -84,10 +88,9 @@ test("reduced motion pushes and pops instantly", async ({ page, irc }) => {
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
-test("swipe released past halfway continues closed from the finger", async ({
-  page,
-  irc,
-}) => {
+test("swipe released past halfway continues closed from the finger", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openShell(page, irc);
   await openChat(page, irc);
   const settle = await swipeAndRelease(page, [
@@ -103,10 +106,9 @@ test("swipe released past halfway continues closed from the finger", async ({
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
-test("a flick shortens its distance-scaled finish, still animated", async ({
-  page,
-  irc,
-}) => {
+test("a flick shortens its distance-scaled finish, still animated", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openShell(page, irc);
   await openChat(page, irc);
   const flick = await swipeAndRelease(page, [
@@ -119,10 +121,9 @@ test("a flick shortens its distance-scaled finish, still animated", async ({
   expectSettlesFromFinger(flick, viewport(page), true);
 });
 
-test("swipe released short springs back open from the finger", async ({
-  page,
-  irc,
-}) => {
+test("swipe released short springs back open from the finger", {
+  tag: "@serial",
+}, async ({ page, irc }) => {
   await openShell(page, irc);
   await openChat(page, irc);
   const settle = await swipeAndRelease(page, [

@@ -371,7 +371,8 @@
           WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
         };
         e2eShardCount = 4;
-        # Specs tagged @serial restart Ergo or show fixed names in screenshots.
+        # Specs tagged @serial restart Ergo, show fixed names in committed
+        # screenshots, or sample motion frames that CPU contention drops.
         e2eWorkers = 2;
         e2e = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e";
