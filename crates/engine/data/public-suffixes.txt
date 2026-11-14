@@ -5,8 +5,8 @@
 // The ASCII rules of the Public Suffix List (ICANN and private), without comments.
 // VERSION: 2026-11-12_19-44-12_UTC
 // COMMIT: aa004f90b4cbe1c54ea96375622eca83d76059f0
-// Regenerate from https://publicsuffix.org/list/public_suffix_list.dat by keeping this
-// header and appending: LC_ALL=C grep -v -e '^//' -e '^$' -e '[^ -~]' <list> | tr -d ' '
+// Regenerate from https://publicsuffix.org/list/public_suffix_list.dat: keep this header,
+// set VERSION and COMMIT, and append: tr -d ' \t\r' <list | LC_ALL=C grep -v -e '^//' -e '^$' -e '[^ -~]'
 ac
 com.ac
 edu.ac
