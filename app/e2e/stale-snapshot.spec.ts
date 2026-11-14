@@ -1,10 +1,4 @@
-import {
-  devices,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
+import { devices, type Locator, type Page } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
@@ -13,7 +7,8 @@ import {
   releaseHeldHistoryRequest,
   releaseHeldLatestHistory,
 } from "./history-wire-fixture";
-import { IrcClient } from "./irc-client";
+import { type IrcClient, messageTag } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 
 test.describe("startup chat-list snapshot against local Ergo", () => {
@@ -25,69 +20,55 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
   test("sends from a snapshot-restored DM after TARGETS reconciliation", async ({
     baseURL,
     page,
+    irc,
   }) => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
-    const suffix = Date.now().toString(36);
-    const appAccount = `send-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const keeper = await IrcClient.connectIsolated(
-      appAccount,
-      "#weblounge-test",
-    );
-    const bot = await IrcClient.connect(
-      `send-dm-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
+    const suffix = irc.id;
+    const appAccount = irc.account;
+    const keeper = await irc.self([irc.channel]);
+    const bot = await irc.peer("send-dm", [irc.channel]);
     const incoming = `snapshot direct ${suffix}`;
     const reply = `reply after TARGETS ${suffix}`;
-    try {
-      await keeper.setAlwaysOn(true);
-      keeper.close();
-      await keeper.waitForDisconnect();
-      await bot.privmsgConfirmed(appAccount, incoming);
-      await page.goto("/config.json");
-      await seedUnreadDirectSnapshot(
-        page,
-        baseURL,
-        bot.nickname,
-        incoming,
-        [],
-        [],
-      );
-      await useDedicatedWorker(page);
-      await page.goto(
-        startUrlForAccount(appAccount, appPassword, "#weblounge-test"),
-      );
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    await bot.privmsgConfirmed(appAccount, incoming);
+    await page.goto("/config.json");
+    await seedUnreadDirectSnapshot(
+      page,
+      baseURL,
+      bot.nickname,
+      incoming,
+      [],
+      [],
+    );
+    await useDedicatedWorker(page);
+    await page.goto(irc.url());
 
-      await bufferRow(page, bot.nickname).click();
-      await expect(
-        page
-          .getByRole("list", { name: "Messages" })
-          .getByText(incoming, { exact: true }),
-      ).toBeVisible();
+    await bufferRow(page, bot.nickname).click();
+    await expect(
+      page
+        .getByRole("list", { name: "Messages" })
+        .getByText(incoming, { exact: true }),
+    ).toBeVisible();
 
-      const composer = page.getByRole("textbox", {
-        name: `Message ${bot.nickname}`,
-      });
-      await composer.fill(reply);
-      await composer.press("Enter");
-      await expect(
-        page.getByRole("button", { name: "Failed · Retry" }),
-      ).toHaveCount(0);
-      await expect(messageRow(page, reply, "confirmed")).toHaveCount(1);
-      await bot.waitForPrivmsg(bot.nickname, reply, appAccount);
-    } finally {
-      keeper.close();
-      bot.close();
-    }
+    const composer = page.getByRole("textbox", {
+      name: `Message ${bot.nickname}`,
+    });
+    await composer.fill(reply);
+    await composer.press("Enter");
+    await expect(
+      page.getByRole("button", { name: "Failed · Retry" }),
+    ).toHaveCount(0);
+    await expect(messageRow(page, reply, "confirmed")).toHaveCount(1);
+    await bot.waitForPrivmsg(bot.nickname, reply, appAccount);
   });
 
   test("drops a beta transcript gap that has no restored timeline range", async ({
     baseURL,
     page,
+    irc,
   }) => {
     test.skip(
       process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
@@ -95,69 +76,56 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     );
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
-    const nick = `stuck-gap-${Date.now().toString(36)}`;
-    let forwarderDropped = false;
-    try {
-      await page.goto("/config.json");
-      await seedUnreadDirectSnapshot(
-        page,
-        baseURL,
-        nick,
-        `${nick}: cached message`,
-        [],
-        [],
-        1,
-        1_800_000_000_000,
-        7,
-        100,
-      );
-      await useDedicatedWorker(page);
-      await controlForwarder("drop");
-      forwarderDropped = true;
+    const nick = irc.nickNamed("stuck-gap");
+    await page.goto("/config.json");
+    await seedUnreadDirectSnapshot(
+      page,
+      baseURL,
+      nick,
+      `${nick}: cached message`,
+      [],
+      [],
+      1,
+      1_800_000_000_000,
+      7,
+      100,
+    );
+    await useDedicatedWorker(page);
+    await irc.forwarder.drop();
 
-      await page.goto(startUrl());
+    await page.goto(irc.url());
 
-      await expect(bufferRow(page, nick)).toHaveAccessibleName(
-        new RegExp(`^${nick}(?:$|, 1 unread, including mentions$)`, "u"),
-      );
-    } finally {
-      if (forwarderDropped) await controlForwarder("restore");
-    }
+    await expect(bufferRow(page, nick)).toHaveAccessibleName(
+      new RegExp(`^${nick}(?:$|, 1 unread, including mentions$)`, "u"),
+    );
   });
 
   test("first paint retains an own send after immediate relaunch", async ({
     baseURL,
     browser,
     browserName,
+    irc,
   }) => {
     const { defaultBrowserType: _browser, ...device } =
       devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
     const context = await browser.newContext({ ...device, baseURL });
-    const suffix = Date.now().toString(36).slice(-6);
-    const channels = [`#own-send-${suffix}`, `#other-${suffix}`];
+    await irc.scope(context);
+    const suffix = irc.id;
+    const channels = [irc.channelNamed("own-send"), irc.channelNamed("other")];
     const [target, other] = channels;
     if (target === undefined || other === undefined)
       throw new Error("relaunch channels are missing");
-    const appAccount = `own-send-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const keeper = await IrcClient.connectIsolated(appAccount, target);
+    const appAccount = irc.account;
+    const keeper = await irc.self([target]);
     await keeper.joinAll([other]);
     await keeper.setAlwaysOn(true);
     keeper.close();
     await keeper.waitForDisconnect();
-    const bot = await IrcClient.connect(
-      `own-send-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      other,
-    );
+    const bot = await irc.peer("own-send-bot", [other]);
     let current = await context.newPage();
-    let forwarderDropped = false;
     try {
       await useDedicatedWorker(current);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       for (const channel of channels)
         await expect(bufferRow(current, channel)).toBeVisible();
       await bot.privmsgConfirmed(other, `newer other ${suffix}`);
@@ -182,22 +150,17 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         ]);
       const finalRows = await selectedChatRows(current, channels);
 
-      await controlForwarder("drop");
-      forwarderDropped = true;
+      await irc.forwarder.drop();
       await backgroundPage(current);
       await current.close();
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordFirstChatRows(current, channels);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
     } finally {
-      if (forwarderDropped) await controlForwarder("restore");
       if (!current.isClosed()) await current.close();
       await context.close();
-      bot.close();
     }
   });
 
@@ -205,37 +168,24 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     baseURL,
     browser,
     browserName,
+    irc,
   }) => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
     const { defaultBrowserType: _browser, ...device } =
       devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
     const context = await browser.newContext({ ...device, baseURL });
-    const suffix = Date.now().toString(36).slice(-6);
-    const appAccount = `own-dm-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const keeper = await IrcClient.connectIsolated(
-      appAccount,
-      "#weblounge-test",
-    );
+    await irc.scope(context);
+    const suffix = irc.id;
+    const appAccount = irc.account;
+    const keeper = await irc.self([irc.channel]);
     await keeper.setAlwaysOn(true);
     keeper.close();
     await keeper.waitForDisconnect();
-    const target = await IrcClient.connect(
-      `own-dm-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    const other = await IrcClient.connect(
-      `other-dm-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
+    const target = await irc.peer("own-dm", [irc.channel]);
+    const other = await irc.peer("other-dm", [irc.channel]);
     const titles = [target.nickname, other.nickname];
     let current = await context.newPage();
-    let forwarderDropped = false;
     try {
       await current.goto("/config.json");
       await seedUnreadDirectSnapshot(
@@ -252,7 +202,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         holdRequest: `CHATHISTORY LATEST ${target.nickname} `,
       });
       await useDedicatedWorker(current);
-      await current.goto(startUrlForAccount(appAccount, appPassword));
+      await current.goto(irc.url());
       await other.privmsgConfirmed(appAccount, `newer other ${suffix}`);
       await expect(bufferRow(current, other.nickname)).toBeVisible();
 
@@ -277,21 +227,17 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         ]);
       const finalRows = await selectedChatRows(current, titles);
 
-      await controlForwarder("drop");
-      forwarderDropped = true;
+      await irc.forwarder.drop();
       await backgroundPage(current);
       await current.close();
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordFirstChatRows(current, titles);
-      await current.goto(startUrlForAccount(appAccount, appPassword));
+      await current.goto(irc.url());
       await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
     } finally {
-      if (forwarderDropped) await controlForwarder("restore");
       if (!current.isClosed()) await current.close();
       await context.close();
-      target.close();
-      other.close();
     }
   });
 
@@ -299,36 +245,30 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     baseURL,
     context,
     page,
+    irc,
   }) => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
-    const suffix = Date.now().toString(36);
-    const channel = `#snapshot-marker-${suffix}`;
-    const appAccount = `marker-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
+    const suffix = irc.id;
+    const channel = irc.channelNamed("snapshot-marker");
     const readFirst = `read marker first ${suffix}`;
     const readThrough = `read marker boundary ${suffix}`;
     const preview = `unread marker preview ${suffix}`;
-    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    const keeper = await irc.self([channel]);
     await keeper.setAlwaysOn(true);
     keeper.close();
     await keeper.waitForDisconnect();
-    const bot = await IrcClient.connect(
-      `snapshot-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
+    const bot = await irc.peer("snapshot-bot", [channel]);
     const snapshotPreview = `${bot.nickname}: ${preview}`;
     let current = page;
     try {
       await useDedicatedWorker(current);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await bufferRow(current, channel).click();
       await expect(
         current.getByRole("heading", { name: channel }),
       ).toBeVisible();
-      await leaveConversation(current, channel);
+      await leaveConversation(current, irc.channel, channel);
       const history = [
         {
           text: readFirst,
@@ -369,12 +309,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotRow(current, channel))
         .toMatchObject({ preview: snapshotPreview });
 
-      const markerReader = await IrcClient.connect(
-        appAccount,
-        appAccount,
-        appPassword,
-        channel,
-      );
+      const markerReader = await irc.self([channel]);
       try {
         await closeAppUntilDetached(current, markerReader);
         await markerReader.markRead(channel, boundaryTime);
@@ -393,7 +328,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .toEqual({ gap: false, mentions: 0, unread: history.length });
       await captureHistoryWire(current);
       await useDedicatedWorker(current);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await expect
         .poll(() => historyWire(current))
         .toContainEqual(
@@ -421,7 +356,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, channel);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
@@ -433,7 +368,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           .toMatchObject({ text: expect.stringContaining(preview) });
     } finally {
       if (!current.isClosed()) await current.close();
-      bot.close();
     }
   });
 
@@ -442,29 +376,19 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     browserName,
     context,
     page,
+    irc,
   }) => {
     test.skip(browserName !== "firefox", "covers the reported Firefox failure");
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
-    const suffix = Date.now().toString(36);
-    const channel = "#weblounge-test";
+    const suffix = irc.id;
+    const channel = irc.channel;
     const preview = `stale Firefox preview ${suffix}`;
-    const bot = await IrcClient.connect(
-      `firefox-cache-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    const markerReader = await IrcClient.connect(
-      "weblounge",
-      "weblounge",
-      "weblounge-test",
-      channel,
-    );
+    const bot = await irc.peer("firefox-cache", [channel]);
+    const markerReader = await irc.self([channel]);
     let current = page;
-    let forwarderDropped = false;
     try {
-      const latest = await bot.privmsgConfirmed("weblounge", preview);
+      const latest = await bot.privmsgConfirmed(irc.account, preview);
       await markerReader.markRead(bot.nickname, messageTag(latest, "time"));
       await current.goto("/config.json");
       await seedUnreadDirectSnapshot(
@@ -482,9 +406,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await installStorageWriteFailureControl(current);
       await observeVisibleCountIncrease(current, bot.nickname);
       await recordCachedRow(current, bot.nickname);
-      await controlForwarder("drop");
-      forwarderDropped = true;
-      await current.goto(startUrl());
+      await irc.forwarder.drop();
+      await current.goto(irc.url());
       await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
         "data-unread",
         "0",
@@ -495,8 +418,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           unread: "0",
         });
       await failNextStorageWrite(current);
-      await controlForwarder("restore");
-      forwarderDropped = false;
+      await irc.forwarder.restore();
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
       await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
         "data-unread",
@@ -512,19 +434,14 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useFreshSharedWorker(current);
       await recordCachedRow(current, bot.nickname);
-      await controlForwarder("drop");
-      forwarderDropped = true;
-      await current.goto(startUrl());
+      await irc.forwarder.drop();
+      await current.goto(irc.url());
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({ unread: "0" });
-      await controlForwarder("restore");
-      forwarderDropped = false;
+      await irc.forwarder.restore();
     } finally {
-      if (forwarderDropped) await controlForwarder("restore");
       if (!current.isClosed()) await current.close();
-      markerReader.close();
-      bot.close();
     }
   });
 
@@ -532,32 +449,23 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     browserName,
     context,
     page,
+    irc,
   }) => {
     test.skip(browserName !== "firefox", "covers the reported Firefox failure");
-    const suffix = Date.now().toString(36);
-    const channel = "#weblounge-test";
+    const suffix = irc.id;
+    const channel = irc.channel;
     const text = `snapshot direct ${suffix}`;
-    const bot = await IrcClient.connect(
-      `snapshot-read-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    const markerReader = await IrcClient.connect(
-      "weblounge",
-      "weblounge",
-      "weblounge-test",
-      channel,
-    );
+    const bot = await irc.peer("snapshot-read", [channel]);
+    const markerReader = await irc.self([channel]);
     let current = page;
     try {
       await installStorageWriteFailureControl(current);
       await observeMarkReadRequests(current);
-      await current.goto(startUrl());
+      await current.goto(irc.url());
       await expect(
         current.locator('[data-network-state="online"]'),
       ).toHaveCount(1);
-      const latest = await bot.privmsgConfirmed("weblounge", text);
+      const latest = await bot.privmsgConfirmed(irc.account, text);
       const latestTime = messageTag(latest, "time");
       const row = bufferRow(current, bot.nickname);
       await expectUnreadCount(row, bot.nickname, 1);
@@ -588,96 +496,71 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useFreshSharedWorker(current);
       await recordCachedRow(current, bot.nickname);
-      await current.goto(startUrl());
+      await current.goto(irc.url());
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({ unread: "0" });
     } finally {
       if (!current.isClosed()) await current.close();
-      markerReader.close();
-      bot.close();
     }
   });
 
   test("keeps a remotely read DM clear across an immediate reload", async ({
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#immediate-read-${suffix}`;
-    const appAccount = `immediate-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
+    const suffix = irc.id;
+    const channel = irc.channelNamed("immediate-read");
+    const appAccount = irc.account;
     const text = `immediate read ${suffix}`;
-    const keeper = await IrcClient.connectIsolated(appAccount, channel);
-    const bot = await IrcClient.connect(
-      `immediate-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    let markerReader: IrcClient | undefined;
-    try {
-      await keeper.setAlwaysOn(true);
-      keeper.close();
-      await keeper.waitForDisconnect();
-      await useDedicatedWorker(page);
-      await recordCachedRow(page, bot.nickname);
-      await page.goto(startUrlForAccount(appAccount, appPassword, channel));
-      await expect(bufferRow(page, channel)).toBeVisible();
-      const line = await bot.privmsgConfirmed(appAccount, text);
-      await expectUnreadCount(bufferRow(page, bot.nickname), bot.nickname, 1);
-      await expect
-        .poll(() => snapshotReadState(page, bot.nickname))
-        .toEqual({ gap: false, mentions: 1, unread: 1 });
+    const keeper = await irc.self([channel]);
+    const bot = await irc.peer("immediate-bot", [channel]);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    await useDedicatedWorker(page);
+    await recordCachedRow(page, bot.nickname);
+    await page.goto(irc.url({ autojoin: [channel] }));
+    await expect(bufferRow(page, channel)).toBeVisible();
+    const line = await bot.privmsgConfirmed(appAccount, text);
+    await expectUnreadCount(bufferRow(page, bot.nickname), bot.nickname, 1);
+    await expect
+      .poll(() => snapshotReadState(page, bot.nickname))
+      .toEqual({ gap: false, mentions: 1, unread: 1 });
 
-      markerReader = await IrcClient.connect(
-        appAccount,
-        appAccount,
-        appPassword,
-        channel,
-      );
-      await markerReader.markRead(bot.nickname, messageTag(line, "time"));
-      await expectRead(bufferRow(page, bot.nickname), bot.nickname);
-      await backgroundPage(page);
-      await expect
-        .poll(() => snapshotReadState(page, bot.nickname))
-        .toEqual({ gap: false, mentions: 0, unread: 0 });
+    const markerReader = await irc.self([channel]);
+    await markerReader.markRead(bot.nickname, messageTag(line, "time"));
+    await expectRead(bufferRow(page, bot.nickname), bot.nickname);
+    await backgroundPage(page);
+    await expect
+      .poll(() => snapshotReadState(page, bot.nickname))
+      .toEqual({ gap: false, mentions: 0, unread: 0 });
 
-      await page.goto(startUrlForAccount(appAccount, appPassword, channel));
-      await expect
-        .poll(() => cachedRow(page))
-        .toMatchObject({
-          label: bot.nickname,
-          unread: isMobile(page) ? null : "0",
-        });
-    } finally {
-      markerReader?.close();
-      keeper.close();
-      bot.close();
-    }
+    await page.goto(irc.url({ autojoin: [channel] }));
+    await expect
+      .poll(() => cachedRow(page))
+      .toMatchObject({
+        label: bot.nickname,
+        unread: isMobile(page) ? null : "0",
+      });
   });
 
   test("keeps a newer live preview when catch-up finishes behind it", async ({
     context,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36);
-    const channel = "#weblounge-test";
-    const appAccount = `preview-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
+    const suffix = irc.id;
+    const channel = irc.channel;
     const missed = `older catch-up preview ${suffix}`;
     const live = `newer live preview ${suffix}`;
-    const bot = await IrcClient.connect(
-      `preview-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    const bot = await irc.peer("preview-bot", [channel]);
+    const keeper = await irc.self([channel]);
     let current = page;
     try {
       await keeper.setAlwaysOn(true);
       await useDedicatedWorker(current);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await bufferRow(current, channel).click();
       await expect(
         current.getByRole("heading", { name: channel }),
@@ -687,7 +570,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
 
       current = await context.newPage();
       await useDedicatedWorker(current);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
         "data-connection-progress",
       );
@@ -711,7 +594,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, channel);
-      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await current.goto(irc.url({ autojoin: [channel] }));
       await expect.poll(() => cachedRow(current)).not.toBeUndefined();
       if (isMobile(current))
         await expect
@@ -722,8 +605,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .toMatchObject({ preview: expect.stringContaining(live) });
     } finally {
       if (!current.isClosed()) await current.close();
-      keeper.close();
-      bot.close();
     }
   });
 
@@ -731,44 +612,36 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     baseURL,
     browser,
     browserName,
+    irc,
   }) => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
     const { defaultBrowserType: _browser, ...device } =
       devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
     const context = await browser.newContext({ ...device, baseURL });
-    const suffix = Date.now().toString(36).slice(-6);
-    const channels = Array.from(
-      { length: 3 },
-      (_, index) => `#relaunch-${index}-${suffix}`,
+    await irc.scope(context);
+    const suffix = irc.id;
+    const channels = Array.from({ length: 3 }, (_, index) =>
+      irc.channelNamed(`relaunch-${index}`),
     );
     const firstChannel = channels[0];
     if (firstChannel === undefined) throw new Error("first channel is missing");
-    const appAccount = `relaunch-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const keeper = await IrcClient.connectIsolated(appAccount, firstChannel);
+    const appAccount = irc.account;
+    const keeper = await irc.self([firstChannel]);
     await keeper.joinAll(channels.slice(1));
     await keeper.setAlwaysOn(true);
     keeper.close();
     await keeper.waitForDisconnect();
     const bots = await Promise.all(
       channels.map((channel, index) =>
-        IrcClient.connect(
-          `relaunch-${index}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          channel,
-        ),
+        irc.peer(`relaunch-${index}`, [channel]),
       ),
     );
     let current = await context.newPage();
-    let forwarderDropped = false;
     try {
       await installWorkerControl(current);
       await useDedicatedWorker(current);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       for (const channel of channels)
         await expect(bufferRow(current, channel)).toBeVisible();
 
@@ -797,8 +670,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         (channel, index) => `final ${index} ${channel} ${suffix}`,
       );
       const activityBase = Date.now() + 1_000;
-      await controlForwarder("drop");
-      forwarderDropped = true;
+      await irc.forwarder.drop();
       for (const [index, channel] of channels.entries()) {
         const preview = finalPreviews[index];
         if (preview === undefined) throw new Error("final preview is missing");
@@ -837,59 +709,38 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordFirstChatRows(current, channels);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
     } finally {
-      if (forwarderDropped) await controlForwarder("restore");
       if (!current.isClosed()) await current.close();
       await context.close();
-      keeper.close();
-      for (const bot of bots) bot.close();
     }
   });
 
   test("persists a read channel and the final live rows across relaunch", async ({
     context,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#badge-relaunch-${suffix}`;
-    const emptyChannel = `#badge-empty-${suffix}`;
-    const homeChannel = "#weblounge-test";
-    const appAccount = `badge-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    const suffix = irc.id;
+    const channel = irc.channelNamed("badge-relaunch");
+    const emptyChannel = irc.channelNamed("badge-empty");
+    const homeChannel = irc.channel;
+    const appAccount = irc.account;
+    const keeper = await irc.self([channel]);
     await keeper.join(emptyChannel);
     await keeper.join(homeChannel);
     await keeper.setAlwaysOn(true);
     keeper.close();
     await keeper.waitForDisconnect();
-    const bot = await IrcClient.connect(
-      `badge-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    const markerReader = await IrcClient.connect(
-      appAccount,
-      appAccount,
-      appPassword,
-      channel,
-    );
+    const bot = await irc.peer("badge-bot", [channel]);
+    const markerReader = await irc.self([channel]);
     const titles = [bot.nickname, channel, emptyChannel];
     let current = page;
     try {
       await useDedicatedWorker(current);
       await current.goto(
-        startUrlForAccount(
-          appAccount,
-          appPassword,
-          homeChannel,
-          channel,
-          emptyChannel,
-        ),
+        irc.url({ autojoin: [homeChannel, channel, emptyChannel] }),
       );
       await expect(bufferRow(current, channel)).toBeVisible();
       await expect(bufferRow(current, emptyChannel)).toBeVisible();
@@ -936,7 +787,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           bot.privmsgConfirmed(channel, `closed-app unread ${index} ${suffix}`),
         ),
       );
-      const newestUnreadTime = messageTag(unreadLines.at(-1), "time");
+      const newestUnreadTime = messageTag(unreadLines.at(-1) ?? "", "time");
       await expect.poll(() => markerReader.readMarker(channel)).toBeUndefined();
 
       current = await context.newPage();
@@ -946,13 +797,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await useDedicatedWorker(current);
       await observeMarkReadRequests(current);
       await current.goto(
-        startUrlForAccount(
-          appAccount,
-          appPassword,
-          homeChannel,
-          channel,
-          emptyChannel,
-        ),
+        irc.url({ autojoin: [homeChannel, channel, emptyChannel] }),
       );
       let catchupState: "complete" | "held" | undefined;
       await expect
@@ -986,7 +831,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect
         .poll(() => markerReader.readMarker(channel))
         .toBe(newestUnreadTime);
-      await leaveConversation(current, channel);
+      await leaveConversation(current, irc.channel, channel);
       await expectRead(bufferRow(current, channel), channel);
 
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
@@ -1000,22 +845,13 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await useDedicatedWorker(current);
       await recordCachedChatRows(current, titles);
       await current.goto(
-        startUrlForAccount(
-          appAccount,
-          appPassword,
-          homeChannel,
-          channel,
-          emptyChannel,
-        ),
+        irc.url({ autojoin: [homeChannel, channel, emptyChannel] }),
       );
       await expect.poll(() => cachedChatRows(current)).toEqual(finalRows);
       await expectRead(bufferRow(current, channel), channel);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
     } finally {
       if (!current.isClosed()) await current.close();
-      keeper.close();
-      markerReader.close();
-      bot.close();
     }
   });
 
@@ -1023,33 +859,28 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     baseURL,
     context,
     page,
+    irc,
   }) => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
-    const suffix = Date.now().toString(36).slice(-6);
-    const appAccount = `cache-user-${suffix}`;
-    const appPassword = `test-${appAccount}`;
-    const channels = Array.from(
-      { length: 3 },
-      (_, index) => `#cache-${index}-${suffix}`,
+    const suffix = irc.id;
+    const appAccount = irc.account;
+    const channels = Array.from({ length: 3 }, (_, index) =>
+      irc.channelNamed(`cache-${index}`),
     );
     const firstChannel = channels[0];
     if (firstChannel === undefined) throw new Error("first channel is missing");
-    const bot = await IrcClient.connect(
-      `cache-bot-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      firstChannel,
-    );
-    const keeper = await IrcClient.connectIsolated(appAccount, firstChannel);
+    const bot = await irc.peer("cache-bot", [firstChannel]);
+    await irc.self([firstChannel]);
     const backgroundBots: IrcClient[] = [];
     const directText = `cached direct ${suffix}`;
     let current = page;
     try {
       for (let index = 0; index < 15; index += 1) {
-        const nick = `cache-slow-${index.toString().padStart(2, "0")}-${suffix}`;
         backgroundBots.push(
-          await IrcClient.connectIsolated(nick, firstChannel),
+          await irc.peer(`cache-slow-${index.toString().padStart(2, "0")}`, [
+            firstChannel,
+          ]),
         );
       }
       for (const [index, backgroundBot] of backgroundBots.entries())
@@ -1070,9 +901,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await useDedicatedWorker(current);
       await observeMarkReadRequests(current);
       await recordCachedRow(current, bot.nickname);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
@@ -1107,17 +936,12 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, bot.nickname);
-      await current.goto(
-        startUrlForAccount(appAccount, appPassword, ...channels),
-      );
+      await current.goto(irc.url({ autojoin: channels }));
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({ label: bot.nickname });
     } finally {
       if (!current.isClosed()) await current.close();
-      bot.close();
-      keeper.close();
-      for (const backgroundBot of backgroundBots) backgroundBot.close();
     }
   });
 });
@@ -1144,11 +968,15 @@ function isMobile(page: Page): boolean {
   return (page.viewportSize()?.width ?? 1_280) < 700;
 }
 
-async function leaveConversation(page: Page, channel: string): Promise<void> {
+async function leaveConversation(
+  page: Page,
+  home: string,
+  channel: string,
+): Promise<void> {
   if (isMobile(page)) {
     await page.getByRole("button", { name: "Back to chats" }).click();
   } else {
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await page.getByRole("button", { name: home }).click();
   }
   await expect(bufferRow(page, channel)).not.toHaveAttribute(
     "aria-current",
@@ -1179,26 +1007,6 @@ async function expectRead(
   channel: string,
 ): Promise<void> {
   await expect(row).toHaveAttribute("aria-label", channel);
-}
-
-function startUrl(...channels: string[]): string {
-  const params = new URLSearchParams({ "irc-password": "weblounge-test" });
-  for (const channel of channels) params.append("irc-autojoin", channel);
-  return `/?${params.toString()}`;
-}
-
-function startUrlForAccount(
-  account: string,
-  password: string,
-  ...channels: string[]
-): string {
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": password,
-  });
-  for (const channel of channels) params.append("irc-autojoin", channel);
-  return `/?${params.toString()}`;
 }
 
 async function snapshotRow(page: Page, channel: string): Promise<unknown> {
@@ -1432,13 +1240,6 @@ async function backgroundPage(page: Page): Promise<void> {
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new PageTransitionEvent("pagehide"));
   });
-}
-
-async function controlForwarder(action: "drop" | "restore"): Promise<void> {
-  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
-  if (base === undefined) throw new Error("socket forwarder is unavailable");
-  const response = await fetch(`${base}/${action}`, { method: "POST" });
-  if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
 }
 
 async function useFreshSharedWorker(page: Page): Promise<void> {
@@ -1819,14 +1620,6 @@ async function expectNewDividerBetween(
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
-function messageTag(line: string | undefined, tag: string): string {
-  const value = new RegExp(`(?:^@|;)${tag}=([^; ]+)`, "u").exec(
-    line ?? "",
-  )?.[1];
-  if (value === undefined) throw new Error(`IRC line missing ${tag}: ${line}`);
-  return value;
 }
 
 async function observeMarkReadRequests(page: Page): Promise<void> {
