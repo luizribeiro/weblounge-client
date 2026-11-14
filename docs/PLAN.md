@@ -25,6 +25,11 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-14: desktop sidebar navigation polish. Channel rows now show the hover/focus close ×
+  too ("Leave channel", which asks before PART); DMs keep the instant close with undo. Middle-
+  clicking a conversation row closes it the same way, without autoscroll or paste. In the Mac
+  app and Tauri, `⌃Tab`/`⌃⇧Tab` (and `⇧⌘]`/`⇧⌘[` on macOS) cycle rows in sidebar order with
+  wrap-around; the web keeps `⌥↑`/`⌥↓` only, because browsers own the tab chords (design 14).
 - 2026-11-13: inline images, slice 2 (design 30): the full-size viewer. Clicking, tapping, or
   Enter/Space on a loaded inline image opens a PhotoSwipe 5.4.4 viewer, lazy-loaded in its own
   ~19KB gzip chunk, that grows from the slot, zooms (pinch, ctrl/plain wheel, Safari gesture
