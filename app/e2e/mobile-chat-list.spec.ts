@@ -4,6 +4,7 @@ import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
+  resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 
@@ -76,6 +77,7 @@ test.describe("mobile chat list against local Ergo", () => {
     bot.privmsg(irc.account, "direct chat for filters");
     await expect(directRow(page, bot.nickname)).toBeVisible();
     await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await resetNativeFeelLayoutShift(page);
 
     const chip = page.getByRole("button", { name: "Direct", exact: true });
     const pill = await boxOf(chip);
