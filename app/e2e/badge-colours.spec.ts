@@ -1,7 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
-
-const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 
 test.describe("unread badge colours against local Ergo", () => {
   test.skip(
@@ -13,10 +11,10 @@ test.describe("unread badge colours against local Ergo", () => {
     baseURL,
     browser,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36).slice(-6);
-    const desktopChannel = `#badge-d-${suffix}`;
-    const mobileChannel = `#badge-m-${suffix}`;
+    const desktopChannel = irc.channelNamed("badge-d");
+    const mobileChannel = irc.channelNamed("badge-m");
     const mobileContext = await browser.newContext({
       baseURL,
       colorScheme: "light",
@@ -24,32 +22,19 @@ test.describe("unread badge colours against local Ergo", () => {
       isMobile: true,
       viewport: { height: 874, width: 402 },
     });
+    await irc.scope(mobileContext);
     const mobile = await mobileContext.newPage();
-    const bots: IrcClient[] = [];
     try {
       await page.emulateMedia({ colorScheme: "light" });
-      await Promise.all([
-        page.goto("/?irc-password=weblounge-test"),
-        mobile.goto("/?irc-password=weblounge-test"),
-      ]);
-      await joinDesktopChannel(page, desktopChannel);
-      await joinMobileChannel(mobile, mobileChannel);
-      bots.push(
-        await IrcClient.connect(
-          `badged${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          desktopChannel,
-        ),
-        await IrcClient.connect(
-          `badgem${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          mobileChannel,
-        ),
-      );
+      await Promise.all([page.goto(irc.url()), mobile.goto(irc.url())]);
+      await joinDesktopChannel(page, irc.channel, desktopChannel);
+      await joinMobileChannel(mobile, irc.channel, mobileChannel);
+      const bots = [
+        await irc.peer("badged", [desktopChannel]),
+        await irc.peer("badgem", [mobileChannel]),
+      ];
 
-      await page.getByRole("button", { name: fixtureChannel }).click();
+      await page.getByRole("button", { name: irc.channel }).click();
       await mobile.getByRole("button", { name: "Back to chats" }).click();
       await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
 
@@ -78,11 +63,11 @@ test.describe("unread badge colours against local Ergo", () => {
 
       await bots[0]?.privmsgConfirmed(
         desktopChannel,
-        "weblounge: mentioned on desktop",
+        `${irc.account}: mentioned on desktop`,
       );
       await bots[1]?.privmsgConfirmed(
         mobileChannel,
-        "weblounge: mentioned on mobile",
+        `${irc.account}: mentioned on mobile`,
       );
       const mentionLabel = "2 unread, including mentions";
       await expectBadge(desktopRow, mentionLabel, "mention");
@@ -97,28 +82,31 @@ test.describe("unread badge colours against local Ergo", () => {
       await expectTokenColours(desktopRow, "mention-badge", "mention-badge-fg");
       await expectTokenColours(mobileRow, "mention-badge", "mention-badge-fg");
     } finally {
-      for (const bot of bots) bot.close();
       await mobileContext.close();
     }
   });
 });
 
-async function joinDesktopChannel(page: Page, channel: string): Promise<void> {
-  const composer = page.getByRole("textbox", {
-    name: `Message ${fixtureChannel}`,
-  });
+async function joinDesktopChannel(
+  page: Page,
+  home: string,
+  channel: string,
+): Promise<void> {
+  const composer = page.getByRole("textbox", { name: `Message ${home}` });
   await expect(composer).toBeVisible();
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 }
 
-async function joinMobileChannel(page: Page, channel: string): Promise<void> {
+async function joinMobileChannel(
+  page: Page,
+  home: string,
+  channel: string,
+): Promise<void> {
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-  await page.getByRole("button", { name: fixtureChannel }).click();
-  const composer = page.getByRole("textbox", {
-    name: `Message ${fixtureChannel}`,
-  });
+  await page.getByRole("button", { name: home }).click();
+  const composer = page.getByRole("textbox", { name: `Message ${home}` });
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();

@@ -1,5 +1,6 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import type { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 
 const trafficIntervalMilliseconds = 250;
@@ -12,67 +13,57 @@ test.describe("busy bot channel read state", () => {
 
   test("clears and persists unread while bot traffic continues", async ({
     page,
+    irc,
   }, testInfo) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#bots-${suffix}`;
+    const channel = irc.channelNamed("bots");
     const mobile = testInfo.project.name === "webkit-mobile-bots-unread";
     const bots = await Promise.all(
       ["louro", "iris", "louro-pi", "relay"].map((name) =>
-        IrcClient.connect(
-          `${name}-${suffix}`,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          channel,
-        ),
+        irc.peer(name, [channel]),
       ),
     );
-    try {
-      await useDedicatedWorker(page);
-      await page.goto("/?irc-password=weblounge-test");
-      if (mobile)
-        await page.getByRole("button", { name: "#weblounge-test" }).click();
-      const composer = page.getByRole("textbox", {
-        name: mobile ? "Message #weblounge-test" : "Message",
-      });
-      await composer.fill(`/join ${channel}`);
-      await composer.press("Enter");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await useDedicatedWorker(page);
+    await page.goto(irc.url());
+    if (mobile) await page.getByRole("button", { name: irc.channel }).click();
+    const composer = page.getByRole("textbox", {
+      name: mobile ? `Message ${irc.channel}` : "Message",
+    });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-      const row = bufferRow(page, channel);
-      const bufferId = await row.getAttribute("data-buffer-id");
-      if (bufferId === null) throw new Error("bot channel has no buffer id");
-      const list = mobile
-        ? page
-            .locator(`[data-mobile-chat="${bufferId}"]`)
-            .locator("[data-message-list]")
-        : page.locator("[data-message-list]");
-      await expectRead(row, channel, mobile);
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
+    const row = bufferRow(page, channel);
+    const bufferId = await row.getAttribute("data-buffer-id");
+    if (bufferId === null) throw new Error("bot channel has no buffer id");
+    const list = mobile
+      ? page
+          .locator(`[data-mobile-chat="${bufferId}"]`)
+          .locator("[data-message-list]")
+      : page.locator("[data-message-list]");
+    await expectRead(row, channel, mobile);
+    await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
 
-      await bots[0]?.typingConfirmed(channel, "active");
-      const traffic = sendBotTraffic(page, channel, bots);
-      await traffic.readCheckpoints[0];
-      await expectRead(row, channel, mobile, 400);
-      await traffic.readCheckpoints[1];
-      await expectRead(row, channel, mobile, 400);
-      const newestText = await traffic.done;
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
-      await expectRead(row, channel, mobile);
+    await bots[0]?.typingConfirmed(channel, "active");
+    const traffic = sendBotTraffic(page, channel, bots);
+    await traffic.readCheckpoints[0];
+    await expectRead(row, channel, mobile, 400);
+    await traffic.readCheckpoints[1];
+    await expectRead(row, channel, mobile, 400);
+    const newestText = await traffic.done;
+    await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
+    await expectRead(row, channel, mobile);
 
-      await restoreDebugCredentials(page, channel);
-      await page.reload();
-      const reloadedRow = bufferRow(page, channel);
-      await expect(reloadedRow).toBeAttached();
-      const heading = page.getByRole("heading", { name: channel });
-      if (!(await heading.isVisible())) await reloadedRow.click();
-      await expect(heading).toBeVisible();
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: newestText }),
-      ).toBeVisible();
-      await expectRead(reloadedRow, channel, mobile);
-    } finally {
-      for (const bot of bots) bot.close();
-    }
+    await restoreDebugCredentials(page, irc.url({ autojoin: [channel] }));
+    await page.reload();
+    const reloadedRow = bufferRow(page, channel);
+    await expect(reloadedRow).toBeAttached();
+    const heading = page.getByRole("heading", { name: channel });
+    if (!(await heading.isVisible())) await reloadedRow.click();
+    await expect(heading).toBeVisible();
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: newestText }),
+    ).toBeVisible();
+    await expectRead(reloadedRow, channel, mobile);
   });
 });
 
@@ -95,14 +86,14 @@ async function expectRead(
 
 async function restoreDebugCredentials(
   page: Page,
-  channel: string,
+  startUrl: string,
 ): Promise<void> {
-  await page.evaluate((autojoin) => {
+  await page.evaluate((start) => {
     const url = new URL(window.location.href);
-    url.searchParams.set("irc-password", "weblounge-test");
-    url.searchParams.append("irc-autojoin", autojoin);
+    for (const [name, value] of new URL(start, url).searchParams)
+      url.searchParams.append(name, value);
     window.history.replaceState(window.history.state, "", url);
-  }, channel);
+  }, startUrl);
 }
 
 function distanceFromBottom(list: Locator): Promise<number> {
