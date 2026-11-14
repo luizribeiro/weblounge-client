@@ -139,7 +139,7 @@
   font-size: var(--wl-font-section-size);
   font-weight: 500;
   gap: var(--wl-space-list-gap);
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr);
   letter-spacing: var(--wl-font-section-tracking);
   height: var(--wl-density-sidebar-row-height);
   margin-top: var(--wl-network-header-lead);

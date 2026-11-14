@@ -82,9 +82,18 @@ async function expectBalancedNetworkHeader(
     const headerBox = element.getBoundingClientRect();
     const nameBox = name.getBoundingClientRect();
     const rowBox = firstRow.getBoundingClientRect();
+    const tile = element.querySelector("[data-network-tile]");
+    const rowPrefix = firstRow.querySelector("[data-sidebar-prefix]");
+    const rowName = firstRow.querySelector("[data-sidebar-name]");
+    if (tile == null || rowPrefix == null || rowName == null)
+      throw new Error("network tile or row columns are missing");
     const radius = (box: Element) =>
       Number.parseFloat(getComputedStyle(box).borderTopLeftRadius);
     return {
+      tileLeft: tile.getBoundingClientRect().left,
+      rowPrefixLeft: rowPrefix.getBoundingClientRect().left,
+      nameLeft: nameBox.left,
+      rowNameLeft: rowName.getBoundingClientRect().left,
       headerHeight: headerBox.height,
       headerRadius: radius(element),
       rowHeight: rowBox.height,
@@ -102,6 +111,12 @@ async function expectBalancedNetworkHeader(
     Math.abs(geometry.nameCenter - geometry.headerCenter),
   ).toBeLessThanOrEqual(1);
   expect(geometry.rowOffset).toBeCloseTo(firstRowOffset, 1);
+  expect(
+    Math.abs(geometry.tileLeft - geometry.rowPrefixLeft),
+  ).toBeLessThanOrEqual(0.5);
+  expect(
+    Math.abs(geometry.nameLeft - geometry.rowNameLeft),
+  ).toBeLessThanOrEqual(0.5);
   expect(
     Math.abs(geometry.headerHeight - geometry.rowHeight),
   ).toBeLessThanOrEqual(0.5);

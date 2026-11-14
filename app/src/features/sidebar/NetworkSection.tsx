@@ -70,7 +70,7 @@ export function NetworkSection(props: NetworkSectionProps) {
           tabIndex={props.rovingId === server()?.id ? 0 : -1}
           type="button"
         >
-          <span aria-hidden="true" class={styles.tile}>
+          <span aria-hidden="true" class={styles.tile} data-network-tile="true">
             {props.network.label.slice(0, 1).toLocaleUpperCase()}
           </span>
           <Line class={styles.networkName}>{props.network.label}</Line>
