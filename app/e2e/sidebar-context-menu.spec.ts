@@ -100,7 +100,9 @@ test.describe("desktop sidebar context menu against local Ergo", () => {
     await directRow.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Mark as read" }).click();
     await expect(stableDirectRow).toHaveAttribute("data-unread", "0");
-    await expect(stableDirectRow).toHaveAccessibleName(peer.nickname);
+    await expect(stableDirectRow).toHaveAccessibleName(
+      `${peer.nickname}, online`,
+    );
     expect(consoleIssues).toEqual([]);
   });
 });

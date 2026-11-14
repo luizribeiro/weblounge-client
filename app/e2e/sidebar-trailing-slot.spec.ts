@@ -22,7 +22,7 @@ test.describe("sidebar row trailing slot against local Ergo", () => {
     await peer.privmsgConfirmed(irc.account, `unread direct ${irc.id}`);
 
     const direct = page.getByRole("button", {
-      name: `${peer.nickname}, 1 unread, including mentions`,
+      name: `${peer.nickname}, 1 unread, including mentions, online`,
     });
     await expect(direct).toBeVisible();
     const directRow = page
@@ -43,7 +43,7 @@ test.describe("sidebar row trailing slot against local Ergo", () => {
     await expect(badge).toBeHidden();
     expect(await nameEdge()).toBe(restingEdge);
     await expect(direct).toHaveAccessibleName(
-      `${peer.nickname}, 1 unread, including mentions`,
+      `${peer.nickname}, 1 unread, including mentions, online`,
     );
 
     await page.mouse.move(0, 0);

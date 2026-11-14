@@ -97,7 +97,7 @@ test.describe("desktop conversation closing against local Ergo", () => {
     await expect(directRow()).toHaveCount(0);
     await peer.privmsgConfirmed(irc.account, "reopen direct");
     await expect(directRow()).toHaveAccessibleName(
-      `${peer.nickname}, 1 unread, including mentions`,
+      `${peer.nickname}, 1 unread, including mentions, online`,
     );
 
     await home.click();

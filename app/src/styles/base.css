@@ -20,6 +20,8 @@
   --wl-space-list-inset: 8px;
   --wl-sidebar-prefix-width: 12px;
   --wl-sidebar-row-end-inset: calc(var(--wl-space-list-inset) / 2);
+  --wl-size-presence-dot: 8px;
+  --wl-size-presence-ring: 1px;
   --wl-space-transcript-inline: 16px;
   --wl-space-transcript-desktop-inline: 20px;
   --wl-space-composer-inline: 14px;

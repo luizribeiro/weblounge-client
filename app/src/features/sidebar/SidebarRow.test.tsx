@@ -205,4 +205,71 @@ describe("SidebarRow", () => {
       name,
     );
   });
+
+  it.each([
+    ["online", "alice, 4 unread, including mentions, online"],
+    ["away", "alice, 4 unread, including mentions, away"],
+  ] as const)(
+    "marks a direct peer reported %s on its leading column",
+    (presence, label) => {
+      const { container } = render(() => (
+        <SidebarRow
+          active={false}
+          buffer={{
+            ...buffer,
+            kind: "direct",
+            title: "alice",
+            peer_presence: presence,
+          }}
+          onClick={() => {}}
+          tabIndex={0}
+        />
+      ));
+
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+      expect(
+        container.querySelector("[data-sidebar-prefix] [data-presence]"),
+      ).toHaveAttribute("data-presence", presence);
+    },
+  );
+
+  it("shows no presence for a direct peer the network reports nothing about", () => {
+    const { container } = render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{ ...buffer, kind: "direct", title: "alice" }}
+        onClick={() => {}}
+        tabIndex={0}
+      />
+    ));
+
+    expect(container.querySelector("[data-presence]")).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "alice, 4 unread, including mentions",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("names a read direct row with its peer's presence alone", () => {
+    render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{
+          ...buffer,
+          kind: "direct",
+          title: "alice",
+          unread: 0,
+          mentions: 0,
+          peer_presence: "online",
+        }}
+        onClick={() => {}}
+        tabIndex={0}
+      />
+    ));
+
+    expect(
+      screen.getByRole("button", { name: "alice, online" }),
+    ).toBeInTheDocument();
+  });
 });

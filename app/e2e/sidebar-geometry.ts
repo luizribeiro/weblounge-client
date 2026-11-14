@@ -126,3 +126,14 @@ async function expectBalancedNetworkHeader(
   expect(geometry.headerLeft).toBeCloseTo(geometry.rowLeft, 1);
   expect(geometry.headerRight).toBeCloseTo(geometry.rowRight, 1);
 }
+
+export async function tokenColour(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.documentElement.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+}

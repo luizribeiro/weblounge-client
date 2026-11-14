@@ -1,5 +1,5 @@
 import { createSignal, type JSX, onCleanup } from "solid-js";
-import type { BufferProjection } from "../../engine/protocol";
+import type { BufferProjection, PeerPresence } from "../../engine/protocol";
 import { t } from "../../strings";
 import {
   type ContextMenuRequest,
@@ -55,6 +55,7 @@ export function SidebarRow(props: SidebarRowProps) {
   const visibleMentions = () => (showBadges() ? props.buffer.mentions : 0);
   const prefix = () =>
     props.buffer.kind === "channel" ? props.buffer.title.slice(0, 1) : "";
+  const presence = () => props.buffer.peer_presence;
   const name = () =>
     props.buffer.kind === "channel"
       ? props.buffer.title.slice(1)
@@ -77,7 +78,7 @@ export function SidebarRow(props: SidebarRowProps) {
       onPointerLeave={() => setPointerInside(false)}
     >
       <button
-        aria-label={rowLabel(props.buffer.title, badge()?.label)}
+        aria-label={rowLabel(props.buffer.title, badge()?.label, presence())}
         aria-current={props.active ? "page" : undefined}
         class={styles.open}
         data-buffer-id={props.buffer.id}
@@ -107,6 +108,9 @@ export function SidebarRow(props: SidebarRowProps) {
           data-sidebar-prefix="true"
         >
           {prefix()}
+          {presence() !== undefined && (
+            <span class={styles.presence} data-presence={presence()} />
+          )}
         </span>
         <Line
           class={styles.title}
@@ -179,8 +183,19 @@ function closeCopy(buffer: BufferProjection): {
   };
 }
 
-function rowLabel(title: string, badgeLabel: string | undefined): string {
-  return badgeLabel === undefined
-    ? title
-    : t("sidebar.row_label", { title, badge: badgeLabel });
+function rowLabel(
+  title: string,
+  badgeLabel: string | undefined,
+  presence: PeerPresence | undefined,
+): string {
+  const label =
+    badgeLabel === undefined
+      ? title
+      : t("sidebar.row_label", { title, badge: badgeLabel });
+  return presence === undefined
+    ? label
+    : t("sidebar.row_presence_label", {
+        label,
+        presence: t(`sidebar.presence.${presence}`),
+      });
 }

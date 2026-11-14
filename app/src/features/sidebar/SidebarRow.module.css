@@ -35,6 +35,23 @@
   text-align: right;
 }
 
+.presence {
+  border: var(--wl-size-presence-ring) solid var(--wl-color-online);
+  border-radius: 50%;
+  display: inline-block;
+  height: var(--wl-size-presence-dot);
+  vertical-align: middle;
+  width: var(--wl-size-presence-dot);
+}
+
+.presence[data-presence="online"] {
+  background: var(--wl-color-online);
+}
+
+.presence[data-presence="away"] {
+  border-color: var(--wl-color-panel-muted);
+}
+
 .row:hover {
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);

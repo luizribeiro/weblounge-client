@@ -415,6 +415,15 @@ export class IrcClient {
     }
   }
 
+  async setAway(message: string | undefined): Promise<void> {
+    const [command, numeric] =
+      message === undefined ? ["AWAY", " 305 "] : [`AWAY :${message}`, " 306 "];
+    this.send(command);
+    await this.waitFor(`AWAY confirmation${numeric}`, (line) =>
+      line.includes(numeric),
+    );
+  }
+
   async part(channel: string): Promise<void> {
     this.send(`PART ${channel} :screenshot seed complete`);
     await this.waitFor(`PART confirmation for ${channel}`, (line) =>

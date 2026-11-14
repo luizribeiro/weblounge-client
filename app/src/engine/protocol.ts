@@ -11,6 +11,7 @@ import type { MessageProjection } from "./generated/MessageProjection";
 import type { NetworkProjection } from "./generated/NetworkProjection";
 import type { NoticeKind } from "./generated/NoticeKind";
 import type { NoticeSource } from "./generated/NoticeSource";
+import type { PeerPresence } from "./generated/PeerPresence";
 import type { PushState } from "./generated/PushState";
 import type { TypingProjection } from "./generated/TypingProjection";
 import type { UiToEngine } from "./generated/UiToEngine";
@@ -29,6 +30,7 @@ export type {
   NetworkProjection,
   NoticeKind,
   NoticeSource,
+  PeerPresence,
   PushState,
   TypingProjection,
   UiToEngine,
