@@ -8,6 +8,11 @@ mod members;
 mod name_key;
 mod notification_settings;
 mod protocol;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the upload credential rule is its only caller")
+)]
+mod public_suffix;
 mod push_device;
 mod pushed_messages;
 mod reactions;
