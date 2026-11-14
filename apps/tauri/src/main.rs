@@ -5,6 +5,7 @@ mod login_item;
 mod menu;
 mod navigation;
 mod notifications;
+mod page_action;
 mod security;
 mod shell;
 mod window;

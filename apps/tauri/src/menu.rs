@@ -6,10 +6,15 @@ use tauri::{
 };
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::{login_item, window};
+use crate::{
+    login_item,
+    page_action::{self, PageAction},
+    window,
+};
 
 const RELOAD_ID: &str = "reload";
 const LOGIN_ID: &str = "open-at-login";
+const SETTINGS_ID: &str = "settings";
 
 pub struct LoginCheck(CheckMenuItem<Wry>);
 
@@ -25,6 +30,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     app.manage(LoginCheck(login.clone()));
     let reload = MenuItem::with_id(app, RELOAD_ID, "Reload", true, Some("CmdOrCtrl+R"))?;
+    let settings = MenuItem::with_id(app, SETTINGS_ID, "Settings…", true, Some("CmdOrCtrl+,"))?;
     Menu::with_items(
         app,
         &[
@@ -35,6 +41,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 &[
                     &PredefinedMenuItem::about(app, None, None)?,
                     &PredefinedMenuItem::separator(app)?,
+                    &settings,
                     &login,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::hide(app, None)?,
@@ -83,7 +90,14 @@ pub fn handle_event(app: &AppHandle, event: &MenuEvent) {
         window::reload(app);
     } else if event.id() == LOGIN_ID {
         toggle_login_item(app);
+    } else if event.id() == SETTINGS_ID {
+        run_in_page(app, PageAction::OpenSettings);
     }
+}
+
+fn run_in_page(app: &AppHandle, action: PageAction) {
+    window::show(app);
+    window::eval_in_page(app, &page_action::dispatch_script(action));
 }
 
 fn toggle_login_item(app: &AppHandle) {

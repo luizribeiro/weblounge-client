@@ -44,7 +44,9 @@ with its own lockfile, so the root workspace and Linux CI never resolve Tauri's 
 - One window titled “weblounge”, with a native title bar, a sensible default size and a 400 px
   minimum width: design 09's narrow desktop, where the sidebar and member list become drawers.
   Window size and position persist across launches.
-- The standard macOS menu: app (About, Hide, Quit), Edit (Undo, Redo, Cut, Copy, Paste, Select
+- Menu items that act on the page dispatch design 29's allow-listed `weblounge:action` event
+  (Settings…, ⌘,, sends `settings.open`); no IPC is added for them.
+- The standard macOS menu: app (About, Settings…, Hide, Quit), Edit (Undo, Redo, Cut, Copy, Paste, Select
   All, so text editing shortcuts work), View (Reload, Enter Full Screen) and Window.
 - Closing the window hides the app instead of quitting, as macOS chat apps do; ⌘Q quits.
   Reopening from the dock shows the window again.

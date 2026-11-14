@@ -101,6 +101,8 @@ The single place a fresh session reads to know where the project stands. Update 
   and the composer box share the prototype's 20px (`--wl-space-transcript-desktop-inline`). On
   mobile, the typing line sits level with the messages (16px) and the composer pill keeps its
   14px wrap.
+- 2026-11-14: the desktop app menu has Settings… (⌘,), which shows the window and dispatches
+  design 29's `settings.open` page action; a probe build confirmed the page receives it.
 - 2026-11-13: local desktop builds (`.#desktop-dev`, `cargo run`) are `weblounge dev`
   (`org.weblounge.desktop.dev`, a yellow icon from the same generator); only the release package
   overlays the release identity, so LaunchServices can no longer open a local build for the
