@@ -153,10 +153,15 @@ const specs: readonly ActionSpec[] = [
     ...command("debug.overlay", t("action.debug"), alwaysAvailable),
     surfaces: [],
   },
-  {
-    ...command("settings.open", t("action.settings"), alwaysAvailable),
-    surfaces: [],
-  },
+  command("settings.open", t("action.settings"), alwaysAvailable, [
+    { ...mod(",", "⌘,", "Ctrl+,"), code: "Comma", shells: ["tauri"] },
+    {
+      ...mod(",", "⇧⌘,", "Ctrl+Shift+,"),
+      code: "Comma",
+      shift: true,
+      shells: ["web"],
+    },
+  ]),
   command("sidebar.toggle", t("action.sidebar_toggle"), alwaysAvailable, {
     ...mod("s", "⌥⌘S", "Ctrl+Alt+S"),
     alt: true,
@@ -340,6 +345,17 @@ export class ActionRegistry {
       meta: mod && this.#platform === "macos",
       shift: binding.shift === true,
     };
+  }
+
+  ariaKeyShortcuts(id: UiActionId): string | undefined {
+    const binding = this.#binding(findSpec(id));
+    if (binding === undefined) return undefined;
+    return [
+      ...(binding.mod ? [this.#platform === "macos" ? "Meta" : "Control"] : []),
+      ...(binding.alt ? ["Alt"] : []),
+      ...(binding.shift ? ["Shift"] : []),
+      binding.code ?? binding.key,
+    ].join("+");
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
@@ -595,7 +611,12 @@ function groupFor(id: UiActionId): ActionGroup {
   if (id === "buffer.mark-read") return "Messages";
   if (id.startsWith("network.")) return "Network";
   if (id.startsWith("message.")) return "Messages";
-  if (id === "members.toggle" || id === "sidebar.toggle") return "View";
+  if (
+    id === "members.toggle" ||
+    id === "sidebar.toggle" ||
+    id === "settings.open"
+  )
+    return "View";
   return "Navigation";
 }
 

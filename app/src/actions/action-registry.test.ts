@@ -41,20 +41,112 @@ describe("ActionRegistry", () => {
   });
 
   it("does not advertise or bind placeholder actions", () => {
-    const settings = vi.fn();
-    const registry = new ActionRegistry(
-      {
-        "network.add": vi.fn(),
-        "settings.open": settings,
-      },
+    const registry = new ActionRegistry({ "network.add": vi.fn() }, "macos");
+
+    expect(registry.help(context).map(({ id }) => id)).not.toContain(
+      "network.add",
+    );
+    expect(registry.palette(context).map(({ id }) => id)).not.toContain(
+      "network.add",
+    );
+  });
+
+  it("keeps Settings hidden and unbound until a shell can open it", () => {
+    const registry = new ActionRegistry({}, "macos");
+
+    expect(registry.palette(context).map(({ id }) => id)).not.toContain(
+      "settings.open",
+    );
+    expect(
+      registry.handleKeydown(comma({ metaKey: true, shiftKey: true }), context),
+    ).toBe(false);
+  });
+
+  it("lists Settings in the palette with each shell's chord", () => {
+    const settings = { "settings.open": vi.fn() };
+    const web = new ActionRegistry(settings, "macos");
+    const linux = new ActionRegistry(settings, "other");
+    const native = new ActionRegistry(
+      settings,
       "macos",
+      [],
+      undefined,
+      "tauri",
     );
 
-    expect(registry.bindingLabel("settings.open")).toBeUndefined();
-    expect(registry.help(context).map(({ id }) => id)).not.toEqual(
-      expect.arrayContaining(["network.add", "settings.open"]),
+    expect(web.palette(context)).toContainEqual({
+      id: "settings.open",
+      title: "Settings",
+      group: "View",
+      chord: "⇧⌘,",
+    });
+    expect(linux.bindingLabel("settings.open")).toBe("Ctrl+Shift+,");
+    expect(native.bindingLabel("settings.open")).toBe("⌘,");
+  });
+
+  it("describes chords for assistive technology", () => {
+    const handlers = { "settings.open": vi.fn(), "sidebar.toggle": vi.fn() };
+    const web = new ActionRegistry(handlers, "macos");
+    const linux = new ActionRegistry(handlers, "other");
+    const native = new ActionRegistry(
+      handlers,
+      "macos",
+      [],
+      undefined,
+      "tauri",
     );
-    expect(settings).not.toHaveBeenCalled();
+
+    expect(web.ariaKeyShortcuts("settings.open")).toBe("Meta+Shift+Comma");
+    expect(linux.ariaKeyShortcuts("settings.open")).toBe("Control+Shift+Comma");
+    expect(native.ariaKeyShortcuts("settings.open")).toBe("Meta+Comma");
+    expect(web.ariaKeyShortcuts("sidebar.toggle")).toBe("Meta+Alt+s");
+    expect(web.ariaKeyShortcuts("network.add")).toBeUndefined();
+  });
+
+  it("opens Settings with Shift on the web and without it natively", () => {
+    const web = vi.fn();
+    const native = vi.fn();
+    const linux = vi.fn();
+    const webRegistry = new ActionRegistry({ "settings.open": web }, "macos");
+    const nativeRegistry = new ActionRegistry(
+      { "settings.open": native },
+      "macos",
+      [],
+      undefined,
+      "tauri",
+    );
+    const linuxRegistry = new ActionRegistry(
+      { "settings.open": linux },
+      "other",
+    );
+
+    expect(webRegistry.handleKeydown(comma({ metaKey: true }), context)).toBe(
+      false,
+    );
+    expect(
+      webRegistry.handleKeydown(
+        comma({ metaKey: true, shiftKey: true }),
+        context,
+      ),
+    ).toBe(true);
+    expect(
+      nativeRegistry.handleKeydown(
+        comma({ metaKey: true, shiftKey: true }),
+        context,
+      ),
+    ).toBe(false);
+    expect(
+      nativeRegistry.handleKeydown(comma({ metaKey: true }), context),
+    ).toBe(true);
+    expect(
+      linuxRegistry.handleKeydown(
+        comma({ ctrlKey: true, shiftKey: true }),
+        context,
+      ),
+    ).toBe(true);
+    expect(web).toHaveBeenCalledOnce();
+    expect(native).toHaveBeenCalledOnce();
+    expect(linux).toHaveBeenCalledOnce();
   });
 
   it("opens the discoverable switcher from the platform chord", () => {
@@ -361,7 +453,6 @@ describe("ActionRegistry", () => {
         "members.toggle": vi.fn(),
         "network.add": vi.fn(),
         "network.open-server": vi.fn(),
-        "settings.open": vi.fn(),
       },
       "other",
       [join],
@@ -743,4 +834,13 @@ function implicitChannelCommand(
     ...command(name, ["channel_menu"]),
     arguments: [{ name: "channel", kind: "channel", required: false }],
   };
+}
+
+function comma(init: KeyboardEventInit): KeyboardEvent {
+  return new KeyboardEvent("keydown", {
+    key: init.shiftKey === true ? "<" : ",",
+    code: "Comma",
+    cancelable: true,
+    ...init,
+  });
 }
