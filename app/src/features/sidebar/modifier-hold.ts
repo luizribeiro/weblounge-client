@@ -24,13 +24,14 @@ export function isExactChord(
 export function createModifierHold(
   target: Window,
   chord: ModifierChord | undefined,
+  keepsHold: (event: KeyboardEvent) => boolean = () => false,
 ): Accessor<boolean> {
   const [held, setHeld] = createSignal(false);
   if (chord === undefined) return held;
   const release = () => setHeld(false);
   const keydown = (event: KeyboardEvent) => {
     const modifier = modifierKeys.has(event.key);
-    if (modifier && event.repeat) return;
+    if ((modifier && event.repeat) || keepsHold(event)) return;
     setHeld(modifier && isExactChord(event, chord));
   };
   const keyup = (event: KeyboardEvent) => {

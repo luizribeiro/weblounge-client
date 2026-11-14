@@ -19,10 +19,13 @@ const controlAlt: ModifierChord = {
 let dispose = () => {};
 afterEach(() => dispose());
 
-function hold(chord: ModifierChord | undefined) {
+function hold(
+  chord: ModifierChord | undefined,
+  keepsHold?: (event: KeyboardEvent) => boolean,
+) {
   return createRoot((disposeRoot) => {
     dispose = disposeRoot;
-    return createModifierHold(window, chord);
+    return createModifierHold(window, chord, keepsHold);
   });
 }
 
@@ -57,6 +60,28 @@ describe("modifier hold", () => {
     key("keydown", "c", { metaKey: true });
     expect(held()).toBe(false);
     key("keydown", "Meta", { metaKey: true, repeat: true });
+    expect(held()).toBe(false);
+  });
+
+  it("keeps the hold through keys that keep it, until the modifier is released", () => {
+    const jumpDigit = (event: KeyboardEvent) => /^[1-9]$/u.test(event.key);
+    const held = hold(command, jumpDigit);
+    key("keydown", "Meta", { metaKey: true });
+    key("keydown", "2", { metaKey: true });
+    key("keyup", "2", { metaKey: true });
+    key("keydown", "5", { metaKey: true });
+    expect(held()).toBe(true);
+
+    key("keydown", "k", { metaKey: true });
+    expect(held()).toBe(false);
+    key("keydown", "3", { metaKey: true });
+    expect(held()).toBe(false);
+    key("keyup", "Meta");
+    expect(held()).toBe(false);
+
+    key("keydown", "Meta", { metaKey: true });
+    key("keydown", "4", { metaKey: true });
+    key("keyup", "Meta");
     expect(held()).toBe(false);
   });
 

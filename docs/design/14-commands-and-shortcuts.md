@@ -229,9 +229,12 @@ Without it the app uses the web keymap, and the browser target never binds `Mod+
 While the user holds exactly the jump chord (`⌘`, `Ctrl`, `⌥`/`Alt` or `Ctrl+Alt`, as in the
 table), each of the first nine rows shows its number after `--wl-time-hint-hold` (400ms), so quick
 chords such as `⌘C` never flash numbers. The hint fades in with `--wl-motion-fade`, which reduced
-motion zeroes; the hold delay is a time token, not motion, so it stays. Releasing a modifier,
-pressing any other key or modifier, window blur, or the page becoming hidden hides the hints at
-once. Modifier auto-repeat never brings them back, and `AltGraph` never shows them.
+motion zeroes; the hold delay is a time token, not motion, so it stays. Jump digits keep the hold:
+pressing `⌘2` and then `⌘5` leaves the numbers showing (and updated) until the modifier is
+released, whether or not a row holds that number, and a jump during the hold delay neither
+restarts nor skips it. Releasing a modifier, pressing any other key or modifier (so `⌘C` or `⌘K`
+leave nothing behind), window blur, or the page becoming hidden hides the hints at once. Modifier
+auto-repeat never brings them back, and `AltGraph` never shows them.
 
 Each sidebar row has one fixed-width trailing slot that shows at most one item, in this order:
 

@@ -326,6 +326,13 @@ export class ActionRegistry {
     return binding === undefined ? undefined : this.#label(binding);
   }
 
+  matchesBinding(id: UiActionId, event: KeyboardEvent): boolean {
+    const binding = this.#binding(findSpec(id));
+    return (
+      binding !== undefined && !producesText(event) && matches(event, binding)
+    );
+  }
+
   modifierChord(id: UiActionId): ModifierChord | undefined {
     const binding = this.#binding(findSpec(id));
     if (binding === undefined) return undefined;
@@ -339,14 +346,7 @@ export class ActionRegistry {
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
-    if (
-      event.isComposing ||
-      event.getModifierState("AltGraph") ||
-      event.key === "Dead" ||
-      event.key === "Process"
-    ) {
-      return false;
-    }
+    if (producesText(event)) return false;
     const scopes = activeScopes(event.target);
     const match = specs
       .flatMap(
@@ -671,6 +671,15 @@ function activeScopes(target: EventTarget | null): readonly ActionScope[] {
   if (!(target instanceof Element)) return ["global", "desktop"];
   const list = target.closest('[data-command-scope="list"]') !== null;
   return list ? ["list", "desktop", "global"] : ["desktop", "global"];
+}
+
+function producesText(event: KeyboardEvent): boolean {
+  return (
+    event.isComposing ||
+    event.getModifierState("AltGraph") ||
+    event.key === "Dead" ||
+    event.key === "Process"
+  );
 }
 
 function matches(event: KeyboardEvent, binding: Binding): boolean {

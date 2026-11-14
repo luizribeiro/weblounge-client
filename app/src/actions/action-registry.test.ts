@@ -266,6 +266,34 @@ describe("ActionRegistry", () => {
       expect(event.defaultPrevented).toBe(false);
     });
 
+    it("matches a jump chord without needing a row in that slot", () => {
+      const { registry } = jumpRegistry("macos", "tauri");
+
+      expect(
+        registry.matchesBinding("buffer.jump-9", digit(9, { metaKey: true })),
+      ).toBe(true);
+      expect(
+        registry.matchesBinding("buffer.jump-9", digit(8, { metaKey: true })),
+      ).toBe(false);
+      expect(
+        registry.matchesBinding(
+          "buffer.jump-9",
+          digit(9, { metaKey: true, shiftKey: true }),
+        ),
+      ).toBe(false);
+    });
+
+    it("never matches a jump chord typed with AltGraph", () => {
+      const { registry } = jumpRegistry("linux", "web");
+      const event = digit(3, { altKey: true, ctrlKey: true });
+
+      expect(registry.matchesBinding("buffer.jump-3", event)).toBe(true);
+      Object.defineProperty(event, "getModifierState", {
+        value: (key: string) => key === "AltGraph",
+      });
+      expect(registry.matchesBinding("buffer.jump-3", event)).toBe(false);
+    });
+
     it.each([
       ["macos", "tauri", { alt: false, ctrl: false, meta: true, shift: false }],
       ["other", "tauri", { alt: false, ctrl: true, meta: false, shift: false }],

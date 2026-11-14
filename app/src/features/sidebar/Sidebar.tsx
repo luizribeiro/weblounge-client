@@ -90,6 +90,10 @@ export function Sidebar(props: SidebarProps) {
   const jumpHintsHeld = createModifierHold(
     window,
     props.registry.modifierChord(jumpActionId(1)),
+    (event) =>
+      jumpSlots.some((slot) =>
+        props.registry.matchesBinding(jumpActionId(slot), event),
+      ),
   );
   const jumpSlotsByBuffer = createMemo(() =>
     jumpSlotsById(props.networks, props.buffers, jumpSlots.length),

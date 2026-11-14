@@ -40,7 +40,7 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
   }) => {
     await emulatePlatform(page, "Linux x86_64");
     await installNativeFeelInstrumentation(page);
-    await openWithExtraChannel(page);
+    await openWithExtraChannel(page, 2);
     const ids = await conversationRowIds(page);
     const numbered = ids.slice(0, 9);
     const first = sidebarRow(page, ids[0]);
@@ -65,6 +65,13 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
       restingEdge,
     );
     await nativeFeelAudit(page);
+
+    await page.keyboard.press("2");
+    await expect(row(page, ids[1])).toHaveAttribute("aria-current", "page");
+    await expect(first.locator("[data-jump-hint]")).toBeVisible();
+    await page.keyboard.press("3");
+    await expect(row(page, ids[2])).toHaveAttribute("aria-current", "page");
+    await expect(first.locator("[data-jump-hint]")).toBeVisible();
 
     await releaseJumpModifier(page);
     await expect(first.locator("[data-jump-hint]")).toBeHidden();
@@ -139,18 +146,23 @@ async function emulatePlatform(page: Page, platform: string): Promise<void> {
   }, platform);
 }
 
-async function openWithExtraChannel(page: Page): Promise<void> {
+async function openWithExtraChannel(
+  page: Page,
+  extraChannels = 1,
+): Promise<void> {
   await page.goto("/?irc-password=weblounge-test");
   const home = page.getByRole("button", { name: /^#weblounge-test/u });
   await home.click();
   const composer = page.getByRole("textbox", {
     name: "Message #weblounge-test",
   });
-  const channel = `#jump-${Date.now().toString(36)}`;
-  await composer.fill(`/join ${channel}`);
-  await composer.press("Enter");
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-  await home.click();
+  for (let index = 0; index < extraChannels; index += 1) {
+    const channel = `#jump-${Date.now().toString(36)}-${index}`;
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await home.click();
+  }
 }
 
 async function conversationRowIds(page: Page): Promise<string[]> {
