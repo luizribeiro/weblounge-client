@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import loungeNight from "../../themes/lounge-night.json";
 import { themePreferences } from "../engine/decodeSettings";
 import { resolveTheme } from "./resolve-theme";
 import { installTheme } from "./theme-controller";
 import {
+  buildRegistry,
   motionTokens,
   nickPaletteSize,
   themeStyleSheet,
@@ -61,6 +63,30 @@ describe("theme registry", () => {
     expect(timeTokens.hintHold).toBe("400ms");
     expect(themeStyleSheet()).toContain("--wl-time-hint-hold:400ms");
     expect(themeStyleSheet()).not.toContain("--wl-time-hint-hold:0ms");
+  });
+});
+
+describe("theme schema", () => {
+  const { onboarding: _onboarding, ...withoutOnboarding } = loungeNight;
+
+  it("accepts a theme without onboarding tokens", () => {
+    const [theme] = buildRegistry({ "night.json": withoutOnboarding });
+
+    expect(theme?.id).toBe("lounge-night");
+    expect(theme).not.toHaveProperty("onboarding");
+  });
+
+  it("rejects unknown keys and missing tokens", () => {
+    expect(() =>
+      buildRegistry({ "night.json": { ...loungeNight, extra: true } }),
+    ).toThrow("night.json: expected");
+    const { accent: _accent, ...colors } = loungeNight.colors;
+    expect(() =>
+      buildRegistry({ "night.json": { ...loungeNight, colors } }),
+    ).toThrow("night.json.colors: expected");
+    expect(() =>
+      buildRegistry({ "night.json": { ...loungeNight, onboarding: {} } }),
+    ).toThrow("night.json.onboarding: expected");
   });
 });
 

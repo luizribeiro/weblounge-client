@@ -11,9 +11,23 @@ export interface ThemeDefinition {
   readonly shape: Readonly<Record<ShapeToken, string>>;
   readonly effects: Readonly<Record<EffectToken, string>>;
   readonly nickPalette: readonly [CssColor, ...CssColor[]];
-  readonly onboarding: Readonly<Record<OnboardingToken, CssColor>> &
-    Readonly<Partial<Record<LightOnboardingToken, CssColor>>>;
+  readonly onboarding?: OnboardingDefinition;
 }
+
+type OnboardingDefinition = Readonly<Record<OnboardingToken, CssColor>> &
+  Readonly<Partial<Record<LightOnboardingToken, CssColor>>>;
+
+const themeKeys = [
+  "id",
+  "name",
+  "order",
+  "appearance",
+  "colors",
+  "typography",
+  "shape",
+  "effects",
+  "nickPalette",
+] as const;
 
 const colorTokens = [
   "bg",
@@ -144,7 +158,7 @@ function motionProperties(
     .join(";");
 }
 
-function buildRegistry(
+export function buildRegistry(
   files: Readonly<Record<string, unknown>>,
 ): readonly ThemeDefinition[] {
   const registry = Object.entries(files).map(([path, value]) =>
@@ -168,20 +182,10 @@ function sharedNickPaletteSize(registry: readonly ThemeDefinition[]): number {
 
 function parseTheme(path: string, value: unknown): ThemeDefinition {
   if (!isRecord(value)) throw new Error(`${path}: theme must be an object`);
+  const hasOnboarding = value.onboarding !== undefined;
   assertKeys(
     value,
-    [
-      "id",
-      "name",
-      "order",
-      "appearance",
-      "colors",
-      "typography",
-      "shape",
-      "effects",
-      "nickPalette",
-      "onboarding",
-    ],
+    hasOnboarding ? [...themeKeys, "onboarding"] : themeKeys,
     path,
   );
   if (typeof value.id !== "string" || !/^[a-z][a-z0-9-]*$/.test(value.id)) {
@@ -217,14 +221,18 @@ function parseTheme(path: string, value: unknown): ThemeDefinition {
       `${path}.effects`,
     ),
     nickPalette,
-    onboarding: parseTokenRecord(
-      value.onboarding,
-      value.appearance === "light"
-        ? [...onboardingTokens, ...lightOnboardingTokens]
-        : onboardingTokens,
-      true,
-      `${path}.onboarding`,
-    ) as ThemeDefinition["onboarding"],
+    ...(hasOnboarding
+      ? {
+          onboarding: parseTokenRecord(
+            value.onboarding,
+            value.appearance === "light"
+              ? [...onboardingTokens, ...lightOnboardingTokens]
+              : onboardingTokens,
+            true,
+            `${path}.onboarding`,
+          ) as OnboardingDefinition,
+        }
+      : {}),
   };
 }
 
