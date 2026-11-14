@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { InlineImage } from "./InlineImage";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function renderImage(url: string, onOpenExternal?: (href: string) => void) {
   return render(() => (
@@ -58,6 +63,59 @@ it("follows the loaded image's aspect and keeps it across remounts", () => {
   expect(remounted.style.getPropertyValue("--wl-inline-image-aspect")).toBe(
     "8",
   );
+});
+
+it.each([
+  ["animates a GIF without reduced motion", false, "animated.gif", "img"],
+  ["stills a GIF under reduced motion", true, "still.gif", "canvas"],
+  ["keeps a PNG under reduced motion", true, "photo.png", "img"],
+])("%s", (_label, reduced, name, element) => {
+  const drawImage = vi.fn();
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        matches: reduced && query === "(prefers-reduced-motion: reduce)",
+      }) as MediaQueryList,
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage,
+  } as unknown as CanvasRenderingContext2D);
+  const slot = slotFor(`https://files.example.test/${name}`);
+
+  const image = loadNaturalSize(slot, 160, 120);
+
+  expect(slot.querySelector("img, canvas")?.localName).toBe(element);
+  expect(slot.style.getPropertyValue("--wl-inline-image-aspect")).toBe(
+    String(160 / 120),
+  );
+  if (element === "canvas") expect(drawImage).toHaveBeenCalledWith(image, 0, 0);
+});
+
+it("keeps a remounted GIF hidden until its still frame replaces it", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+      }) as MediaQueryList,
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  const url = "https://files.example.test/remounted.gif";
+  const first = renderImage(url);
+  loadNaturalSize(screen.getByRole("link"), 160, 120);
+  first.unmount();
+
+  const slot = slotFor(url);
+
+  expect(slot.querySelector("img")).not.toHaveAttribute("data-loaded", "true");
+  expect(slot.style.getPropertyValue("--wl-inline-image-aspect")).toBe(
+    String(160 / 120),
+  );
+  loadNaturalSize(slot, 160, 120);
+  expect(slot.querySelector("canvas")).not.toBeNull();
 });
 
 it("treats an image without a natural size as a failure", () => {

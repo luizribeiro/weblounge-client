@@ -92,6 +92,20 @@ test.describe("inline file host images against local Ergo", () => {
     });
   });
 
+  test("stills animated images under reduced motion", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await withDirectPeer(page, "still", async (peer, suffix) => {
+      const animated = `${E2E_FILEHOST_ORIGIN}/${suffix}/animated.gif`;
+      await peer.privmsgConfirmed("weblounge", `wave ${animated}`);
+      const slot = slotIn(page, animated);
+      await expect(slot).toHaveAttribute("data-inline-image", "still");
+      await expect(slot.locator("canvas")).toBeVisible();
+      await expect(slot.locator("img")).toHaveCount(0);
+      await expectSlotSize(slot, 240, 320);
+    });
+  });
+
   test.describe("phone layout", () => {
     test.use({
       hasTouch: true,

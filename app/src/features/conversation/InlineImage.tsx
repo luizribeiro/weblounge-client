@@ -1,11 +1,18 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, Match, Switch } from "solid-js";
 import { t } from "../../strings";
 import styles from "./InlineImage.module.css";
 
 type ImageState =
-  | { readonly kind: "loading" }
+  | { readonly kind: "loading"; readonly aspect?: number }
   | { readonly kind: "loaded"; readonly aspect: number }
+  | {
+      readonly kind: "still";
+      readonly aspect: number;
+      readonly frame: HTMLCanvasElement;
+    }
   | { readonly kind: "failed" };
+
+const animatedPath = /\.(?:gif|webp)$/iu;
 
 // Virtualisation remounts rows; remembering each loaded aspect keeps a
 // scrolled-back image at its final width instead of re-growing from 4:3.
@@ -17,15 +24,18 @@ export function InlineImage(props: {
   readonly presentation: "desktop" | "mobile";
   readonly url: string;
 }) {
+  const still = prefersStill(props.url);
   const knownAspect = loadedAspects.get(props.url);
   const [state, setState] = createSignal<ImageState>(
     knownAspect === undefined
       ? { kind: "loading" }
-      : { kind: "loaded", aspect: knownAspect },
+      : still
+        ? { kind: "loading", aspect: knownAspect }
+        : { kind: "loaded", aspect: knownAspect },
   );
   const aspectStyle = () => {
     const current = state();
-    return current.kind === "loaded"
+    return current.kind !== "failed" && current.aspect !== undefined
       ? { "--wl-inline-image-aspect": String(current.aspect) }
       : undefined;
   };
@@ -36,7 +46,12 @@ export function InlineImage(props: {
     }
     const aspect = image.naturalWidth / image.naturalHeight;
     loadedAspects.set(props.url, aspect);
-    setState({ kind: "loaded", aspect });
+    const frame = still ? firstFrame(image) : undefined;
+    setState(
+      frame === undefined
+        ? { kind: "loaded", aspect }
+        : { kind: "still", aspect, frame },
+    );
   };
   const host = new URL(props.url).host;
   return (
@@ -59,9 +74,22 @@ export function InlineImage(props: {
       style={aspectStyle()}
       target="_blank"
     >
-      <Show
-        when={state().kind !== "failed"}
+      <Switch
         fallback={
+          <img
+            alt=""
+            class={styles.image}
+            data-loaded={state().kind === "loaded"}
+            decoding="async"
+            draggable={false}
+            loading="lazy"
+            onError={() => setState({ kind: "failed" })}
+            onLoad={(event) => showLoaded(event.currentTarget)}
+            src={props.url}
+          />
+        }
+      >
+        <Match when={state().kind === "failed"}>
           <span class={styles.failure}>
             <span>
               {t("messages.image.failed")} ·{" "}
@@ -70,20 +98,36 @@ export function InlineImage(props: {
               </span>
             </span>
           </span>
-        }
-      >
-        <img
-          alt=""
-          class={styles.image}
-          data-loaded={state().kind === "loaded"}
-          decoding="async"
-          draggable={false}
-          loading="lazy"
-          onError={() => setState({ kind: "failed" })}
-          onLoad={(event) => showLoaded(event.currentTarget)}
-          src={props.url}
-        />
-      </Show>
+        </Match>
+        <Match when={stillFrame(state())} keyed>
+          {(frame) => frame}
+        </Match>
+      </Switch>
     </a>
   );
+}
+
+function stillFrame(state: ImageState): HTMLCanvasElement | undefined {
+  return state.kind === "still" ? state.frame : undefined;
+}
+
+function prefersStill(url: string): boolean {
+  return (
+    animatedPath.test(new URL(url).pathname) &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+  );
+}
+
+// Drawing a cross-origin image only taints the canvas, which is never read
+// back, so a still frame needs neither CORS nor a proxy.
+function firstFrame(image: HTMLImageElement): HTMLCanvasElement | undefined {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (context === null) return undefined;
+  context.drawImage(image, 0, 0);
+  canvas.className = styles.image ?? "";
+  canvas.dataset.loaded = "true";
+  return canvas;
 }
