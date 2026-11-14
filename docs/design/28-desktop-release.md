@@ -27,9 +27,10 @@ workflow on a `v*` tag. This adds a cask beside them, bumped the same way.
 
 ## Release flow
 
-A release script, `apps/tauri/scripts/release.sh`, runs on Luiz's Mac. It runs outside Nix
-because signing needs the login keychain's Developer ID identity and notarization needs the network
-and the stored `notarytool` profile `weblounge`, neither of which the sandbox may have.
+A release script, `apps/tauri/release/release.mjs` (run with `nix develop -c node`), runs on Luiz's
+Mac, outside Nix: signing needs the login keychain's Developer ID identity and notarization needs
+the network and the stored `notarytool` profile `weblounge`, neither of which the sandbox may have.
+`--dry-run` stops before publishing and keeps the verified image.
 
 1. Refuse to run unless the worktree is clean, `HEAD` is on `origin/main`, and the tag
    `desktop-v<version>` does not exist; `<version>` is the crate's, which `tauri.conf.json` and
@@ -39,14 +40,18 @@ and the stored `notarytool` profile `weblounge`, neither of which the sandbox ma
    and the Developer ID Application identity. The identifier stays `org.weblounge.desktop`, so
    notification permission, web storage and the login item carry over from an ad-hoc install.
    The hardened runtime needs no entitlements: WebKit's JIT runs in its own signed processes.
-4. Build `Weblounge-<version>.dmg` with `hdiutil` (compressed UDIF, the Applications symlink as in
-   `.#desktop-dmg`), sign it, submit it with `notarytool submit --wait`, and staple the ticket to
-   the image. Notarization and stapling need a real UDIF image, which the sandboxed ISO hybrid of
-   `.#desktop-dmg` is not; that package stays for local installs.
+4. Notarize a zip of the app and staple the ticket to the app itself, so a copy dragged out of the
+   image or installed by the cask passes Gatekeeper on first launch without reaching Apple.
+   Then build `Weblounge-<version>.dmg` with `hdiutil` (compressed UDIF, the Applications symlink
+   as in `.#desktop-dmg`), sign it, notarize it, and staple the ticket to the image. Notarization
+   and stapling need a real UDIF image, which the sandboxed ISO hybrid of `.#desktop-dmg` is not;
+   that package stays for local installs. A submission that Apple does not accept prints its
+   notarization log and stops the release, keeping its files for inspection.
 5. Verify before publishing: `spctl --assess --type open --context context:primary-signature` on
    the image, `spctl --assess --type execute` and `codesign --verify --strict --deep` on the
    mounted app, and `stapler validate`.
-6. Tag `desktop-v<version>`, push the tag, and create a GitHub release with the image.
+6. Create a GitHub release with the image, letting GitHub create the tag `desktop-v<version>` at
+   the built commit in the same step, so a failed upload leaves no tag that would block a retry.
 
 Publishing the release triggers a workflow in this repo that calls a new reusable `bump-cask`
 workflow in the tap, the counterpart of `bump-formula`: it downloads the release's image, rewrites
