@@ -265,6 +265,20 @@ describe("ActionRegistry", () => {
       expect(registry.handleKeydown(event, jumpContext)).toBe(false);
       expect(event.defaultPrevented).toBe(false);
     });
+
+    it.each([
+      ["macos", "tauri", { alt: false, ctrl: false, meta: true, shift: false }],
+      ["other", "tauri", { alt: false, ctrl: true, meta: false, shift: false }],
+      ["macos", "web", { alt: true, ctrl: false, meta: false, shift: false }],
+      ["linux", "web", { alt: true, ctrl: true, meta: false, shift: false }],
+    ] as const)(
+      "reports the %s %s jump modifiers for hints",
+      (platform, shell, chord) => {
+        expect(
+          jumpRegistry(platform, shell).registry.modifierChord("buffer.jump-1"),
+        ).toEqual(chord);
+      },
+    );
   });
 
   it("passes a clicked target through the typed command boundary", () => {

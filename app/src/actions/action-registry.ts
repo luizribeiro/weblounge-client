@@ -95,6 +95,13 @@ interface Binding {
   readonly shells?: readonly ActionShell[];
 }
 
+export interface ModifierChord {
+  readonly alt: boolean;
+  readonly ctrl: boolean;
+  readonly meta: boolean;
+  readonly shift: boolean;
+}
+
 interface ActionSpec {
   readonly id: UiActionId;
   readonly title: string;
@@ -317,6 +324,18 @@ export class ActionRegistry {
   bindingLabel(id: UiActionId): string | undefined {
     const binding = this.#binding(findSpec(id));
     return binding === undefined ? undefined : this.#label(binding);
+  }
+
+  modifierChord(id: UiActionId): ModifierChord | undefined {
+    const binding = this.#binding(findSpec(id));
+    if (binding === undefined) return undefined;
+    const mod = binding.mod === true;
+    return {
+      alt: binding.alt === true,
+      ctrl: mod && this.#platform !== "macos",
+      meta: mod && this.#platform === "macos",
+      shift: binding.shift === true,
+    };
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
