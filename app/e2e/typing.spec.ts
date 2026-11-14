@@ -1,14 +1,13 @@
-import { expect, type Locator, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 import {
   advanceEngineClock,
   installEngineClock,
   startEngineClock,
 } from "./engine-clock";
-import { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
+import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
-
-const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 interface Box {
   readonly bottom: number;
@@ -44,502 +43,434 @@ test.describe("typing indicators", () => {
 
   test("shows and clears incoming channel and direct typing", async ({
     page,
+    irc,
   }) => {
-    const peer = await IrcClient.connect(
-      "typing-peer",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
+    const channel = irc.channel;
+    const peer = await irc.peer("typing-peer");
     const indicator = page.locator("[data-typing-indicator]");
-    try {
-      await installEngineClock(page);
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await installEngineClock(page);
+    await page.goto(irc.url());
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-      await peer.typingConfirmed(channel, "active");
-      await expect(indicator).toContainText("typing-peer is typing…");
-      await peer.typingConfirmed(channel, "done");
-      await expect(indicator).toHaveText("");
+    await peer.typingConfirmed(channel, "active");
+    await expect(indicator).toContainText(`${peer.nickname} is typing…`);
+    await peer.typingConfirmed(channel, "done");
+    await expect(indicator).toHaveText("");
 
-      await peer.typingConfirmed(channel, "active");
-      await expect(indicator).toContainText("typing-peer is typing…");
-      const channelMessage = `typing clear ${Date.now()}`;
-      await peer.privmsgConfirmed(channel, channelMessage);
-      await expect(
-        page.getByText(channelMessage, { exact: true }),
-      ).toBeVisible();
-      await expect(indicator).toHaveText("");
+    await peer.typingConfirmed(channel, "active");
+    await expect(indicator).toContainText(`${peer.nickname} is typing…`);
+    const channelMessage = `typing clear ${Date.now()}`;
+    await peer.privmsgConfirmed(channel, channelMessage);
+    await expect(page.getByText(channelMessage, { exact: true })).toBeVisible();
+    await expect(indicator).toHaveText("");
 
-      const directMessage = `open typing direct ${Date.now()}`;
-      await peer.privmsgConfirmed("weblounge", directMessage);
-      await page
-        .getByRole("button", { name: /^typing-peer, 1 unread/u })
-        .click();
-      await expect(
-        page.getByRole("heading", { name: "typing-peer" }),
-      ).toBeVisible();
-      await peer.typingConfirmed("weblounge", "active");
-      await expect(indicator).toContainText("typing-peer is typing…");
-      await peer.typingConfirmed("weblounge", "done");
-      await expect(indicator).toHaveText("");
+    const directMessage = `open typing direct ${Date.now()}`;
+    await peer.privmsgConfirmed(irc.account, directMessage);
+    await page
+      .getByRole("button", {
+        name: new RegExp(`^${peer.nickname}, 1 unread`, "u"),
+      })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: peer.nickname }),
+    ).toBeVisible();
+    await peer.typingConfirmed(irc.account, "active");
+    await expect(indicator).toContainText(`${peer.nickname} is typing…`);
+    await peer.typingConfirmed(irc.account, "done");
+    await expect(indicator).toHaveText("");
 
-      await page.getByRole("button", { name: channel, exact: true }).click();
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-      await startEngineClock(page);
-      await peer.typingConfirmed(channel, "active");
-      await expect(indicator).toContainText("typing-peer is typing…");
-      await advanceEngineClock(page, 6_001);
-      await expect(indicator).toHaveText("");
-    } finally {
-      peer.close();
-    }
+    await page.getByRole("button", { name: channel, exact: true }).click();
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await startEngineClock(page);
+    await peer.typingConfirmed(channel, "active");
+    await expect(indicator).toContainText(`${peer.nickname} is typing…`);
+    await advanceEngineClock(page, 6_001);
+    await expect(indicator).toHaveText("");
   });
 
   test("renders spaces in the composer typing line for one and two typers", async ({
     page,
+    irc,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
-    const suffix = mobile ? "mobile" : "desktop";
-    const run = Date.now().toString(36).slice(-5);
-    const typingChannel = `#typing-${suffix[0]}-${run}`;
-    const viewer = `typing-viewer-${suffix[0]}-${run}`;
-    const seed = await IrcClient.connectIsolated(viewer, typingChannel);
-    seed.close();
-    await seed.waitForDisconnect();
-    const first = await IrcClient.connectIsolated(
-      `typing-alexandria-${suffix[0]}-${run}`,
-      typingChannel,
+    const typingChannel = irc.channelNamed("typing");
+    const first = await irc.peer("typing-alexandria", [typingChannel]);
+    const second = await irc.peer("typing-bartholomew", [typingChannel]);
+    const third = await irc.peer("typing-cordelia", [typingChannel]);
+    if (mobile) await emulateStandalone(page);
+    await page.goto(irc.url({ autojoin: [typingChannel] }));
+    if (mobile) await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await page
+      .getByRole("button", { name: typingChannel, exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: typingChannel }),
+    ).toBeVisible();
+    const indicator = page.locator("[data-typing-indicator]");
+
+    const typingMessage = `typing colour from ${first.nickname}`;
+    await first.privmsgConfirmed(typingChannel, typingMessage);
+    await first.typingConfirmed(typingChannel, "active");
+    await expect(indicator).toContainText(`${first.nickname} is typing…`);
+    const typingNick = indicator.locator(
+      `[data-typing-nick="${first.nickname}"]`,
     );
-    const second = await IrcClient.connectIsolated(
-      `typing-bartholomew-${suffix[0]}-${run}`,
-      typingChannel,
+    const typingRow = page.locator(
+      `[data-message-row][data-message-text="${typingMessage}"]`,
     );
-    const third = await IrcClient.connectIsolated(
-      `typing-cordelia-${suffix[0]}-${run}`,
-      typingChannel,
+    const senderNick = typingRow.locator(`[title="${first.nickname}"]`);
+    await expect(senderNick).toBeVisible();
+    const typingText = indicator.locator("[data-typing-text]");
+    await expectSharedLeftEdge(
+      mobile
+        ? { nick: senderNick, typing: typingText }
+        : {
+            composer: page.getByRole("textbox", {
+              name: `Message ${typingChannel}`,
+            }),
+            time: typingRow.locator("time"),
+            typing: typingText,
+          },
     );
-    try {
-      if (mobile) await emulateStandalone(page);
-      const params = new URLSearchParams({
-        "irc-account": viewer,
-        "irc-autojoin": typingChannel,
-        "irc-nickname": viewer,
-        "irc-password": `test-${viewer}`,
-      });
-      await page.goto(`/?${params.toString()}`);
-      if (mobile)
-        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-      await page
-        .getByRole("button", { name: typingChannel, exact: true })
-        .click();
-      await expect(
-        page.getByRole("heading", { name: typingChannel }),
-      ).toBeVisible();
-      const indicator = page.locator("[data-typing-indicator]");
+    await expect(typingNick).toHaveCSS("font-weight", "650");
+    const senderColor = await senderNick.evaluate(
+      (element) => getComputedStyle(element).color,
+    );
+    await expect(typingNick).toHaveCSS("color", senderColor);
+    const singleSpacing = await visibleTypingSpaces(indicator);
 
-      const typingMessage = `typing colour from ${first.nickname}`;
-      await first.privmsgConfirmed(typingChannel, typingMessage);
-      await first.typingConfirmed(typingChannel, "active");
-      await expect(indicator).toContainText(`${first.nickname} is typing…`);
-      const typingNick = indicator.locator(
-        `[data-typing-nick="${first.nickname}"]`,
-      );
-      const typingRow = page.locator(
-        `[data-message-row][data-message-text="${typingMessage}"]`,
-      );
-      const senderNick = typingRow.locator(`[title="${first.nickname}"]`);
-      await expect(senderNick).toBeVisible();
-      const typingText = indicator.locator("[data-typing-text]");
-      await expectSharedLeftEdge(
-        mobile
-          ? { nick: senderNick, typing: typingText }
-          : {
-              composer: page.getByRole("textbox", {
-                name: `Message ${typingChannel}`,
-              }),
-              time: typingRow.locator("time"),
-              typing: typingText,
-            },
-      );
-      await expect(typingNick).toHaveCSS("font-weight", "650");
-      const senderColor = await senderNick.evaluate(
-        (element) => getComputedStyle(element).color,
-      );
-      await expect(typingNick).toHaveCSS("color", senderColor);
-      const singleSpacing = await visibleTypingSpaces(indicator);
+    await second.typingConfirmed(typingChannel, "active");
+    await expect(indicator).toContainText(
+      `${first.nickname} and ${second.nickname} are typing…`,
+    );
+    const pairSpacing = await visibleTypingSpaces(indicator);
+    const truncation = await typingTruncation(indicator);
 
-      await second.typingConfirmed(typingChannel, "active");
-      await expect(indicator).toContainText(
-        `${first.nickname} and ${second.nickname} are typing…`,
-      );
-      const pairSpacing = await visibleTypingSpaces(indicator);
-      const truncation = await typingTruncation(indicator);
+    await third.typingConfirmed(typingChannel, "active");
+    await expect(indicator).toHaveText("several people are typing…");
+    await expect(indicator.locator("[data-typing-nick]")).toHaveCount(0);
 
-      await third.typingConfirmed(typingChannel, "active");
-      await expect(indicator).toHaveText("several people are typing…");
-      await expect(indicator.locator("[data-typing-nick]")).toHaveCount(0);
-
-      expect.soft(singleSpacing, "space before 'is typing'").toEqual([1]);
-      expect
-        .soft(pairSpacing, "spaces around 'and' and before 'are typing'")
-        .toEqual([1, 1, 1]);
-      expect(truncation).toMatchObject({
-        clippedWithinRow: true,
-        overflow: "hidden",
-        whiteSpace: "nowrap",
-      });
-      if (mobile) expect(truncation.hasOverflow).toBe(true);
-    } finally {
-      first.close();
-      second.close();
-      third.close();
-    }
+    expect.soft(singleSpacing, "space before 'is typing'").toEqual([1]);
+    expect
+      .soft(pairSpacing, "spaces around 'and' and before 'are typing'")
+      .toEqual([1, 1, 1]);
+    expect(truncation).toMatchObject({
+      clippedWithinRow: true,
+      overflow: "hidden",
+      whiteSpace: "nowrap",
+    });
+    if (mobile) expect(truncation.hasOverflow).toBe(true);
   });
 
   test("keeps the transcript against the composer while the typing line changes", async ({
     page,
+    irc,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
-    const run = Date.now().toString(36).slice(-5);
-    const typer = await IrcClient.connectIsolated(
-      `typing-edge-${mobile ? "mobile" : "desktop"}-${run}`,
-      channel,
-    );
-    const sender = await IrcClient.connectIsolated(
-      `typing-sender-${mobile ? "mobile" : "desktop"}-${run}`,
-      channel,
-    );
-    try {
-      const incoming = `typing edge incoming ${Date.now()}`;
-      if (mobile) {
-        await emulateStandalone(page);
-        await installEngineClock(page);
-      } else await sender.privmsgConfirmed(channel, incoming);
-      await page.goto("/?irc-password=weblounge-test");
-      if (mobile) {
-        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await page.getByRole("button", { name: channel, exact: true }).click();
-        await expect(
-          page.getByRole("heading", { name: channel }),
-        ).toBeVisible();
-        const channelComposer = page.getByRole("textbox", {
-          name: `Message ${channel}`,
-        });
-        const verifiedOpening = `verified typing thread ${Date.now()}`;
-        await channelComposer.fill(
-          `/query ${sender.nickname} ${verifiedOpening}`,
-        );
-        await channelComposer.press("Enter");
-        await sender.waitForPrivmsg(
-          sender.nickname,
-          verifiedOpening,
-          "weblounge",
-        );
-        await expect(
-          page.getByRole("heading", { name: sender.nickname }),
-        ).toBeVisible();
-        await page.getByRole("button", { name: "Back to chats" }).click();
-        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await expect(page.locator("[data-motion]")).toHaveCount(0);
-        const echoedIncoming = await sender.privmsgConfirmed(
-          "weblounge",
-          incoming,
-        );
-        expectServerTags(echoedIncoming, sender.nickname);
-        await page
-          .getByRole("button", {
-            name: new RegExp(`^${sender.nickname}, 1 unread`, "u"),
-          })
-          .click();
-      }
-      const conversation = mobile ? sender.nickname : channel;
+    const channel = irc.channel;
+    const typer = await irc.peer("typing-edge");
+    const sender = await irc.peer("typing-sender");
+    const incoming = `typing edge incoming ${Date.now()}`;
+    if (mobile) {
+      await emulateStandalone(page);
+      await installEngineClock(page);
+    } else await sender.privmsgConfirmed(channel, incoming);
+    await page.goto(irc.url());
+    if (mobile) {
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await page.getByRole("button", { name: channel, exact: true }).click();
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      const channelComposer = page.getByRole("textbox", {
+        name: `Message ${channel}`,
+      });
+      const verifiedOpening = `verified typing thread ${Date.now()}`;
+      await channelComposer.fill(
+        `/query ${sender.nickname} ${verifiedOpening}`,
+      );
+      await channelComposer.press("Enter");
+      await sender.waitForPrivmsg(
+        sender.nickname,
+        verifiedOpening,
+        irc.account,
+      );
       await expect(
-        page.getByRole("heading", { name: conversation }),
+        page.getByRole("heading", { name: sender.nickname }),
       ).toBeVisible();
-      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
-      if (mobile) await expect(page.locator("[data-motion]")).toHaveCount(0);
-      const conversationRoot = mobile
-        ? page.locator("[data-mobile-chat]").filter({
-            has: page.getByRole("heading", { name: conversation }),
-          })
-        : page.locator("[data-app-root]");
-      const indicator = conversationRoot.locator("[data-typing-indicator]");
+      await page.getByRole("button", { name: "Back to chats" }).click();
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await expectSettled(page);
+      const echoedIncoming = await sender.privmsgConfirmed(
+        irc.account,
+        incoming,
+      );
+      expectServerTags(echoedIncoming, sender.nickname);
+      await page
+        .getByRole("button", {
+          name: new RegExp(`^${sender.nickname}, 1 unread`, "u"),
+        })
+        .click();
+    }
+    const conversation = mobile ? sender.nickname : channel;
+    await expect(
+      page.getByRole("heading", { name: conversation }),
+    ).toBeVisible();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    if (mobile) await expectSettled(page);
+    const conversationRoot = mobile
+      ? page.locator("[data-mobile-chat]").filter({
+          has: page.getByRole("heading", { name: conversation }),
+        })
+      : page.locator("[data-app-root]");
+    const indicator = conversationRoot.locator("[data-typing-indicator]");
 
-      const incomingRow = conversationRoot
-        .locator("[data-message-row]")
-        .filter({ has: page.getByText(incoming, { exact: true }) });
-      await expect(incomingRow).toBeVisible();
+    const incomingRow = conversationRoot
+      .locator("[data-message-row]")
+      .filter({ has: page.getByText(incoming, { exact: true }) });
+    await expect(incomingRow).toBeVisible();
 
-      await expect(indicator).toHaveText("");
-      const emptyGeometry = await transcriptEdgeGeometry(
+    await expect(indicator).toHaveText("");
+    const emptyGeometry = await transcriptEdgeGeometry(
+      conversationRoot,
+      incomingRow,
+    );
+    expectTranscriptMeetsComposer(emptyGeometry, "nobody typing");
+    expectNewestRowAgainstComposer(emptyGeometry, "nobody typing");
+
+    if (mobile) {
+      await page.getByRole("button", { name: "Back to chats" }).click();
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await expectSettled(page);
+      await startEngineClock(page);
+      const firstActive = await sender.typingConfirmed(irc.account, "active");
+      expectServerTags(firstActive, sender.nickname);
+      await advanceEngineClock(page, 3_000);
+      const refreshedActive = await sender.typingConfirmed(
+        irc.account,
+        "active",
+      );
+      expectServerTags(refreshedActive, sender.nickname);
+      await page
+        .getByRole("button", {
+          name: new RegExp(`^${sender.nickname}(?:,|$)`, "u"),
+        })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: sender.nickname }),
+      ).toBeVisible();
+      await expectSettled(page);
+      await expect(indicator).toContainText(`${sender.nickname} is typing…`);
+      await expectMobileTypingIndicatorVisible(indicator);
+      await expectTypingLineChangeKeepsGeometry(
         conversationRoot,
         incomingRow,
+        emptyGeometry,
       );
-      expectTranscriptMeetsComposer(emptyGeometry, "nobody typing");
-      expectNewestRowAgainstComposer(emptyGeometry, "nobody typing");
-
-      if (mobile) {
-        await page.getByRole("button", { name: "Back to chats" }).click();
-        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await expect(page.locator("[data-motion]")).toHaveCount(0);
-        await startEngineClock(page);
-        const firstActive = await sender.typingConfirmed("weblounge", "active");
-        expectServerTags(firstActive, sender.nickname);
-        await advanceEngineClock(page, 3_000);
-        const refreshedActive = await sender.typingConfirmed(
-          "weblounge",
-          "active",
-        );
-        expectServerTags(refreshedActive, sender.nickname);
-        await page
-          .getByRole("button", {
-            name: new RegExp(`^${sender.nickname}(?:,|$)`, "u"),
-          })
-          .click();
-        await expect(
-          page.getByRole("heading", { name: sender.nickname }),
-        ).toBeVisible();
-        await expect(page.locator("[data-motion]")).toHaveCount(0);
-        await expect(indicator).toContainText(`${sender.nickname} is typing…`);
-        await expectMobileTypingIndicatorVisible(indicator);
-        await expectTypingLineChangeKeepsGeometry(
-          conversationRoot,
-          incomingRow,
-          emptyGeometry,
-        );
-        const done = await sender.typingConfirmed("weblounge", "done");
-        expectServerTags(done, sender.nickname);
-        await expect(indicator).toHaveText("");
-        expectStableTypingGeometry(
-          emptyGeometry,
-          await transcriptEdgeGeometry(conversationRoot, incomingRow),
-          "after typing stops",
-        );
-        const reply = `typing edge reply ${Date.now()}`;
-        const echoedReply = await sender.privmsgConfirmed("weblounge", reply);
-        expectServerTags(echoedReply, sender.nickname);
-        await expect(
-          conversationRoot.getByText(reply, { exact: true }),
-        ).toBeVisible();
-      } else {
-        await typer.typingConfirmed(channel, "active");
-        await expect(indicator).toContainText(`${typer.nickname} is typing…`);
-        await expectTypingLineChangeKeepsGeometry(
-          conversationRoot,
-          incomingRow,
-          emptyGeometry,
-        );
-        await typer.typingConfirmed(channel, "done");
-        await expect(indicator).toHaveText("");
-        expectStableTypingGeometry(
-          emptyGeometry,
-          await transcriptEdgeGeometry(conversationRoot, incomingRow),
-          "after typing stops",
-        );
-      }
-      const sent = `typing edge sent ${Date.now()}`;
-      const composer = page.getByRole("textbox", {
-        name: `Message ${conversation}`,
-      });
-      await composer.fill(sent);
-      await composer.press("Enter");
-      const sentRow = conversationRoot
-        .locator('[data-message-row][data-delivery="confirmed"]')
-        .filter({ has: page.getByText(sent, { exact: true }) });
-      await expect(sentRow).toBeVisible();
-      expectTranscriptMeetsComposer(
-        await transcriptEdgeGeometry(conversationRoot, sentRow),
-        "after sending",
+      const done = await sender.typingConfirmed(irc.account, "done");
+      expectServerTags(done, sender.nickname);
+      await expect(indicator).toHaveText("");
+      expectStableTypingGeometry(
+        emptyGeometry,
+        await transcriptEdgeGeometry(conversationRoot, incomingRow),
+        "after typing stops",
       );
-    } finally {
-      sender.close();
-      typer.close();
+      const reply = `typing edge reply ${Date.now()}`;
+      const echoedReply = await sender.privmsgConfirmed(irc.account, reply);
+      expectServerTags(echoedReply, sender.nickname);
+      await expect(
+        conversationRoot.getByText(reply, { exact: true }),
+      ).toBeVisible();
+    } else {
+      await typer.typingConfirmed(channel, "active");
+      await expect(indicator).toContainText(`${typer.nickname} is typing…`);
+      await expectTypingLineChangeKeepsGeometry(
+        conversationRoot,
+        incomingRow,
+        emptyGeometry,
+      );
+      await typer.typingConfirmed(channel, "done");
+      await expect(indicator).toHaveText("");
+      expectStableTypingGeometry(
+        emptyGeometry,
+        await transcriptEdgeGeometry(conversationRoot, incomingRow),
+        "after typing stops",
+      );
     }
+    const sent = `typing edge sent ${Date.now()}`;
+    const composer = page.getByRole("textbox", {
+      name: `Message ${conversation}`,
+    });
+    await composer.fill(sent);
+    await composer.press("Enter");
+    const sentRow = conversationRoot
+      .locator('[data-message-row][data-delivery="confirmed"]')
+      .filter({ has: page.getByText(sent, { exact: true }) });
+    await expect(sentRow).toBeVisible();
+    expectTranscriptMeetsComposer(
+      await transcriptEdgeGeometry(conversationRoot, sentRow),
+      "after sending",
+    );
   });
 
   test("keeps a long transcript against the composer typing line", async ({
     page,
+    irc,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
-    const suffix = `${mobile ? "m" : "d"}${Date.now().toString().slice(-6)}`;
-    const sender = await IrcClient.connect(
-      `typing-long-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
-    try {
-      for (let index = 0; index < 12; index += 1)
-        await sender.privmsgConfirmed(
-          channel,
-          `typing long seed ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
-        );
-      const opening = `typing long opening ${suffix}`;
-      await sender.privmsgConfirmed(channel, opening);
-
-      if (mobile) await emulateStandalone(page);
-      await page.goto("/?irc-password=weblounge-test");
-      if (mobile) {
-        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await page
-          .getByRole("button", {
-            name: new RegExp(`^${channel}(?:,|$)`, "u"),
-          })
-          .click();
-      }
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
-
-      const root = mobile
-        ? page.locator("[data-mobile-chat]").filter({
-            has: page.getByRole("heading", { name: channel }),
-          })
-        : page.locator("[data-app-root]");
-      const composer = root.getByRole("textbox", {
-        name: `Message ${channel}`,
-      });
-
-      await expectNewestRowClear(root, opening, "after opening long history");
-
-      const version = await page.evaluate(() => window.weblounge.version);
-      await composer.fill("/version");
-      await composer.press("Enter");
-      await expectNewestRowClear(root, version, "after /version");
-
-      const incoming = `typing long incoming ${suffix}`;
-      await sender.privmsgConfirmed(channel, incoming);
-      await expectNewestRowClear(root, incoming, "after incoming message");
-
-      const sent = `typing long sent ${suffix}`;
-      await composer.fill(sent);
-      await composer.press("Enter");
-      const sentRow = root
-        .locator('[data-message-row][data-delivery="confirmed"]')
-        .filter({ has: page.getByText(sent, { exact: true }) });
-      await expect(sentRow).toBeVisible();
-      const sentGeometry = await transcriptEdgeGeometry(root, sentRow);
-      expectLongTranscript(sentGeometry, "after sending in long history");
-      expectTranscriptMeetsComposer(
-        sentGeometry,
-        "after sending in long history",
-        true,
+    const channel = irc.channel;
+    const sender = await irc.peer("typing-long");
+    const suffix = irc.id;
+    for (let index = 0; index < 12; index += 1)
+      await sender.privmsgConfirmed(
+        channel,
+        `typing long seed ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
       );
-    } finally {
-      sender.close();
+    const opening = `typing long opening ${suffix}`;
+    await sender.privmsgConfirmed(channel, opening);
+
+    if (mobile) await emulateStandalone(page);
+    await page.goto(irc.url());
+    if (mobile) {
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await page
+        .getByRole("button", {
+          name: new RegExp(`^${channel}(?:,|$)`, "u"),
+        })
+        .click();
     }
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+
+    const root = mobile
+      ? page.locator("[data-mobile-chat]").filter({
+          has: page.getByRole("heading", { name: channel }),
+        })
+      : page.locator("[data-app-root]");
+    const composer = root.getByRole("textbox", {
+      name: `Message ${channel}`,
+    });
+
+    await expectNewestRowClear(root, opening, "after opening long history");
+
+    const version = await page.evaluate(() => window.weblounge.version);
+    await composer.fill("/version");
+    await composer.press("Enter");
+    await expectNewestRowClear(root, version, "after /version");
+
+    const incoming = `typing long incoming ${suffix}`;
+    await sender.privmsgConfirmed(channel, incoming);
+    await expectNewestRowClear(root, incoming, "after incoming message");
+
+    const sent = `typing long sent ${suffix}`;
+    await composer.fill(sent);
+    await composer.press("Enter");
+    const sentRow = root
+      .locator('[data-message-row][data-delivery="confirmed"]')
+      .filter({ has: page.getByText(sent, { exact: true }) });
+    await expect(sentRow).toBeVisible();
+    const sentGeometry = await transcriptEdgeGeometry(root, sentRow);
+    expectLongTranscript(sentGeometry, "after sending in long history");
+    expectTranscriptMeetsComposer(
+      sentGeometry,
+      "after sending in long history",
+      true,
+    );
   });
 
   test("keeps unread rows above the composer typing line when opening at New", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "webkit-mobile-typing",
       "covers the iPhone channel-opening path",
     );
-    const suffix = Date.now().toString(36);
-    const unreadChannel = `#typing-unread-${suffix}`;
-    const sender = await IrcClient.connect(
-      `typing-unread-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      unreadChannel,
+    const unreadChannel = irc.channelNamed("typing-unread");
+    const sender = await irc.peer("typing-unread", [unreadChannel]);
+    const suffix = irc.id;
+    await emulateStandalone(page);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    const defaultComposer = page.getByRole("textbox", {
+      name: `Message ${irc.channel}`,
+    });
+    await defaultComposer.fill(`/join ${unreadChannel}`);
+    await defaultComposer.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: unreadChannel }),
+    ).toBeVisible();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+
+    for (let index = 0; index < 12; index += 1)
+      await sender.privmsgConfirmed(
+        unreadChannel,
+        `typing unread history ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
+      );
+    const historyEnd = `typing unread history end ${suffix}`;
+    await sender.privmsgConfirmed(unreadChannel, historyEnd);
+    await expect(page.getByText(historyEnd, { exact: true })).toBeVisible();
+
+    const row = page
+      .locator("[data-buffer-id]")
+      .filter({ hasText: unreadChannel })
+      .first();
+    await expect(row).toHaveAttribute("aria-label", unreadChannel);
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+
+    const unread = Array.from(
+      { length: 3 },
+      (_, index) => `typing unread ${suffix} ${index + 1}`,
     );
-    try {
-      await emulateStandalone(page);
-      await page.goto("/?irc-password=weblounge-test");
-      await page.getByRole("button", { name: "#weblounge-test" }).click();
-      const defaultComposer = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
-      });
-      await defaultComposer.fill(`/join ${unreadChannel}`);
-      await defaultComposer.press("Enter");
-      await expect(
-        page.getByRole("heading", { name: unreadChannel }),
-      ).toBeVisible();
-      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    for (const text of unread)
+      await sender.privmsgConfirmed(unreadChannel, text);
+    await expect(row).toHaveAttribute(
+      "aria-label",
+      `${unreadChannel}, 3 unread`,
+    );
+    await row.click();
 
-      for (let index = 0; index < 12; index += 1)
-        await sender.privmsgConfirmed(
-          unreadChannel,
-          `typing unread history ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
-        );
-      const historyEnd = `typing unread history end ${suffix}`;
-      await sender.privmsgConfirmed(unreadChannel, historyEnd);
-      await expect(page.getByText(historyEnd, { exact: true })).toBeVisible();
-
-      const row = page
-        .locator("[data-buffer-id]")
-        .filter({ hasText: unreadChannel })
-        .first();
-      await expect(row).toHaveAttribute("aria-label", unreadChannel);
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-
-      const unread = Array.from(
-        { length: 3 },
-        (_, index) => `typing unread ${suffix} ${index + 1}`,
-      );
-      for (const text of unread)
-        await sender.privmsgConfirmed(unreadChannel, text);
-      await expect(row).toHaveAttribute(
-        "aria-label",
-        `${unreadChannel}, 3 unread`,
-      );
-      await row.click();
-
-      const root = page.locator("[data-mobile-chat]").filter({
-        has: page.getByRole("heading", { name: unreadChannel }),
-      });
-      await expect(root.locator("[data-new-line]")).toBeVisible();
-      await expectNewestRowClear(
-        root,
-        unread.at(-1) ?? "",
-        "after opening at New",
-      );
-    } finally {
-      sender.close();
-    }
+    const root = page.locator("[data-mobile-chat]").filter({
+      has: page.getByRole("heading", { name: unreadChannel }),
+    });
+    await expect(root.locator("[data-new-line]")).toBeVisible();
+    await expectNewestRowClear(
+      root,
+      unread.at(-1) ?? "",
+      "after opening at New",
+    );
   });
 
-  test("sends throttled active, paused, and done states", async ({ page }) => {
-    const observer = await IrcClient.connect(
-      "typing-observer",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
+  test("sends throttled active, paused, and done states", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channel;
+    const observer = await irc.peer("typing-observer");
+    await page.goto(irc.url());
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${channel}`,
+    });
+
+    await composer.fill("h");
+    expect(await observer.waitForNextTyping(channel, irc.account)).toBe(
+      "active",
     );
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-      const composer = page.getByRole("textbox", {
-        name: `Message ${channel}`,
-      });
+    await composer.fill("he");
+    await composer.fill("hel");
+    expect(await observer.waitForNextTyping(channel, irc.account)).toBe(
+      "paused",
+    );
 
-      await composer.fill("h");
-      expect(await observer.waitForNextTyping(channel, "weblounge")).toBe(
-        "active",
-      );
-      await composer.fill("he");
-      await composer.fill("hel");
-      expect(await observer.waitForNextTyping(channel, "weblounge")).toBe(
-        "paused",
-      );
-
-      const text = `hello from typing ${Date.now()}`;
-      await composer.fill(text);
-      expect(await observer.waitForNextTyping(channel, "weblounge")).toBe(
-        "active",
-      );
-      await composer.press("Enter");
-      expect(await observer.waitForNextTyping(channel, "weblounge")).toBe(
-        "done",
-      );
-      await observer.waitForPrivmsg(channel, text, "weblounge");
-      await expect(page.getByText(text, { exact: true })).toBeVisible();
-    } finally {
-      observer.close();
-    }
+    const text = `hello from typing ${Date.now()}`;
+    await composer.fill(text);
+    expect(await observer.waitForNextTyping(channel, irc.account)).toBe(
+      "active",
+    );
+    await composer.press("Enter");
+    expect(await observer.waitForNextTyping(channel, irc.account)).toBe("done");
+    await observer.waitForPrivmsg(channel, text, irc.account);
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
   });
 });
 
