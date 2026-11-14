@@ -1,13 +1,8 @@
-import {
-  expect,
-  type Locator,
-  type Page,
-  type Route,
-  test,
-} from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
-import { IrcClient } from "./irc-client";
+import { IrcClient, isolatedPassword, registerAccount } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
 
@@ -506,58 +501,46 @@ for (const recovery of [
 
 test("reveals local Ergo rows with channel and direct previews", async ({
   page,
+  irc,
 }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
-  const suffix = Date.now().toString().slice(-6);
-  const nick = `start${suffix}`;
+  const suffix = irc.id;
   const channelPreview = `channel startup ${suffix}`;
   const directPreview = `direct startup ${suffix}`;
-  const seedNicks = [`seed-a-${suffix}`, `seed-b-${suffix}`] as const;
-  const seedBots: IrcClient[] = [];
-  let bot: IrcClient | undefined;
   let keeper: Page | undefined;
   try {
-    for (const seedNick of seedNicks)
-      seedBots.push(
-        await IrcClient.connect(
-          seedNick,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
-        ),
-      );
+    const seedBots = [
+      await connectSeed(irc.nickNamed("seed-a"), irc.channel),
+      await connectSeed(irc.nickNamed("seed-b"), irc.channel),
+    ];
     for (let index = 0; index < 50; index += 1) {
       const mentioned =
         index % 10 === 0
-          ? "weblounge"
-          : seedNicks[(index + 1) % seedNicks.length];
-      await seedBots[index % seedBots.length].privmsgConfirmed(
-        "#weblounge-test",
+          ? irc.account
+          : seedBots[(index + 1) % seedBots.length]?.nickname;
+      await seedBots[index % seedBots.length]?.privmsgConfirmed(
+        irc.channel,
         `earlier startup ${suffix} ${index} mentions ${mentioned}`,
       );
     }
     for (const seedBot of seedBots) seedBot.close();
-    bot = await IrcClient.connect(
-      nick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    await page.goto("/?irc-password=weblounge-test");
+    const bot = await irc.peer("start");
+    const nick = bot.nickname;
+    await page.goto(irc.url());
     const channelRow = page
-      .locator('[data-buffer-id][aria-label^="#weblounge-test"]')
+      .locator(`[data-buffer-id][aria-label^="${irc.channel}"]`)
       .first();
     await channelRow.click();
     await expect(
       page.locator('[data-mobile-chat][data-network-state="online"]'),
     ).toHaveCount(1);
-    await expect(channelRow).toHaveAttribute("aria-label", "#weblounge-test");
+    await expect(channelRow).toHaveAttribute("aria-label", irc.channel);
     await page.getByRole("button", { name: "Back to chats" }).click();
-    await bot.privmsgConfirmed("#weblounge-test", channelPreview);
-    await bot.privmsgConfirmed("weblounge", directPreview);
+    await bot.privmsgConfirmed(irc.channel, channelPreview);
+    await bot.privmsgConfirmed(irc.account, directPreview);
     await expect(
       page.getByRole("button", { name: new RegExp(`^${nick}(?:,|$)`) }),
     ).toContainText(directPreview);
@@ -565,8 +548,9 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     await keeper.goto("/");
     await expect(keeper.locator("[data-initial-splash]")).toHaveCount(0);
     await recordFirstReveal(page);
-    await page.evaluate(() =>
-      history.replaceState(null, "", "/?irc-password=weblounge-test"),
+    await page.evaluate(
+      (url) => history.replaceState(null, "", url),
+      irc.url(),
     );
 
     await page.reload();
@@ -575,7 +559,7 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          title: "#weblounge-test, 1 unread",
+          title: `${irc.channel}, 1 unread`,
           text: expect.stringContaining(channelPreview),
         }),
         expect.objectContaining({
@@ -587,8 +571,6 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   } finally {
     await keeper?.close();
-    bot?.close();
-    for (const seedBot of seedBots) seedBot.close();
   }
 });
 
@@ -662,11 +644,9 @@ test("updates each restored row in place without a duplicate or remount", async 
     .toBe(true);
 });
 
-test("drops legacy saved counts while keeping the restored list interactive", async ({
-  baseURL,
-  context,
-  page,
-}) => {
+test("drops legacy saved counts while keeping the restored list interactive", {
+  tag: "@serial",
+}, async ({ baseURL, context, page, irc }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's startup connection configuration",
@@ -708,7 +688,7 @@ test("drops legacy saved counts while keeping the restored list interactive", as
     await expectErgoRunning(false);
     await context.setOffline(true);
 
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
 
     const rows = await firstRevealRows(page);
     expect(rows).toEqual([
@@ -795,6 +775,11 @@ test("reveals restored rows without waiting for stalled history", async ({
     page.getByRole("button", { name: "#weblounge-test" }),
   ).toBeVisible();
 });
+
+async function connectSeed(nick: string, channel: string): Promise<IrcClient> {
+  await registerAccount(nick, isolatedPassword(nick));
+  return IrcClient.connect(nick, nick, isolatedPassword(nick), channel);
+}
 
 async function recordFirstReveal(page: import("@playwright/test").Page) {
   await page.addInitScript(() => {
