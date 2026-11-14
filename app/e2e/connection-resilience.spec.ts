@@ -446,9 +446,9 @@ test.describe("connection resilience against local Ergo", () => {
       const reconciled = transcriptRow(page, authoritative);
       await expect(reconciled).toHaveCount(1);
       await expect(reconciled.getByRole("img", { name: "Bot" })).toHaveCount(1);
-      const reconciledHighlight = await highlightPaint(reconciled);
-      expect(reconciledHighlight).not.toBe("");
-      expect(reconciledHighlight).not.toBe("rgba(0, 0, 0, 0)");
+      await expect
+        .poll(() => highlightPaint(reconciled))
+        .not.toMatch(/^(?:|rgba\(0, 0, 0, 0\))$/u);
       await expect(provisional).toHaveCount(0);
       await expect(title).not.toHaveAttribute("data-connection-progress");
       await expect(
