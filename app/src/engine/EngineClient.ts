@@ -246,8 +246,12 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
-    if (message.type === "notifiable_message_received") {
-      // Alerts matter most while hidden, when the render queue holds events until visible.
+    if (
+      message.type === "notifiable_message_received" ||
+      message.type === "upload_resolved"
+    ) {
+      // The render queue holds events while the page is hidden. Alerts matter most then, and an
+      // upload sent just before backgrounding must not stall with its credential held here.
       this.#publish(message);
       return;
     }

@@ -5,6 +5,7 @@ import {
   WorkerEngineClient,
 } from "./EngineClient";
 import type { UiToEngine } from "./protocol";
+import { requestReply } from "./request-reply";
 
 class FakePort implements EnginePort {
   readonly sent: UiToEngine[] = [];
@@ -664,6 +665,42 @@ describe("WorkerEngineClient", () => {
 
     expect(frames).toHaveLength(0);
     expect(listener).toHaveBeenCalledWith(message);
+  });
+
+  it("resolves an upload requested before the page was hidden", async () => {
+    const { client, frames, port } = fixture();
+    const resolution = requestReply(
+      client,
+      { type: "resolve_upload", network_id: 1, approval: null },
+      (message, commandId) =>
+        message.type === "upload_resolved" && message.command_id === commandId
+          ? { value: message.resolution }
+          : undefined,
+    );
+    const request = port.sent.find(
+      (sent) =>
+        sent.type === "request" &&
+        sent.payload.request.type === "resolve_upload",
+    );
+    if (request?.type !== "request") throw new Error("no resolve request");
+    client.setVisibility("hidden");
+
+    port.emit({
+      type: "upload_resolved",
+      command_id: request.payload.id,
+      resolution: {
+        kind: "ready",
+        endpoint: "https://files.weblounge.org/upload",
+        authorization: { kind: "basic", header: "Basic d2VibG91bmdlOng=" },
+      },
+    });
+
+    await expect(resolution).resolves.toEqual({
+      kind: "ready",
+      endpoint: "https://files.weblounge.org/upload",
+      authorization: { kind: "basic", header: "Basic d2VibG91bmdlOng=" },
+    });
+    expect(frames).toHaveLength(0);
   });
 
   it("rejects unversioned member windows", () => {
