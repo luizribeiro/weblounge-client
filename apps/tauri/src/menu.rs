@@ -14,7 +14,6 @@ use crate::{
 
 const RELOAD_ID: &str = "reload";
 const LOGIN_ID: &str = "open-at-login";
-const SETTINGS_ID: &str = "settings";
 
 pub struct LoginCheck(CheckMenuItem<Wry>);
 
@@ -30,7 +29,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     app.manage(LoginCheck(login.clone()));
     let reload = MenuItem::with_id(app, RELOAD_ID, "Reload", true, Some("CmdOrCtrl+R"))?;
-    let settings = MenuItem::with_id(app, SETTINGS_ID, "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let settings = page_action_item(app, PageAction::OpenSettings)?;
     Menu::with_items(
         app,
         &[
@@ -76,6 +75,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 "Window",
                 true,
                 &[
+                    &page_action_item(app, PageAction::NextBuffer)?,
+                    &page_action_item(app, PageAction::PreviousBuffer)?,
+                    &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::minimize(app, None)?,
                     &PredefinedMenuItem::maximize(app, Some("Zoom"))?,
                     &PredefinedMenuItem::close_window(app, None)?,
@@ -90,9 +92,19 @@ pub fn handle_event(app: &AppHandle, event: &MenuEvent) {
         window::reload(app);
     } else if event.id() == LOGIN_ID {
         toggle_login_item(app);
-    } else if event.id() == SETTINGS_ID {
-        run_in_page(app, PageAction::OpenSettings);
+    } else if let Some(action) = PageAction::from_name(event.id().as_ref()) {
+        run_in_page(app, action);
     }
+}
+
+fn page_action_item(app: &AppHandle, action: PageAction) -> tauri::Result<MenuItem<Wry>> {
+    MenuItem::with_id(
+        app,
+        action.name(),
+        action.label(),
+        true,
+        Some(action.accelerator()),
+    )
 }
 
 fn run_in_page(app: &AppHandle, action: PageAction) {
@@ -108,5 +120,21 @@ fn toggle_login_item(app: &AppHandle) {
     });
     if let Err(error) = app.state::<LoginCheck>().0.set_checked(opens_at_login) {
         eprintln!("could not update the Open at Login check: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn every_menu_item_id_is_distinct() {
+        let ids: Vec<&str> = [RELOAD_ID, LOGIN_ID]
+            .into_iter()
+            .chain(PageAction::ALL.map(PageAction::name))
+            .collect();
+        assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 }

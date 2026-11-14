@@ -101,6 +101,12 @@ The single place a fresh session reads to know where the project stands. Update 
   and the composer box share the prototype's 20px (`--wl-space-transcript-desktop-inline`). On
   mobile, the typing line sits level with the messages (16px) and the composer pill keeps its
   14px wrap.
+- 2026-11-14: the desktop Window menu has Next/Previous Conversation (⌃Tab, ⌃⇧Tab), dispatching
+  `buffer.next`/`buffer.previous`. The page's action registry prevents default on chords it
+  handles, so WKWebView passes them to the menu only when the page did nothing. Open: Luiz checks
+  one ⌃Tab press moves one conversation in 0.1.2. `apps/tauri/src/page_action.rs` must stay within
+  the page's allow-list in `app/src/actions/shell-actions.ts`; no test spans the two, since the
+  wrapper's Nix build sees only its own crate.
 - 2026-11-14: the desktop app menu has Settings… (⌘,), which shows the window and dispatches
   design 29's `settings.open` page action; a probe build confirmed the page receives it.
 - 2026-11-13: local desktop builds (`.#desktop-dev`, `cargo run`) are `weblounge dev`
