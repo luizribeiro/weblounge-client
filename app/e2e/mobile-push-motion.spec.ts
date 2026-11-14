@@ -1,4 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import { requireWebKitWithErgo } from "./member-drawer";
 import { emulateStandalone } from "./mobile-platform";
 import {
   durationMs,
@@ -9,20 +11,18 @@ import {
   hasIntermediatePosition,
   type TransitionStyle,
 } from "./motion-assertions";
+import { expectSettled } from "./settled";
 
-test.beforeEach(async ({ browserName, page }) => {
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
-  test.skip(browserName !== "webkit", "requires WebKit touch events");
+requireWebKitWithErgo();
+
+test.beforeEach(async ({ page }) => {
   await emulateStandalone(page);
 });
 
-test("push slides the chat over a still chats list", async ({ page }) => {
-  await openShell(page);
+test("push slides the chat over a still chats list", async ({ page, irc }) => {
+  await openShell(page, irc);
   const frames = await recordMotion(page, () =>
-    page.getByRole("button", { name: "#weblounge-test" }).click(),
+    page.getByRole("button", { name: irc.channel }).click(),
   );
   const moving = present(frames);
 
@@ -36,9 +36,12 @@ test("push slides the chat over a still chats list", async ({ page }) => {
   expect(moving.at(-1)?.chatLeft).toBe(0);
 });
 
-test("tap Back slides the chat off a still chats list", async ({ page }) => {
-  await openShell(page);
-  await openChat(page);
+test("tap Back slides the chat off a still chats list", async ({
+  page,
+  irc,
+}) => {
+  await openShell(page, irc);
+  await openChat(page, irc);
   const frames = await recordMotion(page, () =>
     page.getByRole("button", { name: "Back to chats" }).tap(),
   );
@@ -57,15 +60,13 @@ test("tap Back slides the chat off a still chats list", async ({ page }) => {
   expect(frames.at(-1)?.chatLeft).toBeNull();
 });
 
-test("reduced motion pushes and pops instantly", async ({ page }) => {
+test("reduced motion pushes and pops instantly", async ({ page, irc }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await openShell(page);
+  await openShell(page, irc);
   const pushed = await recordMotion(page, () =>
-    page.getByRole("button", { name: "#weblounge-test" }).click(),
+    page.getByRole("button", { name: irc.channel }).click(),
   );
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: irc.channel })).toBeVisible();
   expect(present(pushed).length).toBeGreaterThan(0);
   expect(pushed.every((frame) => frame.motion === null)).toBe(true);
   expect(
@@ -85,9 +86,10 @@ test("reduced motion pushes and pops instantly", async ({ page }) => {
 
 test("swipe released past halfway continues closed from the finger", async ({
   page,
+  irc,
 }) => {
-  await openShell(page);
-  await openChat(page);
+  await openShell(page, irc);
+  await openChat(page, irc);
   const settle = await swipeAndRelease(page, [
     { at: 0, x: 5 },
     { at: 100, x: 20 },
@@ -103,9 +105,10 @@ test("swipe released past halfway continues closed from the finger", async ({
 
 test("a flick shortens its distance-scaled finish, still animated", async ({
   page,
+  irc,
 }) => {
-  await openShell(page);
-  await openChat(page);
+  await openShell(page, irc);
+  await openChat(page, irc);
   const flick = await swipeAndRelease(page, [
     { at: 0, x: 5 },
     { at: 10, x: 20 },
@@ -118,9 +121,10 @@ test("a flick shortens its distance-scaled finish, still animated", async ({
 
 test("swipe released short springs back open from the finger", async ({
   page,
+  irc,
 }) => {
-  await openShell(page);
-  await openChat(page);
+  await openShell(page, irc);
+  await openChat(page, irc);
   const settle = await swipeAndRelease(page, [
     { at: 0, x: 5 },
     { at: 100, x: 20 },
@@ -130,9 +134,7 @@ test("swipe released short springs back open from the finger", async ({
 
   expectSettlesFromFinger(settle, 0);
   expect(settle.frames.at(-1)?.chatLeft).toBe(0);
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: irc.channel })).toBeVisible();
 });
 
 interface PanStep {
@@ -295,20 +297,16 @@ interface Frame {
   readonly transition: TransitionStyle;
 }
 
-async function openShell(page: Page): Promise<void> {
-  await page.goto("/?irc-password=weblounge-test");
-  await expect(
-    page.getByRole("button", { name: "#weblounge-test" }),
-  ).toBeVisible();
+async function openShell(page: Page, irc: IrcTestAccount): Promise<void> {
+  await page.goto(irc.url());
+  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expectSettled(page);
 }
 
-async function openChat(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+async function openChat(page: Page, irc: IrcTestAccount): Promise<void> {
+  await page.getByRole("button", { name: irc.channel }).click();
+  await expectSettled(page, { conversation: irc.channel });
 }
 
 async function recordMotion(

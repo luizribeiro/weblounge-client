@@ -1,22 +1,30 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
+import { expectSettled } from "./settled";
 
 type PointerType = "pointerdown" | "pointermove" | "pointerup";
 
-export async function openStandaloneChannel(
-  page: Page,
-  browserName: string,
-): Promise<void> {
+export function requireWebKitWithErgo(): void {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
-  test.skip(browserName !== "webkit", "requires WebKit touch events");
+  test.skip(
+    ({ browserName }) => browserName !== "webkit",
+    "requires WebKit touch events",
+  );
+}
+
+export async function openStandaloneChannel(
+  page: Page,
+  irc: IrcTestAccount,
+): Promise<void> {
   await emulateStandalone(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto("/?irc-password=weblounge-test");
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await page.goto(irc.url());
+  await page.getByRole("button", { name: irc.channel }).click();
+  await expectSettled(page, { conversation: irc.channel });
 }
 
 export async function openDrawer(page: Page): Promise<void> {

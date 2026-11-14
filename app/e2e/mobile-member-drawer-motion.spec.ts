@@ -1,8 +1,10 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import {
   drawerPointer,
   openDrawer,
   openStandaloneChannel,
+  requireWebKitWithErgo,
 } from "./member-drawer";
 import {
   durationMs,
@@ -11,8 +13,10 @@ import {
   type TransitionStyle,
 } from "./motion-assertions";
 
-test.beforeEach(async ({ browserName, page }) => {
-  await openStandaloneChannel(page, browserName);
+requireWebKitWithErgo();
+
+test.beforeEach(async ({ page, irc }) => {
+  await openStandaloneChannel(page, irc);
 });
 
 test("opens with a fast start, anchored right, over a painted chat", async ({
@@ -55,12 +59,9 @@ for (const kind of ["close-button", "scrim", "escape"] as const) {
   });
 }
 
-test("closes via Back by sliding fully off-screen", async ({
-  browserName,
-  page,
-}) => {
+test("closes via Back by sliding fully off-screen", async ({ page, irc }) => {
   await page.addInitScript(() => Reflect.deleteProperty(window, "WebKitPoint"));
-  await openStandaloneChannel(page, browserName);
+  await openStandaloneChannel(page, irc);
   await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
     "data-history-policy",
     "stack",

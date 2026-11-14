@@ -1,17 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import {
   drawerPointer,
   openDrawer,
   openStandaloneChannel,
+  requireWebKitWithErgo,
   shellPointer,
 } from "./member-drawer";
 
-test.beforeEach(async ({ browserName, page }) => {
-  await openStandaloneChannel(page, browserName);
+requireWebKitWithErgo();
+
+test.beforeEach(async ({ page, irc }) => {
+  await openStandaloneChannel(page, irc);
 });
 
 test("member drawer pans, springs back, and closes before the chat", async ({
   page,
+  irc,
 }) => {
   await openDrawer(page);
   const drawer = page.getByRole("dialog", { name: "Members" });
@@ -41,9 +45,7 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   await drawerPointer(page, "pointermove", 155, 300, 1_040, 3);
   await drawerPointer(page, "pointerup", 155, 300, 1_050, 3);
   await expect(drawer).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: irc.channel })).toBeVisible();
 
   await openDrawer(page);
   await drawerPointer(page, "pointerdown", 100, 300, 2_000, 4);
@@ -90,6 +92,7 @@ test("member drawer pan survives bubbling child capture loss", async ({
 
 test("opens the channel drawer from a protected mid-screen pan", async ({
   page,
+  irc,
 }) => {
   const drawer = page.getByRole("dialog", { name: "Members" });
   const historyLength = await page.evaluate(() => history.length);
@@ -99,15 +102,13 @@ test("opens the channel drawer from a protected mid-screen pan", async ({
   await shellPointer(page, "pointerup", 250, 300, 200, 10);
   await expect(drawer).toHaveCount(0);
 
-  await page
-    .getByRole("heading", { name: "#weblounge-test" })
-    .evaluate((heading) => {
-      const selection = getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(heading);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    });
+  await page.getByRole("heading", { name: irc.channel }).evaluate((heading) => {
+    const selection = getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(heading);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
   await shellPointer(page, "pointerdown", 250, 300, 300, 11);
   await shellPointer(page, "pointermove", 100, 300, 400, 11);
   await shellPointer(page, "pointerup", 100, 300, 500, 11);
