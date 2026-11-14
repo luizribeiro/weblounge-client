@@ -1,6 +1,10 @@
 import type { Locator, Page } from "@playwright/test";
 import { IrcClient, messageId, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 
 test.use({
@@ -58,6 +62,42 @@ test.describe("mobile chat list against local Ergo", () => {
     await expectCentredBadge(row, "123");
     await page.emulateMedia({ colorScheme: "light" });
     await expectCentredBadge(row, "123");
+  });
+
+  test("keeps 35px filter chips tappable across a 44px target", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("chips");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    const channelRow = page.getByRole("button", { name: irc.channel });
+    await expect(channelRow).toBeVisible();
+    bot.privmsg(irc.account, "direct chat for filters");
+    await expect(directRow(page, bot.nickname)).toBeVisible();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+
+    const chip = page.getByRole("button", { name: "Direct", exact: true });
+    const pill = await boxOf(chip);
+    expect(pill.height).toBeCloseTo(35, 1);
+    const list = await boxOf(page.locator("[data-mobile-chat-list]"));
+    expect(list.y - (pill.y + pill.height)).toBeCloseTo(9, 1);
+
+    const overhang = (44 - pill.height) / 2;
+    const x = pill.x + pill.width / 2;
+    const bandTop = pill.y - overhang;
+    const bandBottom = pill.y + pill.height + overhang;
+    const below = bandBottom - 1;
+    expect(await hitsChip(chip, x, bandTop + 1)).toBe(true);
+    expect(await hitsChip(chip, x, below)).toBe(true);
+    expect(await hitsChip(chip, x, bandTop - 1)).toBe(false);
+    expect(await hitsChip(chip, x, bandBottom + 1)).toBe(false);
+
+    await page.touchscreen.tap(x, below);
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await expect(channelRow).toHaveCount(0);
+    await expect(directRow(page, bot.nickname)).toBeVisible();
+    await nativeFeelAudit(page);
   });
 
   test("moves the most recently active chat to the top", async ({
@@ -127,6 +167,19 @@ test.describe("mobile chat list against local Ergo", () => {
     }
   });
 });
+
+async function boxOf(locator: Locator) {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("element has no layout box");
+  return box;
+}
+
+async function hitsChip(chip: Locator, x: number, y: number) {
+  return chip.evaluate(
+    (element, point) => document.elementFromPoint(point.x, point.y) === element,
+    { x, y },
+  );
+}
 
 function directRow(page: Page, nick: string) {
   return page.locator(`[data-buffer-id][aria-label^="${nick}"]`);

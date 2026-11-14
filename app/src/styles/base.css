@@ -29,6 +29,8 @@
   --wl-size-upload-progress: 4px;
   --wl-size-sidebar: 224px;
   --wl-size-touch-target: 44px;
+  --wl-size-filter-chip: 35px;
+  --wl-font-filter-chip: 12px;
   --wl-font-touch-editable-min: 16px;
   background: var(--wl-color-bg);
   color: var(--wl-color-fg);

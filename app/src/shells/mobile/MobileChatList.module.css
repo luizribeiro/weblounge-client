@@ -1,4 +1,8 @@
 .root {
+  --wl-filter-hit-overhang: calc(
+    (var(--wl-size-touch-target) - var(--wl-size-filter-chip)) /
+    2
+  );
   background: var(--wl-color-surface);
   display: flex;
   flex-direction: column;
@@ -59,7 +63,7 @@
   border: 1px solid transparent;
   border-radius: var(--wl-radius-composer);
   display: flex;
-  margin: 2px 12px 8px;
+  margin: 2px 12px calc(8px - var(--wl-filter-hit-overhang));
   min-height: 40px;
   padding: 0 11px;
 }
@@ -86,20 +90,29 @@
   display: flex;
   gap: 7px;
   overflow-x: auto;
-  padding: 0 12px 9px;
+  padding: var(--wl-filter-hit-overhang) 12px 9px;
 }
 
 .filter {
+  --wl-filter-border: 1px;
   appearance: none;
   background: transparent;
-  border: 1px solid var(--wl-color-border);
+  border: var(--wl-filter-border) solid var(--wl-color-border);
   border-radius: var(--wl-radius-pill);
   color: var(--wl-color-muted);
   flex: 0 0 auto;
   font: inherit;
-  font-size: 13px;
-  min-height: 44px;
-  padding: 0 14px;
+  font-size: var(--wl-font-filter-chip);
+  height: var(--wl-size-filter-chip);
+  padding: 0 12px;
+  position: relative;
+}
+
+.filter::before {
+  content: "";
+  inset: calc(-1 * (var(--wl-filter-hit-overhang) + var(--wl-filter-border)))
+    calc(-1 * var(--wl-filter-border));
+  position: absolute;
 }
 
 .filter[aria-pressed="true"] {
