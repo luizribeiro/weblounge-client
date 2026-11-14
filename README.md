@@ -101,18 +101,15 @@ nice -n 10 nix build --no-link --impure --max-jobs 2 --cores 4 --expr '
 brew install --cask luizribeiro/tap/weblounge
 ```
 
-`brew upgrade` installs later releases. To build and launch it from this checkout instead:
+`brew upgrade` installs later releases. To build and launch a dev build from this checkout:
 
 ```sh
-open "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge.app"
+open "$(nix build --no-link --print-out-paths .#desktop-dev)/Applications/weblounge dev.app"
 ```
 
-To keep it in the Dock, copy the bundle out of the Nix store:
-
-```sh
-ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge.app" \
-  ~/Applications/weblounge.app
-```
+Dev builds are named `weblounge dev`, wear a yellow icon and use their own identifier, so they run
+beside the installed release with separate sign-in and notification permission. `.#desktop` builds
+the release identity that the release script signs.
 
 To publish a release ([design 28](docs/design/28-desktop-release.md)), bump the version in
 `apps/tauri/Cargo.toml` and `apps/tauri/tauri.conf.json`, push it to `main`, and run
@@ -121,8 +118,6 @@ signs with the Developer ID in the login keychain and notarizes through the `not
 profile `weblounge`; the published release then bumps the tap's cask.
 
 For a quick debug build, run `nix develop -c cargo run --manifest-path apps/tauri/Cargo.toml`.
-The bare binary keeps its own web storage, so it asks you to sign in separately from the installed
-app.
 
 After changing the brand mark, regenerate the bundled icons with
 `nix develop -c apps/tauri/scripts/icons.sh`.

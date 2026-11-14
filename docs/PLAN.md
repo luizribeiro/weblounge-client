@@ -50,6 +50,11 @@ The single place a fresh session reads to know where the project stands. Update 
   and the composer box share the prototype's 20px (`--wl-space-transcript-desktop-inline`). On
   mobile, the typing line sits level with the messages (16px) and the composer pill keeps its
   14px wrap.
+- 2026-11-13: local desktop builds (`.#desktop-dev`, `cargo run`) are `weblounge dev`
+  (`org.weblounge.desktop.dev`, a yellow icon from the same generator); only the release package
+  overlays the release identity, so LaunchServices can no longer open a local build for the
+  installed app's bundle ID. Desktop 0.1.1 links macOS's own libiconv: 0.1.0 crashed at launch
+  because the hardened runtime refused the Nix store copy, which other Macs lack anyway.
 - 2026-11-13: released the desktop app (design 28) as notarized `desktop-v0.1.0`, installable
   with `brew install --cask luizribeiro/tap/weblounge`. The release script re-signs the Nix bundle
   with Developer ID, notarizes and staples the app and its DMG, and verifies both with Gatekeeper;

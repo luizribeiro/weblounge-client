@@ -78,7 +78,15 @@ the feature:
 
 ## Build
 
-`nix build .#desktop` on `aarch64-darwin` produces `weblounge.app`. The bundle needs no frontend
+Builds carry one of two identities so a local build never shares an identifier, and with it
+LaunchServices' choice of which copy to open, with the installed release. `tauri.conf.json` is the
+dev identity: `weblounge dev`, `org.weblounge.desktop.dev`, a yellow icon from the same generator,
+and its own web storage and notification permission. `tauri.release.conf.json` overlays the
+release identity (`weblounge`, `org.weblounge.desktop`, the brand icon) and only the release
+package applies it. The window title and app menu follow the product name.
+
+`nix build .#desktop` on `aarch64-darwin` produces the release `weblounge.app`, and
+`.#desktop-dev` the dev bundle; `cargo run` uses the dev identity. The bundle needs no frontend
 assets. The dev shell gains the Tauri CLI on darwin only. The darwin package build runs the
 crate's clippy and unit tests; Linux CI is unaffected. `nix build .#desktop-dmg` wraps that exact
 signed bundle in a drag-to-install `weblounge.dmg`, an HFS+ hybrid image built in the sandbox.
