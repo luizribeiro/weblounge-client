@@ -63,8 +63,12 @@ export function InlineImage(props: {
         when={state().kind !== "failed"}
         fallback={
           <span class={styles.failure}>
-            {t("messages.image.failed")} ·{" "}
-            <span class={styles.openLink}>{t("messages.image.open_link")}</span>
+            <span>
+              {t("messages.image.failed")} ·{" "}
+              <span class={styles.openLink}>
+                {t("messages.image.open_link")}
+              </span>
+            </span>
           </span>
         }
       >

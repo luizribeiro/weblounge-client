@@ -9,6 +9,7 @@
   border: 1px solid var(--wl-color-border);
   border-radius: var(--wl-radius-control);
   box-sizing: border-box;
+  color: inherit;
   cursor: pointer;
   display: block;
   inline-size: clamp(
@@ -18,6 +19,7 @@
   );
   max-inline-size: 100%;
   overflow: hidden;
+  text-decoration: none;
 }
 .slot[data-presentation="mobile"] {
   --wl-inline-image-height: var(--wl-density-message-mobile-image-slot-height);
