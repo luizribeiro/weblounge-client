@@ -1,7 +1,10 @@
 import http from "node:http";
 import net from "node:net";
 import { injectedIrcFrame } from "./socket-forwarder-inject.mjs";
-import { WebSocketIrcTimeRewriter } from "./socket-forwarder-rewrite.mjs";
+import {
+  textRewriteRule,
+  WebSocketIrcTimeRewriter,
+} from "./socket-forwarder-rewrite.mjs";
 import {
   inScope,
   ScopedFlag,
@@ -36,9 +39,13 @@ const server = net.createServer((client) => {
     dropIncomingContaining: undefined,
     incomingHandshake: Buffer.alloc(0),
     injectedOpcode: 0x81,
-    incomingTimeRewriter: new WebSocketIrcTimeRewriter(incomingTimeRewrites),
+    incomingTimeRewriter: undefined,
     recentIncoming: Buffer.alloc(0),
   };
+  connection.incomingTimeRewriter = new WebSocketIrcTimeRewriter(
+    incomingTimeRewrites,
+    (rule) => rule.scope === undefined || inScope(connection.scope, rule.scope),
+  );
   const upstream = net.connect(targetPort, "127.0.0.1");
   connection.upstream = upstream;
   connections.add(connection);
@@ -173,6 +180,29 @@ const control = http.createServer((request, response) => {
       connection.recentIncoming = Buffer.alloc(0);
     }
     response.end("armed");
+    return;
+  }
+  if (url.pathname === "/rewrite-text") {
+    const rule = textRewriteRule(
+      url.searchParams.get("from") ?? "",
+      url.searchParams.get("to") ?? "",
+      scope,
+    );
+    if (rule === undefined) {
+      response.writeHead(400).end("from and to must have equal lengths");
+      return;
+    }
+    incomingTimeRewrites.push(rule);
+    response.end("armed");
+    return;
+  }
+  if (url.pathname === "/clear-text-rewrites") {
+    for (let index = incomingTimeRewrites.length - 1; index >= 0; index -= 1) {
+      const rule = incomingTimeRewrites[index];
+      if (rule.from !== undefined && (scope === null || rule.scope === scope))
+        incomingTimeRewrites.splice(index, 1);
+    }
+    response.end("cleared");
     return;
   }
   if (url.pathname === "/rewrite-time") {

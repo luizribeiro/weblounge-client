@@ -32,10 +32,13 @@ export class WebSocketIrcTimeRewriter {
   #fragmentedFrames;
   #pending = Buffer.alloc(0);
   #rules;
+  #applies;
   #upgraded = false;
 
-  constructor(rules) {
+  // `applies` picks the rules for this connection, so a scoped rule touches only its own test.
+  constructor(rules, applies = () => true) {
     this.#rules = rules;
+    this.#applies = applies;
   }
 
   push(chunk) {
@@ -68,7 +71,8 @@ export class WebSocketIrcTimeRewriter {
   }
 
   #rewriteOrBufferFrame(frame) {
-    if (this.#rules.length === 0) return frame;
+    const rules = this.#rules.filter(this.#applies);
+    if (rules.length === 0) return frame;
     const opcode = frame[0] & 0x0f;
     const final = (frame[0] & 0x80) !== 0;
     if (this.#fragmentedFrames === undefined) {
@@ -76,13 +80,13 @@ export class WebSocketIrcTimeRewriter {
         this.#fragmentedFrames = [frame];
         return Buffer.alloc(0);
       }
-      return rewriteFrame(frame, this.#rules);
+      return rewriteFrame(frame, rules);
     }
     this.#fragmentedFrames.push(frame);
     if (opcode === 0 && final) {
       const frames = this.#fragmentedFrames;
       this.#fragmentedFrames = undefined;
-      return rewriteFragmentedMessage(frames, this.#rules);
+      return rewriteFragmentedMessage(frames, rules);
     }
     if (opcode === 8 || opcode === 1 || opcode === 2) {
       const frames = this.#fragmentedFrames;
@@ -204,6 +208,7 @@ function rewriteLine(line, rules) {
   let rewritten = line;
   for (let ruleIndex = rules.length - 1; ruleIndex >= 0; ruleIndex -= 1) {
     const rule = rules[ruleIndex];
+    if (rule.time === undefined) continue;
     const match = line.indexOf(Buffer.from(rule.contains));
     if (match < 0) continue;
     const timeTagStart = line.lastIndexOf("time=", match);
@@ -215,7 +220,29 @@ function rewriteLine(line, rules) {
     if (rewritten === line) rewritten = Buffer.from(line);
     Buffer.from(replacement).copy(rewritten, timeStart);
   }
-  return rewritten;
+  return replaceText(line, rewritten, rules);
+}
+
+// Text rules swap equal-length byte strings, so WebSocket frame lengths stay valid.
+function replaceText(line, rewritten, rules) {
+  let result = rewritten;
+  for (const rule of rules) {
+    if (rule.from === undefined) continue;
+    let index = result.indexOf(rule.from);
+    while (index >= 0) {
+      if (result === line) result = Buffer.from(line);
+      rule.to.copy(result, index);
+      index = result.indexOf(rule.from, index + rule.from.length);
+    }
+  }
+  return result;
+}
+
+export function textRewriteRule(from, to, scope = null) {
+  const rule = { from: Buffer.from(from), to: Buffer.from(to), scope };
+  return rule.from.length > 0 && rule.from.length === rule.to.length
+    ? rule
+    : undefined;
 }
 
 function withTimestampPrecision(time, length) {

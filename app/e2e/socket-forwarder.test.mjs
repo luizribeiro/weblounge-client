@@ -3,6 +3,7 @@ import test from "node:test";
 import { injectedIrcFrame } from "./socket-forwarder-inject.mjs";
 import {
   IrcTimeRewriter,
+  textRewriteRule,
   WebSocketIrcTimeRewriter,
 } from "./socket-forwarder-rewrite.mjs";
 
@@ -22,6 +23,20 @@ test("encodes injected lines for a negotiated binary IRC connection", () => {
   assert.equal(frame[0], 0x82);
   assert.equal(frame[1] & 0x80, 0);
   assert.equal(frameText(frame), ":irc.test WALLOPS :maintenance");
+});
+
+test("swaps equal-length text in every incoming line", () => {
+  const rule = textRewriteRule("127.0.0.1:4175", "localhost:4175");
+  const rewriter = new IrcTimeRewriter([rule]);
+  const line =
+    ":irc.localhost 005 weblounge draft/FILEHOST=https://127.0.0.1:4175/upload :are supported\r\n";
+
+  assert.equal(
+    rewriter.push(Buffer.from(line)).toString(),
+    line.replace("127.0.0.1:4175", "localhost:4175"),
+  );
+  assert.equal(textRewriteRule("draft/FILEHOST", "x"), undefined);
+  assert.equal(textRewriteRule("", ""), undefined);
 });
 
 test("passes traffic through while no rewrite is armed", () => {
@@ -95,6 +110,29 @@ test("rewrites complete IRC messages inside split WebSocket frames", () => {
     frameText(rewriter.push(frame.subarray(8))),
     "@time=2026-01-02T03:04:05.678Z :nick PRIVMSG #room :armed message",
   );
+});
+
+test("applies a scoped text rewrite only to its own connection", () => {
+  const rule = textRewriteRule("127.0.0.1:4175", "localhost:4175", "me1");
+  const handshake = Buffer.from("HTTP/1.1 101 Switching Protocols\r\n\r\n");
+  const line =
+    ":irc.localhost 005 me1 draft/FILEHOST=https://127.0.0.1:4175/upload";
+  const forScope = (scope) =>
+    new WebSocketIrcTimeRewriter(
+      [rule],
+      (candidate) => candidate.scope === scope,
+    );
+
+  const own = forScope("me1").push(Buffer.concat([handshake, textFrame(line)]));
+  const other = forScope("me2").push(
+    Buffer.concat([handshake, textFrame(line)]),
+  );
+
+  assert.equal(
+    frameText(own.subarray(handshake.length)),
+    line.replace("127.0.0.1:4175", "localhost:4175"),
+  );
+  assert.equal(frameText(other.subarray(handshake.length)), line);
 });
 
 test("rewrites the binary IRC WebSocket subprotocol", () => {
