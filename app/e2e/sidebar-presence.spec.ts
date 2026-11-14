@@ -1,4 +1,4 @@
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -67,13 +67,9 @@ test.describe("sidebar presence against local Ergo", () => {
       await expectSettled(page, { conversation: irc.channel });
       await peer.privmsgConfirmed(irc.account, `hello ${irc.id}`);
 
-      const direct = page.getByRole("button", {
-        name: `${peer.nickname}, 1 unread, including mentions, online`,
-        exact: true,
-      });
-      await expect(direct).toBeVisible();
-      const row = page.locator(
-        `[data-buffer-id="${await direct.getAttribute("data-buffer-id")}"]`,
+      const row = await directRow(
+        page,
+        `${peer.nickname}, 1 unread, including mentions, online`,
       );
       const dot = row.locator("[data-sidebar-prefix] [data-presence]");
       await expect(dot).toHaveAttribute("data-presence", "online");
@@ -111,4 +107,12 @@ async function nameLeft(row: Locator): Promise<number> {
   const box = await row.locator("[data-sidebar-name]").boundingBox();
   if (box === null) throw new Error("row name has no box");
   return box.x;
+}
+
+async function directRow(page: Page, name: string): Promise<Locator> {
+  const direct = page.getByRole("button", { name, exact: true });
+  await expect(direct).toBeVisible();
+  return page.locator(
+    `[data-buffer-id="${await direct.getAttribute("data-buffer-id")}"]`,
+  );
 }
