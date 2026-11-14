@@ -50,6 +50,12 @@ The single place a fresh session reads to know where the project stands. Update 
   and the composer box share the prototype's 20px (`--wl-space-transcript-desktop-inline`). On
   mobile, the typing line sits level with the messages (16px) and the composer pill keeps its
   14px wrap.
+- 2026-11-13: released the desktop app (design 28) as notarized `desktop-v0.1.0`, installable
+  with `brew install --cask luizribeiro/tap/weblounge`. The release script re-signs the Nix bundle
+  with Developer ID, notarizes and staples the app and its DMG, and verifies both with Gatekeeper;
+  a published release bumps the tap's cask through its reusable `bump-cask` workflow. The app is
+  now named `weblounge` in lowercase. Checked a cask install with quarantine: Gatekeeper accepts
+  it as Notarized Developer ID.
 - 2026-11-13: the macOS wrapper identifies itself to the page (design 27): an initialization
   script defines a frozen, read-only `globalThis.__WEBLOUNGE_SHELL__` of
   `{ kind: "macos-app", version }` so the page can pick native keymaps. Checked in the running app

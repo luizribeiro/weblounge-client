@@ -1,6 +1,6 @@
 # 28 — Desktop release
 
-Status: proposed for Luiz's review (2026-11-13). Distributes the design 27 wrapper to friends.
+Status: signed off and built (Luiz, 2026-11-13). Distributes the design 27 wrapper to friends.
 
 ## Problem
 

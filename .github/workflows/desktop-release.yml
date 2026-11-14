@@ -1,0 +1,36 @@
+---
+name: desktop-release
+
+"on":
+  release:
+    types: [published]
+
+jobs:
+  version:
+    if: startsWith(github.event.release.tag_name, 'desktop-v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      url: ${{ steps.tag.outputs.url }}
+    steps:
+      - id: tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          version=${TAG#desktop-v}
+          downloads=https://github.com/$REPO/releases/download
+          {
+            echo "version=$version"
+            echo "url=$downloads/$TAG/weblounge-$version.dmg"
+          } >> "$GITHUB_OUTPUT"
+
+  homebrew:
+    needs: version
+    uses: luizribeiro/homebrew-tap/.github/workflows/bump-cask.yml@main
+    with:
+      cask: weblounge
+      version: ${{ needs.version.outputs.version }}
+      url: ${{ needs.version.outputs.url }}
+    secrets:
+      tap-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

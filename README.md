@@ -95,7 +95,13 @@ nice -n 10 nix build --no-link --impure --max-jobs 2 --cores 4 --expr '
 
 `apps/tauri/` is a temporary Tauri 2 wrapper that opens the hosted app at
 <https://beta.weblounge.org> in its own window (see
-[design 27](docs/design/27-desktop-wrapper.md)). On a Mac, build and launch it with:
+[design 27](docs/design/27-desktop-wrapper.md)). Install the notarized release (Apple silicon) with:
+
+```sh
+brew install --cask luizribeiro/tap/weblounge
+```
+
+`brew upgrade` installs later releases. To build and launch it from this checkout instead:
 
 ```sh
 open "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge.app"
@@ -108,10 +114,11 @@ ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge
   ~/Applications/weblounge.app
 ```
 
-To install it on another Mac, build a disk image with `nix build .#desktop-dmg`, open
-`result/weblounge.dmg` there and drag weblounge into Applications. The app is not notarized, so if
-the image arrived through a browser or AirDrop, clear its quarantine before the first launch with
-`xattr -dr com.apple.quarantine /Applications/weblounge.app`.
+To publish a release ([design 28](docs/design/28-desktop-release.md)), bump the version in
+`apps/tauri/Cargo.toml` and `apps/tauri/tauri.conf.json`, push it to `main`, and run
+`nix develop -c node apps/tauri/release/release.mjs` (`--dry-run` stops before publishing). It
+signs with the Developer ID in the login keychain and notarizes through the `notarytool` keychain
+profile `weblounge`; the published release then bumps the tap's cask.
 
 For a quick debug build, run `nix develop -c cargo run --manifest-path apps/tauri/Cargo.toml`.
 The bare binary keeps its own web storage, so it asks you to sign in separately from the installed
