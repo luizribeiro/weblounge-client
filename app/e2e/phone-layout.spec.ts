@@ -1,6 +1,7 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
-import { IrcClient } from "./irc-client";
+import { messageId } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
 import { screenshotPixelVariance } from "./transcript-paint";
@@ -12,91 +13,66 @@ test.skip(
 
 test("keeps clickable sender and mentioned nicks as bold as our own", async ({
   page,
-}, testInfo) => {
-  const suffix = `${testInfo.project.name.slice(0, 2)}${Date.now().toString(36).slice(-5)}`;
-  const channel = `#nick-weight-${suffix}`;
-  const account = `nick-user-${suffix}`;
-  const startUrl = await isolatedStartUrl(account, channel);
-  const peer = await IrcClient.connect(
-    `nick-bot-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  irc,
+}) => {
+  const suffix = irc.id;
+  const channel = irc.channelNamed("nick-weight");
+  const account = irc.account;
+  const startUrl = irc.url({ autojoin: [channel] });
+  const peer = await irc.peer("nick-bot", [channel]);
   const peerText = `peer sender ${suffix}`;
   const ownText = `own mentions ${peer.nickname}`;
   const actionText = `waves at ${account}`;
   const noticeText = `notice from ${peer.nickname}`;
-  try {
-    await peer.mode(peer.nickname, "+B");
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await peer.mode(peer.nickname, "+B");
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-    await peer.privmsgConfirmed(channel, peerText);
-    const composer = page.getByRole("textbox", { name: `Message ${channel}` });
-    await composer.fill(ownText);
-    await composer.press("Enter");
-    await peer.actionConfirmed(channel, actionText);
-    await peer.noticeConfirmed(channel, noticeText);
+  await peer.privmsgConfirmed(channel, peerText);
+  const composer = page.getByRole("textbox", { name: `Message ${channel}` });
+  await composer.fill(ownText);
+  await composer.press("Enter");
+  await peer.actionConfirmed(channel, actionText);
+  await peer.noticeConfirmed(channel, noticeText);
 
-    const ownNick = messageRow(page, ownText).locator(`[title="${account}"]`);
-    const peerNick = messageRow(page, peerText).locator(
-      `[title="${peer.nickname}"]`,
-    );
-    const actionNick = messageRow(page, actionText)
-      .locator("[data-nick-action]")
-      .first();
-    const noticeNick = messageRow(page, noticeText).locator(
-      `[title="${peer.nickname}"]`,
-    );
-    const mentionedNick = messageRow(page, ownText).locator(
-      "[data-nick-action]",
-    );
-    await expect(ownNick).toBeVisible();
-    await expect(peerNick).toBeVisible();
-    await expect(actionNick).toBeVisible();
-    await expect(noticeNick).toBeVisible();
-    await expect(mentionedNick).toBeVisible();
+  const ownNick = messageRow(page, ownText).locator(`[title="${account}"]`);
+  const peerNick = messageRow(page, peerText).locator(
+    `[title="${peer.nickname}"]`,
+  );
+  const actionNick = messageRow(page, actionText)
+    .locator("[data-nick-action]")
+    .first();
+  const noticeNick = messageRow(page, noticeText).locator(
+    `[title="${peer.nickname}"]`,
+  );
+  const mentionedNick = messageRow(page, ownText).locator("[data-nick-action]");
+  await expect(ownNick).toBeVisible();
+  await expect(peerNick).toBeVisible();
+  await expect(actionNick).toBeVisible();
+  await expect(noticeNick).toBeVisible();
+  await expect(mentionedNick).toBeVisible();
 
-    for (const nick of [
-      ownNick,
-      peerNick,
-      actionNick,
-      noticeNick,
-      mentionedNick,
-    ])
-      await expect(nick).toHaveCSS("font-weight", "650");
-    const peerColor = await peerNick.evaluate(
-      (element) => getComputedStyle(element).color,
-    );
-    for (const nick of [actionNick, noticeNick, mentionedNick])
-      await expect(nick).toHaveCSS("color", peerColor);
-  } finally {
-    peer.close();
-  }
+  for (const nick of [ownNick, peerNick, actionNick, noticeNick, mentionedNick])
+    await expect(nick).toHaveCSS("font-weight", "650");
+  const peerColor = await peerNick.evaluate(
+    (element) => getComputedStyle(element).color,
+  );
+  for (const nick of [actionNick, noticeNick, mentionedNick])
+    await expect(nick).toHaveCSS("color", peerColor);
 });
 
 test("groups phone messages without losing timestamps or the live edge", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
-  const suffix = `${testInfo.project.name.slice(0, 2)}${Date.now().toString(36).slice(-5)}`;
-  const channel = `#phone-${suffix}`;
-  const startUrl = await isolatedStartUrl(`phone-user-${suffix}`, channel);
-  const sender = await IrcClient.connect(
-    `phone-bot-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
-  const peer = await IrcClient.connect(
-    `phone-peer-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const suffix = irc.id;
+  const channel = irc.channelNamed("phone");
+  const startUrl = irc.url({ autojoin: [channel] });
+  const sender = await irc.peer("phone-bot", [channel]);
+  const peer = await irc.peer("phone-peer", [channel]);
   const first = `phone first ${suffix}`;
   const second = `phone grouped ${suffix} ${"wrap inside the phone text column ".repeat(5)}`;
   const changedSender = `phone sender ${suffix}`;
@@ -107,211 +83,167 @@ test("groups phone messages without losing timestamps or the live edge", async (
     (_, index) =>
       `phone backlog ${index} ${suffix} ${"wrap this message across the narrow transcript ".repeat(5)}`,
   );
-  try {
-    await sender.mode(sender.nickname, "+B");
-    await armGroupingTimes(
-      backlog,
-      first,
-      second,
-      changedSender,
-      beforeMinute,
-      changedMinute,
-    );
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await expect(page.getByRole("button", { name: channel })).toBeVisible();
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await sender.mode(sender.nickname, "+B");
+  await armGroupingTimes(
+    backlog,
+    first,
+    second,
+    changedSender,
+    beforeMinute,
+    changedMinute,
+  );
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await expect(page.getByRole("button", { name: channel })).toBeVisible();
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-    for (const text of backlog) sender.privmsg(channel, text);
-    await sender.privmsgConfirmed(channel, first);
-    const firstRow = messageRow(page, first);
-    await expect(firstRow).toBeVisible();
-    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+  for (const text of backlog) sender.privmsg(channel, text);
+  await sender.privmsgConfirmed(channel, first);
+  const firstRow = messageRow(page, first);
+  await expect(firstRow).toBeVisible();
+  await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
 
-    const echoed = await sender.privmsgConfirmed(channel, second);
-    const secondRow = messageRow(page, second);
-    await expect(secondRow).toBeVisible();
-    await expect(secondRow).toHaveAttribute(
-      "data-message-group-start",
-      "false",
-    );
-    await expect(secondRow.locator("time")).toBeHidden();
-    await expect.poll(() => wrapsAcrossLines(secondRow)).toBe(true);
-    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+  const echoed = await sender.privmsgConfirmed(channel, second);
+  const secondRow = messageRow(page, second);
+  await expect(secondRow).toBeVisible();
+  await expect(secondRow).toHaveAttribute("data-message-group-start", "false");
+  await expect(secondRow.locator("time")).toBeHidden();
+  await expect.poll(() => wrapsAcrossLines(secondRow)).toBe(true);
+  await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
 
-    await peer.privmsgConfirmed(channel, changedSender);
-    await sender.privmsgConfirmed(channel, beforeMinute);
-    await sender.privmsgConfirmed(channel, changedMinute);
-    await expect(messageRow(page, changedSender)).toHaveAttribute(
-      "data-message-group-start",
-      "true",
-    );
-    await expect(messageRow(page, beforeMinute)).toHaveAttribute(
-      "data-message-group-start",
-      "true",
-    );
-    await expect(messageRow(page, changedMinute)).toHaveAttribute(
-      "data-message-group-start",
-      "true",
-    );
-    await expect(messageRow(page, changedMinute).locator("time")).toBeVisible();
-    expect(await messageMinute(page, beforeMinute)).not.toBe(
-      await messageMinute(page, changedMinute),
-    );
+  await peer.privmsgConfirmed(channel, changedSender);
+  await sender.privmsgConfirmed(channel, beforeMinute);
+  await sender.privmsgConfirmed(channel, changedMinute);
+  await expect(messageRow(page, changedSender)).toHaveAttribute(
+    "data-message-group-start",
+    "true",
+  );
+  await expect(messageRow(page, beforeMinute)).toHaveAttribute(
+    "data-message-group-start",
+    "true",
+  );
+  await expect(messageRow(page, changedMinute)).toHaveAttribute(
+    "data-message-group-start",
+    "true",
+  );
+  await expect(messageRow(page, changedMinute).locator("time")).toBeVisible();
+  expect(await messageMinute(page, beforeMinute)).not.toBe(
+    await messageMinute(page, changedMinute),
+  );
 
-    await peer.reactionConfirmed(channel, messageId(echoed), "👍");
-    const reaction = secondRow.locator('[data-reaction="👍"]');
-    await expect(reaction).toBeVisible();
-    const reactionGeometry = await geometryBelowText(secondRow, reaction);
-    expect(reactionGeometry.verticalGap).toBeGreaterThanOrEqual(0);
-    expect(Math.abs(reactionGeometry.horizontalOffset)).toBeLessThanOrEqual(1);
+  await peer.reactionConfirmed(channel, messageId(echoed), "👍");
+  const reaction = secondRow.locator('[data-reaction="👍"]');
+  await expect(reaction).toBeVisible();
+  const reactionGeometry = await geometryBelowText(secondRow, reaction);
+  expect(reactionGeometry.verticalGap).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(reactionGeometry.horizontalOffset)).toBeLessThanOrEqual(1);
 
-    const visibleBotRow = messageRow(page, changedMinute);
-    const icon = visibleBotRow.getByRole("img", { name: "bot" });
-    await expect(icon).toBeVisible();
-    expect(await iconMatchesNick(visibleBotRow, sender.nickname)).toBe(true);
-    expect(
-      await iconNickCentreOffset(visibleBotRow, sender.nickname),
-    ).toBeLessThanOrEqual(2);
-    await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
-    await expect(visibleBotRow.locator("[data-message-avatar]")).toHaveCount(0);
-  } finally {
-    peer.close();
-    sender.close();
-  }
+  const visibleBotRow = messageRow(page, changedMinute);
+  const icon = visibleBotRow.getByRole("img", { name: "bot" });
+  await expect(icon).toBeVisible();
+  expect(await iconMatchesNick(visibleBotRow, sender.nickname)).toBe(true);
+  expect(
+    await iconNickCentreOffset(visibleBotRow, sender.nickname),
+  ).toBeLessThanOrEqual(2);
+  await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
+  await expect(visibleBotRow.locator("[data-message-avatar]")).toHaveCount(0);
 });
 
 test("keeps the desktop row while replacing its bot label", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(
     isPhoneProject(testInfo.project.name),
     "runs in the desktop project",
   );
-  const suffix = Date.now().toString(36).slice(-6);
-  const channel = `#desktop-${suffix}`;
-  const text = `desktop bot ${suffix}`;
-  const startUrl = await isolatedStartUrl(`desktop-user-${suffix}`, channel);
-  const sender = await IrcClient.connect(
-    `desktop-bot-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
+  const channel = irc.channelNamed("desktop");
+  const text = `desktop bot ${irc.id}`;
+  const startUrl = irc.url({ autojoin: [channel] });
+  const sender = await irc.peer("desktop-bot", [channel]);
+  await sender.mode(sender.nickname, "+B");
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await sender.privmsgConfirmed(channel, text);
+  const row = messageRow(page, text);
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("img", { name: "bot" })).toBeVisible();
+  expect(await iconMatchesNick(row, sender.nickname)).toBe(true);
+  expect(await iconNickCentreOffset(row, sender.nickname)).toBeLessThanOrEqual(
+    2,
   );
-  try {
-    await sender.mode(sender.nickname, "+B");
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-    await sender.privmsgConfirmed(channel, text);
-    const row = messageRow(page, text);
-    await expect(row).toBeVisible();
-    await expect(row.getByRole("img", { name: "bot" })).toBeVisible();
-    expect(await iconMatchesNick(row, sender.nickname)).toBe(true);
-    expect(
-      await iconNickCentreOffset(row, sender.nickname),
-    ).toBeLessThanOrEqual(2);
-    await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
-    expect(await keepsDesktopColumns(row)).toBe(true);
-  } finally {
-    sender.close();
-  }
+  await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
+  expect(await keepsDesktopColumns(row)).toBe(true);
 });
 
 test("paints message and member bot icons under the beta CSP", async ({
   page,
+  irc,
 }, testInfo) => {
   test.skip(
     isPhoneProject(testInfo.project.name),
     "runs in the desktop project",
   );
-  const suffix = Date.now().toString(36).slice(-6);
-  const channel = `#bot-csp-${suffix}`;
-  const text = `bot CSP ${suffix}`;
-  const startUrl = await isolatedStartUrl(`csp-user-${suffix}`, channel);
-  const sender = await IrcClient.connect(
-    `csp-bot-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
+  const channel = irc.channelNamed("bot-csp");
+  const text = `bot CSP ${irc.id}`;
+  const startUrl = irc.url({ autojoin: [channel] });
+  const sender = await irc.peer("csp-bot", [channel]);
+  await sender.mode(sender.nickname, "+B");
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "botIconCspViolations", []);
+    document.addEventListener("securitypolicyviolation", (event) => {
+      const violations = Reflect.get(globalThis, "botIconCspViolations");
+      if (Array.isArray(violations))
+        violations.push({
+          blocked: event.blockedURI,
+          directive: event.violatedDirective,
+        });
+    });
+  });
+  await useDedicatedWorker(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const response = await page.goto(startUrl);
+  expect(response?.headers()["content-security-policy"]).toBe(
+    E2E_CONTENT_SECURITY_POLICY,
   );
-  try {
-    await sender.mode(sender.nickname, "+B");
-    await page.addInitScript(() => {
-      Reflect.set(globalThis, "botIconCspViolations", []);
-      document.addEventListener("securitypolicyviolation", (event) => {
-        const violations = Reflect.get(globalThis, "botIconCspViolations");
-        if (Array.isArray(violations))
-          violations.push({
-            blocked: event.blockedURI,
-            directive: event.violatedDirective,
-          });
-      });
-    });
-    await useDedicatedWorker(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const response = await page.goto(startUrl);
-    expect(response?.headers()["content-security-policy"]).toBe(
-      E2E_CONTENT_SECURITY_POLICY,
-    );
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-    await sender.privmsgConfirmed(channel, text);
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await sender.privmsgConfirmed(channel, text);
 
-    const messageIcon = messageRow(page, text).getByRole("img", {
-      name: "bot",
-    });
-    await expect(messageIcon).toBeVisible();
-    await page.getByRole("button", { name: "Toggle member list" }).click();
-    const memberIcon = page
-      .getByRole("complementary", { name: `Members of ${channel}` })
-      .getByRole("button", {
-        name: `Open direct message with ${sender.nickname}`,
-      })
-      .getByRole("img", { name: "bot" });
-    await expect(memberIcon).toBeVisible();
+  const messageIcon = messageRow(page, text).getByRole("img", {
+    name: "bot",
+  });
+  await expect(messageIcon).toBeVisible();
+  await page.getByRole("button", { name: "Toggle member list" }).click();
+  const memberIcon = page
+    .getByRole("complementary", { name: `Members of ${channel}` })
+    .getByRole("button", {
+      name: `Open direct message with ${sender.nickname}`,
+    })
+    .getByRole("img", { name: "bot" });
+  await expect(memberIcon).toBeVisible();
 
-    for (const icon of [messageIcon, memberIcon]) {
-      expect(await maskImageOrigin(icon)).toBe(new URL(page.url()).origin);
-      expect(
-        await screenshotPixelVariance(
-          page,
-          await icon.screenshot({ scale: "css" }),
-        ),
-      ).toBeGreaterThan(1);
-    }
+  for (const icon of [messageIcon, memberIcon]) {
+    expect(await maskImageOrigin(icon)).toBe(new URL(page.url()).origin);
     expect(
-      await page.evaluate(() =>
-        Reflect.get(globalThis, "botIconCspViolations"),
+      await screenshotPixelVariance(
+        page,
+        await icon.screenshot({ scale: "css" }),
       ),
-    ).toEqual([]);
-  } finally {
-    sender.close();
+    ).toBeGreaterThan(1);
   }
+  expect(
+    await page.evaluate(() => Reflect.get(globalThis, "botIconCspViolations")),
+  ).toEqual([]);
 });
 
 function isPhoneProject(name: string): boolean {
   return name === "android-phone-layout" || name === "webkit-phone-layout";
-}
-
-async function isolatedStartUrl(
-  account: string,
-  channel: string,
-): Promise<string> {
-  const seed = await IrcClient.connectIsolated(account, channel);
-  seed.close();
-  await seed.waitForDisconnect();
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": `test-${account}`,
-    "irc-autojoin": channel,
-  });
-  return `/?${params.toString()}`;
 }
 
 function messageRow(page: Page, text: string): Locator {
@@ -442,10 +374,4 @@ async function armGroupingTimes(
     armMessageTime(beforeMinute, minute + 59_000),
     armMessageTime(changedMinute, minute + 60_000),
   ]);
-}
-
-function messageId(line: string): string {
-  const value = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
-  if (value === undefined) throw new Error(`IRC line has no msgid: ${line}`);
-  return value;
 }

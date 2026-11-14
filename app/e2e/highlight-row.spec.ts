@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import type { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
 
@@ -11,6 +12,7 @@ test.skip(
 
 test("keeps highlighted transcript rows in the message rhythm and scroll layer", async ({
   page,
+  irc,
 }, testInfo) => {
   const phone = isPhoneProject(testInfo.project.name);
   test.skip(
@@ -21,169 +23,131 @@ test("keeps highlighted transcript rows in the message rhythm and scroll layer",
     phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
   );
   await page.emulateMedia({ colorScheme: "dark" });
-  const suffix = `${testInfo.project.name.slice(0, 2)}${Date.now().toString(36).slice(-5)}`;
-  const account = `hluser${suffix}`;
-  const channel = `#hl-row-${suffix}`;
-  const startUrl = await isolatedStartUrl(account, channel);
-  const first = await IrcClient.connect(
-    `hl-first-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
-  const second = await IrcClient.connect(
-    `hl-second-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const suffix = irc.id;
+  const account = irc.account;
+  const channel = irc.channelNamed("hl-row");
+  const startUrl = irc.url({ autojoin: [channel] });
+  const first = await irc.peer("hl-first", [channel]);
+  const second = await irc.peer("hl-second", [channel]);
   const messages = highlightMessages(account, suffix);
-  try {
-    await useDedicatedWorker(page);
-    await page.goto(startUrl);
-    await expect(page.getByRole("button", { name: channel })).toBeVisible();
-    await page.getByRole("button", { name: channel }).click();
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await useDedicatedWorker(page);
+  await page.goto(startUrl);
+  await expect(page.getByRole("button", { name: channel })).toBeVisible();
+  await page.getByRole("button", { name: channel }).click();
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-    const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
-    await sendAt(page, first, channel, messages.normalBefore, minute + 1_000);
-    await sendAt(page, second, channel, messages.normalAfter, minute + 2_000);
-    await sendAt(
-      page,
-      first,
-      channel,
-      messages.highlightedGroup,
-      minute + 3_000,
-    );
-    await sendAt(
-      page,
-      second,
-      channel,
-      messages.afterHighlight,
-      minute + 4_000,
-    );
-    await sendAt(
-      page,
-      first,
-      channel,
-      messages.normalGroupStart,
-      minute + 5_000,
-    );
-    await sendAt(
-      page,
-      first,
-      channel,
-      messages.normalContinuation,
-      minute + 6_000,
-    );
-    await sendAt(page, second, channel, messages.breakGroup, minute + 7_000);
-    await sendAt(
-      page,
-      first,
-      channel,
-      messages.highlightGroupStart,
-      minute + 8_000,
-    );
-    await sendAt(
-      page,
-      first,
-      channel,
-      messages.highlightedContinuation,
-      minute + 9_000,
-    );
+  const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
+  await sendAt(page, first, channel, messages.normalBefore, minute + 1_000);
+  await sendAt(page, second, channel, messages.normalAfter, minute + 2_000);
+  await sendAt(page, first, channel, messages.highlightedGroup, minute + 3_000);
+  await sendAt(page, second, channel, messages.afterHighlight, minute + 4_000);
+  await sendAt(page, first, channel, messages.normalGroupStart, minute + 5_000);
+  await sendAt(
+    page,
+    first,
+    channel,
+    messages.normalContinuation,
+    minute + 6_000,
+  );
+  await sendAt(page, second, channel, messages.breakGroup, minute + 7_000);
+  await sendAt(
+    page,
+    first,
+    channel,
+    messages.highlightGroupStart,
+    minute + 8_000,
+  );
+  await sendAt(
+    page,
+    first,
+    channel,
+    messages.highlightedContinuation,
+    minute + 9_000,
+  );
 
-    const highlightedGroup = messageRow(page, messages.highlightedGroup);
-    const highlightedContinuation = messageRow(
-      page,
-      messages.highlightedContinuation,
-    );
-    await expect(highlightedGroup).toBeVisible();
-    await expect(highlightedContinuation).toHaveAttribute(
-      "data-message-group-start",
-      "false",
-    );
-    await expectHighlight(highlightedGroup);
-    await expectHighlight(highlightedContinuation);
-    expect(await highlightInsets(highlightedGroup)).toEqual(
-      phone ? { end: -8, start: 8 } : { end: 0, start: 0 },
-    );
-    expect(await highlightInsets(highlightedContinuation)).toEqual(
-      phone ? { end: -3, start: 3 } : { end: 0, start: 0 },
-    );
+  const highlightedGroup = messageRow(page, messages.highlightedGroup);
+  const highlightedContinuation = messageRow(
+    page,
+    messages.highlightedContinuation,
+  );
+  await expect(highlightedGroup).toBeVisible();
+  await expect(highlightedContinuation).toHaveAttribute(
+    "data-message-group-start",
+    "false",
+  );
+  await expectHighlight(highlightedGroup);
+  await expectHighlight(highlightedContinuation);
+  expect(await highlightInsets(highlightedGroup)).toEqual(
+    phone ? { end: -8, start: 8 } : { end: 0, start: 0 },
+  );
+  expect(await highlightInsets(highlightedContinuation)).toEqual(
+    phone ? { end: -3, start: 3 } : { end: 0, start: 0 },
+  );
 
-    await captureScenario(
-      page,
-      testInfo.project.name,
-      "group",
-      highlightedGroup,
-    );
-    await captureScenario(
-      page,
-      testInfo.project.name,
-      "same-minute",
-      highlightedContinuation,
-    );
+  await captureScenario(page, testInfo.project.name, "group", highlightedGroup);
+  await captureScenario(
+    page,
+    testInfo.project.name,
+    "same-minute",
+    highlightedContinuation,
+  );
 
-    await sendAt(
-      page,
-      second,
-      channel,
-      messages.liveEdgeHighlight,
-      minute + 10_000,
-    );
-    const liveEdgeHighlight = messageRow(page, messages.liveEdgeHighlight);
-    await expect(liveEdgeHighlight).toBeVisible();
-    await expectHighlight(liveEdgeHighlight);
-    await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
-    await captureScenario(
-      page,
-      testInfo.project.name,
-      "live-edge",
-      liveEdgeHighlight,
-      true,
-    );
+  await sendAt(
+    page,
+    second,
+    channel,
+    messages.liveEdgeHighlight,
+    minute + 10_000,
+  );
+  const liveEdgeHighlight = messageRow(page, messages.liveEdgeHighlight);
+  await expect(liveEdgeHighlight).toBeVisible();
+  await expectHighlight(liveEdgeHighlight);
+  await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+  await captureScenario(
+    page,
+    testInfo.project.name,
+    "live-edge",
+    liveEdgeHighlight,
+    true,
+  );
 
-    const normalGroupGap = await textGap(
-      messageRow(page, messages.normalBefore),
-      messageRow(page, messages.normalAfter),
+  const normalGroupGap = await textGap(
+    messageRow(page, messages.normalBefore),
+    messageRow(page, messages.normalAfter),
+  );
+  await expect
+    .poll(() =>
+      textGap(messageRow(page, messages.normalAfter), highlightedGroup),
+    )
+    .toBeCloseTo(normalGroupGap, 0);
+  await expect
+    .poll(() =>
+      textGap(highlightedGroup, messageRow(page, messages.afterHighlight)),
+    )
+    .toBeCloseTo(normalGroupGap, 0);
+
+  if (phone) {
+    const normalContinuationGap = await textGap(
+      messageRow(page, messages.normalGroupStart),
+      messageRow(page, messages.normalContinuation),
     );
     await expect
       .poll(() =>
-        textGap(messageRow(page, messages.normalAfter), highlightedGroup),
+        textGap(
+          messageRow(page, messages.highlightGroupStart),
+          highlightedContinuation,
+        ),
       )
-      .toBeCloseTo(normalGroupGap, 0);
-    await expect
-      .poll(() =>
-        textGap(highlightedGroup, messageRow(page, messages.afterHighlight)),
-      )
-      .toBeCloseTo(normalGroupGap, 0);
-
-    if (phone) {
-      const normalContinuationGap = await textGap(
-        messageRow(page, messages.normalGroupStart),
-        messageRow(page, messages.normalContinuation),
-      );
-      await expect
-        .poll(() =>
-          textGap(
-            messageRow(page, messages.highlightGroupStart),
-            highlightedContinuation,
-          ),
-        )
-        .toBeCloseTo(normalContinuationGap, 0);
-    }
-
-    const layers = await rowLayerStyles(
-      messageRow(page, messages.normalAfter),
-      highlightedGroup,
-    );
-    expect(layers.highlightedPaint).toEqual(layers.normalPaint);
-    expect(layers.highlightedRow).toEqual(layers.normalRow);
-    expect(layers.motionLayer.willChange).toBe("auto");
-  } finally {
-    second.close();
-    first.close();
+      .toBeCloseTo(normalContinuationGap, 0);
   }
+
+  const layers = await rowLayerStyles(
+    messageRow(page, messages.normalAfter),
+    highlightedGroup,
+  );
+  expect(layers.highlightedPaint).toEqual(layers.normalPaint);
+  expect(layers.highlightedRow).toEqual(layers.normalRow);
+  expect(layers.motionLayer.willChange).toBe("auto");
 });
 
 function isPhoneProject(name: string): boolean {
@@ -203,22 +167,6 @@ function highlightMessages(account: string, suffix: string) {
     highlightedContinuation: `continuation for ${account} ${suffix}`,
     liveEdgeHighlight: `live edge for ${account} ${suffix}`,
   } as const;
-}
-
-async function isolatedStartUrl(
-  account: string,
-  channel: string,
-): Promise<string> {
-  const seed = await IrcClient.connectIsolated(account, channel);
-  seed.close();
-  await seed.waitForDisconnect();
-  const params = new URLSearchParams({
-    "irc-account": account,
-    "irc-nickname": account,
-    "irc-password": `test-${account}`,
-    "irc-autojoin": channel,
-  });
-  return `/?${params.toString()}`;
 }
 
 async function sendAt(
