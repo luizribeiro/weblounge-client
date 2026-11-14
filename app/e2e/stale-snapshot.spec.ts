@@ -676,15 +676,13 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     let current = page;
     try {
       await keeper.setAlwaysOn(true);
-      keeper.close();
-      await keeper.waitForDisconnect();
       await useDedicatedWorker(current);
       await current.goto(startUrlForAccount(appAccount, appPassword, channel));
       await bufferRow(current, channel).click();
       await expect(
         current.getByRole("heading", { name: channel }),
       ).toBeVisible();
-      await current.close();
+      await closeAppUntilDetached(current, keeper);
       await bot.privmsgConfirmed(channel, missed);
 
       current = await context.newPage();
