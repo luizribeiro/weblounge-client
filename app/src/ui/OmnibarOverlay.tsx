@@ -1,4 +1,5 @@
 import { type JSX, onCleanup, onMount } from "solid-js";
+import { trapTab } from "./focus-trap";
 import styles from "./OmnibarOverlay.module.css";
 
 interface OmnibarOverlayProps {
@@ -57,18 +58,7 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
       props.onDismiss();
       return;
     }
-    if (event.key !== "Tab") return;
-    const elements = focusable(dialog);
-    const first = elements[0];
-    const last = elements.at(-1);
-    if (first === undefined || last === undefined) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    trapTab(event, dialog);
   };
 
   return (
@@ -117,14 +107,5 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
         {props.children}
       </div>
     </div>
-  );
-}
-
-function focusable(root: HTMLElement | undefined): HTMLElement[] {
-  if (root === undefined) return [];
-  return [
-    ...root.querySelectorAll<HTMLElement>("button, input, [tabindex]"),
-  ].filter(
-    (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0,
   );
 }
