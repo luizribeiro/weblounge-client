@@ -139,7 +139,7 @@
   font-size: var(--wl-font-section-size);
   font-weight: 500;
   gap: var(--wl-space-list-gap);
-  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr);
+  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr) auto;
   letter-spacing: var(--wl-font-section-tracking);
   height: var(--wl-density-sidebar-row-height);
   margin-top: var(--wl-network-header-lead);
@@ -173,6 +173,34 @@
 
 .networkName {
   min-width: 0;
+}
+
+.connectionDot {
+  background: var(--wl-color-panel-border);
+  border: var(--wl-size-presence-ring) solid var(--wl-color-panel-border);
+  border-radius: 50%;
+  height: var(--wl-size-presence-dot);
+  width: var(--wl-size-presence-dot);
+}
+
+.networkHeader[data-network-state="online"] .connectionDot {
+  background: var(--wl-color-online);
+  border-color: var(--wl-color-online);
+}
+
+.networkHeader:is(
+    [data-network-state="connecting"],
+    [data-network-state="registering"],
+    [data-network-state="reconnecting"]
+  )
+  .connectionDot {
+  background: transparent;
+  border-color: var(--wl-color-panel-muted);
+}
+
+.networkHeader[data-network-state="failed"] .connectionDot {
+  background: var(--wl-color-error);
+  border-color: var(--wl-color-error);
 }
 
 .rows {

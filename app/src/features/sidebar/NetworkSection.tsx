@@ -74,6 +74,11 @@ export function NetworkSection(props: NetworkSectionProps) {
             {props.network.label.slice(0, 1).toLocaleUpperCase()}
           </span>
           <Line class={styles.networkName}>{props.network.label}</Line>
+          <span
+            aria-hidden="true"
+            class={styles.connectionDot}
+            data-network-dot="true"
+          />
         </button>
       )}
       <div class={styles.rows}>

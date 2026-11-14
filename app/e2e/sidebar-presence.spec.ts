@@ -8,6 +8,54 @@ import { expectSettled } from "./settled";
 import { tokenColour } from "./sidebar-geometry";
 
 test.describe("sidebar presence against local Ergo", () => {
+  test("marks the connected network with the online colour", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+
+    const network = page.getByRole("button", { name: "Local Ergo, online" });
+    const dot = network.locator("[data-network-dot]");
+    await expect(dot).toBeVisible();
+    await expect(dot).toHaveCSS(
+      "background-color",
+      await tokenColour(page, "--wl-color-online"),
+    );
+    await nativeFeelAudit(page);
+  });
+
+  test("colours the network dot for each connection state", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const network = page.locator("[data-network-state]");
+    const dot = network.locator("[data-network-dot]");
+
+    for (const [state, background, border] of [
+      ["reconnecting", "transparent", "--wl-color-panel-muted"],
+      ["offline", "--wl-color-panel-border", "--wl-color-panel-border"],
+      ["failed", "--wl-color-error", "--wl-color-error"],
+    ] as const) {
+      await network.evaluate((element, value) => {
+        element.setAttribute("data-network-state", value);
+      }, state);
+      await expect(dot).toHaveCSS(
+        "background-color",
+        background === "transparent"
+          ? "rgba(0, 0, 0, 0)"
+          : await tokenColour(page, background),
+      );
+      await expect(dot).toHaveCSS(
+        "border-top-color",
+        await tokenColour(page, border),
+      );
+    }
+  });
+
   test("shows a DM peer's MONITOR presence on the row's leading column", async ({
     page,
     irc,
