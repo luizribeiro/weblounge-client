@@ -37,8 +37,9 @@ export function OmnibarOverlay(props: OmnibarOverlayProps) {
   });
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
-    if (props.shouldRestoreFocus?.() === false) return;
+    // Read here: the action that closed the overlay sets this flag after cleanup.
     queueMicrotask(() => {
+      if (props.shouldRestoreFocus?.() === false) return;
       if (invoker?.isConnected === true) invoker.focus({ preventScroll: true });
     });
   });

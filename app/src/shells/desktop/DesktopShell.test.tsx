@@ -663,6 +663,43 @@ it("opens Settings from the web chord and returns focus on Escape", async () => 
     new CustomEvent("weblounge:action", { detail: "settings.open" }),
   );
   expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Settings" }), {
+    key: "Escape",
+  });
+  await waitFor(() => expect(composer).toHaveFocus());
+});
+
+it("focuses the Settings dialog when run from the command palette", async () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onChangeSetting={() => {}}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const composer = screen.getByRole("textbox", { name: "Message #room" });
+  await waitFor(() => expect(composer).toHaveFocus());
+
+  fireEvent.keyDown(composer, { ctrlKey: true, key: "k" });
+  const query = await screen.findByRole("combobox", { name: "Jump to" });
+  fireEvent.input(query, { target: { value: ">sett" } });
+  fireEvent.keyDown(
+    await screen.findByRole("combobox", { name: "Run a command" }),
+    { key: "Enter" },
+  );
+
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await waitFor(() => expect(dialog).toHaveFocus());
 });
 
 it("routes printable chrome keys to the composer without hijacking controls", () => {
