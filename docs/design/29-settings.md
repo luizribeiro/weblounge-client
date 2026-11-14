@@ -41,7 +41,7 @@ to `docs/reference/prototype/`:
   the section name and its current value ("Lounge · one-line · cozy", "2 of 2 connected",
   "Mentions & DMs" or "Push off"); one pushed page per section with a Back header. Segmented
   controls sit full-width under their label on the phone.
-- **Content** (both): Appearance → Theme (seven preview cards drawn from each theme's tokens);
+- **Content** (both): Appearance → Theme (eight preview cards drawn from each theme's tokens);
   Conversation: Message layout, Message density, Avatars, Mode symbols, Joins/parts/quits;
   Sidebars (desktop: Sidebar density) or Chat list (phone: List density, "Compact hides message
   previews"). Networks → "Add network" and one card per network: icon, name, status dot and
@@ -68,9 +68,9 @@ Additions to the prototype's content:
 
 - **Appearance:** a **System** card (Lounge by day, Lounge Night after dark), selected by default;
   design 08 already planned a visible "Match system" choice (D4). The cards run System, Lounge,
-  Lounge Night, Black, Modern, Terminal, Retro. Each shows its theme's one-line description under
-  the name (also its accessible description). The grid wraps at 104px per card on desktop (5 + 2
-  in the 820px modal) and scrolls horizontally on the phone.
+  Lounge Night, Black, Modern, Terminal, Retro, Monokai. Each shows its theme's one-line
+  description under the name (also its accessible description). The grid wraps at 104px per card
+  on desktop (5 + 3 in the 820px modal) and scrolls horizontally on the phone.
 - **No remote-media switch yet (D5).** Link previews are paused and images from other sites never
   show, so there is nothing to switch. Media from a network's own upload host always loads. The
   "Previews and images from other sites" switch (off by default) returns with link previews.

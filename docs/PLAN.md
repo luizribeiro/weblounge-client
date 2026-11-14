@@ -112,6 +112,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-14: a Monokai theme from Luiz's wezterm colours: charcoal `#1c1c1c`, green accent, pink
+  unread and mention badge, set in self-hosted Hack (400/700, upright and italic) that loads only
+  when the theme is active. Design 08.
 - 2026-11-14: the Settings section list folds into a 52px icon rail in narrow desktop windows and
   expands over the content on hover intent or focus; Escape collapses it before closing. Design 29
   D13; follow-ups F22 to F24.
