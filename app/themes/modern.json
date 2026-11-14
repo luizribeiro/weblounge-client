@@ -1,6 +1,7 @@
 {
   "id": "modern",
   "name": "Modern",
+  "description": "Clean and bright",
   "order": 4,
   "appearance": "light",
   "colors": {

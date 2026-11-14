@@ -1,6 +1,7 @@
 {
   "id": "lounge-night",
   "name": "Lounge Night",
+  "description": "weblounge.org, after dark",
   "order": 2,
   "appearance": "dark",
   "colors": {

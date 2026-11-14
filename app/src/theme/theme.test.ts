@@ -52,6 +52,22 @@ describe("theme registry", () => {
     ).toBe(compactCss(themeStyleSheet()));
   });
 
+  it("describes each theme for its Settings card", () => {
+    expect(
+      Object.fromEntries(themes.map((theme) => [theme.id, theme.description])),
+    ).toEqual({
+      lounge: "weblounge.org, by day",
+      "lounge-night": "weblounge.org, after dark",
+      black: "Pure black for OLED screens",
+      modern: "Clean and bright",
+      terminal: "Monospace, dense, dark",
+      retro: "Wood, cream and serifs",
+    });
+    expect(() =>
+      buildRegistry({ "night.json": { ...loungeNight, description: "" } }),
+    ).toThrow("night.json: invalid description");
+  });
+
   it("declares each theme's appearance", () => {
     expect(
       Object.fromEntries(themes.map((theme) => [theme.id, theme.appearance])),

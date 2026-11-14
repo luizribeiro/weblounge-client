@@ -1,6 +1,7 @@
 {
   "id": "black",
   "name": "Black",
+  "description": "Pure black for OLED screens",
   "order": 3,
   "appearance": "dark",
   "colors": {

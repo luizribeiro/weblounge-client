@@ -4,6 +4,7 @@ export type CssColor = string & { readonly cssColor: unique symbol };
 export interface ThemeDefinition {
   readonly id: ThemeId;
   readonly name: string;
+  readonly description: string;
   readonly order: number;
   readonly appearance: "light" | "dark";
   readonly colors: Readonly<Record<ColorToken, CssColor>>;
@@ -20,6 +21,7 @@ type OnboardingDefinition = Readonly<Record<OnboardingToken, CssColor>> &
 const themeKeys = [
   "id",
   "name",
+  "description",
   "order",
   "appearance",
   "colors",
@@ -197,6 +199,9 @@ function parseTheme(path: string, value: unknown): ThemeDefinition {
   if (typeof value.name !== "string" || value.name === "") {
     throw new Error(`${path}: invalid name`);
   }
+  if (typeof value.description !== "string" || value.description === "") {
+    throw new Error(`${path}: invalid description`);
+  }
   if (!Number.isInteger(value.order) || typeof value.order !== "number") {
     throw new Error(`${path}: invalid order`);
   }
@@ -207,6 +212,7 @@ function parseTheme(path: string, value: unknown): ThemeDefinition {
   return {
     id: value.id as ThemeId,
     name: value.name,
+    description: value.description,
     order: value.order,
     appearance: value.appearance,
     colors: parseTokenRecord(value.colors, colorTokens, true, `${path}.colors`),

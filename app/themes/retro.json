@@ -1,6 +1,7 @@
 {
   "id": "retro",
   "name": "Retro",
+  "description": "Wood, cream and serifs",
   "order": 6,
   "appearance": "light",
   "colors": {

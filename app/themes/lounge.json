@@ -1,6 +1,7 @@
 {
   "id": "lounge",
   "name": "Lounge",
+  "description": "weblounge.org, by day",
   "order": 1,
   "appearance": "light",
   "colors": {

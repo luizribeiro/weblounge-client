@@ -1,6 +1,7 @@
 {
   "id": "terminal",
   "name": "Terminal",
+  "description": "Monospace, dense, dark",
   "order": 5,
   "appearance": "dark",
   "colors": {
