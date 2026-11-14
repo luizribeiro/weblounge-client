@@ -45,7 +45,7 @@
 
 .miniature {
   border: 1px solid var(--wl-preview-border);
-  border-radius: 3px;
+  border-radius: var(--wl-preview-radius);
   box-sizing: border-box;
   display: flex;
   height: 100%;

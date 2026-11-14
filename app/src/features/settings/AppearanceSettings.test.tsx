@@ -74,13 +74,13 @@ describe("AppearanceSettings", () => {
     );
   });
 
-  it("previews each fixed theme in its own colours", () => {
+  it("previews and describes each fixed theme in its own colours", () => {
     setup();
 
     for (const theme of themes) {
-      const card = screen
-        .getByRole("radio", { name: theme.name })
-        .closest("label");
+      const radio = screen.getByRole("radio", { name: theme.name });
+      expect(radio).toHaveAccessibleDescription(theme.description);
+      const card = radio.closest("label");
       const previews = [
         ...(card?.querySelectorAll<HTMLElement>("[data-preview-theme]") ?? []),
       ];

@@ -14,13 +14,13 @@ interface ThemeCardsProps {
 }
 
 export function ThemeCards(props: ThemeCardsProps) {
-  const systemDescriptionId = createUniqueId();
+  const descriptionId = createUniqueId();
+  const describedBy = (preference: ThemePreference) =>
+    `${descriptionId}-${preference}`;
   return (
     <RadioGroup
       choiceClass={styles.card}
-      choiceDescribedBy={(preference) =>
-        preference === "system" ? systemDescriptionId : undefined
-      }
+      choiceDescribedBy={describedBy}
       choiceLabel={themeName}
       class={styles.cards}
       data-horizontal-scroll="true"
@@ -41,11 +41,9 @@ export function ThemeCards(props: ThemeCardsProps) {
           </span>
           <span aria-hidden="true" class={styles.name}>
             <b>{themeName(preference)}</b>
-            <Show when={preference === "system"}>
-              <small id={systemDescriptionId}>
-                {t("settings.theme.system_description")}
-              </small>
-            </Show>
+            <small id={describedBy(preference)}>
+              {themeDescription(preference)}
+            </small>
           </span>
         </>
       )}
@@ -88,6 +86,7 @@ function previewTokens(theme: ThemeDefinition): JSX.CSSProperties {
     "--wl-preview-border": colors.border,
     "--wl-preview-input": colors.inputBg,
     "--wl-preview-accent": colors.accent,
+    "--wl-preview-radius": theme.shape.control,
   };
 }
 
@@ -99,6 +98,12 @@ function themeFor(
   const theme = themes.find((candidate) => candidate.id === id);
   if (theme === undefined) throw new Error(`unknown theme: ${id}`);
   return theme;
+}
+
+function themeDescription(preference: ThemePreference): string {
+  return preference === "system"
+    ? t("settings.theme.system_description")
+    : themeFor(preference, false).description;
 }
 
 export function themeName(preference: ThemePreference): string {
