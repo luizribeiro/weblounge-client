@@ -36,8 +36,16 @@ const betaSources: PolicySources = {
 // Local Ergo advertises this as FILEHOST (nix/ergo.nix), and
 // e2e/fake-filehost-server.mjs serves it.
 export const E2E_FILEHOST_ORIGIN = "https://127.0.0.1:4175";
+// The same fake host under a name that is not the IRC endpoint's site, for the specs that
+// rewrite the advertised FILEHOST to it.
+export const E2E_FOREIGN_FILEHOST_ORIGIN = "https://localhost:4175";
+
+const e2eFilehosts = [E2E_FILEHOST_ORIGIN, E2E_FOREIGN_FILEHOST_ORIGIN];
 
 export const E2E_CONTENT_SECURITY_POLICY = contentSecurityPolicy({
-  ...betaSources,
-  images: [...betaSources.images, E2E_FILEHOST_ORIGIN],
+  connect: [
+    ...betaSources.connect,
+    ...e2eFilehosts.map((origin) => `${origin}/upload`),
+  ],
+  images: [...betaSources.images, ...e2eFilehosts],
 });

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { basename, extname } from "node:path";
+import { handleUpload } from "./fake-filehost-uploads.mjs";
 import { selfSignedCertificate } from "./self-signed-certificate.mjs";
 
 // Must match the FILEHOST in nix/ergo.nix and E2E_FILEHOST_ORIGIN in app/csp.ts.
@@ -30,16 +31,25 @@ createServer(
       response.writeHead(204).end();
       return;
     }
+    if (handleUpload(request, response, url, afterRelease)) return;
     const hold = /^\/held\/([\w-]+)\//u.exec(url.pathname);
-    if (hold?.[1] !== undefined && !released.has(hold[1])) {
-      const waiting = held.get(hold[1]) ?? [];
-      waiting.push(() => serveFixture(url.pathname, response));
-      held.set(hold[1], waiting);
+    if (hold?.[1] !== undefined) {
+      afterRelease(hold[1], () => serveFixture(url.pathname, response));
       return;
     }
     serveFixture(url.pathname, response);
   },
 ).listen(4175, "127.0.0.1");
+
+function afterRelease(key, continuation) {
+  if (released.has(key)) {
+    continuation();
+    return;
+  }
+  const waiting = held.get(key) ?? [];
+  waiting.push(continuation);
+  held.set(key, waiting);
+}
 
 function releaseHeld(key) {
   released.add(key);
