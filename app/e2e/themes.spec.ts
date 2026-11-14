@@ -1,5 +1,5 @@
-import type { Page } from "@playwright/test";
-import { expect, test } from "./irc-fixture";
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -56,13 +56,8 @@ test.describe("themes against local Ergo", () => {
     irc,
     page,
   }) => {
-    await page.goto(irc.url());
-    await page.getByRole("button", { name: irc.channel }).click();
-    await expectSettled(page, { conversation: irc.channel });
-    await sidebarSettings(page).click();
-    await choose(page, "Retro");
+    const dialog = await settingsIn(page, irc, "Retro");
 
-    const dialog = page.getByRole("dialog", { name: "Settings" });
     await expect(dialog.getByRole("heading", { name: "Settings" })).toHaveCSS(
       "font-family",
       /^Fraunces,/u,
@@ -74,6 +69,19 @@ test.describe("themes against local Ergo", () => {
     );
   });
 });
+
+async function settingsIn(
+  page: Page,
+  irc: IrcTestAccount,
+  theme: string,
+): Promise<Locator> {
+  await page.goto(irc.url());
+  await page.getByRole("button", { name: irc.channel }).click();
+  await expectSettled(page, { conversation: irc.channel });
+  await sidebarSettings(page).click();
+  await choose(page, theme);
+  return page.getByRole("dialog", { name: "Settings" });
+}
 
 async function recordFirstFrame(page: Page): Promise<void> {
   await page.addInitScript(() => {
