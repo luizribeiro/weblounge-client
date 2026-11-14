@@ -69,16 +69,20 @@ hosts is hardcoded.
 ### U1: the own-site rule
 
 ```rust
-enum Approval { None, Granted } // Granted: this upload's approval or a remembered one
-fn release_credential(irc_host: &str, filehost_host: &str, credential: CredentialKind,
-    approval: Approval) -> Release // Send | Ask
+struct Address { host: String, port: u16 }
+enum Approval { Absent, Granted } // Granted: this upload's approval or a current remembered one
+fn release_credential(irc: &Address, filehost: &Address, credential: CredentialKind,
+    approval: Approval) -> Release // Send | Ask | Refuse
 ```
 
-- `irc_host` is the host of the WebSocket endpoint the connection was configured with (the URL the
-  user or deployment gave), not a name the server reports. `filehost_host` is the host of papo's
-  advertised file host URL, which is always HTTPS.
-- Hosts are compared ASCII-lowercased with one trailing dot removed; ports are ignored for the site
-  test.
+- `irc` is the host and port of the WebSocket endpoint the connection was configured with (the URL
+  the user or deployment gave), not a name the server reports; its port defaults to 443 for `wss`
+  and 80 for `ws`. `filehost` is the host and port of papo's advertised file host URL, which is
+  always HTTPS (port 443 unless given). A port is plain ASCII digits; anything else makes the URL
+  unusable, and an unusable IRC endpoint never releases a credential unasked.
+- Hosts are compared ASCII-lowercased with one trailing dot removed. The site test ignores ports;
+  the release rule below then looks at them. "Same service" means equal host and equal port,
+  whatever the scheme.
 - **Own site** means: the hosts are equal; or both have the same *registrable domain* (the public
   suffix plus one label) by the Public Suffix List, ICANN and private sections both.
   `irc.example.org` and `files.example.org` match; `alice.github.io` and `bob.github.io` do not,
@@ -102,7 +106,8 @@ fn release_credential(irc_host: &str, filehost_host: &str, credential: Credentia
   connection endpoint, the SASL account and the file host's authority (host and port, so approving
   `files.example.net:8443` does not cover `:443`). A one-time approval is not stored and covers only
   the upload that asked. A remembered approval lapses 90 days after it was granted (each entry
-  stores its grant time; an entry without one counts as lapsed), and the next upload asks again.
+  stores its grant time; an entry without one counts as lapsed, and so does one dated in the
+  future, which a later grant then removes), and the next upload asks again.
   `ForgetUploadApprovals` clears every remembered approval; until the
   Networks settings section brings its switch, nothing in the UI calls it, a deliberate v1 gap.
 - **Residual risk.** The PSL is the trust boundary: on a domain that hands out subdomains to other
@@ -206,9 +211,11 @@ images (design 30); Tauri has no CSP.
 
 ## Testing
 
-- Engine: `release_credential` over every credential, approval and site case (equal hosts, shared
-  registrable domain, private suffixes, IP-like forms, single labels, punycode, case and trailing
-  dots);
+- Engine: `release_credential` over every credential, approval, site and port case (equal hosts,
+  shared registrable domain, private suffixes, IP-like forms including `[::1]`, single labels,
+  punycode, case and trailing dots; implicit and explicit 443, another port on the site, the exact
+  IRC host and port; Bearer refused off-site); endpoint and file host address parsing; approval
+  expiry, renewal, pruning and the stored shape;
   `ResolveUpload` over a papo-testing wire for each resolution, the Basic header, remembered and
   forgotten approvals, and a changed host.
 - Unit: the clipboard extractor (Firefox's synthetic paste cannot carry files, so this is its
@@ -220,7 +227,10 @@ images (design 30); Tauri has no CSP.
   and `429` modes. Chromium and WebKit synthesize a clipboard paste. Specs: chip and thumbnail;
   Enter uploads with progress and sends `caption URL`, which renders inline; remove; offline
   refusal; the `413` shrink retry; a network without a file host shows the note and keeps the paste;
-  a foreign-site file host asks, and Remember skips the next prompt. `nativeFeelAudit` and the
+  a file host on another site or port asks, and Remember skips the next prompt. The hosted
+  Bearer path, including `other_site`, has unit coverage only: the local Ergo signs in with SASL
+  PLAIN, and a hosted spec would need the fake OAuth server to mint tokens the fake file host
+  accepts. `nativeFeelAudit` and the
   composer focus rules stay green. Screenshots: desktop light and dark, and phone.
 
 ## Out of scope
