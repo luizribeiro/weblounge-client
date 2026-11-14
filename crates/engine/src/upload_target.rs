@@ -199,6 +199,35 @@ mod tests {
     const DAY: i64 = 24 * 60 * 60 * 1_000;
 
     #[tokio::test]
+    async fn an_unparsable_irc_endpoint_never_releases_a_credential_unasked() {
+        let storage = MemoryKv::default();
+        let endpoint = "wss://irc.example.org:notaport/socket";
+        assert_eq!(
+            resolve(
+                &storage,
+                context(plain(endpoint), Some("files.example.org")),
+                None
+            )
+            .await,
+            UploadResolution::ApprovalRequired {
+                host: "files.example.org".into()
+            }
+        );
+        assert_eq!(
+            resolve(
+                &storage,
+                context(
+                    ConnectionIdentity::hosted(endpoint.into()),
+                    Some("files.example.org")
+                ),
+                None
+            )
+            .await,
+            UploadResolution::OtherSite
+        );
+    }
+
+    #[tokio::test]
     async fn a_lapsed_approval_asks_again_and_a_new_answer_renews_it() {
         let storage = MemoryKv::default();
         let at = |now_ms| UploadContext {

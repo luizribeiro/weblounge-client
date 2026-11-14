@@ -52,7 +52,13 @@ fn address_of(authority: &str, default_port: u16) -> Option<Address> {
     let host = host_of(authority);
     let port = match &authority[host.len()..] {
         "" => default_port,
-        explicit => explicit.strip_prefix(':')?.parse().ok()?,
+        explicit => explicit
+            .strip_prefix(':')
+            .filter(|digits| {
+                !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+            })?
+            .parse()
+            .ok()?,
     };
     Some(Address {
         host: host.to_owned(),
@@ -159,6 +165,8 @@ mod tests {
             ),
             ("wss://[::1]:8097/socket", at("[::1]", 8097)),
             ("wss://irc.example.org:notaport/socket", None),
+            ("wss://irc.example.org:+8097/socket", None),
+            ("wss://irc.example.org:/socket", None),
             ("https://irc.example.org", None),
             ("wss:///socket", None),
         ] {
