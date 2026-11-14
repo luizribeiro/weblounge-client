@@ -50,16 +50,26 @@ export class IrcClient {
   ): Promise<IrcClient> {
     const socket = await connectedSocket();
     const client = new IrcClient(socket, nickname);
-    client.send("CAP LS 302");
-    client.send(`NICK ${nickname}`);
-    client.send(`USER ${nickname} 0 * :${nickname}`);
-    await client.waitFor("capability list", (line) =>
+    try {
+      await client.#registerWithPassword(account, password);
+    } catch (error) {
+      socket.destroy();
+      throw error;
+    }
+    return client;
+  }
+
+  async #registerWithPassword(account: string, password: string) {
+    this.send("CAP LS 302");
+    this.send(`NICK ${this.#nickname}`);
+    this.send(`USER ${this.#nickname} 0 * :${this.#nickname}`);
+    await this.waitFor("capability list", (line) =>
       line.includes(" CAP * LS "),
     );
-    client.send(
+    this.send(
       "CAP REQ :account-tag batch draft/multiline draft/read-marker echo-message message-tags sasl server-time",
     );
-    await client.waitFor(
+    await this.waitFor(
       "requested capability acknowledgement",
       (line) =>
         line.includes(" CAP * ACK ") &&
@@ -72,23 +82,22 @@ export class IrcClient {
         line.includes("echo-message") &&
         line.includes("server-time"),
     );
-    client.send("AUTHENTICATE PLAIN");
-    await client.waitFor("SASL PLAIN authentication prompt", (line) =>
+    this.send("AUTHENTICATE PLAIN");
+    await this.waitFor("SASL PLAIN authentication prompt", (line) =>
       line.endsWith("AUTHENTICATE +"),
     );
     const credentials = Buffer.from(`\0${account}\0${password}`).toString(
       "base64",
     );
-    client.send(`AUTHENTICATE ${credentials}`);
-    await client.waitFor("SASL success numeric", (line) =>
+    this.send(`AUTHENTICATE ${credentials}`);
+    await this.waitFor("SASL success numeric", (line) =>
       line.includes(" 903 "),
     );
-    client.send("CAP END");
-    const welcome = await client.waitFor("welcome numeric", (line) =>
+    this.send("CAP END");
+    const welcome = await this.waitFor("welcome numeric", (line) =>
       line.includes(" 001 "),
     );
-    client.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? nickname;
-    return client;
+    this.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? this.#nickname;
   }
 
   static async connectOAuth(
@@ -136,29 +145,8 @@ export class IrcClient {
     nickname: string,
     channel: string,
   ): Promise<IrcClient> {
-    const password = `test-${nickname}`;
-    const response = await fetch(
-      process.env.WEBLOUNGE_E2E_IRC_API ??
-        "http://127.0.0.1:8089/v1/saregister",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WEBLOUNGE_E2E_IRC_API_TOKEN ?? "weblounge-local-api-token"}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ accountName: nickname, passphrase: password }),
-      },
-    );
-    const result: unknown = await response.json();
-    if (
-      !response.ok ||
-      typeof result !== "object" ||
-      result === null ||
-      !("success" in result) ||
-      result.success !== true
-    ) {
-      throw new Error(`Could not create isolated IRC account ${nickname}`);
-    }
+    const password = isolatedPassword(nickname);
+    await registerAccount(nickname, password);
     return IrcClient.connect(nickname, nickname, password, channel);
   }
 
@@ -491,6 +479,7 @@ export class IrcClient {
   }
 
   close(): void {
+    if (this.#socket.writableEnded) return;
     this.#socket.end("QUIT :test complete\r\n");
   }
 
@@ -527,6 +516,51 @@ export class IrcClient {
         { cause: error },
       );
     }
+  }
+}
+
+export function messageTag(line: string, name: string): string {
+  const value = new RegExp(`(?:^@|;)${name}=([^; ]+)`, "u").exec(line)?.[1];
+  if (value === undefined) throw new Error(`IRC line has no ${name}: ${line}`);
+  return value;
+}
+
+export function messageId(line: string): string {
+  return messageTag(line, "msgid");
+}
+
+export function serverTime(line: string): string {
+  return messageTag(line, "time");
+}
+
+export function isolatedPassword(account: string): string {
+  return `test-${account}`;
+}
+
+export async function registerAccount(
+  account: string,
+  password: string,
+): Promise<void> {
+  const response = await fetch(
+    process.env.WEBLOUNGE_E2E_IRC_API ?? "http://127.0.0.1:8089/v1/saregister",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.WEBLOUNGE_E2E_IRC_API_TOKEN ?? "weblounge-local-api-token"}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ accountName: account, passphrase: password }),
+    },
+  );
+  const result: unknown = await response.json();
+  if (
+    !response.ok ||
+    typeof result !== "object" ||
+    result === null ||
+    !("success" in result) ||
+    result.success !== true
+  ) {
+    throw new Error(`Could not create isolated IRC account ${account}`);
   }
 }
 
