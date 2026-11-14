@@ -24,9 +24,13 @@ at `tauri://localhost`, which neither matches. Onboarding (18), the other way to
 designed yet. Loading the hosted origin keeps sign-in working unchanged and lets the app update
 with every client deploy.
 
-The page does not know it is in Tauri. No Tauri API is exposed to the remote origin, so the
-platform target stays `web` and the UI behaves exactly as in a browser tab. Exposing IPC to a
-remote origin is a security boundary this step does not need.
+The page learns it runs in the app from one read-only global, so it can use native keymaps (⌘1…9
+buffer switching, later ⌘, for Settings; Luiz, 2026-11-13). An initialization script defines
+`globalThis.__WEBLOUNGE_SHELL__` as the frozen object `{ kind: "macos-app", version }`, where
+`version` is the wrapper's crate version, before any page script runs. Its absence means a plain
+browser. Any page script could define the same global, so the page reads it only to pick keymaps
+and native affordances, never for a security decision. Every other product behaviour stays the web
+build's, and only the narrow capability below exposes IPC to the remote origin.
 
 ## Shell
 
@@ -68,8 +72,7 @@ the feature:
 - Offline launch: WKWebView does not run the app's service worker; design 19 treats a failed
   registration as nonfatal and launches online.
 - Web Push and notifications while the app is quit. Notifications while it runs are phase 2.
-- Tauri-only shortcuts and native menus built from the action registry (design 14): the page sees
-  the `web` target, so web-safe chords apply.
+- Native menus built from the action registry (design 14).
 - Raw TCP/TLS networks, native storage, notarization and distribution. The build is ad-hoc signed
   for Luiz's own Mac.
 
@@ -154,7 +157,7 @@ at a time. Close-to-hide plus Open at Login keep the app running, which covers w
 
 The phase 1 window uses the standard macOS title bar. A seamless window, with the traffic lights
 over the sidebar and no title strip, needs an overlay title bar plus web app changes: the desktop
-shell must know it runs in the wrapper, reserve the traffic-light area at the sidebar top, and mark
+shell must reserve the traffic-light area at the sidebar top, and mark
 drag regions, which in turn need the window-drag permission for the remote origin. The prototype
 has no reference for this, so the layout needs Luiz's sign-off before it is built.
 
