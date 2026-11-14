@@ -36,6 +36,7 @@ import type {
 } from "./engine/protocol";
 import type { TimelineView } from "./engine/timeline-store";
 import { migrateDraft } from "./features/composer/draft-storage";
+import { ImageViewerOutlet } from "./features/image-viewer/ImageViewerOutlet";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
   formatNotificationPromptVisibility,
@@ -1726,6 +1727,7 @@ export function App(props: AppProps) {
           />
         )}
       </Show>
+      <ImageViewerOutlet />
     </div>
   );
 
