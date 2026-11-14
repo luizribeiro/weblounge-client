@@ -744,7 +744,14 @@
           push-e2e = pushE2e;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin rec {
-          desktop = import ./nix/desktop.nix { inherit pkgs rustToolchain; };
+          desktop = import ./nix/desktop.nix {
+            inherit pkgs rustToolchain;
+            release = true;
+          };
+          desktop-dev = import ./nix/desktop.nix {
+            inherit pkgs rustToolchain;
+            release = false;
+          };
           desktop-dmg = import ./nix/desktop-dmg.nix { inherit pkgs desktop; };
         };
         apps.ergo = {
