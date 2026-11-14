@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Locator, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
+import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
@@ -15,6 +17,7 @@ test.skip(
 test("centres the phone composer text with its field", async ({
   browser,
   baseURL,
+  irc,
 }) => {
   const context = await browser.newContext({
     baseURL,
@@ -22,13 +25,14 @@ test("centres the phone composer text with its field", async ({
     isMobile: true,
     viewport: { width: 390, height: 844 },
   });
+  await irc.scope(context);
   const page = await context.newPage();
   try {
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expectSettled(page, { conversation: irc.channel });
     const input = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const empty = await firstLineGeometry(input);
 
@@ -58,6 +62,7 @@ test("centres the phone composer text with its field", async ({
 test("keeps the phone Send control inside a capped composer", async ({
   browser,
   baseURL,
+  irc,
 }) => {
   const context = await browser.newContext({
     baseURL,
@@ -65,13 +70,14 @@ test("keeps the phone Send control inside a capped composer", async ({
     isMobile: true,
     viewport: { width: 402, height: 874 },
   });
+  await irc.scope(context);
   const page = await context.newPage();
   try {
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expectSettled(page, { conversation: irc.channel });
     const input = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const field = page.locator("[data-composer-field]");
     const send = page.getByRole("button", { name: "Send" });
@@ -122,7 +128,7 @@ test("keeps the phone Send control inside a capped composer", async ({
       )
       .toBeCloseTo(cappedHeight, 0);
 
-    const sent = `phone composer send ${Date.now()}`;
+    const sent = "phone composer send";
     await input.fill(sent);
     await send.tap();
     await expect(input).toBeFocused();
@@ -136,6 +142,7 @@ test("keeps the phone Send control inside a capped composer", async ({
 test("aligns desktop Send with single-line and multiline fields", async ({
   browser,
   baseURL,
+  irc,
 }) => {
   const context = await browser.newContext({
     baseURL,
@@ -143,11 +150,12 @@ test("aligns desktop Send with single-line and multiline fields", async ({
     isMobile: false,
     viewport: { width: 1_280, height: 800 },
   });
+  await irc.scope(context);
   const page = await context.newPage();
   try {
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     const input = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${irc.channel}`,
     });
     const field = page.locator("[data-composer-field]");
     const send = page.getByRole("button", { name: "Send" });

@@ -1,5 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
@@ -12,14 +13,13 @@ test.describe("buffer routing against local Ergo", () => {
 
   test("updates the address and restores the selected channel", async ({
     page,
+    irc,
   }) => {
-    const channel = `#route-${Date.now().toString(36)}`;
-    await page.goto("/?irc-password=weblounge-test");
-    await page
-      .getByRole("button", { name: fixtureChannel, exact: true })
-      .click();
+    const channel = irc.channelNamed("route");
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel, exact: true }).click();
     const composer = page.getByRole("textbox", {
-      name: `Message ${fixtureChannel}`,
+      name: `Message ${irc.channel}`,
     });
     await expect(composer).toBeVisible();
     await composer.fill(`/join ${channel}`);
@@ -31,7 +31,7 @@ test.describe("buffer routing against local Ergo", () => {
     );
     await expect.poll(() => cachedChatList(page)).toContain(channel);
 
-    await restoreDebugPassword(page);
+    await restoreDebugConnection(page, irc.url());
     await page.reload();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     await expect(page).toHaveURL(
@@ -63,7 +63,7 @@ test.describe("buffer routing against local Ergo", () => {
       new RegExp(`/Local%20Ergo/${channel.slice(1)}$`, "u"),
     );
 
-    await restoreDebugPassword(page);
+    await restoreDebugConnection(page, "/?irc-password=weblounge-test");
     await deleteCachedChatList(page);
     await page.reload();
 
@@ -74,12 +74,16 @@ test.describe("buffer routing against local Ergo", () => {
   });
 });
 
-async function restoreDebugPassword(page: Page): Promise<void> {
-  await page.evaluate(() => {
+async function restoreDebugConnection(
+  page: Page,
+  startUrl: string,
+): Promise<void> {
+  await page.evaluate((start) => {
     const url = new URL(location.href);
-    url.searchParams.set("irc-password", "weblounge-test");
+    for (const [name, value] of new URL(start, location.href).searchParams)
+      url.searchParams.append(name, value);
     history.replaceState(history.state, "", url);
-  });
+  }, startUrl);
 }
 
 async function cachedChatList(page: Page): Promise<string> {

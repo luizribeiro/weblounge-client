@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
 
 test.describe("mobile platform history against local Ergo", () => {
@@ -12,21 +12,22 @@ test.describe("mobile platform history against local Ergo", () => {
 
   test("WebKit browser tabs replace in-app entries", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "webkit-mobile-history",
       "requires the WebKit browser-tab profile",
     );
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     const initialLength = await page.evaluate(() => history.length);
-    const row = page.getByRole("button", { name: "#weblounge-test" });
+    const row = page.getByRole("button", { name: irc.channel });
     await row.click();
     await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
       "data-history-policy",
       "replace",
     );
     await expect(
-      page.getByRole("heading", { name: "#weblounge-test" }),
+      page.getByRole("heading", { name: irc.channel }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Show members" }).click();
     await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
@@ -43,15 +44,16 @@ test.describe("mobile platform history against local Ergo", () => {
 
   test("standalone WebKit keeps in-app navigation replace-only", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "webkit-mobile-history",
       "requires the WebKit standalone profile",
     );
     await emulateStandalone(page);
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     const initialLength = await page.evaluate(() => history.length);
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await page.getByRole("button", { name: irc.channel }).click();
     await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
       "data-history-policy",
       "replace",
@@ -71,14 +73,15 @@ test.describe("mobile platform history against local Ergo", () => {
 
   test("Android Back exhausts the app stack before leaving", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "android-mobile-history",
       "requires the Android profile",
     );
     await page.goto("http://127.0.0.1:4174/health");
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
     await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
       "data-history-policy",
       "stack",
