@@ -300,17 +300,17 @@
         "weblounge-client-previous": []
       },
       "locked": {
-        "lastModified": 1794524123,
-        "narHash": "sha256-tD7YjkUTjzmRIjQBBBoICsl0mQq9JYiTI2awGgV4Pg0=",
+        "lastModified": 1794611285,
+        "narHash": "sha256-n5TZxXcOlbZNziSIhP/4phj7niok1T90en44NM/yAYU=",
         "owner": "luizribeiro",
         "repo": "weblounge-client",
-        "rev": "e1cc3145deb917c9f7839f5eab916fd5b1cbdef6",
+        "rev": "410a6f17a8a09e0de0990d781cae1eb0a9004bf9",
         "type": "github"
       },
       "original": {
         "owner": "luizribeiro",
         "repo": "weblounge-client",
-        "rev": "e1cc3145deb917c9f7839f5eab916fd5b1cbdef6",
+        "rev": "410a6f17a8a09e0de0990d781cae1eb0a9004bf9",
         "type": "github"
       }
     }
