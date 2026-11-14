@@ -49,22 +49,38 @@ const firstRowOffsetByDensity = {
   comfortable: 50,
 } as const;
 
+type SidebarDensity = keyof typeof firstRowOffsetByDensity;
+
+async function atEachDensity(
+  page: Page,
+  check: (density: SidebarDensity) => Promise<void>,
+): Promise<void> {
+  const root = page.locator("html");
+  const initial = await root.getAttribute("data-sidebar-density");
+  try {
+    for (const density of Object.keys(
+      firstRowOffsetByDensity,
+    ) as SidebarDensity[]) {
+      await root.evaluate((element, value) => {
+        element.dataset.sidebarDensity = value;
+      }, density);
+      await check(density);
+    }
+  } finally {
+    await root.evaluate((element, value) => {
+      if (value === null) delete element.dataset.sidebarDensity;
+      else element.dataset.sidebarDensity = value;
+    }, initial);
+  }
+}
+
 export async function expectBalancedNetworkHeaderAtEachDensity(
   page: Page,
   header: Locator,
 ): Promise<void> {
-  const root = page.locator("html");
-  const initial = await root.getAttribute("data-sidebar-density");
-  for (const [density, offset] of Object.entries(firstRowOffsetByDensity)) {
-    await root.evaluate((element, value) => {
-      element.dataset.sidebarDensity = value;
-    }, density);
-    await expectBalancedNetworkHeader(header, offset);
-  }
-  await root.evaluate((element, value) => {
-    if (value === null) delete element.dataset.sidebarDensity;
-    else element.dataset.sidebarDensity = value;
-  }, initial);
+  await atEachDensity(page, (density) =>
+    expectBalancedNetworkHeader(header, firstRowOffsetByDensity[density]),
+  );
 }
 
 async function expectBalancedNetworkHeader(
