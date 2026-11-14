@@ -30,7 +30,7 @@
 
 .prefix {
   color: var(--wl-color-panel-muted);
-  text-align: right;
+  text-align: center;
 }
 
 .presence {
@@ -94,7 +94,9 @@
 
 .slot {
   display: grid;
-  justify-items: end;
+  /* A fixed track lets a badge wider than the slot overflow both sides evenly. */
+  grid-template-columns: 100%;
+  justify-items: center;
 }
 
 .slot > * {
@@ -133,12 +135,16 @@
   color: inherit;
   display: flex;
   inset-block: 3px;
-  inset-inline-end: var(--wl-sidebar-row-end-inset);
+  inset-inline-end: calc(
+    var(--wl-sidebar-row-end-inset) +
+    (var(--wl-sidebar-slot-width) - var(--wl-sidebar-close-width)) /
+    2
+  );
   justify-content: center;
   padding: 0;
   position: absolute;
   visibility: hidden;
-  width: 22px;
+  width: var(--wl-sidebar-close-width);
 }
 
 .row[data-trailing="close"] .close {

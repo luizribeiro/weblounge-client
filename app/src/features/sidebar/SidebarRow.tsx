@@ -108,7 +108,7 @@ export function SidebarRow(props: SidebarRowProps) {
           class={styles.prefix}
           data-sidebar-prefix="true"
         >
-          {prefix()}
+          {prefix() !== "" && <span data-channel-sign="true">{prefix()}</span>}
           {props.buffer.peer_bot === true ? (
             <BotIcon
               class={styles.peerBot}
@@ -117,7 +117,11 @@ export function SidebarRow(props: SidebarRowProps) {
             />
           ) : (
             presence() !== undefined && (
-              <span class={styles.presence} data-presence={presence()} />
+              <span
+                class={styles.presence}
+                data-presence={presence()}
+                data-presence-dot="true"
+              />
             )
           )}
         </span>
@@ -154,6 +158,7 @@ export function SidebarRow(props: SidebarRowProps) {
         <button
           aria-label={copy().label}
           class={styles.close}
+          data-sidebar-close="true"
           onClick={props.onClose}
           {...middleClickClose}
           tabIndex={-1}

@@ -83,28 +83,65 @@ export async function expectBalancedNetworkHeaderAtEachDensity(
   );
 }
 
-export async function expectNetworkDotOnTrailingColumnAtEachDensity(
+const columnMarks = {
+  leading: {
+    tile: "[data-network-tile]",
+    "#": "[data-channel-sign]",
+    presence: "[data-presence-dot]",
+    bot: "[data-peer-bot]",
+  },
+  trailing: {
+    dot: "[data-network-dot]",
+    badge: "[data-badge-kind]",
+    close: "[data-sidebar-close]",
+    hint: "[data-jump-hint]",
+  },
+} as const;
+
+const columnSelectors = {
+  leading: "[data-sidebar-prefix]",
+  trailing: "[data-sidebar-slot]",
+} as const;
+
+/** Every mark in a sidebar column sits on the column's centre line, whichever row holds it. */
+export async function expectSidebarColumnsCentredAtEachDensity(
   page: Page,
   header: Locator,
 ): Promise<void> {
   await atEachDensity(page, async (density) => {
-    const centres = await header.evaluate((element) => {
-      const dot = element.querySelector("[data-network-dot]");
-      const slot = element
-        .closest("section")
-        ?.querySelector("[data-sidebar-row] [data-sidebar-slot]");
-      if (dot == null || slot == null)
-        throw new Error("network dot or row trailing slot is missing");
-      const centre = (box: DOMRect) => (box.left + box.right) / 2;
-      return {
-        dot: centre(dot.getBoundingClientRect()),
-        slot: centre(slot.getBoundingClientRect()),
-      };
-    });
-    expect(
-      Math.abs(centres.dot - centres.slot),
-      `network dot centre at ${density} density`,
-    ).toBeLessThanOrEqual(0.5);
+    for (const side of ["leading", "trailing"] as const) {
+      const centres = await header.evaluate(
+        (element, { column, marks }) => {
+          const section = element.closest("section");
+          if (section == null) throw new Error("network header has no section");
+          const of = (selector: string) =>
+            [...section.querySelectorAll(selector)].map((mark) => {
+              const box = mark.getBoundingClientRect();
+              return (box.left + box.right) / 2;
+            });
+          return {
+            column: of(column),
+            marks: Object.entries(marks).map(
+              ([kind, selector]) => [kind, of(selector)] as const,
+            ),
+          };
+        },
+        { column: columnSelectors[side], marks: columnMarks[side] },
+      );
+      const line = centres.column[0];
+      if (line === undefined) throw new Error(`no ${side} column`);
+      for (const [kind, found] of [
+        ["column", centres.column] as const,
+        ...centres.marks,
+      ]) {
+        expect(found.length, `${side} ${kind} marks`).toBeGreaterThan(0);
+        for (const centre of found)
+          expect(
+            Math.abs(centre - line),
+            `${side} ${kind} centre at ${density} density`,
+          ).toBeLessThanOrEqual(0.5);
+      }
+    }
   });
 }
 
@@ -130,9 +167,10 @@ async function expectBalancedNetworkHeader(
       throw new Error("network tile or row columns are missing");
     const radius = (box: Element) =>
       Number.parseFloat(getComputedStyle(box).borderTopLeftRadius);
+    const centre = (box: DOMRect) => (box.left + box.right) / 2;
     return {
-      tileLeft: tile.getBoundingClientRect().left,
-      rowPrefixLeft: rowPrefix.getBoundingClientRect().left,
+      tileCentre: centre(tile.getBoundingClientRect()),
+      rowPrefixCentre: centre(rowPrefix.getBoundingClientRect()),
       nameLeft: nameBox.left,
       rowNameLeft: rowName.getBoundingClientRect().left,
       headerHeight: headerBox.height,
@@ -153,7 +191,7 @@ async function expectBalancedNetworkHeader(
   ).toBeLessThanOrEqual(1);
   expect(geometry.rowOffset).toBeCloseTo(firstRowOffset, 1);
   expect(
-    Math.abs(geometry.tileLeft - geometry.rowPrefixLeft),
+    Math.abs(geometry.tileCentre - geometry.rowPrefixCentre),
   ).toBeLessThanOrEqual(0.5);
   expect(
     Math.abs(geometry.nameLeft - geometry.rowNameLeft),

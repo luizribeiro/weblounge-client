@@ -21,6 +21,7 @@
   --wl-sidebar-prefix-width: 12px;
   --wl-sidebar-row-end-inset: calc(var(--wl-space-list-inset) / 2);
   --wl-sidebar-slot-width: 28px;
+  --wl-sidebar-close-width: 22px;
   --wl-size-presence-dot: 8px;
   --wl-size-presence-ring: 1px;
   --wl-space-transcript-inline: 16px;

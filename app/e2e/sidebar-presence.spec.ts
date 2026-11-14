@@ -6,7 +6,7 @@ import {
 } from "./native-feel-audit";
 import { expectSettled } from "./settled";
 import {
-  expectNetworkDotOnTrailingColumnAtEachDensity,
+  expectSidebarColumnsCentredAtEachDensity,
   tokenColour,
 } from "./sidebar-geometry";
 
@@ -29,23 +29,43 @@ test.describe("sidebar presence against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
-  test("centres the network dot on the rows' trailing column", async ({
+  test("centres every leading and trailing mark on its column's centre line", async ({
     page,
     irc,
   }) => {
-    await installNativeFeelInstrumentation(page);
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(irc.url());
-    await expectSettled(page, { conversation: irc.channel });
-    const network = page.getByRole("button", { name: "Local Ergo, online" });
-    await expectNetworkDotOnTrailingColumnAtEachDensity(page, network);
+    const bot = await irc.peer("concierge", []);
+    const human = await irc.peer("ana", []);
+    try {
+      await bot.mode(bot.nickname, "+B");
+      await installNativeFeelInstrumentation(page);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
+      await bot.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+      await human.privmsgConfirmed(irc.account, `hello ${irc.id}`);
+      await directRow(
+        page,
+        `${bot.nickname}, bot, 1 unread, including mentions, online`,
+      );
+      await directRow(
+        page,
+        `${human.nickname}, 1 unread, including mentions, online`,
+      );
+      const network = page.getByRole("button", { name: "Local Ergo, online" });
+      await expectSidebarColumnsCentredAtEachDensity(page, network);
+      await widenFirstBadge(page);
+      await expectSidebarColumnsCentredAtEachDensity(page, network);
 
-    await page.setViewportSize({ width: 700, height: 800 });
-    await page.getByRole("button", { name: "Toggle channel list" }).click();
-    await expect(page.locator("[data-overlay-drawer]")).toBeVisible();
-    await expect(network).toBeVisible();
-    await expectNetworkDotOnTrailingColumnAtEachDensity(page, network);
-    await nativeFeelAudit(page);
+      await page.setViewportSize({ width: 700, height: 800 });
+      await page.getByRole("button", { name: "Toggle channel list" }).click();
+      await expect(page.locator("[data-overlay-drawer]")).toBeVisible();
+      await expect(network).toBeVisible();
+      await expectSidebarColumnsCentredAtEachDensity(page, network);
+      await nativeFeelAudit(page);
+    } finally {
+      bot.close();
+      human.close();
+    }
   });
 
   test("colours the network dot for each connection state", async ({
@@ -195,6 +215,15 @@ async function nameLeft(row: Locator): Promise<number> {
   const box = await row.locator("[data-sidebar-name]").boundingBox();
   if (box === null) throw new Error("row name has no box");
   return box.x;
+}
+
+/** Seeding 100 unread lines is slow; the layout only needs the widest text a badge can show. */
+async function widenFirstBadge(page: Page): Promise<void> {
+  const badge = page.locator("[data-badge-kind]").first();
+  await badge.evaluate((element) => {
+    element.textContent = "99+";
+  });
+  await expect(badge).toHaveText("99+");
 }
 
 async function directRow(page: Page, name: string): Promise<Locator> {
