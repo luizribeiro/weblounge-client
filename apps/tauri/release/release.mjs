@@ -78,8 +78,9 @@ function notarize(path) {
     step("/usr/bin/xcrun", ["notarytool", "log", result.id, "--keychain-profile", NOTARY_PROFILE]);
     throw new Error(`notarization of ${path} ended ${result.status}`);
   }
-  step("/usr/bin/xcrun", ["stapler", "staple", path]);
 }
+
+const staple = (path) => step("/usr/bin/xcrun", ["stapler", "staple", path]);
 
 // Stapling the app as well as the image lets a dragged-out or cask-installed copy pass Gatekeeper
 // on its first launch without reaching Apple.
@@ -93,7 +94,7 @@ function notarizedApp(work) {
   const archive = join(work, "app.zip");
   step("/usr/bin/ditto", ["-c", "-k", "--keepParent", app, archive]);
   notarize(archive);
-  step("/usr/bin/xcrun", ["stapler", "staple", app]);
+  staple(app);
   return app;
 }
 
@@ -114,6 +115,7 @@ function notarizedImage(work, app, version) {
   ]);
   sign(image);
   notarize(image);
+  staple(image);
   return image;
 }
 
