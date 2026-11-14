@@ -106,6 +106,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-14: desktop sidebar polish, batch 4. Bot DM rows show the transcript's robot in the
+  leading column instead of the presence dot: online tint when online, muted at half opacity when
+  away, plain muted when unknown; the accessible name reads "nick, bot, …". The engine projects
+  `peer_bot` from papo's user record (bot tag, WHO `B`, WHOIS 335) or the bot tag on the peer's
+  own DMs, and an unknown answer keeps the last report. The network row's connection dot is now
+  centred on the rows' trailing slot column.
 - 2026-11-14: four more themes: Black (pure black Lounge Night for OLED), Modern, Terminal and
   Retro. Their fonts (Geist, Geist Mono, IBM Plex Mono, Work Sans, Fraunces, Courier Prime) are
   self-hosted woff2 subsets that load only when the theme is active. New shape tokens `icon` and
