@@ -11,6 +11,8 @@ import {
   type ActionContext,
   type ActionId,
   ActionRegistry,
+  jumpActionId,
+  jumpSlots,
   type UiActionId,
 } from "../../actions/action-registry";
 import { bufferSyncPresentation } from "../../engine/buffer-sync";
@@ -46,7 +48,10 @@ import {
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
 import { focusAfterClose } from "../../features/sidebar/sidebar-close";
-import { sidebarRowIds } from "../../features/sidebar/sidebar-order";
+import {
+  conversationRowIds,
+  sidebarRowIds,
+} from "../../features/sidebar/sidebar-order";
 import {
   sidebarWidth,
   sidebarWidthToken,
@@ -167,6 +172,9 @@ export function DesktopShell(props: DesktopShellProps) {
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
   const activeBufferId = createMemo(() => activeBuffer()?.id);
+  const jumpTargets = createMemo(() =>
+    conversationRowIds(props.networks, props.buffers),
+  );
   createEffect(() => props.onFocusedBufferChange?.(activeBufferId()));
   createEffect(() => {
     const bufferId = activeBufferId();
@@ -240,6 +248,7 @@ export function DesktopShell(props: DesktopShellProps) {
     const currentBufferKind = activeBuffer()?.kind;
     return {
       bufferCount: props.buffers.length,
+      conversationCount: jumpTargets().length,
       connected: props.networks.some(
         (network) =>
           network.id === activeBuffer()?.network_id &&
@@ -306,6 +315,12 @@ export function DesktopShell(props: DesktopShellProps) {
         if (bufferId !== undefined && through !== undefined)
           props.onMarkRead(bufferId, through);
       },
+      ...Object.fromEntries(
+        jumpSlots.map((slot) => [
+          jumpActionId(slot),
+          () => showBuffer(jumpTargets()[slot - 1]),
+        ]),
+      ),
       "buffer.next": () => moveBuffer(1),
       "buffer.open": () => {},
       "buffer.open-direct": (command) => {

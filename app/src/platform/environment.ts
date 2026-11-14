@@ -10,7 +10,7 @@ export type DisplayMode = "standalone" | "browser" | "tauri";
 export type Shell = "mobile" | "desktop";
 export type DesktopPanels = "inline" | "overlay";
 export type PlatformTarget = "web" | "tauri-desktop" | "tauri-mobile";
-export type ShortcutPlatform = "macos" | "other";
+export type ShortcutPlatform = "macos" | "linux" | "other";
 
 export interface PlatformEnvironment {
   readonly input: PrimaryInput;
@@ -179,7 +179,8 @@ export function resolveEnvironment(
 export function resolveShortcutPlatform(
   browserNavigator: Pick<Navigator, "platform">,
 ): ShortcutPlatform {
-  return /Mac|iPhone|iPad/u.test(browserNavigator.platform) ? "macos" : "other";
+  if (/Mac|iPhone|iPad/u.test(browserNavigator.platform)) return "macos";
+  return /Linux/u.test(browserNavigator.platform) ? "linux" : "other";
 }
 
 function panelsForWidth(width: number): DesktopPanels {

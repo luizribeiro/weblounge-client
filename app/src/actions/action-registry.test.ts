@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActionRegistry } from "./action-registry";
+import {
+  ActionRegistry,
+  type ActionShell,
+  type Platform,
+} from "./action-registry";
 
 const context = {
   bufferCount: 3,
@@ -176,6 +180,91 @@ describe("ActionRegistry", () => {
       ),
     ).toBe(false);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  describe("conversation jumps", () => {
+    const jumpContext = { ...context, conversationCount: 4 };
+    const jumpRegistry = (platform: Platform, shell: ActionShell) => {
+      const third = vi.fn();
+      const registry = new ActionRegistry(
+        { "buffer.jump-3": third, "buffer.jump-9": vi.fn() },
+        platform,
+        [],
+        undefined,
+        shell,
+      );
+      return { registry, third };
+    };
+    const digit = (
+      slot: number,
+      modifiers: KeyboardEventInit,
+      target: Element = document.createElement("textarea"),
+    ) => {
+      const event = new KeyboardEvent("keydown", {
+        code: `Digit${slot}`,
+        key: modifiers.altKey === true ? "™" : String(slot),
+        cancelable: true,
+        ...modifiers,
+      });
+      Object.defineProperty(event, "target", { value: target });
+      return event;
+    };
+
+    it.each([
+      ["macos", "tauri", { metaKey: true }, "⌘3"],
+      ["linux", "tauri", { ctrlKey: true }, "Ctrl+3"],
+      ["other", "tauri", { ctrlKey: true }, "Ctrl+3"],
+      ["macos", "web", { altKey: true }, "⌥3"],
+      ["other", "web", { altKey: true }, "Alt+3"],
+      ["linux", "web", { ctrlKey: true, altKey: true }, "Ctrl+Alt+3"],
+    ] as const)(
+      "binds %s %s by physical digit, even from the composer",
+      (platform, shell, modifiers, label) => {
+        const { registry, third } = jumpRegistry(platform, shell);
+
+        expect(registry.bindingLabel("buffer.jump-3")).toBe(label);
+        expect(registry.handleKeydown(digit(3, modifiers), jumpContext)).toBe(
+          true,
+        );
+        expect(third).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("leaves browser-owned chords alone on the web", () => {
+      const linux = jumpRegistry("linux", "web");
+      const windows = jumpRegistry("other", "web");
+
+      expect(
+        linux.registry.handleKeydown(digit(3, { altKey: true }), jumpContext),
+      ).toBe(false);
+      expect(
+        windows.registry.handleKeydown(
+          digit(3, { ctrlKey: true }),
+          jumpContext,
+        ),
+      ).toBe(false);
+      expect(linux.third).not.toHaveBeenCalled();
+      expect(windows.third).not.toHaveBeenCalled();
+    });
+
+    it("never captures AltGraph", () => {
+      const { registry, third } = jumpRegistry("other", "web");
+      const event = digit(3, { altKey: true, ctrlKey: true });
+      Object.defineProperty(event, "getModifierState", {
+        value: (key: string) => key === "AltGraph",
+      });
+
+      expect(registry.handleKeydown(event, jumpContext)).toBe(false);
+      expect(third).not.toHaveBeenCalled();
+    });
+
+    it("passes the key through when no conversation sits in that slot", () => {
+      const { registry } = jumpRegistry("macos", "web");
+      const event = digit(9, { altKey: true });
+
+      expect(registry.handleKeydown(event, jumpContext)).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    });
   });
 
   it("passes a clicked target through the typed command boundary", () => {

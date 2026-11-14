@@ -3,6 +3,7 @@ export const messages = {
   "action.add_network": "Add network",
   "action.debug": "Debug diagnostics",
   "action.jump_bottom": "Jump to latest message",
+  "action.jump_buffer": "Jump to conversation {slot}",
   "action.list_next": "Next item",
   "action.list_open": "Open item",
   "action.list_previous": "Previous item",

@@ -13,7 +13,10 @@ import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
-import { platformEnvironment } from "../../platform/environment";
+import {
+  platformEnvironment,
+  type ShortcutPlatform,
+} from "../../platform/environment";
 import { recordGestureNotStarted } from "../../platform/gesture-debug";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { t } from "../../strings";
@@ -877,7 +880,7 @@ function swipeNotStartedReason(
 
 function isKeyboardBack(
   event: KeyboardEvent,
-  platform: "macos" | "other",
+  platform: ShortcutPlatform,
 ): boolean {
   return (
     event.key === "Escape" ||

@@ -2,7 +2,12 @@ import type { CommandPermission } from "../engine/generated/CommandPermission";
 import type { CommandSpec, CompletionResult } from "../engine/protocol";
 import { t, translate } from "../strings";
 
+export const jumpSlots = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+export type JumpSlot = (typeof jumpSlots)[number];
+type JumpActionId = `buffer.jump-${JumpSlot}`;
+
 export type UiActionId =
+  | JumpActionId
   | "buffer.mark-read"
   | "buffer.next"
   | "buffer.open"
@@ -25,7 +30,8 @@ export type EngineActionId = `command.${string}`;
 export type ActionId = UiActionId | EngineActionId;
 
 export type ActionScope = "global" | "desktop" | "list";
-export type Platform = "macos" | "other";
+export type Platform = "macos" | "linux" | "other";
+type LabelPlatform = "macos" | "other";
 export type ActionShell = "tauri" | "web";
 export type ActionGroup =
   | "Commands"
@@ -37,6 +43,7 @@ type ActionSurface = "channelMenu" | "help" | "palette";
 
 export interface ActionContext {
   readonly bufferCount: number;
+  readonly conversationCount?: number;
   readonly currentBufferKind?: "channel" | "direct" | "server";
   readonly connected?: boolean;
   readonly debugOverlay?:
@@ -83,7 +90,8 @@ interface Binding {
   readonly shift?: boolean;
   readonly scope: ActionScope;
   readonly input: "never" | "nonText" | "emptyComposer" | "always";
-  readonly label: Readonly<Record<Platform, string>>;
+  readonly label: Readonly<Record<LabelPlatform, string>>;
+  readonly platforms?: readonly Platform[];
   readonly shells?: readonly ActionShell[];
 }
 
@@ -107,6 +115,12 @@ const needsList = (context: ActionContext): ActionAvailability => ({
 const needsUnread = (context: ActionContext): ActionAvailability => ({
   state: context.targetUnread === true ? "available" : "unavailable",
 });
+const needsConversation =
+  (slot: JumpSlot) =>
+  (context: ActionContext): ActionAvailability => ({
+    state:
+      (context.conversationCount ?? 0) >= slot ? "available" : "unavailable",
+  });
 const needsChannel = (context: ActionContext): ActionAvailability => ({
   state: context.currentBufferKind === "channel" ? "available" : "unavailable",
 });
@@ -194,6 +208,15 @@ const specs: readonly ActionSpec[] = [
     needsBuffers,
     altKey("ArrowDown", "⌥↓", "Alt+↓", "desktop"),
   ),
+  ...jumpSlots.map((slot) => ({
+    ...command(
+      jumpActionId(slot),
+      t("action.jump_buffer", { slot: String(slot) }),
+      needsConversation(slot),
+      jumpBindings(slot),
+    ),
+    surfaces: [],
+  })),
   {
     ...command(
       "list.previous",
@@ -222,6 +245,10 @@ const specs: readonly ActionSpec[] = [
     surfaces: ["help"],
   },
 ];
+
+export function jumpActionId(slot: JumpSlot): JumpActionId {
+  return `buffer.jump-${slot}`;
+}
 
 export function isActionId(id: string): id is ActionId {
   return id.startsWith("command.") || specs.some((spec) => spec.id === id);
@@ -288,7 +315,8 @@ export class ActionRegistry {
   }
 
   bindingLabel(id: UiActionId): string | undefined {
-    return this.#binding(findSpec(id))?.label[this.#platform];
+    const binding = this.#binding(findSpec(id));
+    return binding === undefined ? undefined : this.#label(binding);
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
@@ -395,7 +423,8 @@ export class ActionRegistry {
           spec.availability(context).state === "available",
       )
       .map((spec) => {
-        const chord = this.#binding(spec)?.label[this.#platform];
+        const binding = this.#binding(spec);
+        const chord = binding === undefined ? undefined : this.#label(binding);
         return {
           id: spec.id,
           title:
@@ -441,7 +470,15 @@ export class ActionRegistry {
   }
 
   #bindingApplies(binding: Binding): boolean {
-    return binding.shells === undefined || binding.shells.includes(this.#shell);
+    return (
+      (binding.shells === undefined || binding.shells.includes(this.#shell)) &&
+      (binding.platforms === undefined ||
+        binding.platforms.includes(this.#platform))
+    );
+  }
+
+  #label(binding: Binding): string {
+    return binding.label[this.#platform === "macos" ? "macos" : "other"];
   }
 }
 
@@ -562,6 +599,38 @@ function altKey(
     input: "never",
     label: { macos, other },
   };
+}
+
+function jumpBindings(slot: JumpSlot): readonly Binding[] {
+  const digit = {
+    key: String(slot),
+    code: `Digit${slot}`,
+    scope: "global",
+    input: "always",
+  } as const;
+  return [
+    {
+      ...digit,
+      mod: true,
+      shells: ["tauri"],
+      label: { macos: `⌘${slot}`, other: `Ctrl+${slot}` },
+    },
+    {
+      ...digit,
+      alt: true,
+      platforms: ["macos", "other"],
+      shells: ["web"],
+      label: { macos: `⌥${slot}`, other: `Alt+${slot}` },
+    },
+    {
+      ...digit,
+      alt: true,
+      mod: true,
+      platforms: ["linux"],
+      shells: ["web"],
+      label: { macos: `⌃⌥${slot}`, other: `Ctrl+Alt+${slot}` },
+    },
+  ];
 }
 
 function key(keyValue: string, label: string, scope: ActionScope): Binding {

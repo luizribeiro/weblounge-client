@@ -71,7 +71,8 @@ describe("platform environment", () => {
 
   it("centralizes shortcut-label platform adaptation", () => {
     expect(resolveShortcutPlatform({ platform: "MacIntel" })).toBe("macos");
-    expect(resolveShortcutPlatform({ platform: "Linux x86_64" })).toBe("other");
+    expect(resolveShortcutPlatform({ platform: "Linux x86_64" })).toBe("linux");
+    expect(resolveShortcutPlatform({ platform: "Win32" })).toBe("other");
   });
 
   it("publishes capability changes without treating width as shell selection", () => {
