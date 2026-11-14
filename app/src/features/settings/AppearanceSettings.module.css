@@ -1,0 +1,57 @@
+.section {
+  color: var(--wl-color-muted);
+  font: 600 11px var(--wl-font-mono);
+  letter-spacing: 0.1em;
+  margin: 18px 0 4px;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.section[data-before="cards"] {
+  margin-bottom: 12px;
+}
+
+.row {
+  align-items: center;
+  border-bottom: 1px solid var(--wl-color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding: 13px 0;
+  user-select: none;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.description {
+  color: var(--wl-color-muted);
+  font-size: 12.5px;
+}
+
+[data-settings-layout="phone"] .section {
+  margin-top: 22px;
+}
+
+[data-settings-layout="phone"] .row {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+[data-settings-layout="phone"] .text {
+  flex: none;
+}
+
+[data-settings-layout="phone"] .label {
+  font-size: 15px;
+}

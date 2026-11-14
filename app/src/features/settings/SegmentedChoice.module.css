@@ -1,0 +1,49 @@
+.group {
+  background: var(--wl-color-chip);
+  border-radius: var(--wl-radius-control);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+}
+
+.choice {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-muted);
+  cursor: default;
+  display: flex;
+  font-size: 13px;
+  font-weight: 500;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  position: relative;
+  white-space: nowrap;
+}
+
+.choice:hover {
+  color: var(--wl-color-fg);
+}
+
+.choice:has(:checked) {
+  background: var(--wl-color-surface);
+  border-color: var(--wl-color-border);
+  color: var(--wl-color-fg);
+  font-weight: 600;
+}
+
+.choice:has(:focus-visible) {
+  outline: 2px solid var(--wl-color-focus-ring);
+  outline-offset: 1px;
+}
+
+[data-settings-layout="phone"] .group {
+  width: 100%;
+}
+
+[data-settings-layout="phone"] .choice {
+  flex: 1;
+  min-height: 36px;
+}

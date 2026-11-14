@@ -1,0 +1,158 @@
+.cards {
+  --wl-theme-card-width: 104px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(
+      auto-fill,
+      minmax(var(--wl-theme-card-width), 1fr)
+    );
+}
+
+.card {
+  border: 2px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-composer);
+  color: var(--wl-color-fg);
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 10px;
+  position: relative;
+  user-select: none;
+}
+
+.card:has(:checked) {
+  border-color: var(--wl-color-accent);
+}
+
+.card:has(:focus-visible) {
+  outline: 2px solid var(--wl-color-focus-ring);
+  outline-offset: 2px;
+}
+
+.preview {
+  display: block;
+  height: 62px;
+  position: relative;
+}
+
+.dark {
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  inset: 0;
+  position: absolute;
+}
+
+.miniature {
+  border: 1px solid var(--wl-preview-border);
+  border-radius: 3px;
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.miniPanel,
+.miniMain {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 6px;
+}
+
+.miniPanel {
+  background: var(--wl-preview-panel);
+  width: 34%;
+}
+
+.miniMain {
+  background: var(--wl-preview-surface);
+  flex: 1;
+  padding-inline: 7px;
+}
+
+.mutedBar,
+.selectedBar,
+.textBar,
+.shortTextBar {
+  border-radius: 2px;
+  height: 4px;
+}
+
+.mutedBar {
+  background: var(--wl-preview-panel-muted);
+  opacity: 0.6;
+}
+
+.selectedBar {
+  background: var(--wl-preview-selection);
+  height: 6px;
+}
+
+.textBar,
+.shortTextBar {
+  background: var(--wl-preview-fg);
+  opacity: 0.75;
+}
+
+.shortTextBar {
+  width: 70%;
+}
+
+.logo {
+  background: var(--wl-preview-logo);
+  border-radius: 3px;
+  height: 12px;
+  width: 12px;
+}
+
+.input {
+  background: var(--wl-preview-input);
+  border: 1px solid var(--wl-preview-border);
+  border-radius: 2px;
+  box-sizing: border-box;
+  display: flex;
+  height: 10px;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding: 1px;
+}
+
+.send {
+  background: var(--wl-preview-accent);
+  border-radius: 1px;
+  height: 6px;
+  width: 6px;
+}
+
+.name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 4px;
+}
+
+.name b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.name small {
+  color: var(--wl-color-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-settings-layout="phone"] .cards {
+  display: flex;
+  margin-inline: calc(-1 * var(--wl-settings-gutter));
+  overflow-x: auto;
+  padding: 0 var(--wl-settings-gutter) 6px;
+  scrollbar-width: none;
+}
+
+[data-settings-layout="phone"] .card {
+  flex: 0 0 var(--wl-theme-card-width);
+}
