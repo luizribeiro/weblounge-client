@@ -16,7 +16,7 @@ export function MobileChannelDetails(props: MobileChannelDetailsProps) {
       onDismiss={props.onDismiss}
     >
       <span aria-hidden="true" class={styles.grabber} />
-      <h2>{props.title}</h2>
+      <h2 class={styles.title}>{props.title}</h2>
       <button
         class={styles.item}
         data-initial-focus
