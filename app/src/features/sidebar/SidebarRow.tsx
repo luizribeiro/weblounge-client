@@ -1,4 +1,4 @@
-import { type JSX, onCleanup } from "solid-js";
+import { createSignal, type JSX, onCleanup } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
 import {
@@ -8,6 +8,7 @@ import {
 import { Line } from "../../ui/Line";
 import { unreadBadge } from "../unread/unread-badge";
 import styles from "./SidebarRow.module.css";
+import { trailingSlot } from "./trailing-slot";
 
 export interface SidebarRowProps {
   readonly buffer: BufferProjection;
@@ -27,6 +28,16 @@ export function SidebarRow(props: SidebarRowProps) {
   onCleanup(() => unregisterContextSurface());
   const showBadges = () => props.badgesSuppressed !== true;
   const badge = () => (showBadges() ? unreadBadge(props.buffer) : undefined);
+  const [pointerInside, setPointerInside] = createSignal(false);
+  const [focusInside, setFocusInside] = createSignal(false);
+  const closable = () =>
+    props.buffer.kind === "direct" && props.onClose !== undefined;
+  const slot = () =>
+    trailingSlot({
+      badge: badge() !== undefined,
+      closable: closable(),
+      engaged: pointerInside() || focusInside(),
+    });
   const visibleUnread = () => (showBadges() ? props.buffer.unread : 0);
   const visibleMentions = () => (showBadges() ? props.buffer.mentions : 0);
   const prefix = () =>
@@ -41,6 +52,16 @@ export function SidebarRow(props: SidebarRowProps) {
         props.muted === true ? styles.muted : ""
       } ${visibleUnread() > 0 ? styles.unread : ""}`}
       data-sidebar-row="true"
+      data-trailing={slot()}
+      onFocusIn={() => setFocusInside(true)}
+      onFocusOut={(event) =>
+        setFocusInside(
+          event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget),
+        )
+      }
+      onPointerEnter={() => setPointerInside(true)}
+      onPointerLeave={() => setPointerInside(false)}
     >
       <button
         aria-label={rowLabel(props.buffer.title, badge()?.label)}
@@ -80,20 +101,22 @@ export function SidebarRow(props: SidebarRowProps) {
         >
           {name()}
         </Line>
-        {badge() !== undefined && (
-          <Line
-            aria-label={badge()?.label}
-            class={`${styles.badge} ${
-              badge()?.kind === "mention" ? styles.mention : ""
-            }`}
-            data-badge-kind={badge()?.kind}
-            role="status"
-          >
-            {badge()?.count}
-          </Line>
-        )}
+        <span class={styles.slot} data-sidebar-slot="true">
+          {badge() !== undefined && (
+            <Line
+              aria-label={badge()?.label}
+              class={`${styles.badge} ${
+                badge()?.kind === "mention" ? styles.mention : ""
+              }`}
+              data-badge-kind={badge()?.kind}
+              role="status"
+            >
+              {badge()?.count}
+            </Line>
+          )}
+        </span>
       </button>
-      {props.buffer.kind === "direct" && props.onClose !== undefined && (
+      {closable() && (
         <button
           aria-label={t("sidebar.close_conversation", {
             title: props.buffer.title,

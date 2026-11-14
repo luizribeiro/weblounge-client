@@ -1,12 +1,13 @@
 .row {
   --wl-sidebar-prefix-width: 12px;
+  --wl-sidebar-slot-width: 28px;
+  --wl-sidebar-row-end-inset: calc(var(--wl-space-list-inset) / 2);
 
   align-items: center;
   background: transparent;
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-panel-muted);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   height: var(--wl-density-sidebar-row-height);
   position: relative;
   width: 100%;
@@ -22,9 +23,12 @@
   display: grid;
   font: inherit;
   font-size: var(--wl-density-sidebar-font-size);
-  grid-template-columns: var(--wl-sidebar-prefix-width) minmax(0, 1fr) auto;
+  grid-template-columns:
+    var(--wl-sidebar-prefix-width) minmax(0, 1fr)
+    var(--wl-sidebar-slot-width);
+  height: 100%;
   min-width: 0;
-  padding: 0 calc(var(--wl-space-list-inset) / 2) 0 var(--wl-space-list-inset);
+  padding: 0 var(--wl-sidebar-row-end-inset) 0 var(--wl-space-list-inset);
   text-align: start;
 }
 
@@ -60,6 +64,11 @@
   min-width: 0;
 }
 
+.slot {
+  display: grid;
+  justify-items: end;
+}
+
 .badge {
   align-items: center;
   background: var(--wl-color-accent);
@@ -74,6 +83,10 @@
   padding-inline: 4px;
 }
 
+.row:not([data-trailing="badge"]) .badge {
+  visibility: hidden;
+}
+
 .mention {
   background: var(--wl-color-mention-badge);
   color: var(--wl-color-mention-badge-fg);
@@ -86,16 +99,18 @@
   border: 0;
   border-radius: var(--wl-radius-control);
   color: inherit;
-  display: none;
+  display: flex;
+  inset-block: 3px;
+  inset-inline-end: var(--wl-sidebar-row-end-inset);
   justify-content: center;
-  margin: 3px;
   padding: 0;
+  position: absolute;
+  visibility: hidden;
   width: 22px;
 }
 
-.row:hover .close,
-.row:focus-within .close {
-  display: flex;
+.row[data-trailing="close"] .close {
+  visibility: visible;
 }
 
 .close:hover,
