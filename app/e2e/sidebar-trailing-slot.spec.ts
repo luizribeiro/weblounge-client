@@ -57,6 +57,52 @@ test.describe("sidebar row trailing slot against local Ergo", () => {
 
     await nativeFeelAudit(page);
   });
+
+  test("shows only a channel's leave button on hover and confirms before leaving", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("leaveslot", [irc.channel]);
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await page.locator('[data-network-state="online"]').click();
+    await peer.privmsgConfirmed(irc.channel, `unread channel ${irc.id}`);
+
+    const channel = page.getByRole("button", {
+      name: `${irc.channel}, 1 unread`,
+    });
+    await expect(channel).toBeVisible();
+    const channelRow = page
+      .locator('[data-sidebar-row="true"]')
+      .filter({ has: channel });
+    const badge = channelRow.locator("[data-badge-kind]");
+    const leave = channelRow.getByRole("button", {
+      name: "Leave channel",
+    });
+    const restingEdge = await rightEdge(
+      channelRow.locator("[data-sidebar-name]"),
+    );
+    await expect(leave).toBeHidden();
+
+    await channelRow.hover();
+    await expect(leave).toBeVisible();
+    await expect(badge).toBeHidden();
+    expect(await rightEdge(channelRow.locator("[data-sidebar-name]"))).toBe(
+      restingEdge,
+    );
+    await expect(channel).toHaveAccessibleName(`${irc.channel}, 1 unread`);
+
+    await leave.click();
+    const confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${irc.channel}?`,
+    });
+    await expect(confirmation).toBeVisible();
+    await nativeFeelAudit(page);
+    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toBeHidden();
+    await expect(channel).toBeFocused();
+    await expect(channel).toBeVisible();
+  });
 });
 
 async function rightEdge(locator: Locator): Promise<number> {

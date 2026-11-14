@@ -146,22 +146,42 @@ export function Sidebar(props: SidebarProps) {
     if (props.registry.channelMenu(context).length === 0) return;
     setMenu({ context, request, target, title: target.title });
   };
+  const runTargetEntry = (
+    entry: ActionEntry,
+    context: ActionContext,
+    target: SidebarBuffer,
+    invoker: HTMLElement,
+  ) => {
+    if (entry.command?.name === "close" && target.kind === "direct") {
+      void closeDirect(target);
+      return;
+    }
+    const result = props.registry.run(entry.id, context, "menu");
+    if (result === "confirmation_required")
+      setConfirmation({ entry, context, invoker, title: target.title });
+  };
   const selectMenuEntry = (
     entry: ActionEntry,
     current: NonNullable<ReturnType<typeof menu>>,
-  ) => {
-    if (entry.command?.name === "close" && current.target.kind === "direct") {
-      void closeDirect(current.target);
-      return;
-    }
-    const result = props.registry.run(entry.id, current.context, "menu");
-    if (result === "confirmation_required")
-      setConfirmation({
-        entry,
-        context: current.context,
-        invoker: current.request.invoker,
-        title: current.title,
-      });
+  ) =>
+    runTargetEntry(
+      entry,
+      current.context,
+      current.target,
+      current.request.invoker,
+    );
+  const closeHandler = (target: SidebarBuffer): (() => void) | undefined => {
+    if (target.kind === "direct") return () => void closeDirect(target);
+    const context = targetContext(target);
+    const leave = props.registry
+      .channelMenu(context)
+      .find((entry) => entry.command?.name === "part");
+    if (leave === undefined) return undefined;
+    return () => {
+      const invoker = elements.get(target.id);
+      if (invoker !== undefined)
+        runTargetEntry(leave, context, target, invoker);
+    };
   };
   const menuItems = (destructive: boolean): readonly ContextMenuItem[] => {
     const current = menu();
@@ -298,7 +318,7 @@ export function Sidebar(props: SidebarProps) {
               jumpSlotFor={(id) => jumpSlotsByBuffer().get(id)}
               network={network}
               onFocus={setRovingId}
-              onCloseBuffer={(buffer) => void closeDirect(buffer)}
+              closeHandlerFor={closeHandler}
               onOpenBuffer={(buffer) => run("pane.show-buffer", buffer)}
               onOpenMenu={openMenu}
               onOpenServer={(buffer) => run("network.open-server", buffer)}

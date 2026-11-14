@@ -16,37 +16,51 @@ const buffer: BufferProjection = {
 };
 
 describe("SidebarRow", () => {
-  it("offers close only for direct-message rows", () => {
-    const close = vi.fn();
-    const { unmount } = render(() => (
-      <SidebarRow
-        active={false}
-        buffer={{ ...buffer, kind: "direct", title: "alice" }}
-        onClick={() => {}}
-        onClose={close}
-        tabIndex={0}
-      />
-    ));
+  it.each([
+    ["direct", "alice", "Close conversation with alice", "Close conversation"],
+    ["channel", "#lounge", "Leave channel", "Leave channel"],
+  ] as const)(
+    "offers close on a %s row as %s",
+    (kind, title, label, tooltip) => {
+      const close = vi.fn();
+      render(() => (
+        <SidebarRow
+          active={false}
+          buffer={{ ...buffer, kind, title }}
+          onClick={() => {}}
+          onClose={close}
+          tabIndex={0}
+        />
+      ));
 
-    screen
-      .getByRole("button", { name: "Close conversation with alice" })
-      .click();
-    expect(close).toHaveBeenCalledOnce();
-    unmount();
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toHaveAttribute("title", tooltip);
+      expect(
+        screen.getByRole("button", { name: /unread/u }),
+      ).toHaveAccessibleName(`${title}, 4 unread, including mentions`);
+      button.click();
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
 
-    render(() => (
-      <SidebarRow
-        active={false}
-        buffer={buffer}
-        onClick={() => {}}
-        onClose={close}
-        tabIndex={0}
-      />
-    ));
-    expect(
-      screen.queryByRole("button", { name: /Close conversation/u }),
-    ).not.toBeInTheDocument();
-  });
+  it.each([
+    ["direct", "alice"],
+    ["channel", "#lounge"],
+  ] as const)(
+    "offers no close on a %s row without a close handler",
+    (kind, title) => {
+      render(() => (
+        <SidebarRow
+          active={false}
+          buffer={{ ...buffer, kind, title }}
+          onClick={() => {}}
+          tabIndex={0}
+        />
+      ));
+
+      expect(screen.getAllByRole("button")).toHaveLength(1);
+    },
+  );
 
   it("keeps the row's text to its name while a jump number waits in the slot", () => {
     render(() => (

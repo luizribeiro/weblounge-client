@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { ActionRegistry } from "../../actions/action-registry";
 import type { CommandSpec } from "../../engine/protocol";
@@ -167,27 +167,7 @@ it("shows only runnable row-menu items and dispatches against its target", async
     runCommand,
   );
   const removeContextMenuHandler = installContextMenuHandler(document);
-  render(() => (
-    <Sidebar
-      buffers={[
-        buffer(2, "channel", "#lounge", 3),
-        buffer(3, "direct", "alice", 0),
-      ]}
-      commandContext={{ bufferCount: 2, connected: true, listActive: true }}
-      networks={[
-        {
-          id: 7,
-          label: "Local Ergo",
-          nickname: "weblounge",
-          state: "online",
-        },
-      ]}
-      onCloseDirect={closeDirect}
-      registerListController={() => {}}
-      registry={registry}
-      visibleBufferIds={new Set()}
-    />
-  ));
+  renderTargetSidebar(registry, closeDirect);
   const channel = screen.getByRole("button", {
     name: "#lounge, 3 unread",
   });
@@ -223,6 +203,92 @@ it("shows only runnable row-menu items and dispatches against its target", async
   );
   removeContextMenuHandler();
 });
+
+it("leaves a channel from its close button only after confirming, and closes a DM at once", () => {
+  const runCommand = vi.fn();
+  const closeDirect = vi.fn(async () => true);
+  const registry = new ActionRegistry(
+    {},
+    "other",
+    [destructiveCommand("part"), destructiveCommand("close")],
+    runCommand,
+  );
+  renderTargetSidebar(registry, closeDirect);
+
+  fireEvent.click(screen.getByRole("button", { name: "Leave channel" }));
+  expect(runCommand).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(
+      screen.getByRole("alertdialog", { name: "Leave #lounge?" }),
+    ).getByRole("button", { name: "Cancel" }),
+  );
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Leave channel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+  expect(runCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "part" }),
+    expect.objectContaining({ targetBufferId: 2 }),
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close conversation with alice" }),
+  );
+  expect(closeDirect).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 3, title: "alice" }),
+    2,
+  );
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+});
+
+it("offers no leave button while the channel's network is not connected", () => {
+  const registry = new ActionRegistry(
+    {},
+    "other",
+    [destructiveCommand("part"), destructiveCommand("close")],
+    vi.fn(),
+  );
+  renderTargetSidebar(
+    registry,
+    vi.fn(async () => true),
+    "connecting",
+  );
+
+  expect(
+    screen.queryByRole("button", { name: "Leave channel" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Close conversation with alice" }),
+  ).toBeInTheDocument();
+});
+
+function renderTargetSidebar(
+  registry: ActionRegistry,
+  closeDirect: () => Promise<boolean>,
+  state: "connecting" | "online" = "online",
+) {
+  return render(() => (
+    <Sidebar
+      buffers={[
+        buffer(2, "channel", "#lounge", 3),
+        buffer(3, "direct", "alice", 0),
+      ]}
+      commandContext={{ bufferCount: 2, connected: true, listActive: true }}
+      networks={[
+        {
+          id: 7,
+          label: "Local Ergo",
+          nickname: "weblounge",
+          state,
+        },
+      ]}
+      onCloseDirect={closeDirect}
+      registerListController={() => {}}
+      registry={registry}
+      visibleBufferIds={new Set()}
+    />
+  ));
+}
 
 function buffer(
   id: number,

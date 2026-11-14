@@ -23,7 +23,9 @@ interface NetworkSectionProps {
   readonly jumpHintsShown?: boolean;
   readonly onFocus: (bufferId: number | undefined) => void;
   readonly onOpenBuffer: (buffer: SidebarBuffer) => void;
-  readonly onCloseBuffer?: ((buffer: SidebarBuffer) => void) | undefined;
+  readonly closeHandlerFor?:
+    | ((buffer: SidebarBuffer) => (() => void) | undefined)
+    | undefined;
   readonly onOpenMenu: (
     buffer: SidebarBuffer,
     request: ContextMenuRequest,
@@ -89,9 +91,7 @@ export function NetworkSection(props: NetworkSectionProps) {
                     jumpSlot={props.jumpSlotFor?.(current().id)}
                     muted={current().muted === true}
                     onClick={() => props.onOpenBuffer(current())}
-                    {...(props.onCloseBuffer === undefined
-                      ? {}
-                      : { onClose: () => props.onCloseBuffer?.(current()) })}
+                    onClose={props.closeHandlerFor?.(current())}
                     onFocus={() => props.onFocus(current().id)}
                     onOpenMenu={(request) =>
                       props.onOpenMenu(current(), request)

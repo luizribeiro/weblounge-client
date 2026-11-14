@@ -20,7 +20,7 @@ export interface SidebarRowProps {
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onFocus?: JSX.EventHandler<HTMLButtonElement, FocusEvent>;
-  readonly onClose?: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
+  readonly onClose?: (() => void) | undefined;
   readonly onOpenMenu?: (request: ContextMenuRequest) => void;
   readonly ref?: (element: HTMLButtonElement) => void;
 }
@@ -32,8 +32,8 @@ export function SidebarRow(props: SidebarRowProps) {
   const badge = () => (showBadges() ? unreadBadge(props.buffer) : undefined);
   const [pointerInside, setPointerInside] = createSignal(false);
   const [focusInside, setFocusInside] = createSignal(false);
-  const closable = () =>
-    props.buffer.kind === "direct" && props.onClose !== undefined;
+  const closable = () => props.onClose !== undefined;
+  const copy = () => closeCopy(props.buffer);
   const slot = () =>
     trailingSlot({
       badge: badge() !== undefined,
@@ -128,13 +128,11 @@ export function SidebarRow(props: SidebarRowProps) {
       </button>
       {closable() && (
         <button
-          aria-label={t("sidebar.close_conversation", {
-            title: props.buffer.title,
-          })}
+          aria-label={copy().label}
           class={styles.close}
           onClick={props.onClose}
           tabIndex={-1}
-          title={t("cmd.close.menu")}
+          title={copy().tooltip}
           type="button"
         >
           <svg aria-hidden="true" viewBox="0 0 12 12">
@@ -144,6 +142,21 @@ export function SidebarRow(props: SidebarRowProps) {
       )}
     </div>
   );
+}
+
+function closeCopy(buffer: BufferProjection): {
+  readonly label: string;
+  readonly tooltip: string;
+} {
+  if (buffer.kind === "channel") {
+    // Name lookups (Playwright getByRole, screen-reader find) substring-match, so a × named after the channel would shadow its row.
+    const leave = t("cmd.part.menu");
+    return { label: leave, tooltip: leave };
+  }
+  return {
+    label: t("sidebar.close_conversation", { title: buffer.title }),
+    tooltip: t("cmd.close.menu"),
+  };
 }
 
 function rowLabel(title: string, badgeLabel: string | undefined): string {
