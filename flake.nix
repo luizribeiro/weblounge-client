@@ -238,7 +238,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-FR5aZCyRmdzmdGTUi86LZN8/+oxOzXv5Z/KCGPa0SvA=";
+          hash = "sha256-0WxDwoaQk7zqqMVBMjtRGn8Kz0gqcMc4mRoNKR8cols=";
         };
         appRuntimeInputs = [
           pkgs.librsvg
