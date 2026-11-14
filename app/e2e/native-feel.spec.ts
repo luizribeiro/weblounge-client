@@ -1,3 +1,4 @@
+import { serverTime } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import {
   auditMessageSelection,
@@ -35,12 +36,16 @@ test.describe("native feel against local Ergo", () => {
     const first = "first selectable";
     const second = "second selectable";
     bot.privmsg(irc.channel, first);
-    bot.privmsg(irc.channel, second);
+    const newest = await bot.privmsgConfirmed(irc.channel, second);
     await expect(page.getByText(first, { exact: false })).toBeVisible();
     await expect(page.getByText(second, { exact: false })).toBeVisible();
     await expect(
       page.locator('[data-buffer-id][aria-current="page"]'),
     ).toHaveAttribute("data-unread", "0");
+    const ownDevice = await irc.self();
+    await expect
+      .poll(() => ownDevice.readMarker(irc.channel))
+      .toBe(serverTime(newest));
 
     await page.route("**/__native-feel-probe.css", (route) =>
       route.fulfill({
