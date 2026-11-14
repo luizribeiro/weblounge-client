@@ -58,6 +58,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F20: multi-network generality: uploads, inline images and previews key off per-network capabilities, never weblounge hosts; hosted-web CSP `connect-src`/`img-src` list only weblounge hosts, so other filehosts need a CSP decision. Design 30, design 31.
 - F21: perf harness later: scroll/history, reconnect, navigation, six-pane, idle, hidden-tab and soak scenarios; memory targets (220MiB web, 350MiB desktop RSS); real-device and soju profiles; CI runner class. Design 21 §Later.
 
+- F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
+- F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
+- F24: arrow keys between Settings sections (design 29 lists them; one section today). Design 29.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
@@ -107,6 +110,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-14: the Settings section list folds into a 52px icon rail in narrow desktop windows and
+  expands over the content on hover intent or focus; Escape collapses it before closing. Design 29
+  D13; follow-ups F22 to F24.
 - 2026-11-14: desktop sidebar polish, batch 4. Bot DM rows show the transcript's robot in the
   leading column instead of the presence dot: online tint when online, muted at half opacity when
   away, plain muted when unknown; the accessible name reads "nick, bot, …". The engine projects

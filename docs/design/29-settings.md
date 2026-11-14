@@ -90,8 +90,22 @@ shell.
 ### Desktop and web: the prototype's modal
 
 As drawn, typed by design 10 as `Overlay { kind: "settingsModal"; page }`. Changes apply
-immediately; there is no Save button. Below design 09's narrow-desktop breakpoint the modal fills
-the window and uses the phone's root-list-then-page model inside it.
+immediately; there is no Save button. Below design 09's narrow-desktop breakpoint (where
+`DesktopPanels` is `"overlay"`) the modal fills the window and its section list folds into an icon-only rail (D13):
+
+- **Wide:** the 188px list with each section's icon and label, as drawn.
+- **Narrow desktop:** a 52px rail of the same icons, so the content keeps the rest of the width.
+  Each item stays a button named by its label (`aria-label`, plus a `title` tooltip while folded);
+  the current section keeps `aria-current="page"`.
+- **Expanding:** keyboard focus on the rail expands it at once; a pointer expands it after the
+  `railHoverIntent` time token (150ms, kept under reduced motion), so passing over it does not
+  flicker. The expanded rail floats over the content at the list's width, on `panelAlt` with the
+  border and `overlayShadow` tokens, and never pushes the content; its width and label fade use the
+  `railExpand` motion token, which reduced motion zeroes. Pointer leave, focus leaving the rail,
+  choosing a section and Escape collapse it.
+- **Escape order:** an expanded rail collapses first; the next Escape closes the modal (design 14's
+  `navigation.escape` cascade, design 15's focus return).
+- **Phone-width windows** use the mobile shell and its Settings pages, unchanged.
 
 Entry points (D12):
 
@@ -292,8 +306,9 @@ share an ID. The same registry can later feed ⌘K search over settings.
 
 - The modal is a `dialog` with `aria-modal`, a focus trap and a labelled title. Esc
   (`navigation.escape`) closes it and returns focus to the invoker, then the composer (design 15).
-- The section nav marks its current item `aria-current="page"` (as drawn); arrow keys move
-  within it. Switches are `role="switch"`. Segmented controls become a `radiogroup` with arrow
+- The section nav marks its current item `aria-current="page"` (as drawn). Arrow keys moving
+  within it arrive with the second section (F24 in the plan's Backlog); today Tab reaches its one
+  item. Switches are `role="switch"`. Segmented controls become a `radiogroup` with arrow
   keys rather than the prototype's `aria-pressed` buttons, so a screen reader hears one choice.
 - Labels, descriptions and section headers are chrome and not selectable (brief §2); values the
   user may copy (server, account, version, diagnostics) are.
@@ -322,6 +337,7 @@ share an ID. The same registry can later feed ⌘K search over settings.
 | D10 | First-paint appearance | `localStorage` paint hint written only from engine values, applied by a head script before the first paint |
 | D11 | Per-conversation settings | In the conversation's details, not in Settings |
 | D12 | Desktop entry button | A gear button in the sidebar header grouped with search at the right edge, drawing a gear rather than the prototype's sliders, plus the ⌘K "Settings" row and the chord (⌘, in the Mac app, ⇧⌘, on the web) |
+| D13 | Section list in a narrow desktop window | Fold it into a 52px icon rail that expands over the content on hover intent or focus, instead of hiding it (Luiz, 2026-11-14) |
 
 ## Out of scope
 
