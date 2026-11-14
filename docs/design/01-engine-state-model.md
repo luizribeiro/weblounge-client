@@ -199,7 +199,11 @@ otherwise it is `Buffer.local_last_read`. Subsystem 17 supplies the per-buffer `
 or local-only status. This model does not duplicate capability support with an `Unsupported`
 marker variant. Unread and mention counts are engine projections over stored message metadata.
 Message-row highlighting is a separate projection of the user's highlight rules; the initial rule
-matches the current nick as an IRC-casemapped word, and later keyword rules extend the same matcher.
+matches the current nick as an IRC-casemapped token: the text is split on every character that
+can't appear in a nick (anything but letters, digits and ``_ - [ ] \ ` ^ { } |``), and a token
+matches when it folds, under the network's casemapping, to the same name as the nick, so
+`foo-bar: hi` matches `foo-bar` but `foo-barbaz` does not. Later keyword rules extend the same
+matcher.
 
 Memory keeps summaries, pending sends, and bounded timeline windows. Window sizes are configuration
 provided by the performance harness, not hard-coded product defaults. Papo retains joined member,

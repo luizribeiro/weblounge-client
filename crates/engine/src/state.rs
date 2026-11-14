@@ -4553,9 +4553,22 @@ fn nonempty_reactions(
 }
 
 fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
-    text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
-        .filter(|word| !word.is_empty())
-        .any(|word| is_own_nick(state, word))
+    contains_nick_token(text, state.nick().as_str(), state.casemapping())
+}
+
+fn contains_nick_token(text: &str, nick: &str, casemapping: papo::Casemapping) -> bool {
+    let nick = casemapping.fold(nick);
+    text.split(|character| !is_nick_character(character))
+        .filter(|token| !token.is_empty())
+        .any(|token| casemapping.fold(token) == nick)
+}
+
+fn is_nick_character(character: char) -> bool {
+    character.is_alphanumeric()
+        || matches!(
+            character,
+            '_' | '-' | '[' | ']' | '\\' | '`' | '^' | '{' | '}' | '|'
+        )
 }
 
 pub(crate) fn is_own_nick(state: &papo::State, nick: &str) -> bool {
@@ -4690,8 +4703,8 @@ mod tests {
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
         IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
-        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
-        reaction_actor_key, system_time_from_millis, time_millis,
+        chat_projection, collapse_blank_lines, contains_nick_token, derive_read_projection,
+        draft_key, nick_color_index, reaction_actor_key, system_time_from_millis, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -8701,6 +8714,86 @@ mod tests {
                     .highlighted,
                 expected_highlight,
                 "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn nick_tokens_match_whole_nicks_bounded_by_non_nick_characters() {
+        let cases = [
+            ("foo-bar", "foo-bar: hi", true),
+            ("foo-bar", "hi foo-bar, how are you", true),
+            ("foo-bar", "thanks foo-bar", true),
+            ("foo-bar", "(foo-bar) said \"foo-bar's\" idea!", true),
+            ("foo-bar", "@foo-bar?", true),
+            ("foo-bar", "foo-barbaz: hi", false),
+            ("foo-bar", "ping xfoo-bar", false),
+            ("foo-bar", "foo-bar-baz around", false),
+            ("foo-bar", "foo and bar", false),
+            ("[away]", "[away]: back yet?", true),
+            ("[away]", "x[away] is someone else", false),
+            ("nick|afk", "nick|afk, ping", true),
+            ("nick|afk", "nick is afk", false),
+            ("a^b", "hey a^b.", true),
+            ("a^b", "a^bc", false),
+            ("weblounge", "hello weblounge", true),
+            ("weblounge", "hello webloungers", false),
+            ("weblounge", "WebLounge: hi", true),
+            ("bar", "foo-bar is here", false),
+            ("", "hello there", false),
+        ];
+        for (nick, text, expected) in cases {
+            assert_eq!(
+                contains_nick_token(text, nick, papo::Casemapping::Rfc1459),
+                expected,
+                "{nick} in {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nick_tokens_compare_under_the_network_casemapping() {
+        use papo::Casemapping::{Ascii, Precis, Rfc1459, Rfc1459Strict};
+        let cases = [
+            (Rfc1459, "[Away]", "{away}: hi", true),
+            (Rfc1459, "a~b", "A^B: hi", true),
+            (Rfc1459Strict, "nick\\afk", "NICK|AFK: hi", true),
+            (Rfc1459Strict, "a~b", "a^b: hi", false),
+            (Ascii, "[away]", "{away}: hi", false),
+            (Ascii, "[away]", "[AWAY]: hi", true),
+            (Precis, "Ünïcode", "hi ÜNÏCODE: yo", true),
+            (Precis, "İstanbul", "see you, İSTANBUL!", true),
+            (Precis, "foo-bar", "hey FOO-BAR, around?", true),
+            (Precis, "foo-bar", "hey foo-barbaz", false),
+        ];
+        for (casemapping, nick, text, expected) in cases {
+            assert_eq!(
+                contains_nick_token(text, nick, casemapping),
+                expected,
+                "{casemapping}: {nick} in {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rows_highlight_nicks_with_irc_special_characters() {
+        for nick in ["foo-bar", "[away]", "nick|afk", "a^b"] {
+            let mut model = NetworkModel::new(NetworkId(1), "Test".into(), nick.into(), 10);
+            let state = StateBuilder::new(nick).connected(true).build();
+            let text = format!("{nick}: are you there?");
+            model.receive_incoming(
+                incoming(&state, &text, Some("m1"), None, 1, TimelineOrigin::Live),
+                &state,
+            );
+            let id = *model.names.values().next().expect("buffer exists");
+            let buffer = &model.buffers[&id];
+
+            assert_eq!(buffer.projection.mentions, 1, "{nick}");
+            assert!(
+                chat_projection(&buffer.timeline[0])
+                    .expect("chat record")
+                    .highlighted,
+                "{nick}"
             );
         }
     }

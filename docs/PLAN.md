@@ -24,6 +24,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: own-nick highlights and mentions now work for nicks with IRC special characters
+  (`foo-bar`, `[away]`, `nick|afk`, `a^b`): the nick matches as a whole token under the network's
+  casemapping, bounded by text edges or characters that can't appear in a nick.
 - 2026-11-13: inline images, slice 1 (design 30). The engine projects each network's advertised
   FILEHOST origin; a message's first image URL on that origin renders under its text in a
   fixed-height density slot (160/240 desktop, 160/200 phone), whose width follows the image and
