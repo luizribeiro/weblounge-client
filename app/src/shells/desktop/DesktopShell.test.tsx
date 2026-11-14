@@ -658,6 +658,11 @@ it("opens Settings from the web chord and returns focus on Escape", async () => 
 
   await waitFor(() => expect(composer).toHaveFocus());
   expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+
+  window.dispatchEvent(
+    new CustomEvent("weblounge:action", { detail: "settings.open" }),
+  );
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
 });
 
 it("routes printable chrome keys to the composer without hijacking controls", () => {

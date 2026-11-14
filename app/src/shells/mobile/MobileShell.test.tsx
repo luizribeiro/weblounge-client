@@ -79,6 +79,18 @@ it("pushes Settings and its Appearance page over Chats and pops them with Back",
     expect(screen.getByRole("region", { name: "Chats" })).toBeVisible(),
   );
   expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
+
+  window.dispatchEvent(
+    new CustomEvent("weblounge:action", { detail: "settings.open" }),
+  );
+  window.dispatchEvent(
+    new CustomEvent("weblounge:action", { detail: "settings.open" }),
+  );
+  expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Chats" })).toBeVisible(),
+  );
 });
 
 it("clips the shell instead of letting focus reveal scroll it", () => {

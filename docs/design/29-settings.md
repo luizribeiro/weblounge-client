@@ -133,10 +133,12 @@ from the action registry (design 14) and opens the same modal (D3).
 window.dispatchEvent(new CustomEvent("weblounge:action", { detail: "settings.open" }));
 ```
 
-Only actions in the registry's `shellMenuActions` list (`app/src/actions/`) run this way (today just
-`settings.open`); any other detail is ignored. The event runs the same `settings.open` as the button, the palette and the
+Only actions in the shell-menu allow-list (`app/src/actions/shell-actions.ts`) run this way (today
+just `settings.open`); any other detail is ignored. The event runs the same `settings.open` as the button, the palette and the
 chord, so it opens Settings on whichever shell is showing, and drops the request while the app is
-still starting (the splash is up, so there is no Settings to show yet).
+still starting: the shells install the listener when they mount, after the splash, so there is no
+Settings to show before then. On the phone the event does nothing while Settings is already
+showing.
 
 In the Mac app the menu accelerator owns `⌘,`: the menu consumes the key before the web view sees
 it. The page also binds `⌘,` there (selected by `__WEBLOUNGE_SHELL__`), so the chord works before

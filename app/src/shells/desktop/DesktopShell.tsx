@@ -15,6 +15,7 @@ import {
   jumpSlots,
   type UiActionId,
 } from "../../actions/action-registry";
+import { listenForShellActions } from "../../actions/shell-actions";
 import { bufferSyncPresentation } from "../../engine/buffer-sync";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import type { Settings } from "../../engine/generated/Settings";
@@ -525,6 +526,11 @@ export function DesktopShell(props: DesktopShellProps) {
       forwardPrintableKey(event, shellElement);
     };
     document.addEventListener("keydown", handleKeydown);
+    onCleanup(
+      listenForShellActions(window, (action) =>
+        registry.run(action, context()),
+      ),
+    );
     onCleanup(() => {
       shellObserver?.disconnect();
       if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
