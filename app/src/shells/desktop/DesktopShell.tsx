@@ -16,6 +16,8 @@ import {
   type UiActionId,
 } from "../../actions/action-registry";
 import { bufferSyncPresentation } from "../../engine/buffer-sync";
+import type { SettingChange } from "../../engine/generated/SettingChange";
+import type { Settings } from "../../engine/generated/Settings";
 import type {
   BufferProjection,
   CommandSpec,
@@ -43,6 +45,7 @@ import {
   type MemberWindow,
 } from "../../features/members/MemberPanel";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
+import { SettingsModal } from "../../features/settings/SettingsModal";
 import {
   Sidebar,
   type SidebarListController,
@@ -66,6 +69,7 @@ import {
 import type { NetworkUploads } from "../../features/uploads/types";
 import { platformEnvironment } from "../../platform/environment";
 import { t, translate } from "../../strings";
+import { returnFocus } from "../../ui/focus-return";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
@@ -139,6 +143,8 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
+  readonly settings?: Settings | undefined;
+  readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -246,6 +252,22 @@ export function DesktopShell(props: DesktopShellProps) {
         ?.querySelector<HTMLTextAreaElement>("[data-composer] textarea")
         ?.focus({ preventScroll: true }),
     );
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  let settingsInvoker: Element | null = null;
+  const openSettings = () => {
+    if (settingsOpen()) return;
+    settingsInvoker = document.activeElement;
+    setOmnibarMode(null);
+    setSettingsOpen(true);
+  };
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    const invoker = settingsInvoker;
+    settingsInvoker = null;
+    queueMicrotask(() => {
+      if (!returnFocus(invoker)) focusComposer();
+    });
+  };
   const closeDrawer = (restoreFocus = true) => {
     setDrawer(null);
     if (restoreFocus) focusComposer();
@@ -369,6 +391,7 @@ export function DesktopShell(props: DesktopShellProps) {
         else setDrawer("sidebar");
       },
       "palette.open": () => setOmnibarMode("commands"),
+      "settings.open": () => openSettings(),
       "switcher.open": () => setOmnibarMode("buffers"),
     },
     platform.shortcutPlatform,
@@ -486,6 +509,7 @@ export function DesktopShell(props: DesktopShellProps) {
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
+      if (settingsOpen()) return;
       if (
         closedConversation() !== undefined &&
         (event.metaKey || event.ctrlKey) &&
@@ -715,6 +739,13 @@ export function DesktopShell(props: DesktopShellProps) {
             />
           );
         }}
+      </Show>
+      <Show when={settingsOpen()}>
+        <SettingsModal
+          onChange={(change) => props.onChangeSetting?.(change)}
+          onClose={closeSettings}
+          settings={props.settings?.app}
+        />
       </Show>
       <Show when={omnibarMode()} keyed>
         {(initialMode) => (

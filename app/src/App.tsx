@@ -261,7 +261,7 @@ export function App(props: AppProps) {
               hostedUploadSession.sessionTokenEndpoint,
             ).acquire()
           ).accessToken;
-  createEngineSettings({
+  const engineSettings = createEngineSettings({
     client: () => client,
     started: engineStarted,
     onAppearance: (appearance) => props.onAppearanceChange?.(appearance),
@@ -1582,6 +1582,8 @@ export function App(props: AppProps) {
             );
           }}
           onTurnOnNotifications={turnOnNotifications}
+          settings={engineSettings.current()}
+          onChangeSetting={engineSettings.change}
           pathForBuffer={pathForBuffer}
           uploadsFor={(network) =>
             client === undefined

@@ -613,6 +613,53 @@ it("opens, dismisses, and navigates with the buffer switcher", async () => {
   );
 });
 
+it("opens Settings from the web chord and returns focus on Escape", async () => {
+  const onChangeSetting = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onChangeSetting={onChangeSetting}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+      settings={{ app: { theme: "lounge", message_density: "cozy" } }}
+    />
+  ));
+  const composer = screen.getByRole("textbox", { name: "Message #room" });
+  await waitFor(() => expect(composer).toHaveFocus());
+
+  fireEvent.keyDown(composer, {
+    code: "Comma",
+    ctrlKey: true,
+    key: "<",
+    shiftKey: true,
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await waitFor(() => expect(dialog).toHaveFocus());
+  expect(screen.getByRole("radio", { name: "Lounge" })).toBeChecked();
+  fireEvent.click(screen.getByRole("radio", { name: "Compact" }));
+  expect(onChangeSetting).toHaveBeenCalledWith({
+    scope: "app",
+    setting: { key: "message_density", value: "compact" },
+  });
+
+  fireEvent.keyDown(dialog, { ctrlKey: true, key: "k" });
+  expect(screen.queryByRole("combobox", { name: "Jump to" })).toBeNull();
+
+  fireEvent.keyDown(dialog, { key: "Escape" });
+
+  await waitFor(() => expect(composer).toHaveFocus());
+  expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+});
+
 it("routes printable chrome keys to the composer without hijacking controls", () => {
   render(() => (
     <DesktopShell
