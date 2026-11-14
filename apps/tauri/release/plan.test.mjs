@@ -11,7 +11,7 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 `;
 const tauriConf = (version) =>
-  JSON.stringify({ productName: "Weblounge", version, identifier: "org.weblounge.desktop" });
+  JSON.stringify({ productName: "weblounge", version, identifier: "org.weblounge.desktop" });
 
 test("the release version is the crate's when the bundle agrees", () => {
   assert.equal(
@@ -51,7 +51,7 @@ test("a package that inherits its version from a workspace refuses to release", 
 
 test("names the tag and image after the version", () => {
   assert.equal(releaseTag("0.1.0"), "desktop-v0.1.0");
-  assert.equal(imageName("0.1.0"), "Weblounge-0.1.0.dmg");
+  assert.equal(imageName("0.1.0"), "weblounge-0.1.0.dmg");
 });
 
 const ready = {

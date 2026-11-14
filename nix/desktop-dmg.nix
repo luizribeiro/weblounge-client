@@ -19,11 +19,11 @@ pkgs.runCommand "weblounge-desktop-dmg"
   ''
     ln -s /Applications Applications
     mkdir -p $out
-    xorrisofs -volid Weblounge -hfsplus -apm-block-size 2048 -rational-rock \
-      -graft-points -output $out/Weblounge.dmg \
-      Weblounge.app=${desktop}/Applications/Weblounge.app Applications=Applications
-    if LC_ALL=C grep -qa '????????' $out/Weblounge.dmg; then
-      echo "Weblounge.dmg still carries Finder type/creator codes" >&2
+    xorrisofs -volid weblounge -hfsplus -apm-block-size 2048 -rational-rock \
+      -graft-points -output $out/weblounge.dmg \
+      weblounge.app=${desktop}/Applications/weblounge.app Applications=Applications
+    if LC_ALL=C grep -qa '????????' $out/weblounge.dmg; then
+      echo "weblounge.dmg still carries Finder type/creator codes" >&2
       exit 1
     fi
   ''

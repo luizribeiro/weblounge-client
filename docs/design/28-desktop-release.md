@@ -42,7 +42,7 @@ the network and the stored `notarytool` profile `weblounge`, neither of which th
    The hardened runtime needs no entitlements: WebKit's JIT runs in its own signed processes.
 4. Notarize a zip of the app and staple the ticket to the app itself, so a copy dragged out of the
    image or installed by the cask passes Gatekeeper on first launch without reaching Apple.
-   Then build `Weblounge-<version>.dmg` with `hdiutil` (compressed UDIF, the Applications symlink
+   Then build `weblounge-<version>.dmg` with `hdiutil` (compressed UDIF, the Applications symlink
    as in `.#desktop-dmg`), sign it, notarize it, and staple the ticket to the image. Notarization
    and stapling need a real UDIF image, which the sandboxed ISO hybrid of `.#desktop-dmg` is not;
    that package stays for local installs. A submission that Apple does not accept prints its
@@ -60,7 +60,7 @@ does.
 
 ## The cask
 
-`Casks/weblounge.rb` in the tap installs `Weblounge.app` from the release image, requires Apple
+`Casks/weblounge.rb` in the tap installs `weblounge.app` from the release image, requires Apple
 silicon (the only architecture built), and its `zap` removes the app's support, cache, WebKit and
 preferences directories plus the Open at Login launch agent. It does not declare `auto_updates`,
 so `brew upgrade` installs new versions.

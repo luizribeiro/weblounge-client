@@ -17,7 +17,7 @@ mod tests {
     #[test]
     fn the_login_item_argument_starts_hidden() {
         assert!(starts_hidden(args(&[
-            "/Applications/Weblounge.app/Contents/MacOS/weblounge-desktop",
+            "/Applications/weblounge.app/Contents/MacOS/weblounge-desktop",
             "--hidden"
         ])));
     }
@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn a_normal_launch_shows_the_window() {
         assert!(!starts_hidden(args(&[
-            "/Applications/Weblounge.app/Contents/MacOS/weblounge-desktop"
+            "/Applications/weblounge.app/Contents/MacOS/weblounge-desktop"
         ])));
         assert!(!starts_hidden(args(&["weblounge-desktop", "--hidden-ish"])));
     }

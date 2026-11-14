@@ -13,7 +13,7 @@ export function releaseVersion({ cargoToml, tauriConf }) {
 
 export const releaseTag = (version) => `${TAG_PREFIX}${version}`;
 
-export const imageName = (version) => `Weblounge-${version}.dmg`;
+export const imageName = (version) => `weblounge-${version}.dmg`;
 
 export function blockers({ status, head, originMain, tags, version }) {
   return [

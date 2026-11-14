@@ -10,7 +10,7 @@ import { blockers, imageName, releaseTag, releaseVersion } from "./plan.mjs";
 const IDENTITY = "Developer ID Application: LUIZ GUSTAVO CARDOSO RIBEIRO (JR4C2QJKWJ)";
 const BUNDLE_ID = "org.weblounge.desktop";
 const NOTARY_PROFILE = "weblounge";
-const APP = "Weblounge.app";
+const APP = "weblounge.app";
 const repo = new URL("../../../", import.meta.url).pathname;
 const crate = join(repo, "apps/tauri");
 
@@ -105,7 +105,7 @@ function notarizedImage(work, app, version) {
   step("/usr/bin/hdiutil", [
     "create",
     "-volname",
-    "Weblounge",
+    "weblounge",
     "-srcfolder",
     stage,
     "-format",
@@ -156,7 +156,7 @@ function publish(image, { version, head }) {
     "--target",
     head,
     "--title",
-    `Weblounge desktop ${version}`,
+    `weblounge desktop ${version}`,
     "--notes",
     "Notarized macOS app (Apple silicon). Install with `brew install --cask luizribeiro/tap/weblounge`.",
   ]);

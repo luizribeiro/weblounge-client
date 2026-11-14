@@ -98,20 +98,20 @@ nice -n 10 nix build --no-link --impure --max-jobs 2 --cores 4 --expr '
 [design 27](docs/design/27-desktop-wrapper.md)). On a Mac, build and launch it with:
 
 ```sh
-open "$(nix build --no-link --print-out-paths .#desktop)/Applications/Weblounge.app"
+open "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge.app"
 ```
 
 To keep it in the Dock, copy the bundle out of the Nix store:
 
 ```sh
-ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/Weblounge.app" \
-  ~/Applications/Weblounge.app
+ditto "$(nix build --no-link --print-out-paths .#desktop)/Applications/weblounge.app" \
+  ~/Applications/weblounge.app
 ```
 
 To install it on another Mac, build a disk image with `nix build .#desktop-dmg`, open
-`result/Weblounge.dmg` there and drag Weblounge into Applications. The app is not notarized, so if
+`result/weblounge.dmg` there and drag weblounge into Applications. The app is not notarized, so if
 the image arrived through a browser or AirDrop, clear its quarantine before the first launch with
-`xattr -dr com.apple.quarantine /Applications/Weblounge.app`.
+`xattr -dr com.apple.quarantine /Applications/weblounge.app`.
 
 For a quick debug build, run `nix develop -c cargo run --manifest-path apps/tauri/Cargo.toml`.
 The bare binary keeps its own web storage, so it asks you to sign in separately from the installed
