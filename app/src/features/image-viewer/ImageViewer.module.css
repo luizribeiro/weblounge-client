@@ -30,7 +30,8 @@
 
 .bar {
   align-items: center;
-  background: var(--wl-color-bg);
+  background: var(--wl-color-surface);
+  border-bottom: 1px solid var(--wl-color-border);
   block-size: calc(var(--wl-safe-top) + var(--wl-image-viewer-bar-height));
   box-sizing: border-box;
   display: flex;
@@ -115,7 +116,7 @@
 }
 
 .stage :global(.pswp) {
-  --pswp-bg: var(--wl-color-bg);
+  --pswp-bg: var(--wl-color-overlay-scrim);
   --pswp-placeholder-bg: transparent;
   --pswp-root-z-index: 0;
 }

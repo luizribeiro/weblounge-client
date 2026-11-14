@@ -131,11 +131,13 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   touch, which fades the backdrop as it moves. Focus returns to the slot that opened the viewer if it
   is still mounted; if virtualisation removed it, focus stays on the document, where typing still
   reaches the composer, and the close fades instead of shrinking to the slot.
-- **Chrome.** An opaque top bar with the sender's nick, the message time, an "Open original" link
-  (new tab, like message links) and a close button, in theme tokens. The backdrop is
-  `--wl-color-bg` at full opacity. The image fits inside a CSS fit box below the bar, with a 24px
-  margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures that box
-  rather than reading safe areas itself.
+- **Chrome.** A top bar on `--wl-color-surface` with a `--wl-color-border` rule, holding the
+  sender's nick, the message time, an "Open original" link (new tab, like message links) and a
+  close button, so its text stays legible over the backdrop. The backdrop is
+  `--wl-color-overlay-scrim`, as for the omnibar, drawers and confirmations, so the app stays
+  visible and dimmed behind the image. The image fits inside a CSS fit box below the bar, with a
+  24px margin on desktop and the safe-area insets (`--wl-safe-*`) on phone; the viewer measures
+  that box rather than reading safe areas itself.
 - **Accessibility.** The viewer root is `role="dialog"`, `aria-modal="true"`, labelled "Image from
   {nick}". Opening it focuses the dialog with `preventScroll`; Tab cycles inside it through the
   shared trap extracted from `OmnibarOverlay`; the rest of the app root is `inert` while it is open;
