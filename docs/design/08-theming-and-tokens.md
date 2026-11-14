@@ -41,8 +41,8 @@ The schema covers the appendix token set plus an explicit `focusRing` semantic c
 `mentionBadge` / `mentionBadgeFg` pair. The pair gives mention-severity count badges their red
 treatment without coupling them to error UI. Initial `focusRing` values use each theme's accent.
 `viewerScrim` and `viewerFg` are the image viewer's backdrop and the colour of the controls drawn
-on it (design 30): a dark dim, stronger than `overlayScrim`, with light text, in every theme, as in
-photo viewers. Light themes define them dark too.
+on it (design 30): near-black (black at 92%), much stronger than `overlayScrim`, with light text,
+in every theme, as in photo viewers. Every theme, light ones included, uses the same values.
 The accepted milestone-1 colour grammar is the appendix formats (hex and `rgb[a]` where needed);
 arbitrary CSS and `oklch` are not accepted.
 

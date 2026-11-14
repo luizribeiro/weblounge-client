@@ -131,19 +131,17 @@ Luiz: "click on the image to see it larger with support for zoom/pan/etc in an e
   touch, which fades the backdrop as it moves. Focus returns to the slot that opened the viewer if it
   is still mounted; if virtualisation removed it, focus stays on the document, where typing still
   reaches the composer, and the close fades instead of shrinking to the slot.
-- **Chrome.** No bar: the sender's nick, the message time, an "Open original" link (new tab,
-  like message links) and a close button sit straight on the backdrop along the top edge, inside
-  the safe areas. The backdrop is a dark dim in every theme, as in photo viewers:
-  `--wl-color-viewer-scrim`, Lounge Night's background at 88%, so the app stays only faintly
-  visible behind the image. The controls are light on it in every theme, in
-  `--wl-color-viewer-fg` (Lounge Night's text colour), and the viewer's focus ring uses the same
-  colour. Hover underlines Open original; the close button has no hover fill, since the chip
-  colour is a light surface in light themes.
-- **Legibility.** The scrim strength is set by the controls' contrast against the worst app
-  colour showing through: every control stays above 9.7:1 over every colour of every theme and
-  over white (targets: 4.5:1 text, 3:1 icon). A zoomed image can pan above the scrim and under
-  the controls, so they keep a faint halo in the scrim colour (a 1–3px text-shadow, a 1px
-  drop-shadow on the icon) for that case.
+- **Chrome.** No bar: the sender's nick, the message time, an "Open original" link (new tab, like
+  message links) and a close button sit straight on the backdrop along the top edge, inside the safe
+  areas. The backdrop is near-black in every theme, as in photo viewers: `--wl-color-viewer-scrim`,
+  black at 92%, so the app is barely visible behind the image. The controls are light on it in every
+  theme, in `--wl-color-viewer-fg` (Lounge Night's text colour), and the viewer's focus ring uses
+  the same colour. Hover underlines Open original; the close button has no hover fill, since the
+  chip colour is a light surface in light themes.
+- **Legibility.** The scrim strength is set by the controls' contrast against the worst app colour
+  showing through: every control stays above 15:1 even over white (targets: 4.5:1 text, 3:1 icon). A
+  zoomed image can pan above the scrim and under the controls, so they keep a faint halo in the
+  scrim colour (a 1–3px text-shadow, a 1px drop-shadow on the icon) for that case.
 - **Zoomed in.** The image may pan under the controls. They stay put and visible, with no fade
   while dragging, so Close is always one tap away; the faint halo keeps them readable over the
   image. At fit, the image sits inside a CSS fit box below the controls' 48px (44px on phone)

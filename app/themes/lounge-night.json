@@ -22,7 +22,7 @@
     "mentionBadge": "#eba293",
     "mentionBadgeFg": "#18221e",
     "overlayScrim": "rgba(0,0,0,.48)",
-    "viewerScrim": "rgba(24,34,30,.88)",
+    "viewerScrim": "rgba(0,0,0,.92)",
     "viewerFg": "#edefe5",
     "unread": "#eba293",
     "inputBg": "#202c24",

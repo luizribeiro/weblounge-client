@@ -28,7 +28,7 @@ describe("theme registry", () => {
       const block = themeStyleSheet()
         .split(`[data-theme="${theme}"]`)[1]
         ?.split("}")[0];
-      expect(block).toContain("--wl-color-viewer-scrim:rgba(24,34,30,.88)");
+      expect(block).toContain("--wl-color-viewer-scrim:rgba(0,0,0,.92)");
       expect(block).toContain("--wl-color-viewer-fg:#edefe5");
     }
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
