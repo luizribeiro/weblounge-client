@@ -1,19 +1,19 @@
 use crate::{EngineToUi, PeerPresence};
 
-/// Presence for every peer papo currently tracks as online through `MONITOR`.
-///
-/// Peers absent from the result have no reported presence: the network said they went offline,
-/// or never said anything about them.
-pub(crate) fn reported(
-    state: &papo::State,
-) -> impl Iterator<Item = (papo::Conversation, PeerPresence)> + '_ {
-    state.monitor_online().map(|user| {
-        let presence = if matches!(user.away(), papo::Away::Away { .. }) {
+/// Presence the network vouches for: the peer shares a channel with us or `MONITOR` reports it
+/// online. Anything else, including a `MONITOR` offline reply, is no presence at all.
+pub(crate) fn of(state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
+    let user = state.user(nick)?;
+    let visible = user.channels().len() != 0
+        || state
+            .monitor_online()
+            .any(|online| online.nick() == user.nick());
+    visible.then(|| {
+        if matches!(user.away(), papo::Away::Away { .. }) {
             PeerPresence::Away
         } else {
             PeerPresence::Online
-        };
-        (papo::Conversation::Private(user.nick().clone()), presence)
+        }
     })
 }
 
@@ -28,6 +28,10 @@ pub(crate) const fn may_change(event: &papo::Event) -> bool {
             | papo::Event::Connected(_)
             | papo::Event::Disconnected(_)
             | papo::Event::FeaturesChanged { .. }
+            | papo::Event::Joined(_)
+            | papo::Event::Parted(_)
+            | papo::Event::Kicked(_)
+            | papo::Event::ChannelSynced(_)
     )
 }
 
@@ -244,5 +248,48 @@ mod tests {
             [EngineToUi::BufferUpdated { buffer }]
                 if buffer.id == alice && buffer.peer_presence == Some(PeerPresence::Online)
         ));
+    }
+
+    #[tokio::test]
+    async fn a_peer_seen_in_a_shared_channel_is_online_until_it_leaves() {
+        let (client, mut events, mut wire) =
+            papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["away-notify"]).await;
+        next(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@h JOIN #room").await;
+        wire.server(":offline.test 353 weblounge = #room :weblounge alice")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        next(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        let nick = client
+            .state()
+            .user("alice")
+            .map(|user| user.nick().clone())
+            .expect("alice shares #room");
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
+        let presence = |model: &mut NetworkModel| {
+            model
+                .sync_peer_presence(&client.state())
+                .into_iter()
+                .map(|event| match event {
+                    EngineToUi::BufferUpdated { buffer } => (buffer.id, buffer.peer_presence),
+                    other => panic!("unexpected presence event {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(presence(&mut model), [(alice, Some(PeerPresence::Online))]);
+
+        wire.server(":alice!u@h PART #room").await;
+        next(&mut events, |event| matches!(event, papo::Event::Parted(_))).await;
+        assert_eq!(presence(&mut model), [(alice, None)]);
     }
 }

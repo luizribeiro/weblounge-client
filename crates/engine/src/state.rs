@@ -9,7 +9,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
     EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, PeerPresence,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -2575,20 +2575,15 @@ impl NetworkModel {
     }
 
     pub(crate) fn sync_peer_presence(&mut self, state: &papo::State) -> Vec<EngineToUi> {
-        let reported: HashMap<BufferId, PeerPresence> = crate::peer_presence::reported(state)
-            .filter_map(|(conversation, presence)| {
-                Some((self.buffer_id_for_conversation(&conversation)?, presence))
-            })
-            .collect();
         let shown: HashSet<BufferId> = self.buffer_order.iter().copied().collect();
         self.buffers
             .values_mut()
-            .filter(|buffer| {
-                buffer.projection.kind == BufferKind::Direct
-                    && shown.contains(&buffer.projection.id)
-            })
+            .filter(|buffer| shown.contains(&buffer.projection.id))
             .filter_map(|buffer| {
-                let presence = reported.get(&buffer.projection.id).copied();
+                let Some(NameKey::Direct(nick)) = buffer.key.as_ref() else {
+                    return None;
+                };
+                let presence = crate::peer_presence::of(state, nick);
                 (buffer.projection.peer_presence != presence).then(|| {
                     buffer.projection.peer_presence = presence;
                     EngineToUi::BufferUpdated {

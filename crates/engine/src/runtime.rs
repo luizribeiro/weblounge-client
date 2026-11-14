@@ -7569,13 +7569,20 @@ async fn delay(duration: Duration) {
                 break;
             }
         }
-        assert!(matches!(output.as_slice(), [
+        assert!(
+            matches!(output.as_slice(), [
             EngineToUi::BufferAdded { buffer },
             EngineToUi::BuffersChanged { .. },
             EngineToUi::DraftKeyChanged { .. },
+            EngineToUi::BufferUpdated { buffer: present },
             EngineToUi::FocusBufferRequested { buffer_id, .. },
             EngineToUi::CommandResult { .. },
-        ] if buffer.kind == BufferKind::Direct && buffer.title == "mel" && buffer.id == *buffer_id));
+        ] if buffer.kind == BufferKind::Direct
+            && buffer.title == "mel"
+            && buffer.id == *buffer_id
+            && present.peer_presence == Some(crate::PeerPresence::Online)),
+            "{output:?}"
+        );
 
         assert!(
             runtime
