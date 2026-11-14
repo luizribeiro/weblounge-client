@@ -4,7 +4,7 @@ import type { UploadAuthorization } from "./UploadAuthorization";
 /**
  * Where and how the UI may upload an image for one network.
  */
-export type UploadResolution = { "kind": "unavailable" } | { "kind": "offline" } | { "kind": "approval_required",
+export type UploadResolution = { "kind": "unavailable" } | { "kind": "offline" } | { "kind": "other_site" } | { "kind": "approval_required",
 /**
  * File host authority to name in the question.
  */

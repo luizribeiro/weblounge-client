@@ -3,6 +3,7 @@ import type { UploadOutcome } from "../../platform/upload/uploader";
 export type UploadFailure =
   | { readonly kind: "offline" }
   | { readonly kind: "unavailable" }
+  | { readonly kind: "other_site" }
   | { readonly kind: "declined" }
   | { readonly kind: "undecodable" }
   | Exclude<UploadOutcome, { readonly kind: "uploaded" }>;

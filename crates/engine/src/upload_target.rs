@@ -91,6 +91,7 @@ pub(crate) async fn resolve<B: KvBackend>(
         Release::Ask => UploadResolution::ApprovalRequired {
             host: filehost.authority,
         },
+        Release::Refuse => UploadResolution::OtherSite,
     }
 }
 
@@ -216,18 +217,22 @@ mod tests {
     #[tokio::test]
     async fn hosted_logins_ask_the_host_for_a_bearer() {
         let storage = MemoryKv::default();
-        let hosted = ConnectionIdentity::hosted(IRC.into());
+        let hosted = || ConnectionIdentity::hosted(IRC.into());
+        assert_eq!(
+            resolve(&storage, context(hosted(), Some("files.example.org")), None).await,
+            UploadResolution::Ready {
+                endpoint: "https://files.example.org/upload".into(),
+                authorization: UploadAuthorization::HostBearer,
+            }
+        );
         assert_eq!(
             resolve(
                 &storage,
-                context(hosted, Some("files.elsewhere.test")),
-                None
+                context(hosted(), Some("files.elsewhere.test")),
+                Some(approval("files.elsewhere.test", true))
             )
             .await,
-            UploadResolution::Ready {
-                endpoint: "https://files.elsewhere.test/upload".into(),
-                authorization: UploadAuthorization::HostBearer,
-            }
+            UploadResolution::OtherSite
         );
     }
 

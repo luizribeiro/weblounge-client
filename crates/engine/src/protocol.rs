@@ -151,6 +151,8 @@ pub enum UploadResolution {
     Unavailable,
     /// The network is not connected.
     Offline,
+    /// The file host is on another site than the hosted login's, which never sends it a token.
+    OtherSite,
     /// The file host is on another site; ask before sending the password.
     ApprovalRequired {
         /// File host authority to name in the question.

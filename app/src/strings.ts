@@ -93,6 +93,7 @@ export const messages = {
   "upload.approval_remember": "Remember for this network",
   "upload.failed.offline": "You’re offline.",
   "upload.failed.unavailable": "This network doesn’t accept uploads.",
+  "upload.failed.other_site": "This network’s upload host is on another site.",
   "upload.failed.declined": "Upload cancelled.",
   "upload.failed.unauthorized": "The file host refused your sign-in.",
   "upload.failed.too_large": "Image is too large.",

@@ -22,6 +22,8 @@ pub(crate) enum Approval {
 pub(crate) enum Release {
     Send,
     Ask,
+    /// Never offered: a token is not something a user can meaningfully approve for a stranger.
+    Refuse,
 }
 
 pub(crate) fn release_credential(
@@ -31,7 +33,9 @@ pub(crate) fn release_credential(
     approval: Approval,
 ) -> Release {
     match (credential, approval) {
-        (CredentialKind::Bearer, _) | (CredentialKind::Basic, Approval::Granted) => Release::Send,
+        (CredentialKind::Bearer, _) if same_site(irc_host, filehost_host) => Release::Send,
+        (CredentialKind::Bearer, _) => Release::Refuse,
+        (CredentialKind::Basic, Approval::Granted) => Release::Send,
         (CredentialKind::Basic, Approval::Absent) if same_site(irc_host, filehost_host) => {
             Release::Send
         }
@@ -82,16 +86,18 @@ mod tests {
     use super::{Approval, CredentialKind, Release, release_credential, same_site};
 
     #[test]
-    fn bearer_is_always_sent() {
-        for (irc, filehost) in [
-            ("irc.example.org", "files.example.org"),
-            ("irc.example.org", "files.attacker.test"),
-            ("127.0.0.1", "localhost"),
+    fn bearer_goes_only_to_its_own_site_whatever_the_approval() {
+        for (irc, filehost, expected) in [
+            ("beta.weblounge.org", "files.weblounge.org", Release::Send),
+            ("beta.weblounge.org", "beta.weblounge.org", Release::Send),
+            ("beta.weblounge.org", "files.attacker.test", Release::Refuse),
+            ("alice.github.io", "bob.github.io", Release::Refuse),
+            ("127.0.0.1", "localhost", Release::Refuse),
         ] {
             for approval in [Approval::Absent, Approval::Granted] {
                 assert_eq!(
                     release_credential(irc, filehost, CredentialKind::Bearer, approval),
-                    Release::Send,
+                    expected,
                     "{irc} {filehost} {approval:?}"
                 );
             }

@@ -72,6 +72,7 @@ export function failureMessage(failure: AttachmentFailure): string {
       return t("upload.failed.send");
     case "offline":
     case "unavailable":
+    case "other_site":
     case "declined":
     case "unauthorized":
     case "unsupported_type":

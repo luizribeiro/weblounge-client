@@ -6,6 +6,7 @@ describe("decodeUploadResolution", () => {
     for (const resolution of [
       { kind: "unavailable" },
       { kind: "offline" },
+      { kind: "other_site" },
       { kind: "approval_required", host: "files.elsewhere.test:8443" },
       {
         kind: "ready",

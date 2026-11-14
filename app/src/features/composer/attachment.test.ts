@@ -64,6 +64,9 @@ describe("labels and failures", () => {
       "Upload failed.",
     );
     expect(failureMessage({ kind: "offline" })).toBe("You’re offline.");
+    expect(failureMessage({ kind: "other_site" })).toBe(
+      "This network’s upload host is on another site.",
+    );
     expect(failureMessage({ kind: "rate_limited" })).toBe(
       "Too many uploads. Try again later.",
     );

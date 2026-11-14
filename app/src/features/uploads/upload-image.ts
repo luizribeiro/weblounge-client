@@ -72,6 +72,7 @@ async function authorizedTarget(
   switch (resolution.kind) {
     case "unavailable":
     case "offline":
+    case "other_site":
       return { kind: resolution.kind };
     case "approval_required":
       return { kind: "declined" };

@@ -138,7 +138,7 @@ describe("uploadImage", () => {
   });
 
   it("refuses offline and on networks without a file host", async () => {
-    for (const kind of ["offline", "unavailable"] as const) {
+    for (const kind of ["offline", "unavailable", "other_site"] as const) {
       const { subject, uploader } = targets([{ kind }]);
       await expect(
         uploadImage(screenshot, subject, { confirm: neverAsked }),

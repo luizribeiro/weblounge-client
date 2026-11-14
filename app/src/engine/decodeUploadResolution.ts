@@ -9,6 +9,7 @@ export function decodeUploadResolution(
   switch (value.kind) {
     case "unavailable":
     case "offline":
+    case "other_site":
       return { kind: value.kind };
     case "approval_required":
       return typeof value.host === "string"
