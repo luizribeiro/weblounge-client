@@ -1,13 +1,14 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
-import { IrcClient } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 
 const screenshots = path.join(
   process.cwd(),
@@ -25,142 +26,125 @@ test.describe("phone conversation closing against local Ergo", () => {
   test("swipes, undoes, opens sheets, confirms Leave, and keeps scrolling", async ({
     browserName,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36).slice(-6);
-    const channel = `#phone-close-${suffix}`;
-    let peer: IrcClient | undefined;
-    try {
-      await mkdir(screenshots, { recursive: true });
-      await installNativeFeelInstrumentation(page);
-      await page.emulateMedia({ colorScheme: "light" });
-      await page.goto("/?irc-password=weblounge-test");
-      await openChannel(page, channel);
-      peer = await IrcClient.connect(
-        `phone-${suffix}`,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      );
-      await page.getByRole("button", { name: "Back to chats" }).click();
+    const channel = irc.channelNamed("phone-close");
+    await mkdir(screenshots, { recursive: true });
+    await installNativeFeelInstrumentation(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto(irc.url());
+    await openChannel(page, irc, channel);
+    const peer = await irc.peer("phone", [channel]);
+    await page.getByRole("button", { name: "Back to chats" }).click();
 
-      await peer.privmsgConfirmed("weblounge", `phone close ${suffix}`);
-      const directRow = () => rowFor(page, peer?.nickname ?? "");
-      await expect(directRow()).toBeVisible();
-      const directWrapper = () => wrapperFor(directRow());
-      const shell = page.locator("[data-mobile-shell]");
+    await peer.privmsgConfirmed(irc.account, "phone close");
+    const directRow = () => rowFor(page, peer.nickname);
+    await expect(directRow()).toBeVisible();
+    const directWrapper = () => wrapperFor(directRow());
+    const shell = page.locator("[data-mobile-shell]");
 
-      await pointer(directWrapper(), "pointerdown", 0, 1_000);
-      await pointer(directWrapper(), "pointermove", 64, 1_100);
-      await expect(directWrapper()).toHaveAttribute(
-        "data-swipe-state",
-        "dragging",
-      );
-      await expectOffset(directWrapper(), -64);
-      await captureThemes(page, shell, "row-mid-swipe", browserName);
-      await pointer(directWrapper(), "pointerup", 64, 1_150);
-      await expect(directWrapper()).toHaveAttribute(
-        "data-swipe-state",
-        "revealed",
-      );
-      await expectOffset(directWrapper(), -148);
-      await captureThemes(page, shell, "actions-revealed", browserName);
+    await pointer(directWrapper(), "pointerdown", 0, 1_000);
+    await pointer(directWrapper(), "pointermove", 64, 1_100);
+    await expect(directWrapper()).toHaveAttribute(
+      "data-swipe-state",
+      "dragging",
+    );
+    await expectOffset(directWrapper(), -64);
+    await captureThemes(page, shell, "row-mid-swipe", browserName);
+    await pointer(directWrapper(), "pointerup", 64, 1_150);
+    await expect(directWrapper()).toHaveAttribute(
+      "data-swipe-state",
+      "revealed",
+    );
+    await expectOffset(directWrapper(), -148);
+    await captureThemes(page, shell, "actions-revealed", browserName);
 
-      await directRow().click();
-      await expect(directWrapper()).toHaveAttribute(
-        "data-swipe-state",
-        "closed",
-      );
-      await pointer(directWrapper(), "pointerdown", 0, 2_000);
-      await pointer(directWrapper(), "pointermove", 0, 2_050, 70);
-      await pointer(directWrapper(), "pointerup", 0, 2_100, 70);
-      await expect(directWrapper()).not.toHaveAttribute(
-        "data-swipe-state",
-        "dragging",
-      );
+    await directRow().click();
+    await expect(directWrapper()).toHaveAttribute("data-swipe-state", "closed");
+    await pointer(directWrapper(), "pointerdown", 0, 2_000);
+    await pointer(directWrapper(), "pointermove", 0, 2_050, 70);
+    await pointer(directWrapper(), "pointerup", 0, 2_100, 70);
+    await expect(directWrapper()).not.toHaveAttribute(
+      "data-swipe-state",
+      "dragging",
+    );
 
-      await pointer(directWrapper(), "pointerdown", 0, 3_000);
-      const actions = page.getByRole("dialog", {
-        name: `Actions for ${peer.nickname}`,
-      });
-      await expect(actions).toBeVisible();
-      await captureThemes(page, shell, "long-press-sheet", browserName);
-      await actions.getByRole("button", { name: "Cancel" }).click();
+    await pointer(directWrapper(), "pointerdown", 0, 3_000);
+    const actions = page.getByRole("dialog", {
+      name: `Actions for ${peer.nickname}`,
+    });
+    await expect(actions).toBeVisible();
+    await captureThemes(page, shell, "long-press-sheet", browserName);
+    await actions.getByRole("button", { name: "Cancel" }).click();
 
-      await pointer(directWrapper(), "pointerdown", 0, 4_000);
-      await pointer(directWrapper(), "pointermove", 270, 4_100);
-      await pointer(directWrapper(), "pointerup", 270, 4_150);
-      await expect(directRow()).toHaveCount(0);
-      const toast = page.getByRole("status").filter({
-        hasText: `Closed chat with ${peer.nickname}`,
-      });
-      await expect(toast).toBeVisible();
-      await captureThemes(page, shell, "undo-toast", browserName);
-      await toast.getByRole("button", { name: "Undo" }).click();
-      await expect(
-        page.getByRole("heading", { name: peer.nickname }),
-      ).toBeVisible();
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(directRow()).toBeVisible();
+    await pointer(directWrapper(), "pointerdown", 0, 4_000);
+    await pointer(directWrapper(), "pointermove", 270, 4_100);
+    await pointer(directWrapper(), "pointerup", 270, 4_150);
+    await expect(directRow()).toHaveCount(0);
+    const toast = page.getByRole("status").filter({
+      hasText: `Closed chat with ${peer.nickname}`,
+    });
+    await expect(toast).toBeVisible();
+    await captureThemes(page, shell, "undo-toast", browserName);
+    await toast.getByRole("button", { name: "Undo" }).click();
+    await expect(
+      page.getByRole("heading", { name: peer.nickname }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    await expect(directRow()).toBeVisible();
 
-      const channelRow = rowFor(page, channel);
-      await pointer(wrapperFor(channelRow), "pointerdown", 0, 5_000);
-      const channelActions = page.getByRole("dialog", {
-        name: `Actions for ${channel}`,
-      });
-      await expect(channelActions).toBeVisible();
-      await channelActions
-        .getByRole("button", { name: `Leave ${channel}` })
-        .click();
-      let confirmation = page.getByRole("alertdialog", {
-        name: `Leave ${channel}?`,
-      });
-      await expect(confirmation).toBeVisible();
-      await captureThemes(page, shell, "leave-confirm", browserName);
-      let parted = peer.waitForNextPart(channel, "weblounge");
-      await confirmation.getByRole("button", { name: "Leave" }).click();
-      await parted;
-      await expect(channelRow).toHaveCount(0);
+    const channelRow = rowFor(page, channel);
+    await pointer(wrapperFor(channelRow), "pointerdown", 0, 5_000);
+    const channelActions = page.getByRole("dialog", {
+      name: `Actions for ${channel}`,
+    });
+    await expect(channelActions).toBeVisible();
+    await channelActions
+      .getByRole("button", { name: `Leave ${channel}` })
+      .click();
+    let confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${channel}?`,
+    });
+    await expect(confirmation).toBeVisible();
+    await captureThemes(page, shell, "leave-confirm", browserName);
+    let parted = peer.waitForNextPart(channel, irc.account);
+    await confirmation.getByRole("button", { name: "Leave" }).click();
+    await parted;
+    await expect(channelRow).toHaveCount(0);
 
-      await openChannel(page, channel);
-      await page
-        .getByRole("button", { name: `Show details for ${channel}` })
-        .click();
-      const details = page.getByRole("dialog", {
-        name: `Details for ${channel}`,
-      });
-      await expect(details).toBeVisible();
-      await details.getByRole("button", { name: "Leave channel" }).click();
-      confirmation = page.getByRole("alertdialog", {
-        name: `Leave ${channel}?`,
-      });
-      parted = peer.waitForNextPart(channel, "weblounge");
-      await confirmation.getByRole("button", { name: "Leave" }).click();
-      await parted;
-      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await openChannel(page, irc, channel);
+    await page
+      .getByRole("button", { name: `Show details for ${channel}` })
+      .click();
+    const details = page.getByRole("dialog", {
+      name: `Details for ${channel}`,
+    });
+    await expect(details).toBeVisible();
+    await details.getByRole("button", { name: "Leave channel" }).click();
+    confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${channel}?`,
+    });
+    parted = peer.waitForNextPart(channel, irc.account);
+    await confirmation.getByRole("button", { name: "Leave" }).click();
+    await parted;
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 
-      await seedScrollableChannels(page, suffix);
-      await page.setViewportSize({ width: 402, height: 500 });
-      const list = page.locator("[data-mobile-chat-list]");
-      await expect
-        .poll(() =>
-          list.evaluate(
-            (element) => element.scrollHeight > element.clientHeight,
-          ),
-        )
-        .toBe(true);
-      await list.evaluate((element) => element.scrollBy(0, 500));
-      await expect
-        .poll(() => list.evaluate((element) => element.scrollTop))
-        .toBeGreaterThan(0);
-      await expect(list.locator('[data-swipe-state="dragging"]')).toHaveCount(
-        0,
-      );
+    await seedScrollableChannels(page, irc);
+    await page.setViewportSize({ width: 402, height: 500 });
+    const list = page.locator("[data-mobile-chat-list]");
+    await expect
+      .poll(() =>
+        list.evaluate((element) => element.scrollHeight > element.clientHeight),
+      )
+      .toBe(true);
+    await list.evaluate((element) => element.scrollBy(0, 500));
+    await expect
+      .poll(() => list.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await expect(list.locator('[data-swipe-state="dragging"]')).toHaveCount(0);
 
-      await resetNativeFeelLayoutShift(page);
-      await nativeFeelAudit(page);
-    } finally {
-      peer?.close();
-    }
+    await resetNativeFeelLayoutShift(page);
+    await nativeFeelAudit(page);
   });
 });
 
@@ -213,8 +197,12 @@ async function expectOffset(wrapper: Locator, expected: number): Promise<void> {
     .toBe(expected);
 }
 
-async function openChannel(page: Page, channel: string): Promise<void> {
-  const home = page.getByRole("button", { name: /^#weblounge-test/u });
+async function openChannel(
+  page: Page,
+  irc: IrcTestAccount,
+  channel: string,
+): Promise<void> {
+  const home = rowFor(page, irc.channel);
   await home.click();
   const composer = page.locator("[data-composer] textarea");
   await composer.fill(`/join ${channel}`);
@@ -222,11 +210,11 @@ async function openChannel(page: Page, channel: string): Promise<void> {
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 }
 
-async function seedScrollableChannels(page: Page, suffix: string) {
-  await page.getByRole("button", { name: /^#weblounge-test/u }).click();
-  let current = "#weblounge-test";
+async function seedScrollableChannels(page: Page, irc: IrcTestAccount) {
+  await rowFor(page, irc.channel).click();
+  let current = irc.channel;
   for (let index = 0; index < 5; index += 1) {
-    const channel = `#phone-scroll-${suffix}-${index}`;
+    const channel = irc.channelNamed(`phone-scroll-${index}`);
     const composer = page.getByRole("textbox", { name: `Message ${current}` });
     await composer.fill(`/join ${channel}`);
     await composer.press("Enter");
@@ -234,7 +222,7 @@ async function seedScrollableChannels(page: Page, suffix: string) {
     current = channel;
   }
   await page.getByRole("button", { name: "Back to chats" }).click();
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
 }
 
 async function captureThemes(
