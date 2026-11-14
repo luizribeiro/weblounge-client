@@ -56,6 +56,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F19: keyboard-open animation is off by default until Luiz approves a video; may return once glitch-free. Memory.
 - F20: multi-network generality: uploads, inline images and previews key off per-network capabilities, never weblounge hosts; hosted-web CSP `connect-src`/`img-src` list only weblounge hosts, so other filehosts need a CSP decision. Design 30, design 31.
 - F21: perf harness later: scroll/history, reconnect, navigation, six-pane, idle, hidden-tab and soak scenarios; memory targets (220MiB web, 350MiB desktop RSS); real-device and soju profiles; CI runner class. Design 21 §Later.
+- F22: message redaction (delete your own messages, show others' deletions), paused by Luiz until Monday 2026-11-16 or later. Design 32 is committed with the local Ergo `allow-individual-delete` setting and the engine receive slice (received `REDACT`, live and from history, becomes a `MessageKind::Redacted` tombstone row) on branch `worktree-agent-aaff4d5e54200e2d9`. Left: redaction bars UI and token, stability tests, the Delete request and confirmation with desktop and phone entry points, preview/unread/snapshot tombstones, notifications, Playwright coverage and screenshots. Design 32.
 
 - F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
 - F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
