@@ -21,6 +21,13 @@ const releaseIdentity = JSON.parse(readFileSync(join(crate, "tauri.release.conf.
 const BUNDLE_ID = releaseIdentity.identifier;
 const APP = `${releaseIdentity.productName}.app`;
 
+const LSREGISTER =
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+// Gatekeeper checks register each copy with LaunchServices, which could then open a deleted
+// temporary copy for the installed app's bundle ID.
+const forget = (app) => spawnSync(LSREGISTER, ["-u", app]);
+
 const run = (command, args) =>
   execFileSync(command, args, { cwd: repo, encoding: "utf8" }).trim();
 const step = (command, args) =>
@@ -154,6 +161,7 @@ function verify(image) {
     step("/usr/sbin/spctl", ["--assess", "--type", "execute", "--verbose", app]);
     step("/usr/bin/xcrun", ["stapler", "validate", app]);
   } finally {
+    forget(join(mount, APP));
     step("/usr/bin/hdiutil", ["detach", mount]);
     rmSync(mount, { recursive: true, force: true });
   }
@@ -184,8 +192,11 @@ const dryRun = process.argv.includes("--dry-run");
 const release = preflight();
 const work = mkdtempSync(join(tmpdir(), "weblounge-release-"));
 try {
-  const image = notarizedImage(work, notarizedApp(work), release.version);
+  const app = notarizedApp(work);
+  const image = notarizedImage(work, app, release.version);
   verify(image);
+  forget(app);
+  forget(join(work, "stage", APP));
   if (dryRun) {
     console.log(`dry run: verified ${image}; nothing was published`);
   } else {
