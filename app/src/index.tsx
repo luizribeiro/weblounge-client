@@ -48,6 +48,7 @@ import {
   registerProductionServiceWorker,
 } from "./service-worker";
 import "./styles/base.css";
+import "./styles/theme-fonts.css";
 import { t } from "./strings";
 import { installAppearance } from "./theme/appearance";
 
