@@ -1,5 +1,7 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import type { IrcClient } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import { requireWebKitWithErgo } from "./member-drawer";
 import { emulateStandalone } from "./mobile-platform";
 import {
   expectNoTransformOrTransition,
@@ -7,22 +9,23 @@ import {
   hasIntermediatePosition,
   type TransitionStyle,
 } from "./motion-assertions";
+import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 
-test.beforeEach(async ({ browserName, page }) => {
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
-  test.skip(browserName !== "webkit", "requires WebKit touch events");
+requireWebKitWithErgo();
+
+test.beforeEach(async ({ page, irc }) => {
   await emulateStandalone(page);
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(irc.url());
 });
 
-test("mobile back gestures cancel and complete aligned", async ({ page }) => {
-  await openChat(page);
+test("mobile back gestures cancel and complete aligned", async ({
+  page,
+  irc,
+}) => {
+  await openChat(page, irc);
   await drag(page, 1, 10, "pointercancel");
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
   await expectAligned(page);
 
   await drag(page, 2, 360, "pointerup");
@@ -32,8 +35,9 @@ test("mobile back gestures cancel and complete aligned", async ({ page }) => {
 
 test("mobile back gesture survives diagonal drift after locking", async ({
   page,
+  irc,
 }) => {
-  await openChat(page);
+  await openChat(page, irc);
   const prevented = await pointerAndTouchSequence(
     page,
     [
@@ -52,16 +56,20 @@ test("mobile back gesture survives diagonal drift after locking", async ({
 
 test("mobile back gesture survives bubbling child capture loss", async ({
   page,
+  irc,
 }) => {
-  await openChat(page);
+  await openChat(page, irc);
   await panThroughCaptureLoss(page, 100, 300, 390);
 
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
 });
 
-test("mobile back uses release velocity and direction", async ({ page }) => {
-  await openChat(page);
+test("mobile back uses release velocity and direction", async ({
+  page,
+  irc,
+}) => {
+  await openChat(page, irc);
   await pointerSequence(page, [
     [200, 300, 1_000],
     [215, 300, 1_010],
@@ -70,9 +78,9 @@ test("mobile back uses release velocity and direction", async ({ page }) => {
   ]);
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
 
-  await openChat(page);
+  await openChat(page, irc);
   await pointerSequence(page, [
     [50, 300, 2_000],
     [65, 300, 2_010],
@@ -80,13 +88,14 @@ test("mobile back uses release velocity and direction", async ({ page }) => {
     [250, 300, 2_550],
   ]);
   await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
 });
 
 test("mobile back starts anywhere and can grab a returning screen", async ({
   page,
+  irc,
 }) => {
-  await openChat(page);
+  await openChat(page, irc);
   await pointerSequence(page, [
     [180, 300, 1_000],
     [195, 300, 1_010],
@@ -103,8 +112,11 @@ test("mobile back starts anywhere and can grab a returning screen", async ({
   await expectAligned(page);
 });
 
-test("mobile back gesture velocity completes aligned", async ({ page }) => {
-  await openChat(page);
+test("mobile back gesture velocity completes aligned", async ({
+  page,
+  irc,
+}) => {
+  await openChat(page, irc);
   await drag(page, 3, 80, "pointerup");
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
@@ -112,9 +124,10 @@ test("mobile back gesture velocity completes aligned", async ({ page }) => {
 
 test("gesture diagnostics show and remember pan decisions", async ({
   page,
+  irc,
 }) => {
-  await page.goto("/?irc-password=weblounge-test&debug=gestures");
-  await openChat(page);
+  await page.goto(irc.url({ path: "/?debug=gestures" }));
+  await openChat(page, irc);
   await pointerSequence(page, [
     [160, 300, 1_000],
     [175, 300, 1_010],
@@ -128,16 +141,17 @@ test("gesture diagnostics show and remember pan decisions", async ({
   await expect(overlay).toContainText("horizontal@15,0");
   await expect(overlay).toContainText("up-cancel");
 
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(irc.url());
   await expect(overlay).toBeAttached();
-  await page.goto("/?irc-password=weblounge-test&debug=off");
+  await page.goto(irc.url({ path: "/?debug=off" }));
   await expect(overlay).toHaveCount(0);
 });
 
 test("mobile Back button animates the chat over the visible list", async ({
   page,
+  irc,
 }) => {
-  await openChat(page);
+  await openChat(page, irc);
   await startPopRecording(page);
   await page.getByRole("button", { name: "Back to chats" }).tap();
   const frames = await finishPopRecording(page);
@@ -176,181 +190,152 @@ test("mobile Back button animates the chat over the visible list", async ({
 
 test("mobile back reveals chat rows without repainting them", async ({
   page,
+  irc,
 }) => {
-  const suffix = Date.now().toString(36);
   const bots: IrcClient[] = [];
-  try {
-    await openChat(page);
-    await page.getByRole("button", { name: "Back to chats" }).tap();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await openChat(page, irc);
+  await page.getByRole("button", { name: "Back to chats" }).tap();
+  await expectSettled(page);
 
-    for (let index = 0; index < 11; index += 1) {
-      const nick = `swipe-fill-${index}-${suffix}`;
-      const bot = await IrcClient.connect(
-        nick,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        "#weblounge-test",
-      );
-      bots.push(bot);
-      await bot.privmsgConfirmed("weblounge", `swipe fill preview ${index}`);
-    }
-    const uncoveredRow = page.getByRole("button", {
-      name: `swipe-fill-10-${suffix}`,
-    });
-    await expect(uncoveredRow).toContainText("swipe fill preview 10");
-    await expect(uncoveredRow).toBeVisible();
-
-    const clip = await uncoveredRow.evaluate((row) => {
-      const bounds = row.getBoundingClientRect();
-      const y = Math.ceil(Math.max(0, bounds.top) + 4);
-      return {
-        height: Math.floor(
-          Math.min(40, bounds.bottom - y - 4, innerHeight - y - 4),
-        ),
-        width: 100,
-        x: 0,
-        y,
-      };
-    });
-    expect(clip.height).toBeGreaterThan(0);
-    const resting = await page.screenshot({ clip });
-
-    await uncoveredRow.click();
-    await expect(
-      page.getByRole("heading", { name: `swipe-fill-10-${suffix}` }),
-    ).toBeVisible();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await drag(page, 76, 220);
-    await expect(page.locator('[data-motion="dragging"]')).toHaveCount(1);
-    const chatLeft = await page
-      .locator("[data-mobile-chat]")
-      .evaluate(
-        (chat) => chat.parentElement?.getBoundingClientRect().left ?? 0,
-      );
-    expect(chatLeft).toBeGreaterThan(clip.width + 80);
-    expect(chatLeft).toBeLessThan(280);
-    const midDrag = await page.screenshot({ clip });
-
-    expect(midDrag.equals(resting)).toBe(true);
-    await releaseBackSwipe(page, 220);
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-  } finally {
-    for (const bot of bots) bot.close();
+  for (let index = 0; index < 11; index += 1) {
+    const bot = await irc.peer(`swipe-fill-${index}`);
+    bots.push(bot);
+    await bot.privmsgConfirmed(irc.account, `swipe fill preview ${index}`);
   }
+  const uncoveredNick = bots[10]?.nickname ?? "";
+  const uncoveredRow = page.getByRole("button", { name: uncoveredNick });
+  await expect(uncoveredRow).toContainText("swipe fill preview 10");
+  await expect(uncoveredRow).toBeVisible();
+
+  const clip = await uncoveredRow.evaluate((row) => {
+    const bounds = row.getBoundingClientRect();
+    const y = Math.ceil(Math.max(0, bounds.top) + 4);
+    return {
+      height: Math.floor(
+        Math.min(40, bounds.bottom - y - 4, innerHeight - y - 4),
+      ),
+      width: 100,
+      x: 0,
+      y,
+    };
+  });
+  expect(clip.height).toBeGreaterThan(0);
+  const resting = await page.screenshot({ clip });
+
+  await uncoveredRow.click();
+  await expectSettled(page, { conversation: uncoveredNick });
+  await drag(page, 76, 220);
+  await expect(page.locator('[data-motion="dragging"]')).toHaveCount(1);
+  const chatLeft = await page
+    .locator("[data-mobile-chat]")
+    .evaluate((chat) => chat.parentElement?.getBoundingClientRect().left ?? 0);
+  expect(chatLeft).toBeGreaterThan(clip.width + 80);
+  expect(chatLeft).toBeLessThan(280);
+  const midDrag = await page.screenshot({ clip });
+
+  expect(midDrag.equals(resting)).toBe(true);
+  await releaseBackSwipe(page, 220);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
-test("mobile keyboard Back uses the pop transition", async ({ page }) => {
-  await openChat(page);
+test("mobile keyboard Back uses the pop transition", async ({ page, irc }) => {
+  await openChat(page, irc);
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-motion="closing"]')).toHaveCount(1);
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
-test("mobile back gesture midpoint completes aligned", async ({ page }) => {
-  await openChat(page);
+test("mobile back gesture midpoint completes aligned", async ({
+  page,
+  irc,
+}) => {
+  await openChat(page, irc);
   await drag(page, 4, 200, "pointerup");
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
   await expectAligned(page);
 });
 
 test("mobile back swipe starts on selectable transcript content", async ({
   page,
+  irc,
 }) => {
-  const bot = await IrcClient.connect(
-    "swipe-audit",
-    "weblounge-bot",
-    "weblounge-bot-test",
-    "#weblounge-test",
+  const bot = await irc.peer("swipe-audit");
+  const text = "selectable swipe target";
+  await bot.privmsgConfirmed(irc.channel, text);
+  await openChat(page, irc);
+  const message = page.getByText(text, { exact: true });
+  await expect(message).toBeVisible();
+  await expect(page.locator("[data-message-list]")).toHaveCSS(
+    "touch-action",
+    "pan-y",
   );
-  const text = `selectable swipe target ${Date.now()}`;
-  try {
-    await bot.privmsgConfirmed("#weblounge-test", text);
-    await openChat(page);
-    const message = page.getByText(text, { exact: true });
-    await expect(message).toBeVisible();
-    await expect(page.locator("[data-message-list]")).toHaveCSS(
-      "touch-action",
-      "pan-y",
-    );
-    await expect(message).toHaveCSS("user-select", "text");
-    await waitForStableGeometry(
-      page.locator("[data-message-list]"),
-      "[data-message-row]",
-    );
+  await expect(message).toHaveCSS("user-select", "text");
+  await waitForStableGeometry(
+    page.locator("[data-message-list]"),
+    "[data-message-row]",
+  );
 
-    const messagePoint = await visiblePoint(message);
-    await panOverTranscript(page, messagePoint.x, messagePoint.y, 401, 600);
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expectAligned(page);
+  const messagePoint = await visiblePoint(message);
+  await panOverTranscript(page, messagePoint.x, messagePoint.y, 401, 600);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
 
-    await openChat(page);
-    await waitForStableGeometry(
-      page.locator("[data-message-list]"),
-      "[data-message-row]",
-    );
-    const reopenedMessagePoint = await visiblePoint(message);
-    await panOverTranscript(page, 5, reopenedMessagePoint.y, 80, 500);
-    await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-    await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await expectAligned(page);
+  await openChat(page, irc);
+  await waitForStableGeometry(
+    page.locator("[data-message-list]"),
+    "[data-message-row]",
+  );
+  const reopenedMessagePoint = await visiblePoint(message);
+  await panOverTranscript(page, 5, reopenedMessagePoint.y, 80, 500);
+  await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+  await expectSettled(page);
+  await expectAligned(page);
 
-    const listY = await page.locator("[data-message-list]").evaluate((list) => {
-      const bounds = list.getBoundingClientRect();
-      return bounds.top + 4;
-    });
-    await panOverTranscript(page, 5, listY, 240, 600);
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expectAligned(page);
+  const listY = await page.locator("[data-message-list]").evaluate((list) => {
+    const bounds = list.getBoundingClientRect();
+    return bounds.top + 4;
+  });
+  await panOverTranscript(page, 5, listY, 240, 600);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
 
-    await openChat(page);
-    await waitForStableGeometry(
-      page.locator("[data-message-list]"),
-      "[data-message-row]",
-    );
-    const fastMessagePoint = await visiblePoint(message);
-    await panOverTranscript(page, 5, fastMessagePoint.y, 80, 80);
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expectAligned(page);
-  } finally {
-    bot.close();
-  }
+  await openChat(page, irc);
+  await waitForStableGeometry(
+    page.locator("[data-message-list]"),
+    "[data-message-row]",
+  );
+  const fastMessagePoint = await visiblePoint(message);
+  await panOverTranscript(page, 5, fastMessagePoint.y, 80, 80);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
 });
 
 test("mobile back swipe starting on a nickname wins over its tap", async ({
   page,
+  irc,
 }) => {
-  const suffix = Date.now().toString().slice(-6);
-  const nick = `swipenick${suffix}`;
-  const marker = `nick swipe target ${suffix}`;
-  const bot = await IrcClient.connect(
-    nick,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    "#weblounge-test",
-  );
-  try {
-    await bot.privmsgConfirmed("#weblounge-test", marker);
-    await openChat(page);
-    const nickAction = page
-      .locator("[data-message-row]")
-      .filter({ has: page.getByText(marker, { exact: true }) })
-      .getByRole("button", { name: `Open direct message with ${nick}` });
-    await expect(nickAction).toBeVisible();
+  const bot = await irc.peer("swipenick");
+  const nick = bot.nickname;
+  const marker = "nick swipe target";
+  await bot.privmsgConfirmed(irc.channel, marker);
+  await openChat(page, irc);
+  const nickAction = page
+    .locator("[data-message-row]")
+    .filter({ has: page.getByText(marker, { exact: true }) })
+    .getByRole("button", { name: `Open direct message with ${nick}` });
+  await expect(nickAction).toBeVisible();
 
-    expect(await swipeFromNickname(nickAction)).toBe(true);
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expect(page.getByRole("heading", { name: nick })).toHaveCount(0);
-    await expectAligned(page);
-  } finally {
-    bot.close();
-  }
+  expect(await swipeFromNickname(nickAction)).toBe(true);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: nick })).toHaveCount(0);
+  await expectAligned(page);
 });
 
 test("mobile transcript leaves vertical touchmove available to native scrolling", async ({
   page,
+  irc,
 }) => {
-  await openChat(page);
+  await openChat(page, irc);
   const prevented = await page
     .locator("[data-message-list]")
     .evaluate((list) => {
@@ -387,8 +372,8 @@ test("mobile transcript leaves vertical touchmove available to native scrolling"
   await expect(page.locator("[data-mobile-chat]")).toBeVisible();
 });
 
-test("mobile history interrupts a gesture aligned", async ({ page }) => {
-  await openChat(page);
+test("mobile history interrupts a gesture aligned", async ({ page, irc }) => {
+  await openChat(page, irc);
   const shell = page.locator("[data-mobile-shell]");
   await shell.dispatchEvent("pointerdown", {
     clientX: 5,
@@ -413,16 +398,13 @@ test("mobile history interrupts a gesture aligned", async ({ page }) => {
     clientY: 300,
     pointerId: 5,
   });
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+  await expectSettled(page);
   await expectAligned(page);
 });
 
-async function openChat(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
-  await expect(page.locator("[data-motion]")).toHaveCount(0);
+async function openChat(page: Page, irc: IrcTestAccount): Promise<void> {
+  await page.getByRole("button", { name: irc.channel }).click();
+  await expectSettled(page, { conversation: irc.channel });
 }
 
 async function drag(

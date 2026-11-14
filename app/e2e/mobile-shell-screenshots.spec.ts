@@ -14,7 +14,9 @@ test.use({
   viewport: { width: 402, height: 874 },
 });
 
-test.describe("mobile shell screenshots against local Ergo", () => {
+test.describe("mobile shell screenshots against local Ergo", {
+  tag: "@serial",
+}, () => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",

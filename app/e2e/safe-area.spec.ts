@@ -15,7 +15,9 @@ interface SafeAreaProfile {
   readonly left: number;
 }
 
-test.describe("safe-area profiles against local Ergo", () => {
+test.describe("safe-area profiles against local Ergo", {
+  tag: "@serial",
+}, () => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
