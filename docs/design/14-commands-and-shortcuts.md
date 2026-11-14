@@ -153,7 +153,7 @@ and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-disco
 | `navigation.back` / `navigation.forward` | `⌘[` / `⌘]` | `Alt+Left` / `Alt+Right` | `Mod+Alt+[` / `Mod+Alt+]` | Slack / ours web fallback |
 | `search.open` — search current surface | `⌘F` | `Ctrl+F` | same; intentionally replaces find-in-page | both |
 | `buffer.open` — join channel/start DM | `⇧⌘K` | `Ctrl+Shift+K` | macOS: `⇧⌘K`; Linux/Windows: `Ctrl+Alt+K` | Slack / ours web fallback |
-| `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down` | `Alt+Up` / `Alt+Down` | same; never in text | both |
+| `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down`, never in text; also `⌃⇧Tab` / `⌃Tab` and `⇧⌘[` / `⇧⌘]`, even from the composer | `Alt+Up` / `Alt+Down`, never in text; also `Ctrl+Shift+Tab` / `Ctrl+Tab` | `⌥Up` / `⌥Down` (`Alt+Up` / `Alt+Down`) only; never in text | both / browser tabs |
 | `buffer.previous-unread` / `buffer.next-unread` | `⌥⇧Up` / `⌥⇧Down` | `Alt+Shift+Up` / `Alt+Shift+Down` | same; never in text | both |
 | `buffer.jump-important` | `⌥A` | `Alt+A` | same; physical `KeyA`, never in text | irssi / ours |
 | `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | macOS/Windows: `Alt+1…9`; Linux: `Ctrl+Alt+1…9` | ours |
@@ -303,6 +303,7 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 | native `Mod+[`/`]`, `Alt+Left/Right`; web `Mod+Alt+[`/`]` | Safari and other browsers own the native history chords, and Chrome macOS owns `⌥⌘Left/Right` for tabs. Brackets avoid both published sets. `Ctrl+Alt` may be AltGr, so the AltGraph guard wins. **Verify (manual/Playwright):** browser delivery and GNOME/KDE custom defaults. |
 | native `Mod+Shift+K`; web macOS `Mod+Shift+K`; web Linux/Windows `Ctrl+Alt+K` | Firefox owns `Ctrl+Shift+K` on Linux/Windows and `⌥⌘K` on macOS for Web Console. The platform split avoids both; `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** Safari and Linux AltGr layouts. |
 | `Alt+Up/Down`, `Alt+Shift+Up/Down`, `Alt+A` | These overlap macOS text movement, Windows/NVDA reading, menu mnemonics, and Option-produced characters. They use `event.code` where required and never run in text. **Verify (manual/Playwright):** NVDA focus mode and installed webviews. |
+| native `Ctrl+Tab`/`Ctrl+Shift+Tab`; native macOS `⇧⌘]`/`⇧⌘[` | Every browser owns these to switch tabs, and desktop browsers do not deliver `Ctrl+Tab` to the page, so the web keeps `Alt+Up/Down` only. In the Mac app and Tauri the page owns the window, so `buffer.next`/`buffer.previous` take the Safari/Chrome tab chords, step through the sidebar rows in drawn order and wrap at the ends. They match the literal Control key (never `⌘Tab`, which macOS owns) and the physical bracket keys (`code`), because Shift changes the produced character. The composer's Tab completion ignores Control/Command+Tab. **Verify (manual):** WKWebView delivery of `⌃Tab` with VoiceOver on. |
 | native `Mod+1…9`; web `Alt+1…9` | Chrome, Firefox, and Safari own `Mod+digits`. On Linux both Firefox and Chrome own `Alt+digits`, so Linux gets `Ctrl+Alt+digits`; AltGraph is never captured. Windows menu access and macOS Option characters were checked. **Verify (manual/Playwright):** all digit rows on each browser/OS. |
 | native `Shift+Esc`; web `Mod+Alt+A` | Chrome/Firefox may own Shift+Escape for Task Manager, so it is Tauri-only. The web chord avoids Chrome's `Ctrl+Shift+A` tab search and keeps `Alt+A` available for important unread. **Verify (manual/Playwright):** VoiceOver and Linux AltGr behavior. |
 | `Alt+PgUp` | Browsers use `Ctrl+PgUp/PgDn` for tabs; no major OS/browser default was found for Alt+PageUp. Screen readers may interpret paging in browse mode. **Verify (manual/Playwright):** NVDA and VoiceOver from the composer. |
@@ -319,9 +320,11 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 | message-mode `R`/`E`, pane-mode `W`/`X`/`Z` | Plain letters never run from ordinary focus; the user must explicitly enter the visible owning mode. IME/dead-key guards apply and unmatched keys are not consumed. |
 | composer `Mod+Up/Down`; list `Ctrl+P/N`; `Mod+C` | These overlap document/readline movement, print/new-window, and copy. They are limited to their owning widgets; DOM selection and native copy win before selected-message copy. |
 
-Defaults do not use `Mod+T/N/Q`, `Ctrl+Tab`, `Ctrl+Shift+T/N`, `Alt+F4`, system Meta/Super
-shortcuts, `Mod+Alt+arrows`, or `Ctrl+Alt+Shift+arrows`. User overrides may request host-safe
-bindings in Tauri but validation rejects reserved chords for web.
+Web defaults do not use `Mod+T/N/Q`, `Ctrl+Tab`, `Ctrl+Shift+T/N`, `Alt+F4`, system Meta/Super
+shortcuts, `Mod+Alt+arrows`, or `Ctrl+Alt+Shift+arrows`. `Ctrl+Tab`, `Ctrl+Shift+Tab` and macOS
+`⇧⌘[`/`]` are native-only: browsers keep them for tab switching and do not reliably deliver them,
+while the Mac app and Tauri receive them. User overrides may request host-safe bindings in Tauri
+but validation rejects reserved chords for web.
 
 ## Help and binding presentation
 
@@ -441,6 +444,8 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
 - Luiz, 2026-11-13: number `buffer.jump-N` by visible sidebar conversation rows, show the
   numbers while the jump chord is held, give each row one trailing slot (hint, then close, then
   badge), and use the native keymap in the Mac app.
+- Luiz, 2026-11-14: in native shells, add the browser tab chords (`⌃Tab`/`⌃⇧Tab`, and `⇧⌘]`/`⇧⌘[`
+  on macOS) to `buffer.next`/`buffer.previous`; the web keeps `⌥Up`/`⌥Down`.
 
 ## Questions for Luiz
 
