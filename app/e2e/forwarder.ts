@@ -29,6 +29,15 @@ export class Forwarder {
     return this.#post("/inject", {}, line);
   }
 
+  /** Swaps equal-length text in this test's incoming IRC lines. */
+  async rewriteIncomingText(from: string, to: string): Promise<void> {
+    await this.#post("/rewrite-text", { from, to });
+  }
+
+  async clearTextRewrites(): Promise<void> {
+    await this.#post("/clear-text-rewrites");
+  }
+
   async #post(
     path: string,
     parameters: Readonly<Record<string, string>> = {},

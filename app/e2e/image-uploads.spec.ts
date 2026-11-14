@@ -1,26 +1,20 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import {
-  type APIRequestContext,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { E2E_FILEHOST_ORIGIN, E2E_FOREIGN_FILEHOST_ORIGIN } from "../csp";
 import { screenshotWithInter } from "./inter-font";
-import { IrcClient } from "./irc-client";
+import type { IrcClient } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 
 const screenshots =
   process.env.WEBLOUNGE_UPLOAD_SCREENSHOTS ??
   path.join(process.cwd(), "e2e", "screenshots", "image-uploads");
-const forwarder =
-  process.env.WEBLOUNGE_E2E_FORWARDER_URL ?? "http://127.0.0.1:8091";
 
 interface RecordedUpload {
   readonly authorization: string | null;
@@ -46,30 +40,27 @@ test.describe("image uploads against local Ergo", () => {
   );
   test.use({ ignoreHTTPSErrors: true });
 
-  test.beforeEach(async ({ page }) => {
-    await control(page.request, "reset");
-    await clearTextRewrites();
-  });
-  test.afterEach(async () => clearTextRewrites());
+  test.afterEach(async ({ irc }) => irc.forwarder.clearTextRewrites());
 
   test("pastes, uploads with progress on Enter and sends caption and URL", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "the phone layout has its own test");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await withDirectPeer(page, "send", async (peer, composer) => {
+    await withDirectPeer(page, irc, "send", async (peer, composer) => {
       await pasteImage(composer, { width: 1000, height: 1000, noise: true });
       const chip = page.locator("[data-attachment-chip]");
       await expect(chip).toHaveAttribute("data-state", "ready");
       await expect(chip).toContainText(/^Image · \d+\.\d MB/u);
       await expectThumbnailLoaded(chip);
       await expect(composer).toHaveValue("");
-      expect(await uploads(page.request)).toEqual([]);
+      expect(await uploads(page.request, irc)).toEqual([]);
       await captureThemes(page, "desktop-chip");
 
       const key = `send${Date.now().toString(36)}`;
-      await control(page.request, "hold", { key });
+      await control(page.request, irc, "hold", { key });
       await composer.fill("look at this");
       const sendStarted = await now(page);
       await composer.press("Enter");
@@ -93,7 +84,7 @@ test.describe("image uploads against local Ergo", () => {
       const received = await peer.waitForPrivmsg(
         peer.nickname,
         `look at this ${E2E_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
       const url = /(https:\/\/\S+)/u.exec(received)?.[1] ?? "";
       await expect(chip).toHaveCount(0);
@@ -105,9 +96,9 @@ test.describe("image uploads against local Ergo", () => {
         .locator("[data-inline-image]");
       await expect(slot).toHaveAttribute("data-inline-image", "loaded");
 
-      const [upload] = await uploads(page.request);
+      const [upload] = await uploads(page.request, irc);
       expect(upload?.authorization).toBe(
-        `Basic ${Buffer.from("weblounge:weblounge-test").toString("base64")}`,
+        `Basic ${Buffer.from(`${irc.account}:${irc.password}`).toString("base64")}`,
       );
       expect(upload?.contentType).toBe("image/png");
       expect(upload?.disposition).toBe("inline; filename*=UTF-8''image.png");
@@ -118,10 +109,11 @@ test.describe("image uploads against local Ergo", () => {
 
   test("strips GPS EXIF from a pasted JPEG and sends a URL alone", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await withDirectPeer(page, "exif", async (peer, composer) => {
+    await withDirectPeer(page, irc, "exif", async (peer, composer) => {
       await pasteImage(composer, {
         width: 64,
         height: 48,
@@ -133,9 +125,9 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `${E2E_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
-      const [upload] = await uploads(page.request);
+      const [upload] = await uploads(page.request, irc);
       const body = Buffer.from(upload?.body ?? "", "base64");
       expect(body.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
       expect(body.includes(Buffer.from("GPS-37.7749N"))).toBe(false);
@@ -146,10 +138,11 @@ test.describe("image uploads against local Ergo", () => {
 
   test("removes the attachment with × and with Escape", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await withDirectPeer(page, "remove", async (_peer, composer) => {
+    await withDirectPeer(page, irc, "remove", async (_peer, composer) => {
       const chip = page.locator("[data-attachment-chip]");
       await pasteImage(composer, { width: 120, height: 80 });
       await page.getByRole("button", { name: "Remove image" }).click();
@@ -163,16 +156,17 @@ test.describe("image uploads against local Ergo", () => {
       await composer.fill("");
       await composer.press("Escape");
       await expect(chip).toHaveCount(0);
-      expect(await uploads(page.request)).toEqual([]);
+      expect(await uploads(page.request, irc)).toEqual([]);
     });
   });
 
   test("lets copied text paste through beside the image", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await withDirectPeer(page, "text", async (_peer, composer) => {
+    await withDirectPeer(page, irc, "text", async (_peer, composer) => {
       const prevented = await pasteImage(composer, {
         width: 40,
         height: 40,
@@ -185,11 +179,12 @@ test.describe("image uploads against local Ergo", () => {
 
   test("refuses to upload while offline and keeps the image", async ({
     page,
+    irc,
     context,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await withDirectPeer(page, "offline", async (_peer, composer) => {
+    await withDirectPeer(page, irc, "offline", async (_peer, composer) => {
       await pasteImage(composer, { width: 120, height: 80 });
       await context.setOffline(true);
       await expect(
@@ -202,17 +197,18 @@ test.describe("image uploads against local Ergo", () => {
       await expect(chip).toContainText("You’re offline.");
       await expect(composer).toHaveValue("later");
       await context.setOffline(false);
-      expect(await uploads(page.request)).toEqual([]);
+      expect(await uploads(page.request, irc)).toEqual([]);
     });
   });
 
   test("shrinks once after a 413 with Upload-Limit", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await withDirectPeer(page, "shrink", async (peer, composer) => {
-      await control(page.request, "limit", { bytes: "1000000" });
+    await withDirectPeer(page, irc, "shrink", async (peer, composer) => {
+      await control(page.request, irc, "limit", { bytes: "1000000" });
       await pasteImage(composer, { width: 1000, height: 1000, noise: true });
       await composer.fill("smaller");
       await composer.press("Enter");
@@ -220,9 +216,9 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `smaller ${E2E_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
-      const [first, second] = await uploads(page.request);
+      const [first, second] = await uploads(page.request, irc);
       expect(first?.size).toBeGreaterThan(1_000_000);
       expect(second?.size).toBeLessThanOrEqual(1_000_000);
       expect(second?.contentType).toBe("image/jpeg");
@@ -231,18 +227,19 @@ test.describe("image uploads against local Ergo", () => {
 
   test("shows refusals on the chip and Retry sends", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await withDirectPeer(page, "refused", async (peer, composer) => {
+    await withDirectPeer(page, irc, "refused", async (peer, composer) => {
       const chip = page.locator("[data-attachment-chip]");
       await pasteImage(composer, { width: 320, height: 200 });
-      await control(page.request, "next", { status: "415" });
+      await control(page.request, irc, "next", { status: "415" });
       await composer.press("Enter");
       await approveUpload(page);
       await expect(chip).toContainText("Can’t upload this kind of image.");
-      await control(page.request, "next", { status: "429" });
+      await control(page.request, irc, "next", { status: "429" });
       await chip.getByRole("button", { name: "Retry" }).click();
       await expect(chip).toContainText("Too many uploads. Try again later.");
       await expect(chip).toHaveAttribute("data-state", "failed");
@@ -252,20 +249,24 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `${E2E_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
       await expect(chip).toHaveCount(0);
-      expect(await uploads(page.request)).toHaveLength(3);
+      expect(await uploads(page.request, irc)).toHaveLength(3);
     });
   });
 
   test("notes that a network without a file host takes no uploads", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
-    await rewriteIncomingText("draft/FILEHOST=", "draft/XILEHOST=");
-    await withDirectPeer(page, "nohost", async (_peer, composer) => {
+    await irc.forwarder.rewriteIncomingText(
+      "draft/FILEHOST=",
+      "draft/XILEHOST=",
+    );
+    await withDirectPeer(page, irc, "nohost", async (_peer, composer) => {
       const prevented = await pasteImage(composer, { width: 40, height: 40 });
       expect(prevented).toBe(false);
       await expect(
@@ -281,12 +282,13 @@ test.describe("image uploads against local Ergo", () => {
 
   test("asks before sending the password to another site and remembers", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(isMobile, "covered on desktop");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await rewriteIncomingText("127.0.0.1:4175", "localhost:4175");
-    await withDirectPeer(page, "foreign", async (peer, composer) => {
+    await irc.forwarder.rewriteIncomingText("127.0.0.1:4175", "localhost:4175");
+    await withDirectPeer(page, irc, "foreign", async (peer, composer) => {
       await pasteImage(composer, { width: 320, height: 200 });
       await composer.fill("first");
       await composer.press("Enter");
@@ -299,7 +301,7 @@ test.describe("image uploads against local Ergo", () => {
       await expect(
         dialog.getByRole("button", { name: "Cancel" }),
       ).toBeFocused();
-      expect(await uploads(page.request)).toEqual([]);
+      expect(await uploads(page.request, irc)).toEqual([]);
       await captureThemes(page, "desktop-approval");
 
       await dialog
@@ -311,7 +313,7 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `first ${E2E_FOREIGN_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
 
       await pasteImage(composer, { width: 320, height: 200 });
@@ -320,19 +322,20 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `second ${E2E_FOREIGN_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
       await expect(page.getByRole("alertdialog")).toHaveCount(0);
-      expect(await uploads(page.request)).toHaveLength(2);
+      expect(await uploads(page.request, irc)).toHaveLength(2);
     });
   });
 
   test("shows the chip inside the phone composer and sends", async ({
     page,
+    irc,
     isMobile,
   }) => {
     test.skip(!isMobile, "phone layout");
-    await withDirectPeer(page, "phone", async (peer, composer) => {
+    await withDirectPeer(page, irc, "phone", async (peer, composer) => {
       await composer.tap();
       await pasteImage(composer, { width: 900, height: 1200, noise: true });
       const chip = page.locator("[data-attachment-chip]");
@@ -342,7 +345,7 @@ test.describe("image uploads against local Ergo", () => {
       await composer.fill("from my phone");
       await captureThemes(page, "phone-chip");
       const key = `phone${Date.now().toString(36)}`;
-      await control(page.request, "hold", { key });
+      await control(page.request, irc, "hold", { key });
       const sendStarted = await now(page);
       await page.locator("[data-composer-send]").first().tap();
       await approveUpload(page);
@@ -355,7 +358,7 @@ test.describe("image uploads against local Ergo", () => {
       await peer.waitForPrivmsg(
         peer.nickname,
         `from my phone ${E2E_FILEHOST_ORIGIN}/`,
-        "weblounge",
+        irc.account,
       );
       await expect(chip).toHaveCount(0);
       await expectOnlyComposerShifts(page, sendStarted);
@@ -366,36 +369,22 @@ test.describe("image uploads against local Ergo", () => {
 
 async function withDirectPeer(
   page: Page,
+  irc: IrcTestAccount,
   label: string,
   body: (peer: IrcClient, composer: Locator) => Promise<void>,
 ): Promise<void> {
-  const suffix = `${label}${Date.now().toString(36)}`;
   await installNativeFeelInstrumentation(page);
   await recordShiftsOutsideComposer(page);
-  await page.goto("/?irc-password=weblounge-test");
-  await expect(
-    page.getByRole("button", { name: /^#weblounge-test/u }).first(),
-  ).toBeVisible();
-  const peer = await IrcClient.connect(
-    `up${suffix}`.slice(0, 16),
-    "weblounge-bot",
-    "weblounge-bot-test",
-    `#up-${suffix}`,
-  );
-  try {
-    await peer.privmsgConfirmed("weblounge", `uploads ${suffix}`);
-    const direct = page.getByRole("button", {
-      name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
-    });
-    await direct.click();
-    await expect(
-      page.getByRole("heading", { name: peer.nickname }),
-    ).toBeVisible();
-    await resetNativeFeelLayoutShift(page);
-    await body(peer, page.getByLabel(`Message ${peer.nickname}`));
-  } finally {
-    peer.close();
-  }
+  await page.goto(irc.url());
+  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+  const peer = await irc.peer(`up-${label}`, [irc.channelNamed(`up-${label}`)]);
+  await peer.privmsgConfirmed(irc.account, `uploads ${label}${irc.id}`);
+  await page
+    .getByRole("button", { name: new RegExp(`^${peer.nickname}(?:,|$)`, "u") })
+    .click();
+  await expectSettled(page, { conversation: peer.nickname });
+  await resetNativeFeelLayoutShift(page);
+  await body(peer, page.getByLabel(`Message ${peer.nickname}`));
 }
 
 /** Dispatches a synthetic clipboard paste; resolves whether the app prevented it. */
@@ -491,10 +480,12 @@ async function progressOf(chip: Locator): Promise<number> {
 
 async function control(
   request: APIRequestContext,
-  action: "reset" | "hold" | "limit" | "next",
+  irc: IrcTestAccount,
+  action: "hold" | "limit" | "next",
   parameters: Record<string, string> = {},
 ): Promise<void> {
   const url = new URL(`/control/${action}`, E2E_FILEHOST_ORIGIN);
+  url.searchParams.set("scope", irc.account);
   for (const [name, value] of Object.entries(parameters))
     url.searchParams.set(name, value);
   const response = await request.post(url.href);
@@ -503,25 +494,12 @@ async function control(
 
 async function uploads(
   request: APIRequestContext,
+  irc: IrcTestAccount,
 ): Promise<readonly RecordedUpload[]> {
-  const response = await request.get(`${E2E_FILEHOST_ORIGIN}/control/uploads`);
+  const url = new URL("/control/uploads", E2E_FILEHOST_ORIGIN);
+  url.searchParams.set("scope", irc.account);
+  const response = await request.get(url.href);
   return (await response.json()) as RecordedUpload[];
-}
-
-async function rewriteIncomingText(from: string, to: string): Promise<void> {
-  const url = new URL("/rewrite-text", forwarder);
-  url.searchParams.set("from", from);
-  url.searchParams.set("to", to);
-  const response = await fetch(url, { method: "POST" });
-  if (!response.ok)
-    throw new Error(`could not arm rewrite: ${response.status}`);
-}
-
-async function clearTextRewrites(): Promise<void> {
-  const response = await fetch(new URL("/clear-text-rewrites", forwarder), {
-    method: "POST",
-  });
-  if (!response.ok) throw new Error("could not clear rewrites");
 }
 
 async function captureThemes(page: Page, name: string): Promise<void> {
