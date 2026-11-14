@@ -20,6 +20,7 @@ Each theme is one checked JSON file at `app/themes/<id>.json`:
 export interface ThemeDefinition {
   readonly id: ThemeId;
   readonly name: string;
+  readonly description: string;
   readonly order: number;
   readonly appearance: "light" | "dark";
   readonly colors: ColorTokens;
@@ -43,6 +44,11 @@ treatment without coupling them to error UI. Initial `focusRing` values use each
 `viewerScrim` and `viewerFg` are the image viewer's backdrop and the colour of the controls drawn
 on it (design 30): near-black (black at 92%), much stronger than `overlayScrim`, with light text,
 in every theme, as in photo viewers. Every theme, light ones included, uses the same values.
+The shape tokens add `icon` (network logos and settings tiles) and `round`, the largest rounding a
+theme allows: 999px in soft themes, its control radius in square ones. Pills, round buttons and the
+phone's sheets and toasts use `round` directly or as a cap, `min(14px, var(--wl-radius-round))`, so
+Terminal's square corners reach every surface. Typography adds `title`, the font of conversation,
+panel and settings titles (Fraunces in Retro).
 The accepted milestone-1 colour grammar is the appendix formats (hex and `rgb[a]` where needed);
 arbitrary CSS and `oklch` are not accepted.
 
@@ -73,6 +79,17 @@ change.
 The root carries `data-theme` and matching `color-scheme`. Theme changes mutate variables only;
 message rows do not subscribe to individual values. The generated sheet also emits the global
 motion variables and their reduced-motion overrides.
+
+## Shipped themes
+
+In picker order: Lounge, Lounge Night, Black, Modern, Terminal, Retro. Lounge Night and Lounge are
+the System pair. Modern, Terminal and Retro take the prototype's `THEMES` values; tokens the
+prototype lacks follow each theme's own family (focus ring = accent, mention badge = the unread or
+error red). Black is Lounge Night for OLED screens: `#000` for the app, surfaces and panels,
+near-black only where layering needs it (`#0a0a0a` inputs and code, `#111` chips and panel
+borders, `#1a1f1c` content borders and `#1a241d` selection), and Lounge Night's accent and text
+colours, which already pass on black (fg 18.1:1, muted 9.7:1, accent 13.7:1, unread 10.1:1).
+A unit test checks text pairs at 4.5:1 and indicators at 3:1 in every theme.
 
 ## Selection and system appearance
 
@@ -105,9 +122,22 @@ preview cards from those tokens, not screenshots or nested apps. The decorative 
 
 Fonts follow the brief: Inter, the system monospace stack, Geist/Geist Mono, IBM Plex Mono, Work
 Sans, Fraunces, and Courier Prime. The named bundled font families use SIL OFL licensing and may be
-redistributed. Assets are self-hosted, fingerprinted, subset where appropriate, and use metric
-adjustments plus `font-display: swap` to avoid layout shift. Mobile's base `+1px` is a shell
-typography variable, not another theme.
+redistributed; the licences sit next to the files in `app/src/assets/fonts/`. Assets are
+self-hosted (the CSP allows no font host), fingerprinted, and use metric adjustments plus
+`font-display: swap` to avoid layout shift. Mobile's base `+1px` is a shell typography variable,
+not another theme.
+
+Inter is preloaded for the first paint. The other families are woff2 latin and latin-ext subsets
+(`unicode-range`) with only the weights the UI uses: variable 400–700 for Geist, Geist Mono and
+Work Sans, 500–700 for Fraunces, static 400/500/600/700 IBM Plex Mono and 400/700 Courier Prime.
+They are declared once in `theme-fonts.css`, together with metric-matched `<Family> Fallback`
+faces over local Arial, Courier New or Times New Roman. Browsers fetch a face only when rendered
+text uses its family, and only a theme's tokens name these families, so Lounge downloads none of
+them on the page (a Playwright test checks this; another checks that Terminal fetches only IBM
+Plex Mono). Settings cards draw previews without text, so opening Settings loads no theme fonts.
+The service worker still precaches every hashed asset, fonts included, after load and at low
+priority, so a chosen theme keeps its fonts offline. Latin-subset bytes per theme: Modern 52 KB,
+Terminal 60 KB, Retro 106 KB (latin-ext only when such characters appear).
 
 ## Network icons and brand assets
 

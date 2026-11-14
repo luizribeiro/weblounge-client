@@ -106,6 +106,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-14: four more themes: Black (pure black Lounge Night for OLED), Modern, Terminal and
+  Retro. Their fonts (Geist, Geist Mono, IBM Plex Mono, Work Sans, Fraunces, Courier Prime) are
+  self-hosted woff2 subsets that load only when the theme is active. New shape tokens `icon` and
+  `round` and a `title` font carry square corners, round avatars and serif titles everywhere.
 - 2026-11-14: the image viewer's scrim is near-black (`viewerScrim`) in every theme; the phone filter
   chips are 35px tall with a 44px tap target, and their layout-shift test now scopes to the chip
   interaction.
