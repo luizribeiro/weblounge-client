@@ -1,0 +1,54 @@
+.slot {
+  --wl-inline-image-height: var(--wl-density-message-image-slot-height);
+  --wl-inline-image-max-width: 360px;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  align-self: flex-start;
+  background: var(--wl-color-chip);
+  block-size: var(--wl-inline-image-height);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-control);
+  box-sizing: border-box;
+  cursor: pointer;
+  display: block;
+  inline-size: clamp(
+    64px,
+    calc(var(--wl-inline-image-height) * var(--wl-inline-image-aspect, 4 / 3)),
+    var(--wl-inline-image-max-width)
+  );
+  max-inline-size: 100%;
+  overflow: hidden;
+}
+.slot[data-presentation="mobile"] {
+  --wl-inline-image-height: var(--wl-density-message-mobile-image-slot-height);
+  --wl-inline-image-max-width: 100%;
+}
+.image {
+  -webkit-user-drag: none;
+  block-size: 100%;
+  display: block;
+  inline-size: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--wl-motion-fade) var(--wl-motion-standard-curve);
+}
+.image[data-loaded="true"] {
+  opacity: 1;
+}
+.failure {
+  align-items: center;
+  block-size: 100%;
+  box-sizing: border-box;
+  color: var(--wl-color-muted);
+  display: flex;
+  font-size: 12px;
+  font-style: normal;
+  justify-content: center;
+  line-height: var(--wl-message-system-line-height, 18px);
+  padding-inline: 12px;
+  text-align: center;
+}
+.openLink {
+  color: var(--wl-color-accent);
+  text-decoration: underline;
+}
