@@ -390,7 +390,7 @@ export function Composer(props: ComposerProps) {
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!accept(undefined, false)) submit();
-    } else if (event.key === "Tab") {
+    } else if (event.key === "Tab" && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       const cycle = tabCycle;
       if (

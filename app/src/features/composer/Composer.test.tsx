@@ -620,6 +620,27 @@ it("cycles explicit Tab candidates with their engine-owned suffix", async () => 
   expect(input).toHaveValue("ana: ");
 });
 
+it("leaves Control-Tab and Command-Tab to the buffer shortcuts", () => {
+  const request = vi.fn();
+  render(() => (
+    <Composer
+      bufferId={6}
+      bufferTitle="#rust"
+      draftKey="test:ctrl-tab"
+      onRequestCandidates={request}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "an" } });
+  request.mockClear();
+
+  expect(fireEvent.keyDown(input, { key: "Tab", ctrlKey: true })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "Tab", metaKey: true })).toBe(true);
+  expect(request).not.toHaveBeenCalled();
+  expect(input).toHaveValue("an");
+});
+
 it("routes Up from an empty composer to message navigation", () => {
   const onSelectLast = vi.fn();
   render(() => (
