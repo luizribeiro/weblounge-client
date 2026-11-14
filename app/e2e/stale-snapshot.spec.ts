@@ -369,7 +369,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotRow(current, channel))
         .toMatchObject({ preview: snapshotPreview });
 
-      await current.close();
       const markerReader = await IrcClient.connect(
         appAccount,
         appAccount,
@@ -377,6 +376,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         channel,
       );
       try {
+        await closeAppUntilDetached(current, markerReader);
         await markerReader.markRead(channel, boundaryTime);
         await expect
           .poll(() => markerReader.readMarker(channel))

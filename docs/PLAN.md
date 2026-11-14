@@ -24,6 +24,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: the fetched-server-marker relaunch e2e waits for the closed app to detach before
+  sending MARKREAD, so a still-attached app can't clear the snapshot it asserts is unread.
 - 2026-11-13: the read-channel relaunch e2e now waits for the closed page's IRC client to detach
   (NickServ SESSIONS) before sending "closed-app" lines; the dying worker sometimes received one
   live and persisted it, so the relaunch showed 1 unread while catch-up was held.
