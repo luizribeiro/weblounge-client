@@ -13,7 +13,7 @@ describe("decodeSettings", () => {
 
   it("rejects unknown or missing values", () => {
     expect(
-      decodeSettings({ app: { theme: "terminal", message_density: "cozy" } }),
+      decodeSettings({ app: { theme: "solarized", message_density: "cozy" } }),
     ).toBeUndefined();
     expect(
       decodeSettings({ app: { theme: "lounge", message_density: "roomy" } }),

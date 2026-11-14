@@ -35,7 +35,15 @@ describe("AppearanceSettings", () => {
     setup();
     const group = screen.getByRole("radiogroup", { name: "Theme" });
 
-    expect(radioNames(group)).toEqual(["System", "Lounge", "Lounge Night"]);
+    expect(radioNames(group)).toEqual([
+      "System",
+      "Lounge",
+      "Lounge Night",
+      "Black",
+      "Modern",
+      "Terminal",
+      "Retro",
+    ]);
     expect(screen.getByRole("radio", { name: "System" })).toBeChecked();
     expect(
       screen.getByRole("radio", { name: "System" }),
@@ -59,7 +67,30 @@ describe("AppearanceSettings", () => {
       previews.map((preview) =>
         preview.style.getPropertyValue("--wl-preview-surface"),
       ),
-    ).toEqual(themes.map((theme) => theme.colors.bg));
+    ).toEqual(
+      ["lounge", "lounge-night"].map(
+        (id) => themes.find((theme) => theme.id === id)?.colors.bg,
+      ),
+    );
+  });
+
+  it("previews each fixed theme in its own colours", () => {
+    setup();
+
+    for (const theme of themes) {
+      const card = screen
+        .getByRole("radio", { name: theme.name })
+        .closest("label");
+      const previews = [
+        ...(card?.querySelectorAll<HTMLElement>("[data-preview-theme]") ?? []),
+      ];
+      expect(previews.map((preview) => preview.dataset.previewTheme)).toEqual([
+        theme.id,
+      ]);
+      expect(previews[0]?.style.getPropertyValue("--wl-preview-panel")).toBe(
+        theme.colors.panel,
+      );
+    }
   });
 
   it("asks the engine to change the theme when a card is chosen", () => {

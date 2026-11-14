@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { themePreferences } from "../engine/decodeSettings";
 import {
   appearanceHintKey,
   applyAppearanceHint,
   readAppearanceHint,
   writeAppearanceHint,
 } from "./appearance-hint";
+import { resolveTheme } from "./resolve-theme";
 
 const storage = () => localStorage;
 
@@ -20,6 +22,18 @@ describe("appearance hint", () => {
       message_density: "compact",
     });
   });
+
+  it.each(themePreferences)(
+    "paints a remembered %s copy before the engine answers",
+    (theme) => {
+      writeAppearanceHint(storage, { theme, message_density: "cozy" });
+      const root = document.createElement("html");
+
+      applyAppearanceHint(root, readAppearanceHint(storage), false);
+
+      expect(root.dataset.theme).toBe(resolveTheme(theme, false));
+    },
+  );
 
   it("ignores a missing copy", () => {
     expect(readAppearanceHint(storage)).toBeUndefined();

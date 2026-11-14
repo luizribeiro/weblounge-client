@@ -3,4 +3,4 @@
 /**
  * The theme the user chose, or the system's light or dark appearance.
  */
-export type ThemePreference = "system" | "lounge" | "lounge-night";
+export type ThemePreference = "system" | "lounge" | "lounge-night" | "black" | "modern" | "terminal" | "retro";

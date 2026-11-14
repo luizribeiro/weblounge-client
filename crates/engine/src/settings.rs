@@ -23,6 +23,22 @@ pub enum ThemePreference {
     #[serde(rename = "lounge-night")]
     #[ts(rename = "lounge-night")]
     LoungeNight,
+    /// The pure black theme for OLED screens.
+    #[serde(rename = "black")]
+    #[ts(rename = "black")]
+    Black,
+    /// The Modern theme.
+    #[serde(rename = "modern")]
+    #[ts(rename = "modern")]
+    Modern,
+    /// The Terminal theme.
+    #[serde(rename = "terminal")]
+    #[ts(rename = "terminal")]
+    Terminal,
+    /// The Retro theme.
+    #[serde(rename = "retro")]
+    #[ts(rename = "retro")]
+    Retro,
 }
 
 /// Spacing, text size and avatar size of a list.
@@ -281,6 +297,65 @@ mod tests {
             }
         );
         assert_eq!(loaded.invalid_fields, vec!["theme".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn every_theme_round_trips_under_its_wire_name() {
+        for (theme, wire) in [
+            (ThemePreference::System, "system"),
+            (ThemePreference::Lounge, "lounge"),
+            (ThemePreference::LoungeNight, "lounge-night"),
+            (ThemePreference::Black, "black"),
+            (ThemePreference::Modern, "modern"),
+            (ThemePreference::Terminal, "terminal"),
+            (ThemePreference::Retro, "retro"),
+        ] {
+            let storage = MemoryKv::default();
+
+            change(&storage, SettingChange::App(AppSetting::Theme(theme)))
+                .await
+                .expect("change theme");
+
+            assert_eq!(
+                load(&storage).await.expect("reload").settings.app.theme,
+                theme
+            );
+            let raw = storage
+                .get(Space::Settings, APP_KEY)
+                .await
+                .expect("read record")
+                .expect("record exists");
+            let record: serde_json::Value = serde_json::from_slice(&raw).expect("record json");
+            assert_eq!(record["fields"]["theme"], serde_json::json!(wire));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_theme_is_reported_and_survives_another_change() {
+        let storage = MemoryKv::default();
+        seed(
+            &storage,
+            r#"{"version":1,"fields":{"theme":"solarized","message_density":"cozy"}}"#,
+        )
+        .await;
+
+        let loaded = load(&storage).await.expect("load");
+        change(
+            &storage,
+            SettingChange::App(AppSetting::MessageDensity(Density::Compact)),
+        )
+        .await
+        .expect("change density");
+
+        assert_eq!(loaded.settings.app.theme, ThemePreference::System);
+        assert_eq!(loaded.invalid_fields, vec!["theme".to_owned()]);
+        let raw = storage
+            .get(Space::Settings, APP_KEY)
+            .await
+            .expect("read record")
+            .expect("record exists");
+        let record: serde_json::Value = serde_json::from_slice(&raw).expect("record json");
+        assert_eq!(record["fields"]["theme"], serde_json::json!("solarized"));
     }
 
     #[tokio::test]

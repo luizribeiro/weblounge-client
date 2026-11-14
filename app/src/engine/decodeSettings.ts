@@ -7,6 +7,10 @@ export const themePreferences = everyValueOf<ThemePreference>()([
   "system",
   "lounge",
   "lounge-night",
+  "black",
+  "modern",
+  "terminal",
+  "retro",
 ]);
 export const densities = everyValueOf<Density>()([
   "compact",
