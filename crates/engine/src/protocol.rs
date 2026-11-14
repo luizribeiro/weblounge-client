@@ -362,6 +362,10 @@ pub struct NetworkProjection {
     pub nickname: String,
     /// Current connection state.
     pub state: NetworkConnectionState,
+    /// Origin of the file host the network advertises, whose images display inline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub filehost_origin: Option<String>,
 }
 
 /// Conversation represented by a buffer.

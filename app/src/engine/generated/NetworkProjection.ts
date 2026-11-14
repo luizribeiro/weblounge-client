@@ -21,4 +21,8 @@ nickname: string,
 /**
  * Current connection state.
  */
-state: NetworkConnectionState, };
+state: NetworkConnectionState,
+/**
+ * Origin of the file host the network advertises, whose images display inline.
+ */
+filehost_origin?: string, };

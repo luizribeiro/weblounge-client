@@ -21,7 +21,7 @@ use crate::{
         self, ChatListSnapshot, SnapshotChanges, SnapshotPresence, SnapshotRemoval,
     },
     commands::{self, Command},
-    notification_settings, push_device,
+    filehost, notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
@@ -4229,6 +4229,9 @@ fn process_connected(
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryFetch> {
     running.model.rebuild_name_keys(snapshot);
+    running
+        .model
+        .set_filehost_origin(filehost::origin(snapshot));
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
         snapshot.supports(papo::Feature::History),
@@ -9758,16 +9761,20 @@ async fn delay(duration: Duration) {
         register_connection(
             wire,
             &["batch", "draft/webpush", "labeled-response"],
-            vapid,
+            &vapid_token(vapid),
             account,
         )
         .await;
     }
 
+    fn vapid_token(vapid: Option<&str>) -> String {
+        vapid.map_or_else(String::new, |key| format!(" VAPID={key}"))
+    }
+
     async fn register_connection(
         wire: &mut papo_testing::Wire,
         caps: &[&str],
-        vapid: Option<&str>,
+        extra_isupport: &str,
         account: bool,
     ) {
         assert_eq!(wire.next_sent().await, "CAP LS 302");
@@ -9783,9 +9790,8 @@ async fn delay(duration: Duration) {
         } else {
             assert_eq!(negotiation, "CAP END");
         }
-        let vapid = vapid.map_or_else(String::new, |key| format!(" VAPID={key}"));
         wire.server(format!(
-            ":offline.test 005 weblounge CASEMAPPING=rfc1459 CHANTYPES=#{vapid} :supported"
+            ":offline.test 005 weblounge CASEMAPPING=rfc1459 CHANTYPES=#{extra_isupport} :supported"
         ))
         .await;
         if account {
@@ -11778,6 +11784,41 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn connected_projects_the_advertised_filehost_origin() {
+        for (isupport, expected) in [
+            (
+                " draft/FILEHOST=https://Files.Example.test:8443/upload",
+                Some("https://files.example.test:8443"),
+            ),
+            (
+                " soju.im/FILEHOST=https://files.example.test/upload",
+                Some("https://files.example.test"),
+            ),
+            ("", None),
+        ] {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            register_connection(&mut wire, &[], isupport, false).await;
+            let connected = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            let (state, outbound, mut receiver) = harness(client.clone());
+            process_event(&state, &outbound, &client, 1, connected);
+
+            assert!(
+                collect(&mut receiver).iter().any(|event| matches!(
+                    event,
+                    EngineToUi::NetworkStateChanged { network }
+                        if network.state == crate::NetworkConnectionState::Online
+                            && network.filehost_origin.as_deref() == expected
+                )),
+                "{isupport:?} should project {expected:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn push_registration_uses_ergo_replies_and_typed_outcomes() {
         let (client, mut events, mut wire) = push_wire();
         register_push_connection(&mut wire, Some("home-vapid"), true).await;
@@ -12081,7 +12122,7 @@ async fn delay(duration: Duration) {
             let builder = papo::Client::builder("irc://offline.test", "weblounge")
                 .enable(papo::Feature::WebPush);
             let (client, mut events, mut wire) = wire(builder);
-            register_connection(&mut wire, caps, vapid, account).await;
+            register_connection(&mut wire, caps, &vapid_token(vapid), account).await;
             _ = next_matching(&mut events, |event| {
                 matches!(event, papo::Event::Connected(_))
             })

@@ -564,6 +564,7 @@ impl NetworkModel {
                 label,
                 nickname,
                 state: NetworkConnectionState::Connecting,
+                filehost_origin: None,
             },
             server_buffer_id: server_id,
             casemapping,
@@ -627,6 +628,10 @@ impl NetworkModel {
         EngineToUi::NetworkStateChanged {
             network: self.network.clone(),
         }
+    }
+
+    pub(crate) fn set_filehost_origin(&mut self, origin: Option<String>) {
+        self.network.filehost_origin = origin;
     }
 
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
