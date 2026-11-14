@@ -313,7 +313,7 @@ export const messages = {
   "settings.sections": "Settings sections",
   "settings.theme": "Theme",
   "settings.theme.system": "System",
-  "settings.theme.system_description": "Lounge, or Lounge Night after dark",
+  "settings.theme.system_description": "Matches your device",
   "sidebar.channel_list": "Channel list",
   "sidebar.context_menu": "Actions for {title}",
   "sidebar.close_conversation": "Close conversation with {title}",

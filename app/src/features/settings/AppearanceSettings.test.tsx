@@ -39,7 +39,7 @@ describe("AppearanceSettings", () => {
     expect(screen.getByRole("radio", { name: "System" })).toBeChecked();
     expect(
       screen.getByRole("radio", { name: "System" }),
-    ).toHaveAccessibleDescription("Lounge, or Lounge Night after dark");
+    ).toHaveAccessibleDescription("Matches your device");
   });
 
   it("draws System from both the light and the dark theme's tokens", () => {

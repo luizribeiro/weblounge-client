@@ -140,9 +140,6 @@
 .name small {
   color: var(--wl-color-muted);
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 [data-settings-layout="phone"] .cards {
