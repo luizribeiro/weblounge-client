@@ -4,10 +4,8 @@ import { expect, test } from "./irc-fixture";
 import { choose } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
-const themeFontPattern =
-  /\/(?:geist|ibm-plex-mono|work-sans|fraunces|courier-prime)[^/]*\.woff2$/u;
-const fontFile =
-  /\/(geist-mono|geist|ibm-plex-mono|work-sans|fraunces|courier-prime)-/u;
+const themeFontFile =
+  /\/(geist-mono|geist|ibm-plex-mono|work-sans|fraunces|courier-prime|hack)-[^/]*\.woff2$/u;
 
 const lazyThemes = [
   {
@@ -80,13 +78,13 @@ test.describe("theme fonts against local Ergo", () => {
 });
 
 function fontFamilyFile(path: string): string | undefined {
-  return fontFile.exec(path)?.[1];
+  return themeFontFile.exec(path)?.[1];
 }
 
 function recordThemeFontRequests(page: Page): string[] {
   const requested: string[] = [];
   page.on("request", (request) => {
-    if (themeFontPattern.test(new URL(request.url()).pathname))
+    if (themeFontFile.test(new URL(request.url()).pathname))
       requested.push(new URL(request.url()).pathname);
   });
   return requested;
