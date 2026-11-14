@@ -39,7 +39,12 @@ import {
   SwitcherLauncher,
 } from "./SwitcherLauncher";
 import { focusAfterClose } from "./sidebar-close";
-import { jumpSlotsById, networkBuffers, sidebarRowIds } from "./sidebar-order";
+import {
+  jumpSlotsById,
+  networkBuffers,
+  sidebarRowIds,
+  wrappedNeighbourId,
+} from "./sidebar-order";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -179,13 +184,11 @@ export function Sidebar(props: SidebarProps) {
     }
   };
   const move = (offset: -1 | 1) => {
-    const ids = orderedIds();
-    if (ids.length === 0) return;
-    const first = ids[0];
-    if (first === undefined) return;
-    const current = rovingId() ?? props.activeBufferId ?? first;
-    const index = Math.max(0, ids.indexOf(current));
-    const target = ids[(index + offset + ids.length) % ids.length];
+    const target = wrappedNeighbourId(
+      orderedIds(),
+      rovingId() ?? props.activeBufferId,
+      offset,
+    );
     if (target === undefined) return;
     setRovingId(target);
     elements.get(target)?.focus();

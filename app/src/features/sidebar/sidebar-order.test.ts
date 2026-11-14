@@ -3,6 +3,7 @@ import {
   conversationRowIds,
   jumpSlotsById,
   sidebarRowIds,
+  wrappedNeighbourId,
 } from "./sidebar-order";
 
 const networks = [{ id: 20 }, { id: 10 }, { id: 30 }];
@@ -46,5 +47,22 @@ describe("sidebar order", () => {
   it("is empty before any network is known", () => {
     expect(conversationRowIds([], buffers)).toEqual([]);
     expect(sidebarRowIds([], buffers)).toEqual([]);
+  });
+
+  it("steps to the next and previous row, wrapping at both ends", () => {
+    const ids = sidebarRowIds(networks, buffers);
+
+    expect(wrappedNeighbourId(ids, 6, 1)).toBe(2);
+    expect(wrappedNeighbourId(ids, 6, -1)).toBe(3);
+    expect(wrappedNeighbourId(ids, 11, 1)).toBe(5);
+    expect(wrappedNeighbourId(ids, 5, -1)).toBe(11);
+  });
+
+  it("steps from the first row when the current one is not drawn", () => {
+    const ids = sidebarRowIds(networks, buffers);
+
+    expect(wrappedNeighbourId(ids, 4, 1)).toBe(ids[1]);
+    expect(wrappedNeighbourId(ids, undefined, -1)).toBe(11);
+    expect(wrappedNeighbourId([], 1, 1)).toBeUndefined();
   });
 });

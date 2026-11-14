@@ -56,6 +56,17 @@ export function jumpSlotsById(
   );
 }
 
+export function wrappedNeighbourId(
+  orderedIds: readonly number[],
+  currentId: number | undefined,
+  offset: -1 | 1,
+): number | undefined {
+  if (orderedIds.length === 0) return undefined;
+  const index =
+    currentId === undefined ? 0 : Math.max(0, orderedIds.indexOf(currentId));
+  return orderedIds[(index + offset + orderedIds.length) % orderedIds.length];
+}
+
 export function conversationRowIds(
   networks: readonly OrderedNetwork[],
   buffers: readonly OrderedBuffer[],

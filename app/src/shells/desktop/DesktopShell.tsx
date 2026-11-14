@@ -51,6 +51,7 @@ import { focusAfterClose } from "../../features/sidebar/sidebar-close";
 import {
   conversationRowIds,
   sidebarRowIds,
+  wrappedNeighbourId,
 } from "../../features/sidebar/sidebar-order";
 import {
   sidebarWidth,
@@ -309,8 +310,7 @@ export function DesktopShell(props: DesktopShellProps) {
     const ids = sidebarRowIds(props.networks, props.buffers);
     const current = layout().root.bufferId;
     if (ids.length < 2 || current === undefined) return;
-    const index = Math.max(0, ids.indexOf(current));
-    showBuffer(ids[(index + offset + ids.length) % ids.length]);
+    showBuffer(wrappedNeighbourId(ids, current, offset));
   };
   const registry = new ActionRegistry(
     {
