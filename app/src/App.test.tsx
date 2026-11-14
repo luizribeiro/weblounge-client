@@ -99,6 +99,37 @@ it("keeps one app status region while a polite toast is shown", async () => {
   );
 });
 
+it("loads appearance settings and follows changes from the engine", async () => {
+  const client = new FakeEngineClient();
+  const onAppearanceChange = vi.fn();
+  render(() => (
+    <App engineClient={client} onAppearanceChange={onAppearanceChange} />
+  ));
+  await vi.waitFor(() =>
+    expect(client.requests.map(({ request }) => request.type)).toContain(
+      "load_settings",
+    ),
+  );
+  const load = client.requests.find(
+    ({ request }) => request.type === "load_settings",
+  );
+
+  client.emit({
+    type: "settings_loaded",
+    command_id: load?.id ?? "",
+    settings: { app: { theme: "lounge", message_density: "comfortable" } },
+  });
+  client.emit({
+    type: "settings_changed",
+    settings: { app: { theme: "lounge-night", message_density: "compact" } },
+  });
+
+  expect(onAppearanceChange.mock.calls).toEqual([
+    [{ theme: "lounge", message_density: "comfortable" }],
+    [{ theme: "lounge-night", message_density: "compact" }],
+  ]);
+});
+
 it("never shows a mark-read failure as a toast", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
@@ -1791,7 +1822,7 @@ class FakeEngineClient implements EngineClient {
   readonly focusedTimelineBuffers: Array<number | undefined> = [];
   readonly requests: EngineRequestEnvelope[] = [];
   livenessChecks = 0;
-  #listener: ((message: EngineClientMessage) => void) | undefined;
+  readonly #listeners = new Set<(message: EngineClientMessage) => void>();
   readonly #timelines = new TimelineStore();
 
   constructor(
@@ -1842,7 +1873,7 @@ class FakeEngineClient implements EngineClient {
       this.#timelines.apply(message.buffer_id, message);
     if (message.type === "buffer_removed")
       this.#timelines.remove(message.buffer_id);
-    this.#listener?.(message);
+    for (const listener of this.#listeners) listener(message);
   }
 
   requestSnapshot(): void {}
@@ -1865,9 +1896,9 @@ class FakeEngineClient implements EngineClient {
   }
 
   subscribe(listener: (message: EngineClientMessage) => void) {
-    this.#listener = listener;
+    this.#listeners.add(listener);
     return () => {
-      this.#listener = undefined;
+      this.#listeners.delete(listener);
     };
   }
 

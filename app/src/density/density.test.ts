@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   densityDefaults,
+  densityFor,
   densityPresets,
   densityStyleSheet,
   installDensity,
@@ -54,6 +55,14 @@ describe("density presets", () => {
     ).toBe(compactCss(densityStyleSheet()));
 
     dispose();
+  });
+
+  it("changes only the message density for an engine setting", () => {
+    installDensity(document, densityFor("comfortable"));
+
+    expect(document.documentElement.dataset.messageDensity).toBe("comfortable");
+    expect(document.documentElement.dataset.sidebarDensity).toBe("compact");
+    expect(densityFor()).toEqual(densityDefaults);
   });
 });
 

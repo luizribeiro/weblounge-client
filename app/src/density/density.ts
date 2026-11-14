@@ -44,6 +44,12 @@ export const densityDefaults: DensitySettings = {
   mobileList: "cozy",
 };
 
+export function densityFor(
+  message: DensityId = densityDefaults.message,
+): DensitySettings {
+  return { ...densityDefaults, message };
+}
+
 export const densityPresets = validatePresets(presetData);
 
 export function densityStyleSheet(): string {

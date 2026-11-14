@@ -2,9 +2,9 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { exposeBuildVersion } from "./build-version";
-import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
+import type { AppSettings } from "./engine/generated/AppSettings";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
 import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
 import {
@@ -49,7 +49,7 @@ import {
 } from "./service-worker";
 import "./styles/base.css";
 import { t } from "./strings";
-import { installTheme } from "./theme/theme-controller";
+import { installAppearance } from "./theme/appearance";
 
 type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 type InitialSessionResult =
@@ -110,12 +110,15 @@ function Bootstrap(props: BootstrapProps) {
   let deploymentAttempt: Promise<DeploymentAttempt> | undefined =
     loadDeploymentAttempt(setRevalidatedConfig);
   const platform = platformEnvironment();
-  const theme = installTheme(document, platform.prefersDark());
-  const removeDensity = installDensity(document);
+  const appearance = installAppearance(
+    document,
+    platform.prefersDark(),
+    () => localStorage,
+  );
+  const applyAppearance = (settings: AppSettings) => appearance.apply(settings);
   const removePageZoomGuard = installPageZoomGuard(document);
-  createEffect(() => theme.setSystemDark(platform.prefersDark()));
-  onCleanup(() => theme.dispose());
-  onCleanup(removeDensity);
+  createEffect(() => appearance.setSystemDark(platform.prefersDark()));
+  onCleanup(() => appearance.dispose());
   onCleanup(removePageZoomGuard);
   const [state, setState] = createSignal<BootstrapState>({
     type: "starting",
@@ -256,6 +259,7 @@ function Bootstrap(props: BootstrapProps) {
             {(attempt) => (
               <App
                 beforeReveal={props.beforeReveal}
+                onAppearanceChange={applyAppearance}
                 engineClient={current.engineClient}
                 onReady={props.onReady}
                 onStartupError={(message, retry) =>
@@ -283,6 +287,7 @@ function Bootstrap(props: BootstrapProps) {
             {(session) => (
               <App
                 beforeReveal={props.beforeReveal}
+                onAppearanceChange={applyAppearance}
                 engineClient={current.engineClient}
                 hostedSession={session}
                 pushConfig={livePushConfig(current.config, revalidatedConfig())}

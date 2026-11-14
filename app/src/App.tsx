@@ -20,6 +20,7 @@ import {
   EngineCommandError,
   IncompatibleBuildError,
 } from "./engine/EngineClient";
+import type { AppSettings } from "./engine/generated/AppSettings";
 import type { PushDeploymentConfig } from "./engine/generated/PushDeploymentConfig";
 import type { PushState } from "./engine/generated/PushState";
 import type {
@@ -45,6 +46,7 @@ import {
   shouldShowNotificationPrompt,
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
+import { createEngineSettings } from "./features/settings/engine-settings";
 import { CanvasImageCodec } from "./features/uploads/image-codec";
 import { networkUploads } from "./features/uploads/network-uploads";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
@@ -154,6 +156,7 @@ const foregroundLeaseHandoffMilliseconds = 30_000;
 
 interface AppProps {
   beforeReveal?: () => Promise<void>;
+  onAppearanceChange?: (appearance: AppSettings) => void;
   engineClient?: EngineClient;
   hostedSession?: HostedSession;
   pushConfig?: PushDeploymentConfig | undefined;
@@ -258,6 +261,11 @@ export function App(props: AppProps) {
               hostedUploadSession.sessionTokenEndpoint,
             ).acquire()
           ).accessToken;
+  createEngineSettings({
+    client: () => client,
+    started: engineStarted,
+    onAppearance: (appearance) => props.onAppearanceChange?.(appearance),
+  });
   let reportedVisibility: VisibilityState | undefined;
   // Render visibility follows document.hidden alone: an unfocused window
   // is still on screen and must keep drawing.
