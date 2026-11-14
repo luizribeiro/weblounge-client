@@ -1,0 +1,232 @@
+import { expect, type Page, test } from "@playwright/test";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
+import { choose, settingsScreenshot } from "./settings-fixture";
+
+test.describe("desktop Settings against local Ergo", () => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+
+  test("opens from the header, changes appearance live and restores focus", async ({
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    const composer = await openHome(page);
+    const button = settingsButton(page);
+    await expect(button).toHaveAttribute("title", "Settings (Ctrl+Shift+,)");
+    await expect(button).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+Shift+Comma",
+    );
+    await expect(button).toHaveAttribute("aria-haspopup", "dialog");
+    await settingsScreenshot(button, "desktop-1280-window-light");
+
+    await button.click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(dialog).toBeFocused();
+    await expect(page.getByRole("radio", { name: "System" })).toBeChecked();
+    await expect(page.getByRole("radio", { name: "Cozy" })).toBeChecked();
+    await nativeFeelAudit(page);
+    await settingsScreenshot(dialog, "desktop-1280-light");
+
+    await choose(page, "Lounge Night");
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      "lounge-night",
+    );
+    await page.getByRole("radio", { name: "Cozy" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      page.getByRole("radio", { name: "Comfortable" }),
+    ).toBeChecked();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-message-density",
+      "comfortable",
+    );
+    await choose(page, "Cozy");
+    await settingsScreenshot(dialog, "desktop-1280-dark");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+
+    await composer.focus();
+    await page.keyboard.press("Control+Comma");
+    await expect(dialog).toHaveCount(0);
+    await page.keyboard.press("Control+Shift+Comma");
+    await expect(dialog).toBeFocused();
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await expect(composer).toBeFocused();
+
+    await page.keyboard.press("Control+Shift+.");
+    const palette = page.getByRole("combobox", { name: "Run a command" });
+    await palette.fill(">sett");
+    await expect(page.getByRole("option", { name: /Settings/u })).toContainText(
+      "Ctrl+Shift+,",
+    );
+    await palette.press("Enter");
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(composer).toBeFocused();
+    await nativeFeelAudit(page);
+  });
+
+  test("paints the remembered appearance first and follows another tab", async ({
+    context,
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(() => {
+      requestAnimationFrame(() => {
+        const root = document.documentElement;
+        Object.assign(window, {
+          __firstFrame: {
+            background: getComputedStyle(root).backgroundColor,
+            density: root.dataset.messageDensity,
+            theme: root.dataset.theme,
+          },
+        });
+      });
+    });
+    await openHome(page);
+    await settingsButton(page).click();
+    await choose(page, "Lounge Night");
+    await choose(page, "Comfortable");
+
+    const other = await context.newPage();
+    await other.emulateMedia({ colorScheme: "light" });
+    await openHome(other);
+    await expect(other.locator("html")).toHaveAttribute(
+      "data-theme",
+      "lounge-night",
+    );
+    await choose(page, "Lounge");
+    await expect(other.locator("html")).toHaveAttribute("data-theme", "lounge");
+    await choose(page, "System");
+    await other.emulateMedia({ colorScheme: "dark" });
+    await expect(other.locator("html")).toHaveAttribute(
+      "data-theme",
+      "lounge-night",
+    );
+    await other.emulateMedia({ colorScheme: "light" });
+    await expect(other.locator("html")).toHaveAttribute("data-theme", "lounge");
+    await choose(page, "Lounge Night");
+    await expect(other.locator("html")).toHaveAttribute(
+      "data-theme",
+      "lounge-night",
+    );
+    await other.close();
+
+    const nightBackground = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.background = "var(--wl-color-bg)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    await page.reload();
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, "__firstFrame")))
+      .toEqual({
+        background: nightBackground,
+        density: "comfortable",
+        theme: "lounge-night",
+      });
+    await openHome(page);
+    await settingsButton(page).click();
+    await expect(
+      page.getByRole("radio", { name: "Lounge Night" }),
+    ).toBeChecked();
+    await expect(
+      page.getByRole("radio", { name: "Comfortable" }),
+    ).toBeChecked();
+  });
+
+  test("keeps the brand clear of both header buttons in the narrow drawer", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 800 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "Toggle channel list" }).click();
+    const drawer = page.getByRole("dialog", { name: "Channels" });
+    const search = drawer.getByRole("button", { name: "Jump to" });
+    const settings = drawer.getByRole("button", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    const [title, searchBox, settingsBox] = await Promise.all([
+      drawer.locator("[data-connection-title]").boundingBox(),
+      search.boundingBox(),
+      settings.boundingBox(),
+    ]);
+    if (title === null || searchBox === null || settingsBox === null)
+      throw new Error("the drawer header is not rendered");
+    expect(title.x + title.width).toBeLessThanOrEqual(searchBox.x);
+    expect(
+      Math.abs(searchBox.x + searchBox.width - settingsBox.x),
+    ).toBeLessThanOrEqual(1);
+    await settingsScreenshot(drawer, "narrow-drawer-light");
+
+    await settings.click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(dialog).toBeFocused();
+    await settingsScreenshot(dialog, "narrow-modal-light");
+    await page.keyboard.press("Escape");
+    await expect(settings).toBeFocused();
+  });
+
+  test("opens Settings from the Mac app menu and its native chord", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis, "__WEBLOUNGE_SHELL__", {
+        value: Object.freeze({ kind: "macos-app", version: "0.1.0" }),
+      });
+    });
+    const composer = await openHome(page);
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(settingsButton(page)).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+Comma",
+    );
+
+    await page.keyboard.press("Control+Comma");
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(composer).toBeFocused();
+
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("weblounge:action", { detail: "debug.overlay" }),
+      ),
+    );
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("weblounge:action", { detail: "settings.open" }),
+      ),
+    );
+    await expect(dialog).toBeFocused();
+  });
+});
+
+function settingsButton(page: Page) {
+  return page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: "Settings" });
+}
+
+async function openHome(page: Page) {
+  await page.goto("/?irc-password=weblounge-test");
+  await page.getByRole("button", { name: /^#weblounge-test/u }).click();
+  const composer = page.getByRole("textbox", {
+    name: "Message #weblounge-test",
+  });
+  await composer.focus();
+  await expect(composer).toBeFocused();
+  return composer;
+}
