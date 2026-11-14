@@ -1,7 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
-
-const homeChannel = "#weblounge-test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 
 test.describe("mobile member drawer follows navigation", () => {
   test.skip(
@@ -10,145 +8,111 @@ test.describe("mobile member drawer follows navigation", () => {
   );
   test("cold start follows channel A to channel B", async ({
     page,
+    irc,
   }, testInfo) => {
     requireMobileMembersProject(testInfo.project.name);
-    const suffix = Date.now().toString().slice(-6);
-    const otherChannel = `#drawer-cold-${suffix}`;
-    const homeNick = `coldhome${suffix}`;
-    const otherNick = `coldother${suffix}`;
-    const homeMember = await IrcClient.connect(
-      homeNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      homeChannel,
-    );
-    const otherMember = await IrcClient.connect(
-      otherNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      otherChannel,
-    );
+    const homeChannel = irc.channel;
+    const otherChannel = irc.channelNamed("drawer-cold");
+    const homeNick = (await irc.peer("coldhome")).nickname;
+    const otherNick = (await irc.peer("coldother", [otherChannel])).nickname;
 
-    try {
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(
-        `/?irc-password=weblounge-test&irc-autojoin=${encodeURIComponent(otherChannel)}`,
-      );
-      await expect(
-        page.getByRole("button", { exact: true, name: homeChannel }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { exact: true, name: otherChannel }),
-      ).toBeVisible();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(irc.url({ autojoin: [otherChannel] }));
+    await expect(
+      page.getByRole("button", { exact: true, name: homeChannel }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { exact: true, name: otherChannel }),
+    ).toBeVisible();
 
-      await openChat(page, homeChannel);
-      await expectDrawer(page, homeChannel, homeNick, otherNick);
-      await closeDrawer(page);
-      await backToChats(page);
+    await openChat(page, homeChannel);
+    await expectDrawer(page, homeChannel, homeNick, otherNick);
+    await closeDrawer(page);
+    await backToChats(page);
 
-      await openChat(page, otherChannel);
-      await expectDrawer(page, otherChannel, otherNick, homeNick);
-    } finally {
-      homeMember.close();
-      otherMember.close();
-    }
+    await openChat(page, otherChannel);
+    await expectDrawer(page, otherChannel, otherNick, homeNick);
   });
 
   test("shows the active channel through every mobile navigation path", async ({
     page,
+    irc,
   }, testInfo) => {
     requireMobileMembersProject(testInfo.project.name);
-    const suffix = Date.now().toString().slice(-6);
-    const otherChannel = `#drawer-${suffix}`;
-    const homeNick = `home${suffix}`;
-    const otherNick = `other${suffix}`;
-    const homeMember = await IrcClient.connect(
-      homeNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      homeChannel,
-    );
-    const otherMember = await IrcClient.connect(
-      otherNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      otherChannel,
-    );
+    const homeChannel = irc.channel;
+    const otherChannel = irc.channelNamed("drawer");
+    const homeNick = (await irc.peer("home")).nickname;
+    const otherNick = (await irc.peer("other", [otherChannel])).nickname;
 
-    try {
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto("/?irc-password=weblounge-test");
-      await openChat(page, homeChannel);
-      const homePath = new URL(page.url()).pathname;
-      const composer = page.getByRole("textbox", {
-        name: `Message ${homeChannel}`,
-      });
-      await composer.fill(`/join ${otherChannel}`);
-      await composer.press("Enter");
-      await expect(
-        page.getByRole("heading", { name: otherChannel }),
-      ).toBeVisible();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(irc.url());
+    await openChat(page, homeChannel);
+    const homePath = new URL(page.url()).pathname;
+    const composer = page.getByRole("textbox", {
+      name: `Message ${homeChannel}`,
+    });
+    await composer.fill(`/join ${otherChannel}`);
+    await composer.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: otherChannel }),
+    ).toBeVisible();
 
-      await backToChats(page);
-      await openChat(page, homeChannel);
-      await expectDrawer(page, homeChannel, homeNick, otherNick);
-      await closeDrawer(page);
-      await backToChats(page);
+    await backToChats(page);
+    await openChat(page, homeChannel);
+    await expectDrawer(page, homeChannel, homeNick, otherNick);
+    await closeDrawer(page);
+    await backToChats(page);
 
-      await openChat(page, otherChannel);
-      await expectDrawer(page, otherChannel, otherNick, homeNick);
-      await closeDrawer(page);
-      await backToChats(page);
+    await openChat(page, otherChannel);
+    await expectDrawer(page, otherChannel, otherNick, homeNick);
+    await closeDrawer(page);
+    await backToChats(page);
 
-      await openChat(page, homeChannel);
-      await expectDrawer(page, homeChannel, homeNick, otherNick);
-      await page
-        .getByRole("dialog", { name: "Members" })
-        .getByRole("button", {
-          name: `Open direct message with ${homeNick}`,
-        })
-        .click();
-      await expect(page.getByRole("heading", { name: homeNick })).toBeVisible();
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(
-        page.getByRole("heading", { name: homeChannel }),
-      ).toBeVisible();
-      await backToChats(page);
-      await openChat(page, otherChannel);
-      await expectDrawer(page, otherChannel, otherNick, homeNick);
-      await closeDrawer(page);
-      await swipeBack(page);
+    await openChat(page, homeChannel);
+    await expectDrawer(page, homeChannel, homeNick, otherNick);
+    await page
+      .getByRole("dialog", { name: "Members" })
+      .getByRole("button", {
+        name: `Open direct message with ${homeNick}`,
+      })
+      .click();
+    await expect(page.getByRole("heading", { name: homeNick })).toBeVisible();
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    await expect(
+      page.getByRole("heading", { name: homeChannel }),
+    ).toBeVisible();
+    await backToChats(page);
+    await openChat(page, otherChannel);
+    await expectDrawer(page, otherChannel, otherNick, homeNick);
+    await closeDrawer(page);
+    await swipeBack(page);
 
-      await openChat(page, homeChannel);
-      await expectDrawer(page, homeChannel, homeNick, otherNick);
-      await closeDrawer(page);
+    await openChat(page, homeChannel);
+    await expectDrawer(page, homeChannel, homeNick, otherNick);
+    await closeDrawer(page);
 
-      await page.emulateMedia({ reducedMotion: "no-preference" });
-      const retainedComposer = page.getByRole("textbox", {
-        name: `Message ${homeChannel}`,
-      });
-      await retainedComposer.fill(`/join ${otherChannel}`);
-      await retainedComposer.press("Enter");
-      const incoming = page.locator("[data-mobile-chat]").filter({
-        has: page.getByRole("heading", { name: otherChannel }),
-      });
-      await expect(incoming).toBeVisible();
-      await expect(page.locator("[data-mobile-chat]")).toHaveCount(2);
-      await incoming
-        .getByRole("button", { name: "Show members" })
-        .evaluate((button: HTMLButtonElement) => button.click());
-      await expectOpenDrawer(page, otherChannel, otherNick, homeNick);
-      await closeDrawer(page);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    const retainedComposer = page.getByRole("textbox", {
+      name: `Message ${homeChannel}`,
+    });
+    await retainedComposer.fill(`/join ${otherChannel}`);
+    await retainedComposer.press("Enter");
+    const incoming = page.locator("[data-mobile-chat]").filter({
+      has: page.getByRole("heading", { name: otherChannel }),
+    });
+    await expect(incoming).toBeVisible();
+    await expect(page.locator("[data-mobile-chat]")).toHaveCount(2);
+    await incoming
+      .getByRole("button", { name: "Show members" })
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await expectOpenDrawer(page, otherChannel, otherNick, homeNick);
+    await closeDrawer(page);
 
-      await page.goto(`${homePath}?irc-password=weblounge-test`);
-      await expect(
-        page.getByRole("heading", { name: homeChannel }),
-      ).toBeVisible();
-      await expectDrawer(page, homeChannel, homeNick, otherNick);
-    } finally {
-      homeMember.close();
-      otherMember.close();
-    }
+    await page.goto(irc.url({ path: homePath }));
+    await expect(
+      page.getByRole("heading", { name: homeChannel }),
+    ).toBeVisible();
+    await expectDrawer(page, homeChannel, homeNick, otherNick);
   });
 });
 

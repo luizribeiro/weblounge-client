@@ -14,9 +14,9 @@ test.describe("composer suggestions against local Ergo", () => {
 
   test.describe("desktop", () => {
     test.use({ viewport: { width: 1440, height: 900 } });
-    test("suggests without moving or covering the conversation", async ({
-      page,
-    }) => {
+    test("suggests without moving or covering the conversation", {
+      tag: "@serial",
+    }, async ({ page }) => {
       const ana = await connectAna("suggestions-desktop");
       const anita = await IrcClient.connect(
         "anita",
@@ -130,7 +130,9 @@ test.describe("composer suggestions against local Ergo", () => {
       isMobile: true,
       viewport: { width: 402, height: 874 },
     });
-    test("suggests with touch-sized bounded rows", async ({ page }) => {
+    test("suggests with touch-sized bounded rows", { tag: "@serial" }, async ({
+      page,
+    }) => {
       const ana = await connectAna("suggestions-mobile");
       try {
         await installNativeFeelInstrumentation(page);

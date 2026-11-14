@@ -1,15 +1,17 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Locator, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
+import { expectSettled } from "./settled";
 
-const channel = "#weblounge-test";
+const sharedChannel = "#weblounge-test";
 const screenshots = path.join(process.cwd(), "e2e", "screenshots");
 
 test.describe("desktop members against local Ergo", () => {
@@ -18,7 +20,9 @@ test.describe("desktop members against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test("updates groups, toggles, and opens a DM", async ({ page }) => {
+  test("updates groups, toggles, and opens a DM", {
+    tag: "@serial",
+  }, async ({ page }) => {
     const memberChannel = `#member-panel-${Date.now().toString().slice(-6)}`;
     const bot = await IrcClient.connect(
       "member-bot",
@@ -35,7 +39,7 @@ test.describe("desktop members against local Ergo", () => {
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto("/?irc-password=weblounge-test");
       const composer = page.getByRole("textbox", {
-        name: `Message ${channel}`,
+        name: `Message ${sharedChannel}`,
       });
       await composer.fill(`/join ${memberChannel}`);
       await composer.press("Enter");
@@ -163,97 +167,75 @@ test.describe("desktop members against local Ergo", () => {
 
   test("resubscribes the open panel when switching channels", async ({
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString().slice(-5);
-    const room = `#room-${suffix}`;
-    const garden = `#members-${suffix}`;
-    const roomNick = `room${suffix}`;
-    const gardenNick = `garden${suffix}`;
-    const gardenExtraNick = `leaf${suffix}`;
-    const roomBot = await IrcClient.connect(
-      roomNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      room,
-    );
-    const gardenBot = await IrcClient.connect(
-      gardenNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      garden,
-    );
-    const gardenExtraBot = await IrcClient.connect(
-      gardenExtraNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      garden,
-    );
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-      const composer = page.getByRole("textbox", {
-        name: `Message ${channel}`,
-      });
-      await composer.fill(`/join ${garden}`);
-      await composer.press("Enter");
-      await expect(page.getByRole("heading", { name: garden })).toBeVisible();
-      const gardenComposer = page.getByRole("textbox", {
-        name: `Message ${garden}`,
-      });
-      await gardenComposer.fill(`/join ${room}`);
-      await gardenComposer.press("Enter");
-      await expect(page.getByRole("heading", { name: room })).toBeVisible();
-      const gardenButton = page.getByRole("button", { name: garden });
-      await expect(gardenButton).toBeVisible();
+    const channel = irc.channel;
+    const room = irc.channelNamed("panel-room");
+    const garden = irc.channelNamed("members");
+    const roomNick = (await irc.peer("room", [room])).nickname;
+    const gardenNick = (await irc.peer("garden", [garden])).nickname;
+    await irc.peer("leaf", [garden]);
+    await page.goto(irc.url());
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${channel}`,
+    });
+    await composer.fill(`/join ${garden}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: garden })).toBeVisible();
+    const gardenComposer = page.getByRole("textbox", {
+      name: `Message ${garden}`,
+    });
+    await gardenComposer.fill(`/join ${room}`);
+    await gardenComposer.press("Enter");
+    await expect(page.getByRole("heading", { name: room })).toBeVisible();
+    const gardenButton = page.getByRole("button", { name: garden });
+    await expect(gardenButton).toBeVisible();
 
-      await page.getByRole("button", { name: "Toggle member list" }).click();
-      const panel = page.locator("[data-member-buffer]").locator("..");
-      await expect(panel).toHaveAccessibleName(`Members of ${room}`);
-      await expect(
-        panel.getByRole("button", {
-          name: `Open direct message with ${roomNick}`,
-        }),
-      ).toBeVisible();
-      await expect(panel.getByText("2", { exact: true })).toBeVisible();
-      await gardenButton.click();
-      await expect(panel).toHaveAccessibleName(`Members of ${garden}`);
-      await expect(
-        panel.getByRole("button", {
-          name: `Open direct message with ${gardenNick}`,
-        }),
-      ).toBeVisible();
-      await expect(panel.getByText("3", { exact: true })).toBeVisible();
-      await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    const panel = page.locator("[data-member-buffer]").locator("..");
+    await expect(panel).toHaveAccessibleName(`Members of ${room}`);
+    await expect(
+      panel.getByRole("button", {
+        name: `Open direct message with ${roomNick}`,
+      }),
+    ).toBeVisible();
+    await expect(panel.getByText("2", { exact: true })).toBeVisible();
+    await gardenButton.click();
+    await expect(panel).toHaveAccessibleName(`Members of ${garden}`);
+    await expect(
+      panel.getByRole("button", {
+        name: `Open direct message with ${gardenNick}`,
+      }),
+    ).toBeVisible();
+    await expect(panel.getByText("3", { exact: true })).toBeVisible();
+    await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
 
-      await page.getByRole("button", { name: room }).click();
-      await expect(panel).toHaveAccessibleName(`Members of ${room}`);
-      await expect(
-        panel.getByRole("button", {
-          name: `Open direct message with ${roomNick}`,
-        }),
-      ).toBeVisible();
-      await page.getByRole("button", { name: "Hide members" }).click();
-      await gardenButton.click();
-      await page.getByRole("button", { name: "Toggle member list" }).click();
-      await expect(
-        panel.getByRole("button", {
-          name: `Open direct message with ${gardenNick}`,
-        }),
-      ).toBeVisible();
-    } finally {
-      roomBot.close();
-      gardenBot.close();
-      gardenExtraBot.close();
-    }
+    await page.getByRole("button", { name: room }).click();
+    await expect(panel).toHaveAccessibleName(`Members of ${room}`);
+    await expect(
+      panel.getByRole("button", {
+        name: `Open direct message with ${roomNick}`,
+      }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Hide members" }).click();
+    await gardenButton.click();
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    await expect(
+      panel.getByRole("button", {
+        name: `Open direct message with ${gardenNick}`,
+      }),
+    ).toBeVisible();
   });
 
   test("slides the narrow member drawer closed from its panel control", async ({
     page,
+    irc,
   }) => {
     await page.setViewportSize({ width: 500, height: 900 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/?irc-password=weblounge-test");
-    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
     await page.getByRole("button", { name: "Toggle member list" }).click();
     await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
       "data-phase",

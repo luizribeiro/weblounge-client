@@ -1,5 +1,6 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Locator, Page } from "@playwright/test";
+import { IrcClient, messageId, serverTime } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 
 test.use({
@@ -17,124 +18,100 @@ test.describe("mobile chat list against local Ergo", () => {
 
   test("centres unread badges on preview and compact rows", async ({
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36).slice(-6);
-    const nick = `${"W".repeat(25)}-${suffix}`;
-    const bot = await IrcClient.connect(
-      nick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("button", { name: "#weblounge-test" }),
-      ).toBeVisible();
-      const row = page.locator(`[data-buffer-id][aria-label^="${nick},"]`);
+    const bot = await irc.peer("W".repeat(23));
+    const nick = bot.nickname;
+    await page.goto(irc.url());
+    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+    const row = page.locator(`[data-buffer-id][aria-label^="${nick},"]`);
 
-      bot.privmsg("weblounge", "message 1");
-      await expectCentredBadge(row, "1");
-      for (let count = 2; count <= 10; count += 1)
-        bot.privmsg("weblounge", `message ${count}`);
-      await expectCentredBadge(row, "10");
-      await setThreeDigitBadge(row);
-      await expectCentredBadge(row, "123");
+    bot.privmsg(irc.account, "message 1");
+    await expectCentredBadge(row, "1");
+    for (let count = 2; count <= 10; count += 1)
+      bot.privmsg(irc.account, `message ${count}`);
+    await expectCentredBadge(row, "10");
+    await setThreeDigitBadge(row);
+    await expectCentredBadge(row, "123");
 
-      const title = row.getByText(nick, { exact: true });
-      await expect(title).toBeVisible();
-      expect(
-        await title.evaluate(
-          (element) => element.scrollWidth > element.clientWidth,
-        ),
-      ).toBe(true);
-      await expect(row.getByText("message 10", { exact: true })).toBeVisible();
-      await expectCentredBadge(row, "123");
-      await page.emulateMedia({ colorScheme: "dark" });
-      await expectCentredBadge(row, "123");
+    const title = row.getByText(nick, { exact: true });
+    await expect(title).toBeVisible();
+    expect(
+      await title.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    ).toBe(true);
+    await expect(row.getByText("message 10", { exact: true })).toBeVisible();
+    await expectCentredBadge(row, "123");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectCentredBadge(row, "123");
 
-      await page.evaluate(() => {
-        document.documentElement.dataset.mobileDensity = "compact";
-      });
-      const search = page.getByRole("searchbox", { name: "Search chats" });
-      await search.fill("no matching chat");
-      await expect(row).toHaveCount(0);
-      await search.fill("");
-      await expect(row.getByText("message 10", { exact: true })).toHaveCount(0);
-      await setThreeDigitBadge(row);
-      await expectCentredBadge(row, "123");
-      await page.emulateMedia({ colorScheme: "light" });
-      await expectCentredBadge(row, "123");
-    } finally {
-      bot.close();
-    }
+    await page.evaluate(() => {
+      document.documentElement.dataset.mobileDensity = "compact";
+    });
+    const search = page.getByRole("searchbox", { name: "Search chats" });
+    await search.fill("no matching chat");
+    await expect(row).toHaveCount(0);
+    await search.fill("");
+    await expect(row.getByText("message 10", { exact: true })).toHaveCount(0);
+    await setThreeDigitBadge(row);
+    await expectCentredBadge(row, "123");
+    await page.emulateMedia({ colorScheme: "light" });
+    await expectCentredBadge(row, "123");
   });
 
-  test("moves the most recently active chat to the top", async ({ page }) => {
-    const suffix = Date.now().toString(36).slice(-6);
-    const channel = `#recent-${suffix}`;
-    const nick = `recent-${suffix}`;
-    let bot: IrcClient | undefined;
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await page.getByRole("button", { name: "#weblounge-test" }).click();
-      const composer = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
-      });
-      await composer.fill(`/join ${channel}`);
-      await composer.press("Enter");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  test("moves the most recently active chat to the top", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("recent");
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${irc.channel}`,
+    });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-      bot = await IrcClient.connect(
-        nick,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      );
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      bot.privmsg("weblounge", "direct activity first");
-      await expect(page.getByText("direct activity first")).toBeVisible();
-      await expectChatOrder(page.locator("[data-buffer-id]"), [nick, channel]);
+    const bot = await irc.peer("recent", [channel]);
+    const nick = bot.nickname;
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    bot.privmsg(irc.account, "direct activity first");
+    await expect(page.getByText("direct activity first")).toBeVisible();
+    await expectChatOrder(page.locator("[data-buffer-id]"), [nick, channel]);
 
-      bot.privmsg(channel, "channel activity second");
-      await expect(
-        page.getByText("channel activity second", { exact: true }),
-      ).toBeVisible();
-      await expectChatOrder(page.locator("[data-buffer-id]"), [channel, nick]);
-    } finally {
-      bot?.close();
-    }
+    bot.privmsg(channel, "channel activity second");
+    await expect(
+      page.getByText("channel activity second", { exact: true }),
+    ).toBeVisible();
+    await expectChatOrder(page.locator("[data-buffer-id]"), [channel, nick]);
   });
 
   test("uses the newest visible message after reaction-only TARGETS activity", async ({
     context,
     page,
+    irc,
   }) => {
     await useDedicatedWorker(page);
-    await setAppAlwaysOn(true);
-    const suffix = Date.now().toString(36).slice(-6);
-    const bot = await IrcClient.connect(
-      `reaction-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    const text = `before reaction ${suffix}`;
+    await enableAppAlwaysOn(irc);
+    const bot = await irc.peer("reaction");
+    const text = "before reaction";
     let current = page;
     try {
-      await current.goto("/?irc-password=weblounge-test");
+      await current.goto(irc.url());
       await expect(
-        current.getByRole("button", { name: "#weblounge-test" }),
+        current.getByRole("button", { name: irc.channel }),
       ).toBeVisible();
-      const echoed = await bot.privmsgConfirmed("weblounge", text);
+      const echoed = await bot.privmsgConfirmed(irc.account, text);
       let row = directRow(current, bot.nickname);
       await expect(row).toContainText(text);
-      await bot.reactionConfirmed("weblounge", messageId(echoed), "thumbsup");
+      await bot.reactionConfirmed(irc.account, messageId(echoed), "thumbsup");
 
       await current.close();
       current = await context.newPage();
       await useDedicatedWorker(current);
-      await current.goto("/?irc-password=weblounge-test");
+      await current.goto(irc.url());
       row = directRow(current, bot.nickname);
       await expect(row).toContainText(text);
       await row.click();
@@ -143,12 +120,10 @@ test.describe("mobile chat list against local Ergo", () => {
 
       await expect(row.locator("time")).toHaveAttribute(
         "datetime",
-        serverTime(echoed),
+        new Date(serverTime(echoed)).toISOString(),
       );
     } finally {
       if (!current.isClosed()) await current.close();
-      bot.close();
-      await setAppAlwaysOn(false);
     }
   });
 });
@@ -161,35 +136,15 @@ function messageRow(page: Page, text: string) {
   return page.locator("[data-message-row]", { hasText: text });
 }
 
-function messageId(line: string): string {
-  const value = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
-  if (value === undefined) throw new Error(`IRC line has no msgid: ${line}`);
-  return value;
-}
-
-function serverTime(line: string): string {
-  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
-  if (value === undefined)
-    throw new Error(`IRC line has no server time: ${line}`);
-  return new Date(value).toISOString();
-}
-
-async function setAppAlwaysOn(enabled: boolean): Promise<void> {
-  const control = await IrcClient.connect(
-    "weblounge",
-    "weblounge",
-    "weblounge-test",
-    "#weblounge-test",
+async function enableAppAlwaysOn(irc: IrcTestAccount): Promise<void> {
+  const control = await IrcClient.connectWithoutJoin(
+    irc.account,
+    irc.account,
+    irc.password,
   );
-  try {
-    if (control.nickname !== "weblounge") {
-      await control.waitForNickDeparture("weblounge");
-      await control.nick("weblounge");
-    }
-    await control.setAlwaysOn(enabled);
-  } finally {
-    control.close();
-  }
+  await control.setAlwaysOn(true);
+  control.close();
+  await control.waitForDisconnect();
 }
 
 async function expectChatOrder(
