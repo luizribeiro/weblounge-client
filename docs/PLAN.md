@@ -62,6 +62,12 @@ The single place a fresh session reads to know where the project stands. Update 
   it in a new tab. Local Ergo advertises a fake HTTPS file host that the specs drive (held, 404,
   foreign origin, compact, phone). Inline images work on beta once weblounge-server PR #77's CSP is
   live. Next: the zoom/pan viewer, then a natural-size cache in `Space::Cache`.
+- 2026-11-13: Settings slice 1 (design 29): theme (System, Lounge, Lounge Night) and message
+  density are engine-owned device settings that every tab follows live, painted before the first
+  frame from a local copy. Desktop opens a Settings modal from a gear in the sidebar header, the
+  ⌘K/command palette "Settings" row, `⇧⌘,` on the web, `⌘,` in the Mac app, or the
+  `weblounge:action` page event the Mac app menu will dispatch; the phone pushes Settings from a
+  gear in the Chats header. Next slices: the rest of Appearance, Notifications, Networks, About.
 - 2026-11-13: numbered conversation jumps on desktop (`⌘1…9` in Tauri and the Mac app,
   `Alt+1…9` on web macOS/Windows, `Ctrl+Alt+1…9` on web Linux). They count the visible sidebar
   conversation rows top to bottom, and holding the jump modifier shows each row's number. Sidebar
