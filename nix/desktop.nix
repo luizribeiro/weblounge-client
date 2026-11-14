@@ -67,5 +67,6 @@ rustPlatform.buildRustPackage {
     grep -qx " *identifier: ${config.identifier}" <<<"$signature"
     grep -q "'Info (1):" <<<"$signature"
   '';
+  passthru.bundleName = "${config.productName}.app";
   meta.platforms = pkgs.lib.platforms.darwin;
 }

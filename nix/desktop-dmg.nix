@@ -21,7 +21,7 @@ pkgs.runCommand "weblounge-desktop-dmg"
     mkdir -p $out
     xorrisofs -volid weblounge -hfsplus -apm-block-size 2048 -rational-rock \
       -graft-points -output $out/weblounge.dmg \
-      weblounge.app=${desktop}/Applications/weblounge.app Applications=Applications
+      ${desktop.bundleName}=${desktop}/Applications/${desktop.bundleName} Applications=Applications
     if LC_ALL=C grep -qa '????????' $out/weblounge.dmg; then
       echo "weblounge.dmg still carries Finder type/creator codes" >&2
       exit 1

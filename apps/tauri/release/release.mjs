@@ -14,11 +14,12 @@ import {
 } from "./plan.mjs";
 
 const IDENTITY = "Developer ID Application: LUIZ GUSTAVO CARDOSO RIBEIRO (JR4C2QJKWJ)";
-const BUNDLE_ID = "org.weblounge.desktop";
 const NOTARY_PROFILE = "weblounge";
-const APP = "weblounge.app";
 const repo = new URL("../../../", import.meta.url).pathname;
 const crate = join(repo, "apps/tauri");
+const releaseIdentity = JSON.parse(readFileSync(join(crate, "tauri.release.conf.json"), "utf8"));
+const BUNDLE_ID = releaseIdentity.identifier;
+const APP = `${releaseIdentity.productName}.app`;
 
 const run = (command, args) =>
   execFileSync(command, args, { cwd: repo, encoding: "utf8" }).trim();
