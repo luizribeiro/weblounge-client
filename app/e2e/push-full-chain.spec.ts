@@ -45,6 +45,7 @@ test.describe("full unmocked push lifecycle", () => {
   let deployedPushDatabase: JSHandle<IDBDatabase>;
   let audit: IrcClient;
   let bot: IrcClient;
+  let badgeWithUnreadDm: number;
 
   test.beforeAll(async ({ browser }) => {
     context = await pushContext(browser, "a");
@@ -222,7 +223,7 @@ test.describe("full unmocked push lifecycle", () => {
 
       await closeNotifications(page);
       await releaseForegroundLeases([page, other]);
-      const badgeBefore = (await storedAppBadge(page)) ?? 0;
+      badgeWithUnreadDm = ((await storedAppBadge(page)) ?? 0) + 1;
       const direct = `read elsewhere ${randomUUID()}`;
       await bot.privmsgConfirmed("weblounge", direct);
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
@@ -237,7 +238,7 @@ test.describe("full unmocked push lifecycle", () => {
           tag: `weblounge/${bot.nickname.toLowerCase()}`,
         }),
       ]);
-      await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
+      await expect.poll(() => storedAppBadge(page)).toBe(badgeWithUnreadDm);
 
       const droppedBefore = await normalPushesDropped();
       await other.goto("/?debug=push");
@@ -257,26 +258,28 @@ test.describe("full unmocked push lifecycle", () => {
       await expect
         .poll(() => notifications(page))
         .toEqual(originalNotification);
-      await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
-
-      await context.addInitScript(installAppBadgeSpy);
-      await page.goto("/");
-      await expect(connectionHeading(page)).toBeVisible();
-      await expect.poll(() => notifications(page)).toEqual([]);
-      await expect
-        .poll(async () => {
-          const corrected = await latestAppBadgeCall(page);
-          const stored = await storedAppBadge(page);
-          return (
-            corrected !== undefined &&
-            corrected < badgeBefore + 1 &&
-            corrected === stored
-          );
-        })
-        .toBe(true);
+      await expect.poll(() => storedAppBadge(page)).toBe(badgeWithUnreadDm);
     } finally {
       await otherContext.close();
     }
+  });
+
+  test("clears the read-elsewhere notification and badge on reopen", async () => {
+    await context.addInitScript(installAppBadgeSpy);
+    await page.goto("/");
+    await expect(connectionHeading(page)).toBeVisible();
+    await expect.poll(() => notifications(page)).toEqual([]);
+    await expect
+      .poll(async () => {
+        const corrected = await latestAppBadgeCall(page);
+        const stored = await storedAppBadge(page);
+        return (
+          corrected !== undefined &&
+          corrected < badgeWithUnreadDm &&
+          corrected === stored
+        );
+      })
+      .toBe(true);
   });
 });
 
