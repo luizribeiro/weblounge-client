@@ -404,24 +404,10 @@ test.describe("independent push route reopen", () => {
       "#push-e2e",
     );
     try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       const endpointsBefore = await audit.pushSubscriptionEndpoints();
       await page.goto("/");
       await expect(connectionHeading(page)).toBeVisible();
-      await page.getByRole("button", { name: "Turn on" }).click();
-
-      let deviceId: string | undefined;
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          deviceId = created?.id;
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      const deviceId = await turnOnPushForNewDevice(page);
       await expect
         .poll(() => audit.pushSubscriptionEndpoints())
         .toHaveLength(endpointsBefore.length + 1);
@@ -431,23 +417,12 @@ test.describe("independent push route reopen", () => {
       );
       expect(routeEndpoints).toHaveLength(1);
       const [routeEndpoint] = routeEndpoints;
-      if (deviceId === undefined)
-        throw new Error("relay device was not created");
 
       await page.close();
       page = await context.newPage();
       await page.goto("/");
       await expect(connectionHeading(page)).toBeVisible();
-      await expect
-        .poll(async () => {
-          const reopened = (await relayStates()).find(
-            ({ id }) => id === deviceId,
-          );
-          return reopened === undefined
-            ? undefined
-            : { active: reopened.active, probing: reopened.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      await expectActiveRoute(deviceId);
       expect(await audit.pushSubscriptionEndpoints()).toContain(routeEndpoint);
 
       await closeNotifications(page);
@@ -486,7 +461,6 @@ test.describe("independent foreground push suppression", () => {
       "#push-e2e",
     );
     try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await foreground.goto("/");
       await expect(connectionHeading(foreground)).toBeVisible();
       await openPushChannel(foreground);
@@ -500,17 +474,10 @@ test.describe("independent foreground push suppression", () => {
         })
         .click();
       const composer = foreground.getByRole("textbox", { name: "Message" });
-      await foreground.getByRole("button", { name: "Turn on" }).click();
+      const foregroundDevice = await turnOnPushForNewDevice(foreground);
       await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, leases: created.leases };
-        })
-        .toEqual({ active: 1, leases: 1 });
+        .poll(async () => (await findRelayDevice(foregroundDevice))?.leases)
+        .toBe(1);
       await composer.focus();
       await expect(composer).toBeFocused();
       await foreground.evaluate(() => {
@@ -559,9 +526,7 @@ test.describe("independent foreground push suppression", () => {
       let delivered: readonly ReceiverRecord[] = [];
       await expect
         .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
+          const created = await findRelayDevice(foregroundDevice);
           delivered = (await records())
             .filter(({ path }) => path === `/device/${deviceId}`)
             .slice(recordsBefore);
@@ -575,9 +540,7 @@ test.describe("independent foreground push suppression", () => {
       await expect.poll(() => notifications(foreground)).toEqual([]);
       await expect
         .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
+          const created = await findRelayDevice(foregroundDevice);
           return created === undefined
             ? undefined
             : { held: created.held, leases: created.leases };
@@ -607,20 +570,9 @@ test.describe("independent push recovery", () => {
     );
     try {
       const endpointsBefore = await audit.pushSubscriptionEndpoints();
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await page.goto("/");
       await expect(connectionHeading(page)).toBeVisible();
-      await page.getByRole("button", { name: "Turn on" }).click();
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      await turnOnPushForNewDevice(page);
       let registered = await audit.pushSubscriptionEndpoints();
       await expect
         .poll(async () => {
@@ -684,21 +636,10 @@ test.describe("independent push recovery", () => {
       "#push-e2e",
     );
     try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       const endpointsBefore = await audit.pushSubscriptionEndpoints();
       await page.goto("/");
       await expect(connectionHeading(page)).toBeVisible();
-      await page.getByRole("button", { name: "Turn on" }).click();
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      await turnOnPushForNewDevice(page);
       const deviceCount = (await relayStates()).length;
       await expectOneRoutePerDevice(deviceCount);
       await closeNotifications(page);
@@ -773,20 +714,9 @@ test.describe("independent portable push controls", () => {
     );
     const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
     try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await control.goto("/");
       await expect(connectionHeading(control)).toBeVisible();
-      await control.getByRole("button", { name: "Turn on" }).click();
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      await turnOnPushForNewDevice(control);
       await preparePortablePushDriver(control);
       await releaseForegroundLeases([control]);
       const badgeBefore = (await storedAppBadge(control)) ?? 0;
@@ -831,20 +761,9 @@ test.describe("independent Apple badge recovery", () => {
     );
     const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
     try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await ios.goto("/");
       await expect(connectionHeading(ios)).toBeVisible();
-      await ios.getByRole("button", { name: "Turn on" }).click();
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
+      await turnOnPushForNewDevice(ios);
       await releaseForegroundLeases([ios]);
 
       const direct = `stale Apple badge ${randomUUID()}`;
@@ -1081,6 +1000,51 @@ async function activateCurrentServiceWorker(page: Page): Promise<void> {
   } finally {
     await previous.dispose();
   }
+}
+
+async function turnOnPushForNewDevice(page: Page): Promise<string> {
+  const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+  await page.getByRole("button", { name: "Turn on" }).click();
+  // A first visit registers the service worker only after the splash, on idle,
+  // and Turn on waits for it before subscribing.
+  await expect.poll(() => isRootServiceWorkerActivated(page)).toBe(true);
+  let deviceId: string | undefined;
+  await expect
+    .poll(async () => {
+      deviceId = (await relayStates()).find(
+        ({ id }) => !devicesBefore.has(id),
+      )?.id;
+      return deviceId;
+    })
+    .toBeDefined();
+  if (deviceId === undefined) throw new Error("relay device was not created");
+  await expectActiveRoute(deviceId);
+  return deviceId;
+}
+
+function isRootServiceWorkerActivated(page: Page): Promise<boolean> {
+  return page.evaluate(
+    async () =>
+      (await navigator.serviceWorker.getRegistration("/"))?.active?.state ===
+      "activated",
+  );
+}
+
+async function expectActiveRoute(deviceId: string): Promise<void> {
+  await expect
+    .poll(async () => {
+      const device = await findRelayDevice(deviceId);
+      return device === undefined
+        ? undefined
+        : { active: device.active, probing: device.probing };
+    })
+    .toEqual({ active: 1, probing: 0 });
+}
+
+async function findRelayDevice(
+  deviceId: string,
+): Promise<RelayDeviceState | undefined> {
+  return (await relayStates()).find(({ id }) => id === deviceId);
 }
 
 async function relayStates(): Promise<readonly RelayDeviceState[]> {
