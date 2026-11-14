@@ -1,6 +1,8 @@
-import { expect, type Page, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { Page } from "@playwright/test";
+import { IrcClient, isolatedPassword, registerAccount } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -11,26 +13,28 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
   test(`confirms a DM after its unshared peer returns while ${cycle}`, async ({
     context,
     page,
+    irc,
   }) => {
     await installNativeFeelInstrumentation(page);
-    const suffix = `${cycle.slice(0, 1)}${Date.now().toString().slice(-6)}`;
-    const nick = `return-${suffix}`;
+    const nick = irc.nickNamed("return");
+    const suffix = irc.id;
+    await registerAccount(nick, isolatedPassword(nick));
     let peer = await connectPeer(nick);
-    const watcher = await connectPeer(`watch-${suffix}`);
+    const watcher = await irc.peer("watch", []);
     try {
-      await page.goto("/?irc-password=weblounge-test");
+      await page.goto(irc.url());
       await expect(page.locator('[data-network-state="online"]')).toHaveCount(
         1,
       );
       const opening = `open returned peer ${suffix}`;
-      await peer.privmsgConfirmed("weblounge", opening);
+      await peer.privmsgConfirmed(irc.account, opening);
       const direct = page.getByRole("button", {
         name: new RegExp(`^${nick}(?:,|$)`),
       });
       await expect(direct).toBeVisible();
       await direct.click();
       await expect(page.getByText(opening, { exact: true })).toBeVisible();
-      await expectTitleSettled(page);
+      await expectSettled(page, { conversation: nick });
 
       if (cycle === "hidden") await setVisibility(page, true);
       if (cycle === "reconnecting") {
@@ -43,7 +47,7 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
       await peer.waitForDisconnect();
       await departure;
       const offlineBarrier = `offline barrier ${suffix}`;
-      await watcher.privmsgConfirmed("weblounge", offlineBarrier);
+      await watcher.privmsgConfirmed(irc.account, offlineBarrier);
       if (cycle !== "hidden") await expectOfflineBarrier(page, watcher);
       peer = await connectPeer(nick);
 
@@ -57,7 +61,7 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
         await expect(page.locator('[data-network-state="online"]')).toHaveCount(
           1,
         );
-        await expectTitleSettled(page);
+        await expectSettled(page, { conversation: nick });
       }
 
       const reply = `reply to returned peer ${suffix}`;
@@ -73,22 +77,17 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
       await expect(
         page.getByText("Messages can't be sent to this conversation."),
       ).toHaveCount(0);
-      await expectTitleSettled(page);
-      await peer.waitForPrivmsg(peer.nickname, reply, "weblounge");
+      await expectSettled(page, { conversation: nick });
+      await peer.waitForPrivmsg(peer.nickname, reply, irc.account);
     } finally {
       await context.setOffline(false);
       peer.close();
-      watcher.close();
     }
   });
 }
 
 function connectPeer(nick: string): Promise<IrcClient> {
-  return IrcClient.connectWithoutJoin(
-    nick,
-    "weblounge-bot",
-    "weblounge-bot-test",
-  );
+  return IrcClient.connectWithoutJoin(nick, nick, isolatedPassword(nick));
 }
 
 async function expectOfflineBarrier(
@@ -100,12 +99,6 @@ async function expectOfflineBarrier(
       name: new RegExp(`^${watcher.nickname}(?:,|$)`),
     }),
   ).toBeVisible();
-}
-
-async function expectTitleSettled(page: Page): Promise<void> {
-  const title = page.locator("[data-conversation-title]");
-  await expect(title).toHaveText(/^return-/u);
-  await expect(title).not.toHaveAttribute("data-connection-progress");
 }
 
 async function networkState(page: Page): Promise<string | null> {

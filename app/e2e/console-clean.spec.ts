@@ -1,20 +1,13 @@
-import {
-  type BrowserContext,
-  type ConsoleMessage,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
-import { IrcClient } from "./irc-client";
+import type { BrowserContext, ConsoleMessage, Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
-
-const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 test("keeps normal desktop and mobile flows console-clean", async ({
   baseURL,
   browser,
   browserName,
   page,
+  irc,
 }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -22,20 +15,15 @@ test("keeps normal desktop and mobile flows console-clean", async ({
   );
   if (baseURL === undefined) throw new Error("Playwright base URL is missing");
 
-  const suffix = Date.now().toString().slice(-6);
-  const channel = `#console-${suffix}`;
-  const bot = await IrcClient.connect(
-    `console-${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
+  const channel = irc.channelNamed("console");
+  const bot = await irc.peer("console", [channel]);
+  const suffix = irc.id;
   let phase = "load";
   const issues = observeConsole(page, baseURL, browserName, () => phase);
   let mobileContext: BrowserContext | undefined;
   try {
     await page.setViewportSize({ width: 1280, height: 600 });
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
     phase = "open channel";
     const joinComposer = page.getByRole("textbox", { name: "Message" });
@@ -75,6 +63,7 @@ test("keeps normal desktop and mobile flows console-clean", async ({
       isMobile: true,
       viewport: { width: 402, height: 874 },
     });
+    await irc.scope(mobileContext);
     const mobile = await mobileContext.newPage();
     let mobilePhase = "mobile load";
     const mobileIssues = observeConsole(
@@ -83,14 +72,14 @@ test("keeps normal desktop and mobile flows console-clean", async ({
       browserName,
       () => mobilePhase,
     );
-    await mobile.goto("/?irc-password=weblounge-test");
+    await mobile.goto(irc.url());
     await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
     mobilePhase = "open mobile chat";
     await mobile
-      .getByRole("button", { name: new RegExp(`^${fixtureChannel}`) })
+      .getByRole("button", { name: new RegExp(`^${irc.channel}`) })
       .click();
     await expect(
-      mobile.getByRole("heading", { name: fixtureChannel }),
+      mobile.getByRole("heading", { name: irc.channel }),
     ).toBeVisible();
     await expect(mobile.locator("[data-message-list]")).toBeVisible();
 
@@ -100,7 +89,6 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     });
   } finally {
     await mobileContext?.close();
-    bot.close();
   }
 });
 

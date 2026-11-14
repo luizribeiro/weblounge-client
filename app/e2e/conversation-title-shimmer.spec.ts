@@ -1,7 +1,6 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
-
-const channel = "#weblounge-test";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -21,10 +20,11 @@ for (const shell of ["desktop", "mobile"] as const) {
     test("sweeps while history resolves and crossfades when current", async ({
       browserName,
       page,
+      irc,
     }) => {
       await installNativeFeelInstrumentation(page);
-      await holdSyncedBufferProjection(page, channel);
-      await openChannel(page, shell);
+      await holdSyncedBufferProjection(page, irc.channel);
+      await openChannel(page, irc, shell);
       const title = page.locator("[data-conversation-title]");
 
       await expect(title).toHaveAttribute("data-connection-phase", "loading");
@@ -73,10 +73,13 @@ for (const shell of ["desktop", "mobile"] as const) {
       expect(await runningAnimations(title)).toBe(0);
     });
 
-    test("uses a static dim title with reduced motion", async ({ page }) => {
+    test("uses a static dim title with reduced motion", async ({
+      page,
+      irc,
+    }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await holdSyncedBufferProjection(page, channel);
-      await openChannel(page, shell);
+      await holdSyncedBufferProjection(page, irc.channel);
+      await openChannel(page, irc, shell);
       const title = page.locator("[data-conversation-title]");
 
       await expect(title).toHaveAttribute("data-connection-phase", "reduced");
@@ -89,8 +92,13 @@ for (const shell of ["desktop", "mobile"] as const) {
   });
 }
 
-async function openChannel(page: Page, shell: "desktop" | "mobile") {
-  await page.goto("/?irc-password=weblounge-test");
+async function openChannel(
+  page: Page,
+  irc: IrcTestAccount,
+  shell: "desktop" | "mobile",
+) {
+  const channel = irc.channel;
+  await page.goto(irc.url());
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   if (shell === "mobile") {
     const channelButton = page.getByRole("button", { name: channel });
