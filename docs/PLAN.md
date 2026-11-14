@@ -15,6 +15,7 @@ The single place a fresh session reads to know where the project stands. Update 
 - Desktop wrapper (design 27) phase 3: seamless title bar, after Luiz signs off its layout.
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
+- Refresh crates/engine/data/public-suffixes.txt (command in its header); vendored 2026-11-12.
 - Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`.
 - CI flake (2 in ~80 main runs, not reproduced locally): `spacing-audit.spec.ts:133` opens the channel at the top of the transcript instead of the live edge. Hypothesis: TanStack drops the in-flight `scrollToEnd` (an "external" scroll while queued, or the 5s reconcile cap) and MessageList never re-issues it; failures now attach `transcript-geometry`.
 - 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
