@@ -1,7 +1,5 @@
 .row {
-  --wl-sidebar-prefix-width: 12px;
   --wl-sidebar-slot-width: 28px;
-  --wl-sidebar-row-end-inset: calc(var(--wl-space-list-inset) / 2);
 
   align-items: center;
   background: transparent;
