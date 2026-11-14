@@ -1,9 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
 import { expectFullBleedHighlight } from "./highlight-geometry";
 import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
 import {
   expectBalancedNetworkHeaderAtEachDensity,
@@ -18,9 +18,12 @@ test.describe("desktop shell against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test("fills the space beside visible desktop panels", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: /^#weblounge-test/ }).click();
+  test("fills the space beside visible desktop panels", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
     const sidebarToggle = page.getByRole("button", {
       name: "Toggle channel list",
     });
@@ -47,163 +50,146 @@ test.describe("desktop shell against local Ergo", () => {
     }
   });
 
-  test("anchors a short real conversation to the bottom", async ({ page }) => {
-    const bot = await IrcClient.connect(
-      "short-timeline",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      await bot.privmsgConfirmed("#weblounge-test", "short line one");
-      await bot.privmsgConfirmed("#weblounge-test", "short line two");
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByText("short line two", { exact: true }),
-      ).toBeVisible();
-      await page
-        .getByRole("textbox", { name: "Message" })
-        .fill("short line three");
-      await page.getByRole("button", { name: "Send" }).click();
-      await expect(
-        page.getByText("short line three", { exact: true }),
-      ).toBeVisible();
+  test("anchors a short real conversation to the bottom", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("short-timeline");
+    await bot.privmsgConfirmed(irc.channel, "short line one");
+    await bot.privmsgConfirmed(irc.channel, "short line two");
+    await page.goto(irc.url());
+    await expect(
+      page.getByText("short line two", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("textbox", { name: "Message" })
+      .fill("short line three");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(
+      page.getByText("short line three", { exact: true }),
+    ).toBeVisible();
 
-      const geometry = await page
-        .locator("[data-message-list]")
-        .evaluate((list) => {
-          const rows = list.querySelectorAll<HTMLElement>("[data-message-row]");
-          return {
-            firstTop: rows[0]?.getBoundingClientRect().top ?? 0,
-            lastBottom:
-              rows[rows.length - 1]?.getBoundingClientRect().bottom ?? 0,
-            listTop: list.getBoundingClientRect().top,
-            listBottom: list.getBoundingClientRect().bottom,
-          };
-        });
-      expect(geometry.firstTop).toBeGreaterThan(geometry.listTop + 300);
-      expect(geometry.listBottom - geometry.lastBottom).toBeLessThan(30);
-    } finally {
-      bot.close();
-    }
+    const geometry = await page
+      .locator("[data-message-list]")
+      .evaluate((list) => {
+        const rows = list.querySelectorAll<HTMLElement>("[data-message-row]");
+        return {
+          firstTop: rows[0]?.getBoundingClientRect().top ?? 0,
+          lastBottom:
+            rows[rows.length - 1]?.getBoundingClientRect().bottom ?? 0,
+          listTop: list.getBoundingClientRect().top,
+          listBottom: list.getBoundingClientRect().bottom,
+        };
+      });
+    expect(geometry.firstTop).toBeGreaterThan(geometry.listTop + 300);
+    expect(geometry.listBottom - geometry.lastBottom).toBeLessThan(30);
   });
 
   test("composes commands, completion, and per-buffer drafts", async ({
     page,
+    irc,
   }) => {
-    const draftChannel = `#another-${Date.now().toString(36)}`;
+    const draftChannel = irc.channelNamed("another");
     const fixtureMessage = `hello from completion bot ${draftChannel}`;
     const plainMessage = `plain composer message ${draftChannel}`;
     const actionMessage = `waves hello ${draftChannel}`;
-    const bot = await IrcClient.connect(
-      "composer",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      await bot.privmsgConfirmed("#weblounge-test", fixtureMessage);
-      await page.emulateMedia({ colorScheme: "light" });
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByText(fixtureMessage, { exact: true }),
-      ).toBeVisible();
-      const composer = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
-      });
+    const bot = await irc.peer("composer");
+    await bot.privmsgConfirmed(irc.channel, fixtureMessage);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto(irc.url());
+    await expect(page.getByText(fixtureMessage, { exact: true })).toBeVisible();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${irc.channel}`,
+    });
 
-      await page.getByRole("button", { name: "Toggle channel list" }).focus();
-      await page.keyboard.type("typed from desktop chrome");
-      await expect(composer).toHaveValue("typed from desktop chrome");
-      await composer.fill(plainMessage);
-      await composer.press("Enter");
-      await expect(page.getByText(plainMessage, { exact: true })).toBeVisible();
-      await composer.fill(`/me ${actionMessage}`);
-      await composer.press("Enter");
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: actionMessage }),
-      ).toBeVisible();
+    await page.getByRole("button", { name: "Toggle channel list" }).focus();
+    await page.keyboard.type("typed from desktop chrome");
+    await expect(composer).toHaveValue("typed from desktop chrome");
+    await composer.fill(plainMessage);
+    await composer.press("Enter");
+    await expect(page.getByText(plainMessage, { exact: true })).toBeVisible();
+    await composer.fill(`/me ${actionMessage}`);
+    await composer.press("Enter");
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: actionMessage }),
+    ).toBeVisible();
 
-      await composer.fill("comp");
-      await composer.press("Tab");
-      await expect(composer).toHaveValue("composer: ");
-      await mkdir(screenshotDirectory, { recursive: true });
-      await screenshotWithInter(composer, {
-        path: path.join(screenshotDirectory, "composer-completion-light.png"),
-      });
-      await page.emulateMedia({ colorScheme: "dark" });
-      await screenshotWithInter(composer, {
-        path: path.join(screenshotDirectory, "composer-completion-dark.png"),
-      });
+    await composer.fill("comp");
+    await composer.press("Tab");
+    await expect(composer).toHaveValue(`${bot.nickname}: `);
+    await mkdir(screenshotDirectory, { recursive: true });
+    await screenshotWithInter(composer, {
+      path: path.join(screenshotDirectory, "composer-completion-light.png"),
+    });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await screenshotWithInter(composer, {
+      path: path.join(screenshotDirectory, "composer-completion-dark.png"),
+    });
 
-      await composer.fill(`/j ${draftChannel}`);
-      await composer.press("Enter");
-      await expect(
-        page.getByRole("heading", { name: draftChannel }),
-      ).toBeVisible();
-      const another = page.getByRole("textbox", {
-        name: `Message ${draftChannel}`,
-      });
-      await expect(another).toBeFocused();
-      await another.fill("draft in another");
-      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
-      await expect(composer).toBeFocused();
-      await composer.fill("draft in home");
-      await page.getByRole("button", { name: draftChannel }).click();
-      await expect(another).toHaveValue("draft in another");
-      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
-      await expect(composer).toHaveValue("draft in home");
+    await composer.fill(`/j ${draftChannel}`);
+    await composer.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: draftChannel }),
+    ).toBeVisible();
+    const another = page.getByRole("textbox", {
+      name: `Message ${draftChannel}`,
+    });
+    await expect(another).toBeFocused();
+    await another.fill("draft in another");
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expect(composer).toBeFocused();
+    await composer.fill("draft in home");
+    await page.getByRole("button", { name: draftChannel }).click();
+    await expect(another).toHaveValue("draft in another");
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expect(composer).toHaveValue("draft in home");
 
-      await page.goto("/?irc-password=weblounge-test");
-      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
-      const reloadedHome = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
-      });
-      await expect(reloadedHome).toHaveValue("draft in home");
-      await reloadedHome.fill(`/join ${draftChannel}`);
-      await reloadedHome.press("Enter");
-      const restoredAnother = page.getByRole("textbox", {
-        name: `Message ${draftChannel}`,
-      });
-      await expect(restoredAnother).toBeFocused();
-      await expect(restoredAnother).toHaveValue("draft in another");
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    const reloadedHome = page.getByRole("textbox", {
+      name: `Message ${irc.channel}`,
+    });
+    await expect(reloadedHome).toHaveValue("draft in home");
+    await reloadedHome.fill(`/join ${draftChannel}`);
+    await reloadedHome.press("Enter");
+    const restoredAnother = page.getByRole("textbox", {
+      name: `Message ${draftChannel}`,
+    });
+    await expect(restoredAnother).toBeFocused();
+    await expect(restoredAnother).toHaveValue("draft in another");
 
-      await restoredAnother.fill("/hop");
-      await restoredAnother.press("Enter");
-      await expect(
-        page.getByRole("heading", { name: draftChannel }),
-      ).toBeVisible();
+    await restoredAnother.fill("/hop");
+    await restoredAnother.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: draftChannel }),
+    ).toBeVisible();
 
-      await restoredAnother.fill("/q composer hi");
-      await restoredAnother.press("Enter");
-      await expect(
-        page.getByRole("heading", { name: "composer" }),
-      ).toBeVisible();
-      await expect(page.getByText("hi", { exact: true })).toBeVisible();
-      const direct = page.getByRole("textbox", {
-        name: "Message composer",
-      });
-      await expect(direct).toBeFocused();
-      await direct.fill("/help join");
-      await direct.press("Enter");
-      await expect(
-        page.getByRole("status").filter({ hasText: "/join" }),
-      ).toBeVisible();
+    await restoredAnother.fill(`/q ${bot.nickname} hi`);
+    await restoredAnother.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: bot.nickname }),
+    ).toBeVisible();
+    await expect(page.getByText("hi", { exact: true })).toBeVisible();
+    const direct = page.getByRole("textbox", {
+      name: `Message ${bot.nickname}`,
+    });
+    await expect(direct).toBeFocused();
+    await direct.fill("/help join");
+    await direct.press("Enter");
+    await expect(
+      page.getByRole("status").filter({ hasText: "/join" }),
+    ).toBeVisible();
 
-      await direct.fill("/close");
-      await direct.press("Enter");
-      await expect(page.getByRole("button", { name: /^composer/ })).toHaveCount(
-        0,
-      );
-    } finally {
-      bot.close();
-    }
+    await direct.fill("/close");
+    await direct.press("Enter");
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${bot.nickname}`, "u") }),
+    ).toHaveCount(0);
   });
 
-  test("navigates real buffers and follows the system theme", async ({
-    browser,
-    page,
-  }) => {
+  test("navigates real buffers and follows the system theme", {
+    tag: "@serial",
+  }, async ({ browser, page }) => {
     await page.setViewportSize({ width: 1440, height: 1300 });
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/?irc-password=weblounge-test");
