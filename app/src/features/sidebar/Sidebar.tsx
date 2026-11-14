@@ -26,6 +26,8 @@ import {
   createConnectionProgress,
 } from "../../ui/connection-progress";
 import type { ContextMenuRequest } from "../../ui/context-menu";
+import { HeaderIconButton } from "../../ui/HeaderIconButton";
+import { GearIcon } from "../../ui/icons/GearIcon";
 import { Line } from "../../ui/Line";
 import {
   NotificationPrompt,
@@ -104,9 +106,9 @@ export function Sidebar(props: SidebarProps) {
     jumpSlotsById(props.networks, props.buffers, jumpSlots.length),
   );
   const connection = () => connectionPresentation(props.networks);
-  const switcherAvailable = () =>
-    props.registry.availability("switcher.open", props.commandContext).state ===
-    "available";
+  const available = (id: UiActionId) =>
+    props.registry.availability(id, props.commandContext).state === "available";
+  const switcherAvailable = () => available("switcher.open");
   const switcherLauncher = () => (
     <SwitcherLauncher
       label={props.registry.title("switcher.open")}
@@ -275,11 +277,26 @@ export function Sidebar(props: SidebarProps) {
           </h1>
           <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
         </div>
-        <Show
-          when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "icon"}
-        >
-          {switcherLauncher()}
-        </Show>
+        <div class={styles.headerButtons}>
+          <Show
+            when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "icon"}
+          >
+            {switcherLauncher()}
+          </Show>
+          <Show when={available("settings.open")}>
+            <HeaderIconButton
+              ariaKeyShortcuts={props.registry.ariaKeyShortcuts(
+                "settings.open",
+              )}
+              hasPopup="dialog"
+              label={props.registry.title("settings.open")}
+              onClick={() => run("settings.open")}
+              shortcut={props.registry.bindingLabel("settings.open")}
+            >
+              <GearIcon />
+            </HeaderIconButton>
+          </Show>
+        </div>
       </div>
 
       <Show

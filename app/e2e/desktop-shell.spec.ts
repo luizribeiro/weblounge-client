@@ -7,7 +7,7 @@ import { expect, test } from "./irc-fixture";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
 import {
   expectBalancedNetworkHeaderAtEachDensity,
-  expectPinnedToHeaderEnd,
+  expectHeaderButtonsAtEnd,
 } from "./sidebar-geometry";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
@@ -214,13 +214,13 @@ test.describe("desktop shell against local Ergo", () => {
     await expectBalancedNetworkHeaderAtEachDensity(page, network);
     const launcher = sidebar.getByRole("button", { name: "Jump to" });
     await expect(launcher).toHaveAttribute("data-switcher-launcher", "icon");
-    await expectPinnedToHeaderEnd(launcher);
+    await expectHeaderButtonsAtEnd([
+      launcher,
+      sidebar.getByRole("button", { name: "Settings" }),
+    ]);
     await expect(
       sidebar.getByRole("button", { name: "Add network" }),
     ).toHaveCount(0);
-    await expect(sidebar.getByRole("button", { name: "Settings" })).toHaveCount(
-      0,
-    );
     await expect(sidebar.locator("footer")).toHaveCount(0);
 
     await channel.click();

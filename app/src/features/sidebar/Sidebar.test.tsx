@@ -85,6 +85,35 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
   );
 });
 
+it("opens Settings from the header beside the switcher", () => {
+  const settings = vi.fn();
+  const registry = new ActionRegistry(
+    { "settings.open": settings, "switcher.open": vi.fn() },
+    "macos",
+  );
+  render(() => (
+    <Sidebar
+      buffers={[]}
+      commandContext={{ bufferCount: 0, listActive: false }}
+      networks={[]}
+      registerListController={() => {}}
+      registry={registry}
+      visibleBufferIds={new Set()}
+    />
+  ));
+  const button = screen.getByRole("button", { name: "Settings" });
+
+  expect(button).toHaveAttribute("aria-haspopup", "dialog");
+  expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+Shift+Comma");
+  expect(button).toHaveAttribute("title", "Settings (⇧⌘,)");
+  expect(button.querySelector('[data-icon="gear"]')).not.toBeNull();
+  expect(button.previousElementSibling).toBe(
+    screen.getByRole("button", { name: "Jump to" }),
+  );
+  fireEvent.click(button);
+  expect(settings).toHaveBeenCalledOnce();
+});
+
 it("moves roving focus through real list commands", () => {
   let controller: SidebarListController | undefined;
   const registry = new ActionRegistry(

@@ -1,26 +1,39 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-export async function expectPinnedToHeaderEnd(button: Locator): Promise<void> {
-  const geometry = await button.evaluate((element) => {
-    const header = element.closest<HTMLElement>("[data-connection-brand]");
-    const title = header?.querySelector("[data-connection-title]");
-    if (header == null || title == null)
+export async function expectHeaderButtonsAtEnd(
+  buttons: readonly Locator[],
+): Promise<void> {
+  const edges = await Promise.all(
+    buttons.map((button) =>
+      button.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right };
+      }),
+    ),
+  );
+  const first = buttons[0];
+  const firstEdge = edges[0];
+  const lastEdge = edges.at(-1);
+  if (first === undefined || firstEdge === undefined || lastEdge === undefined)
+    throw new Error("no header buttons");
+  const header = await first.evaluate((element) => {
+    const row = element.closest<HTMLElement>("[data-connection-brand]");
+    const title = row?.querySelector("[data-connection-title]");
+    if (row == null || title == null)
       throw new Error("header button is outside the sidebar brand row");
-    const buttonBox = element.getBoundingClientRect();
-    const paddingRight = Number.parseFloat(
-      getComputedStyle(header).paddingRight,
-    );
     return {
-      buttonLeft: buttonBox.left,
-      buttonRight: buttonBox.right,
-      contentRight: header.getBoundingClientRect().right - paddingRight,
+      contentRight:
+        row.getBoundingClientRect().right -
+        Number.parseFloat(getComputedStyle(row).paddingRight),
       titleRight: title.getBoundingClientRect().right,
     };
   });
-  expect(
-    Math.abs(geometry.contentRight - geometry.buttonRight),
-  ).toBeLessThanOrEqual(1);
-  expect(geometry.titleRight).toBeLessThanOrEqual(geometry.buttonLeft);
+  for (const [index, edge] of edges.slice(1).entries())
+    expect(
+      Math.abs(edge.left - (edges[index]?.right ?? Number.NaN)),
+    ).toBeLessThanOrEqual(1);
+  expect(Math.abs(header.contentRight - lastEdge.right)).toBeLessThanOrEqual(1);
+  expect(header.titleRight).toBeLessThanOrEqual(firstEdge.left);
 }
 
 // Pinned so restyling the network header never moves the rows under it.
