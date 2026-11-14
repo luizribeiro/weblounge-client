@@ -400,6 +400,8 @@ eviction, while a beta transcript scalar with no restored range can no longer pi
 **Tombstone.** `Redacted`, live or from history, finds its target through the msgid map
 (`state.rs:2785`).
 
+Design 32 (message redaction) supersedes the preview, read-fact and naming rules below.
+
 - It sets `content = Deleted { by }` and drops the target's reaction facts. The row keeps its id,
   order, author and time.
 - A redaction that arrives before its message waits in the bounded target index used by reactions
