@@ -750,6 +750,7 @@ export function DesktopShell(props: DesktopShellProps) {
         <SettingsModal
           onChange={(change) => props.onChangeSetting?.(change)}
           onClose={closeSettings}
+          rail={platform.environment().desktopPanels === "overlay"}
           settings={props.settings?.app}
         />
       </Show>

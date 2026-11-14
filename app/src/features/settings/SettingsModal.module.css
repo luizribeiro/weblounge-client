@@ -70,8 +70,7 @@
   color: var(--wl-color-fg);
 }
 
-.close svg,
-.section svg {
+.close svg {
   fill: none;
   flex: 0 0 16px;
   height: 16px;
@@ -86,42 +85,6 @@
   display: flex;
   flex: 1;
   min-height: 0;
-}
-
-.nav {
-  background: var(--wl-color-panel-alt);
-  border-right: 1px solid var(--wl-color-border);
-  display: flex;
-  flex: 0 0 188px;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 10px;
-  user-select: none;
-}
-
-.section {
-  align-items: center;
-  appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: var(--wl-radius-control);
-  color: var(--wl-color-fg);
-  display: flex;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  gap: 10px;
-  min-height: 36px;
-  padding: 0 10px;
-  text-align: left;
-  white-space: nowrap;
-  width: 100%;
-}
-
-.section[aria-current="page"] {
-  background: var(--wl-color-selection);
-  color: var(--wl-color-selection-fg);
-  font-weight: 600;
 }
 
 .pane {
@@ -140,10 +103,6 @@
   border-radius: 0;
   height: 100%;
   width: 100%;
-}
-
-:global(#root[data-desktop-panels="overlay"]) .nav {
-  display: none;
 }
 
 .modal:focus-visible {

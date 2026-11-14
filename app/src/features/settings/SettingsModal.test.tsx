@@ -1,14 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "./SettingsModal";
 
-function setup() {
+function setup(rail = false) {
   const onClose = vi.fn();
   const onChange = vi.fn();
   render(() => (
     <SettingsModal
       onChange={onChange}
       onClose={onClose}
+      rail={rail}
       settings={{ theme: "system", message_density: "cozy" }}
     />
   ));
@@ -41,6 +43,41 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
 
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("collapses the expanded rail on Escape before closing", () => {
+    const { dialog, onClose } = setup(true);
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    screen.getByRole("button", { name: "Appearance" }).focus();
+    expect(nav).toHaveAttribute("data-expanded");
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(nav).not.toHaveAttribute("data-expanded");
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("closes on Escape once the window widens past the rail", () => {
+    const onClose = vi.fn();
+    const [rail, setRail] = createSignal(true);
+    render(() => (
+      <SettingsModal
+        onChange={() => {}}
+        onClose={onClose}
+        rail={rail()}
+        settings={{ theme: "system", message_density: "cozy" }}
+      />
+    ));
+    screen.getByRole("button", { name: "Appearance" }).focus();
+    setRail(false);
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Settings" }), {
+      key: "Escape",
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("wraps Tab between the checked density and Close", async () => {

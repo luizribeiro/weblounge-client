@@ -84,3 +84,13 @@
   box-shadow: var(--wl-effect-overlay-shadow);
   width: var(--wl-settings-nav-width);
 }
+
+.nav[data-rail] .label {
+  opacity: 0;
+  transition: opacity var(--wl-motion-rail-expand)
+    var(--wl-motion-standard-curve);
+}
+
+.nav[data-expanded] .label {
+  opacity: 1;
+}

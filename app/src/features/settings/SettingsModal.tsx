@@ -1,4 +1,4 @@
-import { createUniqueId, onMount } from "solid-js";
+import { createEffect, createSignal, createUniqueId, onMount } from "solid-js";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
@@ -6,23 +6,42 @@ import { trapTab } from "../../ui/focus-trap";
 import { AppearanceIcon } from "./AppearanceIcon";
 import { AppearanceSettings } from "./AppearanceSettings";
 import styles from "./SettingsModal.module.css";
+import { SettingsSectionNav } from "./SettingsSectionNav";
 
 interface SettingsModalProps {
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
   readonly onClose: () => void;
+  readonly rail?: boolean | undefined;
 }
 
 export function SettingsModal(props: SettingsModalProps) {
   const titleId = createUniqueId();
   const sectionId = createUniqueId();
+  const sections = [
+    {
+      id: "appearance",
+      label: t("settings.appearance"),
+      labelId: sectionId,
+      icon: () => <AppearanceIcon />,
+    },
+  ] as const;
+  const [section, setSection] =
+    createSignal<(typeof sections)[number]["id"]>("appearance");
+  const [railExpanded, setRailExpanded] = createSignal(false);
+  createEffect(() => {
+    if (props.rail !== true) setRailExpanded(false);
+  });
+  const currentLabelId = () =>
+    sections.find(({ id }) => id === section())?.labelId;
   let dialog: HTMLDivElement | undefined;
   onMount(() => dialog?.focus({ preventScroll: true }));
   const keydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      props.onClose();
+      if (props.rail === true && railExpanded()) setRailExpanded(false);
+      else props.onClose();
       return;
     }
     trapTab(event, dialog);
@@ -62,13 +81,15 @@ export function SettingsModal(props: SettingsModalProps) {
           </button>
         </header>
         <div class={styles.body}>
-          <nav aria-label={t("settings.sections")} class={styles.nav}>
-            <button aria-current="page" class={styles.section} type="button">
-              <AppearanceIcon />
-              <span id={sectionId}>{t("settings.appearance")}</span>
-            </button>
-          </nav>
-          <section aria-labelledby={sectionId} class={styles.pane}>
+          <SettingsSectionNav
+            current={section()}
+            expanded={railExpanded()}
+            onExpandedChange={setRailExpanded}
+            onSelect={setSection}
+            rail={props.rail === true}
+            sections={sections}
+          />
+          <section aria-labelledby={currentLabelId()} class={styles.pane}>
             <AppearanceSettings
               onChange={props.onChange}
               settings={props.settings}
