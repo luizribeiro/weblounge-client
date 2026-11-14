@@ -1,14 +1,16 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { E2E_FILEHOST_ORIGIN } from "../csp";
 import { screenshotWithInter } from "./inter-font";
-import { IrcClient } from "./irc-client";
+import type { IrcClient } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 
 const screenshots = path.join(
@@ -25,17 +27,17 @@ test.describe("inline file host images against local Ergo", () => {
   );
   test.use({ ignoreHTTPSErrors: true });
 
-  test("reserves desktop slots that never move rows", async ({ page }) => {
+  test("reserves desktop slots that never move rows", async ({ page, irc }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: "light" });
-    await withDirectPeer(page, "desktop", async (peer, suffix) => {
+    await withDirectPeer(page, irc, "desktop", async (peer, suffix) => {
       const held = `${E2E_FILEHOST_ORIGIN}/held/${suffix}/wide.png`;
       const missing = `${E2E_FILEHOST_ORIGIN}/${suffix}/missing.png`;
       const foreign = `https://localhost:4175/${suffix}/landscape.png`;
-      await peer.privmsgConfirmed("weblounge", `panorama ${held}`);
-      await peer.privmsgConfirmed("weblounge", `broken ${missing}`);
-      await peer.privmsgConfirmed("weblounge", `elsewhere ${foreign}`);
-      await peer.privmsgConfirmed("weblounge", `after images ${suffix}`);
+      await peer.privmsgConfirmed(irc.account, `panorama ${held}`);
+      await peer.privmsgConfirmed(irc.account, `broken ${missing}`);
+      await peer.privmsgConfirmed(irc.account, `elsewhere ${foreign}`);
+      await peer.privmsgConfirmed(irc.account, `after images ${suffix}`);
 
       const heldSlot = slotIn(page, held);
       await expect(heldSlot).toHaveAttribute("data-inline-image", "loading");
@@ -76,15 +78,18 @@ test.describe("inline file host images against local Ergo", () => {
     });
   });
 
-  test("uses the compact slot height in compact density", async ({ page }) => {
+  test("uses the compact slot height in compact density", async ({
+    page,
+    irc,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: "light" });
-    await withDirectPeer(page, "compact", async (peer, suffix) => {
+    await withDirectPeer(page, irc, "compact", async (peer, suffix) => {
       await page.evaluate(() => {
         document.documentElement.dataset.messageDensity = "compact";
       });
       const image = `${E2E_FILEHOST_ORIGIN}/${suffix}/landscape.png`;
-      await peer.privmsgConfirmed("weblounge", `compact ${image}`);
+      await peer.privmsgConfirmed(irc.account, `compact ${image}`);
       const slot = slotIn(page, image);
       await expect(slot).toHaveAttribute("data-inline-image", "loaded");
       await expectSlotSize(slot, 160, (160 * 4) / 3);
@@ -92,12 +97,12 @@ test.describe("inline file host images against local Ergo", () => {
     });
   });
 
-  test("stills animated images under reduced motion", async ({ page }) => {
+  test("stills animated images under reduced motion", async ({ page, irc }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
-    await withDirectPeer(page, "still", async (peer, suffix) => {
+    await withDirectPeer(page, irc, "still", async (peer, suffix) => {
       const animated = `${E2E_FILEHOST_ORIGIN}/${suffix}/animated.gif`;
-      await peer.privmsgConfirmed("weblounge", `wave ${animated}`);
+      await peer.privmsgConfirmed(irc.account, `wave ${animated}`);
       const slot = slotIn(page, animated);
       await expect(slot).toHaveAttribute("data-inline-image", "still");
       await expect(slot.locator("canvas")).toBeVisible();
@@ -113,13 +118,16 @@ test.describe("inline file host images against local Ergo", () => {
       viewport: { width: 390, height: 844 },
     });
 
-    test("fits the phone slot inside the content column", async ({ page }) => {
+    test("fits the phone slot inside the content column", async ({
+      page,
+      irc,
+    }) => {
       await page.emulateMedia({ colorScheme: "light" });
-      await withDirectPeer(page, "phone", async (peer, suffix) => {
+      await withDirectPeer(page, irc, "phone", async (peer, suffix) => {
         const wide = `${E2E_FILEHOST_ORIGIN}/${suffix}/wide.png`;
         const tall = `${E2E_FILEHOST_ORIGIN}/${suffix}/tall.png`;
-        await peer.privmsgConfirmed("weblounge", `wide ${wide}`);
-        await peer.privmsgConfirmed("weblounge", tall);
+        await peer.privmsgConfirmed(irc.account, `wide ${wide}`);
+        await peer.privmsgConfirmed(irc.account, tall);
         const wideSlot = slotIn(page, wide);
         const tallSlot = slotIn(page, tall);
         await expect(wideSlot).toHaveAttribute("data-inline-image", "loaded");
@@ -149,34 +157,24 @@ test.describe("inline file host images against local Ergo", () => {
 
 async function withDirectPeer(
   page: Page,
+  irc: IrcTestAccount,
   label: string,
   body: (peer: IrcClient, suffix: string) => Promise<void>,
 ): Promise<void> {
-  const suffix = `${label}${Date.now().toString(36)}`;
+  const suffix = `${label}${irc.id}`;
   await installNativeFeelInstrumentation(page);
-  await page.goto("/?irc-password=weblounge-test");
-  await expect(
-    page.getByRole("button", { name: /^#weblounge-test/u }),
-  ).toBeVisible();
-  const peer = await IrcClient.connect(
-    `img${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    `#img-${suffix}`,
-  );
-  try {
-    await peer.privmsgConfirmed("weblounge", `images ${suffix}`);
-    const direct = page.getByRole("button", {
-      name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
-    });
-    await direct.click();
-    await expect(
-      page.getByRole("heading", { name: peer.nickname }),
-    ).toBeVisible();
-    await body(peer, suffix);
-  } finally {
-    peer.close();
-  }
+  await page.goto(irc.url());
+  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+  const peer = await irc.peer(`img-${label}`, [
+    irc.channelNamed(`img-${label}`),
+  ]);
+  await peer.privmsgConfirmed(irc.account, `images ${suffix}`);
+  const direct = page.getByRole("button", {
+    name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+  });
+  await direct.click();
+  await expectSettled(page, { conversation: peer.nickname });
+  await body(peer, suffix);
 }
 
 function rowFor(page: Page, url: string): Locator {
