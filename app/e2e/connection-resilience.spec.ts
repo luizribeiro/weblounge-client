@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
@@ -8,13 +8,12 @@ import {
   holdHistoryRequest,
   releaseHeldHistoryRequest,
 } from "./history-wire-fixture";
-import { IrcClient } from "./irc-client";
+import { type IrcClient, messageId, serverTime } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { visibleMessageAnchor } from "./visible-message-anchor";
-
-const channel = "#weblounge-test";
 
 test.describe("connection resilience against local Ergo", () => {
   test.skip(
@@ -22,110 +21,124 @@ test.describe("connection resilience against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test.beforeEach(async () => {
-    await setAppAlwaysOn(false);
-    await setAppAlwaysOn(true);
+  test.beforeEach(async ({ irc }) => {
+    await enableAppAlwaysOn(irc);
   });
-  test.afterAll(async () => setAppAlwaysOn(false));
 
-  test("keeps the same screen, scroll, and draft through background socket loss", async ({
-    page,
-  }, testInfo) => {
-    test.skip(
-      process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
-      "requires the restartable Ergo fixture",
-    );
-    await installNativeFeelInstrumentation(page);
-    let bot = await connectBot("resume");
-    let ergoStopped = false;
-    try {
-      const composer = await openChannel(page, testInfo.project.name);
-      const list = page.locator("[data-message-list]");
-      const mobile = isMobile(testInfo.project.name);
-      const seedCount = 20;
-      const seedTail = mobile ? "" : " wrapped message".repeat(10);
-      for (let index = 0; index < seedCount; index += 1)
-        await bot.privmsgConfirmed(channel, `resume seed ${index}${seedTail}`);
-      await expect(
-        page.getByText(`resume seed ${seedCount - 1}${seedTail}`, {
-          exact: true,
-        }),
-      ).toHaveCount(1);
-      const scrollDistance = mobile ? 3 : 40;
-      await expect
-        .poll(() => messageListScrollRange(list))
-        .toBeGreaterThan(scrollDistance * 3);
-      const scrollTop = mobile
-        ? await scrollAwayFromLiveEdge(page, list, {
-            distance: scrollDistance,
-            input: "touch",
-          })
-        : await scrollDesktopBetweenEdges(page, list, scrollDistance);
-      expect(scrollTop).toBeGreaterThan(0);
-      const scrollAnchor = await list.evaluate(visibleMessageAnchor);
-      const draft = `draft survives ${Date.now()}`;
-      await composer.fill(draft);
-
-      await setVisibility(page, true);
-      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
-      ergoStopped = true;
-      await bot.waitForDisconnect();
-      await setVisibility(page, false);
-      await dispatchPersistedPageShow(page);
-      await expectTransientConnectionPresentation(
-        page,
-        isMobile(testInfo.project.name),
+  test(
+    "keeps the same screen, scroll, and draft through background socket loss",
+    {
+      tag: "@serial",
+    },
+    async ({ page, irc }, testInfo) => {
+      const channel = irc.channel;
+      test.skip(
+        process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
+        "requires the restartable Ergo fixture",
       );
-      await expectShellToRemain(page, channel);
-      await expectErgoStopped();
+      await installNativeFeelInstrumentation(page);
+      let bot = await irc.peer("resume");
+      let ergoStopped = false;
+      try {
+        const composer = await openChannel(page, irc, testInfo.project.name);
+        const list = page.locator("[data-message-list]");
+        const mobile = isMobile(testInfo.project.name);
+        const seedCount = 20;
+        const seedTail = mobile ? "" : " wrapped message".repeat(10);
+        for (let index = 0; index < seedCount; index += 1)
+          await bot.privmsgConfirmed(
+            channel,
+            `resume seed ${index}${seedTail}`,
+          );
+        await expect(
+          page.getByText(`resume seed ${seedCount - 1}${seedTail}`, {
+            exact: true,
+          }),
+        ).toHaveCount(1);
+        const scrollDistance = mobile ? 3 : 40;
+        await expect
+          .poll(() => messageListScrollRange(list))
+          .toBeGreaterThan(scrollDistance * 3);
+        const scrollTop = mobile
+          ? await scrollAwayFromLiveEdge(page, list, {
+              distance: scrollDistance,
+              input: "touch",
+            })
+          : await scrollDesktopBetweenEdges(page, list, scrollDistance);
+        expect(scrollTop).toBeGreaterThan(0);
+        const scrollAnchor = await list.evaluate(visibleMessageAnchor);
+        const draft = `draft survives ${Date.now()}`;
+        await composer.fill(draft);
 
-      if (!isMobile(testInfo.project.name)) {
-        await page.emulateMedia({ colorScheme: "light" });
-        await page.screenshot({
-          path: "e2e/screenshots/connection-reconnecting-light.png",
-        });
-        await page.emulateMedia({ colorScheme: "dark" });
-        await page.screenshot({
-          path: "e2e/screenshots/connection-reconnecting-dark.png",
-        });
-      }
+        await setVisibility(page, true);
+        process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
+        ergoStopped = true;
+        await bot.waitForDisconnect();
+        await setVisibility(page, false);
+        await dispatchPersistedPageShow(page);
+        await expectTransientConnectionPresentation(
+          page,
+          isMobile(testInfo.project.name),
+        );
+        await expectShellToRemain(page, channel);
+        await expectErgoStopped();
 
-      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
-      await expectErgoReady();
-      await dispatchPersistedPageShow(page);
-      ergoStopped = false;
-      await expectOnline(page, testInfo.project.name);
-      await expect(composer).toHaveValue(draft);
-      await expect(
-        page.getByText(scrollAnchor.text, { exact: true }),
-      ).toBeInViewport();
-      await expect
-        .poll(() => scrollAnchorOffset(list, scrollAnchor.text))
-        .toBeCloseTo(scrollAnchor.offset, 0);
+        if (!isMobile(testInfo.project.name)) {
+          await page.emulateMedia({ colorScheme: "light" });
+          await page.screenshot({
+            path: "e2e/screenshots/connection-reconnecting-light.png",
+          });
+          await page.emulateMedia({ colorScheme: "dark" });
+          await page.screenshot({
+            path: "e2e/screenshots/connection-reconnecting-dark.png",
+          });
+        }
 
-      bot.close();
-      bot = await connectBot("resumed");
-      await list.press("End");
-      await expect(
-        page.getByRole("button", { name: /new message/ }),
-      ).toHaveCount(0);
-      await sendAndExpectEcho(page, bot, `after resume ${Date.now()}`);
-      await expectShellToRemain(page, channel);
-    } finally {
-      if (ergoStopped) {
         process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
         await expectErgoReady();
+        await dispatchPersistedPageShow(page);
+        ergoStopped = false;
+        await expectOnline(page, testInfo.project.name);
+        await expect(composer).toHaveValue(draft);
+        await expect(
+          page.getByText(scrollAnchor.text, { exact: true }),
+        ).toBeInViewport();
+        await expect
+          .poll(() => scrollAnchorOffset(list, scrollAnchor.text))
+          .toBeCloseTo(scrollAnchor.offset, 0);
+
+        bot = await irc.peer("resumed");
+        await list.press("End");
+        await expect(
+          page.getByRole("button", { name: /new message/ }),
+        ).toHaveCount(0);
+        await sendAndExpectEcho(
+          page,
+          bot,
+          channel,
+          `after resume ${Date.now()}`,
+        );
+        await expectShellToRemain(page, channel);
+      } finally {
+        if (ergoStopped) {
+          process.kill(
+            Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID),
+            "SIGUSR2",
+          );
+          await expectErgoReady();
+        }
       }
-      bot.close();
-    }
-  });
+    },
+  );
 
   test("queues offline sends in order and confirms them after reconnect", async ({
     context,
     page,
+    irc,
   }, testInfo) => {
+    const channel = irc.channel;
     await installNativeFeelInstrumentation(page);
-    const composer = await openChannel(page, testInfo.project.name);
+    const composer = await openChannel(page, irc, testInfo.project.name);
     const conversation = conversationColumn(page, testInfo.project.name);
     const conversationWidth = await elementWidth(conversation);
     const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
@@ -175,6 +188,7 @@ test.describe("connection resilience against local Ergo", () => {
 
   test("bounds a send queued on a silently dead resumed socket", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       !isMobile(testInfo.project.name),
@@ -188,8 +202,8 @@ test.describe("connection resilience against local Ergo", () => {
     await captureHistoryWire(page);
     let dropped = false;
     try {
-      const composer = await openChannel(page, testInfo.project.name);
-      await controlForwarder("drop");
+      const composer = await openChannel(page, irc, testInfo.project.name);
+      await irc.forwarder.drop();
       dropped = true;
 
       const text = `queued on dead socket ${Date.now()}`;
@@ -204,7 +218,7 @@ test.describe("connection resilience against local Ergo", () => {
         page,
         isMobile(testInfo.project.name),
       );
-      await controlForwarder("restore");
+      await irc.forwarder.restore();
       dropped = false;
 
       await expect.poll(() => currentNetworkState(page)).not.toBe("online");
@@ -215,103 +229,101 @@ test.describe("connection resilience against local Ergo", () => {
         page.getByRole("button", { name: "Failed · Retry" }),
       ).toHaveCount(1);
     } finally {
-      if (dropped) await controlForwarder("restore");
+      if (dropped) await irc.forwarder.restore();
     }
   });
 
   test("reconciles a send when its first server echo is lost", async ({
     page,
+    irc,
   }, testInfo) => {
+    const channel = irc.channel;
     test.skip(
       process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
       "requires the controllable socket forwarder",
     );
     await installNativeFeelInstrumentation(page);
     await captureHistoryWire(page);
-    const bot = await connectBot("lost-echo");
-    try {
-      const composer = await openChannel(page, testInfo.project.name);
-      const text = `lost first echo ${Date.now()}`;
-      await dropIncomingContaining(text);
+    const bot = await irc.peer("lost-echo");
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    const text = `lost first echo ${Date.now()}`;
+    await irc.forwarder.dropIncomingContaining(text);
 
-      await composer.fill(text);
-      await composer.press("Enter");
-      await expect(messageRow(page, text, "optimistic")).toHaveCount(1);
-      await bot.waitForPrivmsg(channel, text, "weblounge");
+    await composer.fill(text);
+    await composer.press("Enter");
+    await expect(messageRow(page, text, "optimistic")).toHaveCount(1);
+    await bot.waitForPrivmsg(channel, text, irc.account);
 
-      await expectTransientConnectionPresentation(
-        page,
-        isMobile(testInfo.project.name),
-      );
-      await expectOnline(page, testInfo.project.name);
-      await expect.poll(() => sentWireLineCount(page, text)).toBe(1);
-      await expect(messageRow(page, text, "confirmed")).toHaveCount(1);
-      await expect(page.getByText(text, { exact: true })).toHaveCount(1);
-      await expect(
-        page.getByRole("button", { name: "Failed · Retry" }),
-      ).toHaveCount(0);
-      await expectShellToRemain(page, channel);
-    } finally {
-      bot.close();
-    }
+    await expectTransientConnectionPresentation(
+      page,
+      isMobile(testInfo.project.name),
+    );
+    await expectOnline(page, testInfo.project.name);
+    await expect.poll(() => sentWireLineCount(page, text)).toBe(1);
+    await expect(messageRow(page, text, "confirmed")).toHaveCount(1);
+    await expect(page.getByText(text, { exact: true })).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Failed · Retry" }),
+    ).toHaveCount(0);
+    await expectShellToRemain(page, channel);
   });
 
   test("keeps the online wasm engine alive through a foreground probe", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
     await installWorkerControl(page);
     await installNativeFeelInstrumentation(page);
-    const bot = await connectBot("probe");
-    try {
-      await openChannel(page, testInfo.project.name);
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
-          ),
-        )
-        .toBe(1);
-
-      await setVisibility(page, true);
-      await setVisibility(page, false);
-      await dispatchPersistedPageShow(page);
-      await sendAndExpectEcho(
-        page,
-        bot,
-        `after foreground probe ${Date.now()}`,
-      );
-
-      expect(
-        await page.evaluate(() =>
+    const bot = await irc.peer("probe");
+    await openChannel(page, irc, testInfo.project.name);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
           Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
         ),
-      ).toBe(1);
-    } finally {
-      bot.close();
-    }
+      )
+      .toBe(1);
+
+    await setVisibility(page, true);
+    await setVisibility(page, false);
+    await dispatchPersistedPageShow(page);
+    await sendAndExpectEcho(
+      page,
+      bot,
+      irc.channel,
+      `after foreground probe ${Date.now()}`,
+    );
+
+    expect(
+      await page.evaluate(() =>
+        Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
+      ),
+    ).toBe(1);
   });
 
   test("catches up an opened DM and channel after a silently dead socket", async ({
     page,
+    irc,
   }, testInfo) => {
+    const channel = irc.channel;
     test.skip(
       process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
       "requires the controllable socket forwarder",
     );
     await installNativeFeelInstrumentation(page);
-    const bot = await connectBot("gap");
+    const bot = await irc.peer("gap");
     const mobile = isMobile(testInfo.project.name);
     let dropped = false;
     try {
-      await openChannel(page, testInfo.project.name);
+      await openChannel(page, irc, testInfo.project.name);
       const suffix = Date.now();
       const beforeChannel = `before channel gap ${suffix}`;
       await bot.privmsgConfirmed(channel, beforeChannel);
       await expect(transcriptRow(page, beforeChannel)).toHaveCount(1);
 
       const beforeDm = `before direct gap ${suffix}`;
-      await bot.privmsgConfirmed("weblounge", beforeDm);
+      await bot.privmsgConfirmed(irc.account, beforeDm);
       if (mobile)
         await page.getByRole("button", { name: "Back to chats" }).click();
       await page
@@ -319,18 +331,18 @@ test.describe("connection resilience against local Ergo", () => {
         .click();
       await expect(transcriptRow(page, beforeDm)).toHaveCount(1);
 
-      await controlForwarder("drop");
+      await irc.forwarder.drop();
       dropped = true;
       const gapDm = `missed direct ${suffix}`;
       const gapChannel = `missed channel ${suffix}`;
-      await bot.privmsgConfirmed("weblounge", gapDm);
+      await bot.privmsgConfirmed(irc.account, gapDm);
       await bot.privmsgConfirmed(channel, gapChannel);
 
       await setVisibility(page, true);
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
       await expectTransientConnectionPresentation(page, mobile);
-      await controlForwarder("restore");
+      await irc.forwarder.restore();
       dropped = false;
 
       await expectOnline(page, testInfo.project.name);
@@ -340,18 +352,19 @@ test.describe("connection resilience against local Ergo", () => {
       await page.getByRole("button", { name: channel }).first().click();
       await expect(transcriptRow(page, gapChannel)).toHaveCount(1);
     } finally {
-      if (dropped) await controlForwarder("restore");
-      bot.close();
+      if (dropped) await irc.forwarder.restore();
     }
   });
 
   test("shows history loading when a warm chat-list buffer reconciles a restored push", async ({
     page,
+    irc,
   }, testInfo) => {
-    const bot = await connectBot("warm-push");
+    const channel = irc.channel;
+    const bot = await irc.peer("warm-push");
     const suffix = Date.now().toString(36);
     const partial = `warm push first line ${suffix}`;
-    const authoritative = `${partial} and hello weblounge from history`;
+    const authoritative = `${partial} and hello ${irc.account} from history`;
     let dropped = false;
     let historyHeld = false;
     try {
@@ -359,7 +372,7 @@ test.describe("connection resilience against local Ergo", () => {
       await installNativeFeelInstrumentation(page);
       await installWorkerControl(page);
       await captureHistoryWire(page);
-      await openChannel(page, testInfo.project.name);
+      await openChannel(page, irc, testInfo.project.name);
       await holdHistoryRequest(page, `CHATHISTORY LATEST ${channel} `);
       await expect(
         page.locator("[data-conversation-title][data-connection-progress]"),
@@ -380,13 +393,13 @@ test.describe("connection resilience against local Ergo", () => {
       await expect(channelButton).toBeVisible();
 
       await setVisibility(page, true);
-      await controlForwarder("drop");
+      await irc.forwarder.drop();
       dropped = true;
       const identity = messageIdentity(
         await bot.privmsgConfirmed(channel, authoritative),
       );
       await expect(transcriptRow(page, authoritative)).toHaveCount(0);
-      await seedPushedMessage(page, {
+      await seedPushedMessage(page, irc.account, {
         sender: bot.nickname,
         target: channel,
         text: partial,
@@ -420,7 +433,7 @@ test.describe("connection resilience against local Ergo", () => {
         await highlightPaint(provisional),
       );
 
-      await controlForwarder("restore");
+      await irc.forwarder.restore();
       dropped = false;
       await expectOnline(page, testInfo.project.name);
       await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
@@ -445,29 +458,24 @@ test.describe("connection resilience against local Ergo", () => {
       ).toHaveCount(0);
     } finally {
       if (historyHeld) await releaseHeldHistoryRequest(page);
-      if (dropped) await controlForwarder("restore");
-      bot.close();
+      if (dropped) await irc.forwarder.restore();
     }
   });
 
   test("marks a push-only read before authoritative history arrives", async ({
     page,
+    irc,
   }, testInfo) => {
     test.skip(
       process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
       "requires the controllable socket forwarder",
     );
-    const suffix = Date.now().toString(36);
-    const pushedChannel = `#pushed-read-${suffix}`;
+    const suffix = irc.id;
+    const pushedChannel = irc.channelNamed("pushed-read");
     const text = `read before history ${suffix}`;
-    const appUrl = `/?irc-password=weblounge-test&irc-autojoin=${encodeURIComponent(pushedChannel)}`;
-    const bot = await IrcClient.connect(
-      `push${suffix.slice(-6)}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      pushedChannel,
-    );
-    const leaveBot = await connectBot("leave");
+    const appUrl = irc.url({ autojoin: [pushedChannel] });
+    const bot = await irc.peer("push", [pushedChannel]);
+    const leaveBot = await irc.peer("leave");
     let markerReader: IrcClient | undefined;
     let dropped = false;
     let historyHeld = false;
@@ -478,32 +486,27 @@ test.describe("connection resilience against local Ergo", () => {
       });
       await observeMarkReadRequests(page);
       await page.goto("/manifest.webmanifest");
-      await controlForwarder("drop");
+      await irc.forwarder.drop();
       dropped = true;
       const identity = messageIdentity(
         await bot.privmsgConfirmed(pushedChannel, text),
       );
-      await seedPushedMessage(page, {
+      await seedPushedMessage(page, irc.account, {
         sender: bot.nickname,
         target: pushedChannel,
         text,
         ...identity,
       });
       const leaveText = `other pushed row ${suffix}`;
-      await seedPushedMessage(page, {
+      await seedPushedMessage(page, irc.account, {
         sender: leaveBot.nickname,
-        target: "weblounge",
+        target: irc.account,
         text: leaveText,
         ...messageIdentity(
-          await leaveBot.privmsgConfirmed("weblounge", leaveText),
+          await leaveBot.privmsgConfirmed(irc.account, leaveText),
         ),
       });
-      markerReader = await IrcClient.connect(
-        `reader${suffix.slice(-6)}`,
-        "weblounge",
-        "weblounge-test",
-        pushedChannel,
-      );
+      markerReader = await irc.self([pushedChannel]);
 
       await page.goto(appUrl);
       const pushedRow = page.locator(`[data-buffer-id]`).filter({
@@ -527,7 +530,7 @@ test.describe("connection resilience against local Ergo", () => {
         .filter({ has: page.getByText(leaveBot.nickname, { exact: true }) })
         .click();
 
-      await controlForwarder("restore");
+      await irc.forwarder.restore();
       dropped = false;
       await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
       historyHeld = true;
@@ -558,88 +561,95 @@ test.describe("connection resilience against local Ergo", () => {
       }
     } finally {
       if (historyHeld) await releaseHeldHistoryRequest(page);
-      if (dropped) await controlForwarder("restore");
-      markerReader?.close();
-      leaveBot.close();
-      bot.close();
+      if (dropped) await irc.forwarder.restore();
     }
   });
 
   test("recovers transparently after the dedicated worker is terminated", async ({
     page,
+    irc,
   }, testInfo) => {
+    const channel = irc.channel;
     test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
     await installWorkerControl(page);
     await installNativeFeelInstrumentation(page);
-    const bot = await connectBot("worker");
-    try {
-      const composer = await openChannel(page, testInfo.project.name);
-      const draft = `worker draft ${Date.now()}`;
-      await composer.fill(draft);
-      await page.evaluate(() => {
-        const terminate = Reflect.get(globalThis, "terminateEngineWorker");
-        if (typeof terminate !== "function")
-          throw new Error("engine worker control was not installed");
-        terminate();
-      });
-      await expectShellToRemain(page, channel);
+    const bot = await irc.peer("worker");
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    const draft = `worker draft ${Date.now()}`;
+    await composer.fill(draft);
+    await page.evaluate(() => {
+      const terminate = Reflect.get(globalThis, "terminateEngineWorker");
+      if (typeof terminate !== "function")
+        throw new Error("engine worker control was not installed");
+      terminate();
+    });
+    await expectShellToRemain(page, channel);
 
-      await setVisibility(page, true);
-      await setVisibility(page, false);
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
-          ),
-        )
-        .toBeGreaterThan(1);
-      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
-        1,
-      );
-      await expect(composer).toHaveValue(draft);
+    await setVisibility(page, true);
+    await setVisibility(page, false);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
+        ),
+      )
+      .toBeGreaterThan(1);
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await expect(composer).toHaveValue(draft);
 
-      await sendAndExpectEcho(page, bot, `after worker restart ${Date.now()}`);
-      await expectShellToRemain(page, channel);
-    } finally {
-      bot.close();
-    }
+    await sendAndExpectEcho(
+      page,
+      bot,
+      channel,
+      `after worker restart ${Date.now()}`,
+    );
+    await expectShellToRemain(page, channel);
   });
 
-  test("recovers after the Ergo process restarts", async ({
-    page,
-  }, testInfo) => {
-    test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
-    test.skip(
-      process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
-      "requires the restartable Ergo fixture",
-    );
-    await openChannel(page, testInfo.project.name);
+  test(
+    "recovers after the Ergo process restarts",
+    {
+      tag: "@serial",
+    },
+    async ({ page, irc }, testInfo) => {
+      const channel = irc.channel;
+      test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
+      test.skip(
+        process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
+        "requires the restartable Ergo fixture",
+      );
+      await openChannel(page, irc, testInfo.project.name);
 
-    let ergoStopped = false;
-    try {
-      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
-      ergoStopped = true;
-      await expectTransientConnectionPresentation(page, false);
-      await expectErgoStopped();
-      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
-      await expectErgoReady();
-      await dispatchPersistedPageShow(page);
-      ergoStopped = false;
-      await expectOnline(page, testInfo.project.name);
-      const bot = await connectBot("ergo");
+      let ergoStopped = false;
       try {
-        await sendAndExpectEcho(page, bot, `after Ergo restart ${Date.now()}`);
-        await expectShellToRemain(page, channel);
-      } finally {
-        bot.close();
-      }
-    } finally {
-      if (ergoStopped) {
+        process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
+        ergoStopped = true;
+        await expectTransientConnectionPresentation(page, false);
+        await expectErgoStopped();
         process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
         await expectErgoReady();
+        await dispatchPersistedPageShow(page);
+        ergoStopped = false;
+        await expectOnline(page, testInfo.project.name);
+        const bot = await irc.peer("ergo");
+        await sendAndExpectEcho(
+          page,
+          bot,
+          channel,
+          `after Ergo restart ${Date.now()}`,
+        );
+        await expectShellToRemain(page, channel);
+      } finally {
+        if (ergoStopped) {
+          process.kill(
+            Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID),
+            "SIGUSR2",
+          );
+          await expectErgoReady();
+        }
       }
-    }
-  });
+    },
+  );
 });
 
 async function expectTransientConnectionPresentation(
@@ -682,9 +692,14 @@ async function expectTransientConnectionPresentation(
     });
 }
 
-async function openChannel(page: Page, projectName: string) {
+async function openChannel(
+  page: Page,
+  irc: IrcTestAccount,
+  projectName: string,
+) {
+  const channel = irc.channel;
   await expectErgoReady();
-  await page.goto("/?irc-password=weblounge-test");
+  await page.goto(irc.url());
   if (isMobile(projectName)) {
     const channelButton = page.getByRole("button", { name: channel });
     await expect
@@ -714,37 +729,15 @@ async function openChannel(page: Page, projectName: string) {
   });
 }
 
-async function connectBot(label: string): Promise<IrcClient> {
-  const suffix = Date.now().toString().slice(-6);
-  return IrcClient.connect(
-    `${label}${suffix}`,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    channel,
-  );
-}
-
-async function setAppAlwaysOn(enabled: boolean): Promise<void> {
-  const client = await IrcClient.connect(
-    "always-on-control",
-    "weblounge",
-    "weblounge-test",
-    channel,
-  );
-  try {
-    if (client.nickname !== "weblounge") {
-      await client.waitForNickDeparture("weblounge");
-      await client.nick("weblounge");
-    }
-    await client.setAlwaysOn(enabled);
-  } finally {
-    client.close();
-  }
+async function enableAppAlwaysOn(irc: IrcTestAccount): Promise<void> {
+  const client = await irc.self();
+  await client.setAlwaysOn(true);
 }
 
 async function sendAndExpectEcho(
   page: Page,
   bot: IrcClient,
+  channel: string,
   prefix: string,
 ): Promise<void> {
   await bot.privmsgConfirmed(channel, prefix);
@@ -945,40 +938,11 @@ async function controlledEngineRequest(
     .toBe("command_result");
 }
 
-async function controlForwarder(action: "drop" | "restore"): Promise<void> {
-  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
-  if (base === undefined) throw new Error("socket forwarder is unavailable");
-  const response = await fetch(`${base}/${action}`, { method: "POST" });
-  if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
-}
-
-async function dropIncomingContaining(text: string): Promise<void> {
-  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
-  if (base === undefined) throw new Error("socket forwarder is unavailable");
-  const endpoint = new URL("/drop-incoming", base);
-  endpoint.searchParams.set("contains", text);
-  const response = await fetch(endpoint, { method: "POST" });
-  if (!response.ok) throw new Error("socket forwarder incoming drop failed");
-}
-
 function messageIdentity(line: string): {
   readonly msgid: string;
   readonly time: string;
 } {
-  const tags = new Map(
-    line
-      .slice(1, line.indexOf(" "))
-      .split(";")
-      .map((tag) => {
-        const separator = tag.indexOf("=");
-        return [tag.slice(0, separator), tag.slice(separator + 1)] as const;
-      }),
-  );
-  const msgid = tags.get("msgid");
-  const time = tags.get("time");
-  if (msgid === undefined || time === undefined)
-    throw new Error(`message has no server identity: ${line}`);
-  return { msgid, time };
+  return { msgid: messageId(line), time: serverTime(line) };
 }
 
 async function snapshotReadAt(
@@ -1037,6 +1001,7 @@ async function snapshotReadAt(
 
 async function seedPushedMessage(
   page: Page,
+  nickname: string,
   message: {
     readonly msgid: string;
     readonly sender: string;
@@ -1047,31 +1012,34 @@ async function seedPushedMessage(
 ): Promise<void> {
   const database = await openEngineDatabase(page);
   try {
-    await database.evaluate(async (value, pushed) => {
-      await new Promise<void>((resolve, reject) => {
-        const encoder = new TextEncoder();
-        const transaction = value.transaction("cache", "readwrite");
-        transaction.objectStore("cache").put(
-          encoder.encode(
-            JSON.stringify({
-              schema: 1,
-              network_label: "Local Ergo",
-              nickname: "weblounge",
-              sender: pushed.sender,
-              target: pushed.target,
-              msgid: pushed.msgid,
-              time: pushed.time,
-              text: pushed.text,
-              kind: "message",
-            }),
-          ),
-          encoder.encode(`pushed-message\0Local Ergo\0${pushed.msgid}`),
-        );
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
-      });
-    }, message);
+    await database.evaluate(
+      async (value, { nickname, pushed }) => {
+        await new Promise<void>((resolve, reject) => {
+          const encoder = new TextEncoder();
+          const transaction = value.transaction("cache", "readwrite");
+          transaction.objectStore("cache").put(
+            encoder.encode(
+              JSON.stringify({
+                schema: 1,
+                network_label: "Local Ergo",
+                nickname,
+                sender: pushed.sender,
+                target: pushed.target,
+                msgid: pushed.msgid,
+                time: pushed.time,
+                text: pushed.text,
+                kind: "message",
+              }),
+            ),
+            encoder.encode(`pushed-message\0Local Ergo\0${pushed.msgid}`),
+          );
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      },
+      { nickname, pushed: message },
+    );
   } finally {
     await closeEngineDatabase(database);
   }
