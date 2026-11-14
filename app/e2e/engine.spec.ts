@@ -1,10 +1,12 @@
-import { devices, expect, type Page, test } from "@playwright/test";
+import { devices, type Page } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
-import { IrcClient } from "./irc-client";
+import { IrcClient, isolatedPassword, registerAccount } from "./irc-client";
+import { expect, test } from "./irc-fixture";
 import {
   distanceFromBottom,
   scrollAwayFromLiveEdge,
 } from "./message-list-scroll";
+import { expectSettled } from "./settled";
 
 const ready = "Engine ready: wasm worker round trip complete";
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
@@ -41,12 +43,10 @@ test.describe("local Ergo user flow", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test("sends, receives, and counts a mention", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
+  test("sends, receives, and counts a mention", async ({ page, irc }) => {
+    await page.goto(irc.url());
     await expect(page).toHaveURL(/^(?!.*irc-password)/);
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
+    await expectSettled(page, { conversation: irc.channel });
 
     const ownText = `from browser ${Date.now()}`;
     await observeDeliveries(page, ownText);
@@ -57,37 +57,25 @@ test.describe("local Ergo user flow", () => {
       .poll(() => observedDeliveries(page))
       .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
 
-    const bot = await IrcClient.connect(
-      "weblounge-bot",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      bot.privmsg("#weblounge-test", "hello from the test bot");
-      await expect(
-        page.getByText("hello from the test bot", { exact: true }),
-      ).toBeVisible();
-      bot.privmsg("#weblounge-test", "hello weblounge, this is a mention");
-      const activeChannel = page.locator(
-        '[data-buffer-id][aria-current="page"]',
-      );
-      await expect(activeChannel).toHaveAttribute("data-mentions", "0");
-      await expect(activeChannel).toHaveAccessibleName("#weblounge-test");
-    } finally {
-      bot.close();
-    }
+    const bot = await irc.peer("test-bot");
+    bot.privmsg(irc.channel, "hello from the test bot");
+    await expect(
+      page.getByText("hello from the test bot", { exact: true }),
+    ).toBeVisible();
+    bot.privmsg(irc.channel, `hello ${irc.account}, this is a mention`);
+    const activeChannel = page.locator('[data-buffer-id][aria-current="page"]');
+    await expect(activeChannel).toHaveAttribute("data-mentions", "0");
+    await expect(activeChannel).toHaveAccessibleName(irc.channel);
   });
 
-  test("shows a clear notice at the server channel limit", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/u }),
-    ).toBeVisible();
-    const suffix = Date.now().toString(36);
-    const channels = Array.from(
-      { length: 8 },
-      (_, index) => `#cap-${suffix}-${index}`,
+  test("shows a clear notice at the server channel limit", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const channels = Array.from({ length: 8 }, (_, index) =>
+      irc.channelNamed(`cap-${index}`),
     );
     const channelButton = (index: number) => {
       const channel = channels[index];
@@ -117,102 +105,81 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
-  test("keeps an ordinary incoming DM row unhighlighted", async ({ page }) => {
-    const bot = await IrcClient.connect(
-      "plain-dm",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    const text = `ordinary direct message ${Date.now()}`;
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/u }),
-      ).toBeVisible();
-      bot.privmsg("weblounge", text);
-      const direct = page.getByRole("button", {
-        name: /^plain-dm, 1 unread, including mentions$/u,
+  test("keeps an ordinary incoming DM row unhighlighted", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("plain-dm");
+    const text = "ordinary direct message";
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    bot.privmsg(irc.account, text);
+    const direct = page.getByRole("button", {
+      name: new RegExp(`^${bot.nickname}, 1 unread, including mentions$`, "u"),
+    });
+    await expect(direct).toBeVisible();
+    await direct.click();
+    const colors = await page
+      .getByText(text, { exact: true })
+      .evaluate((node) => {
+        const row = node.closest<HTMLElement>("[data-message-row]");
+        if (row === null) throw new Error("direct-message row is missing");
+        const highlight = document.createElement("span");
+        highlight.style.background = "var(--wl-color-mention-bg)";
+        document.body.append(highlight);
+        const expected = getComputedStyle(highlight).backgroundColor;
+        highlight.remove();
+        return { expected, row: getComputedStyle(row).backgroundColor };
       });
-      await expect(direct).toBeVisible();
-      await direct.click();
-      const colors = await page
-        .getByText(text, { exact: true })
-        .evaluate((node) => {
-          const row = node.closest<HTMLElement>("[data-message-row]");
-          if (row === null) throw new Error("direct-message row is missing");
-          const highlight = document.createElement("span");
-          highlight.style.background = "var(--wl-color-mention-bg)";
-          document.body.append(highlight);
-          const expected = getComputedStyle(highlight).backgroundColor;
-          highlight.remove();
-          return { expected, row: getComputedStyle(row).backgroundColor };
-        });
 
-      expect(colors.row).not.toBe(colors.expected);
-    } finally {
-      bot.close();
-    }
+    expect(colors.row).not.toBe(colors.expected);
   });
 
   test("keeps a reconnecting direct failure out of channels", async ({
     context,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString().slice(-6);
-    const bot = await IrcClient.connect(
-      `resume-dm-${suffix}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      fixtureChannel,
+    const bot = await irc.peer("resume-dm");
+    await page.setViewportSize({ height: 874, width: 402 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const opening = "open before reconnect";
+    await bot.privmsgConfirmed(irc.account, opening);
+    await page.getByRole("button", { name: "Toggle channel list" }).click();
+    const direct = page.getByRole("button", {
+      name: new RegExp(`^${bot.nickname}`),
+    });
+    await expect(direct).toBeVisible();
+    await direct.click();
+    await expect(page.getByText(opening, { exact: true })).toBeVisible();
+
+    await context.setOffline(true);
+    const queued = "queued before peer leaves";
+    const composer = page.getByRole("textbox", {
+      name: `Message ${bot.nickname}`,
+    });
+    await composer.fill(queued);
+    await composer.press("Enter");
+    await expect(page.getByText(queued, { exact: true })).toBeVisible();
+    bot.close();
+    await bot.waitForDisconnect();
+
+    await context.setOffline(false);
+    await page.evaluate(() => {
+      const event = new Event("pageshow");
+      Object.defineProperty(event, "persisted", { value: true });
+      window.dispatchEvent(event);
+    });
+    const gone = page.getByText(
+      /That person left or the nickname now belongs/u,
     );
-    try {
-      await page.setViewportSize({ height: 874, width: 402 });
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: fixtureChannel }),
-      ).toBeVisible();
-      const opening = `open before reconnect ${suffix}`;
-      await bot.privmsgConfirmed("weblounge", opening);
-      await page.getByRole("button", { name: "Toggle channel list" }).click();
-      const direct = page.getByRole("button", {
-        name: new RegExp(`^${bot.nickname}`),
-      });
-      await expect(direct).toBeVisible();
-      await direct.click();
-      await expect(page.getByText(opening, { exact: true })).toBeVisible();
+    await expect(gone).toBeVisible();
 
-      await context.setOffline(true);
-      const queued = `queued before peer leaves ${suffix}`;
-      const composer = page.getByRole("textbox", {
-        name: `Message ${bot.nickname}`,
-      });
-      await composer.fill(queued);
-      await composer.press("Enter");
-      await expect(page.getByText(queued, { exact: true })).toBeVisible();
-      bot.close();
-      await bot.waitForDisconnect();
-
-      await context.setOffline(false);
-      await page.evaluate(() => {
-        const event = new Event("pageshow");
-        Object.defineProperty(event, "persisted", { value: true });
-        window.dispatchEvent(event);
-      });
-      const gone = page.getByText(
-        /That person left or the nickname now belongs/u,
-      );
-      await expect(gone).toBeVisible();
-
-      await page.getByRole("button", { name: "Toggle channel list" }).click();
-      await page.getByRole("button", { name: fixtureChannel }).click();
-      await expect(
-        page.getByRole("heading", { name: fixtureChannel }),
-      ).toBeVisible();
-      await expect(gone).toHaveCount(0);
-    } finally {
-      bot.close();
-    }
+    await page.getByRole("button", { name: "Toggle channel list" }).click();
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expectSettled(page, { conversation: irc.channel });
+    await expect(gone).toHaveCount(0);
   });
 
   test("resolves cached direct history on desktop and mobile", async ({
@@ -276,17 +243,11 @@ test.describe("local Ergo user flow", () => {
     baseURL,
     browser,
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36).slice(-5);
-    const alias = `pin-${suffix}`;
-    const first = await IrcClient.connectIsolated(
-      `pina${suffix}`,
-      fixtureChannel,
-    );
-    const replacement = await IrcClient.connectIsolated(
-      `pinb${suffix}`,
-      fixtureChannel,
-    );
+    const alias = irc.nickNamed("pin");
+    const first = await irc.peer("pina");
+    const replacement = await irc.peer("pinb");
     const mobileContext = await browser.newContext({
       baseURL,
       colorScheme: "dark",
@@ -295,26 +256,22 @@ test.describe("local Ergo user flow", () => {
       isMobile: true,
       viewport: { width: 402, height: 874 },
     });
+    await irc.scope(mobileContext);
     const mobile = await mobileContext.newPage();
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
-      await Promise.all([
-        page.goto("/?irc-password=weblounge-test"),
-        mobile.goto("/?irc-password=weblounge-test"),
-      ]);
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/u }),
-      ).toBeVisible();
+      await Promise.all([page.goto(irc.url()), mobile.goto(irc.url())]);
+      await expectSettled(page, { conversation: irc.channel });
       await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
       await first.nick(alias);
-      first.privmsg("weblounge", "first account");
+      first.privmsg(irc.account, "first account");
       await page
         .getByRole("button", { name: new RegExp(`^${alias}(?:,|$)`) })
         .click();
       await mobile
         .getByRole("button", { name: new RegExp(`^${alias}(?:,|$)`) })
         .click();
-      await expect(mobile.locator("[data-motion]")).toHaveCount(0);
+      await expectSettled(mobile, { conversation: alias });
       await expect(
         page
           .locator("[data-message-list]")
@@ -326,9 +283,9 @@ test.describe("local Ergo user flow", () => {
           .getByText("first account", { exact: true }),
       ).toBeVisible();
 
-      await first.nick(`away-${suffix}`);
+      await first.nick(irc.nickNamed("away"));
       await replacement.nick(alias);
-      replacement.privmsg("weblounge", "replacement account");
+      replacement.privmsg(irc.account, "replacement account");
 
       const banner = page.locator("[data-direct-identity-banner]");
       const mobileBanner = mobile.locator("[data-direct-identity-banner]");
@@ -354,7 +311,7 @@ test.describe("local Ergo user flow", () => {
       await expect(
         page.getByRole("textbox", { name: `Message ${alias}` }),
       ).toBeEnabled();
-      const reply = `trusted reply ${suffix}`;
+      const reply = "trusted reply";
       await observeDeliveries(page, reply);
       await page.getByRole("textbox", { name: `Message ${alias}` }).fill(reply);
       await page.getByRole("button", { name: "Send" }).click();
@@ -362,36 +319,35 @@ test.describe("local Ergo user flow", () => {
       await expect.poll(() => observedDeliveries(page)).toContain("confirmed");
     } finally {
       await mobileContext.close();
-      first.close();
-      replacement.close();
     }
   });
 
   test("keeps two nicks on one account as separate direct threads", async ({
     page,
+    irc,
   }) => {
-    const suffix = Date.now().toString(36).slice(-5);
-    const desktopNick = `desk-${suffix}`;
-    const phoneNick = `phone-${suffix}`;
+    const desktopNick = irc.nickNamed("desk");
+    const phoneNick = irc.nickNamed("phone");
+    const sharedAccount = irc.nickNamed("pair");
+    const sharedPassword = isolatedPassword(sharedAccount);
+    await registerAccount(sharedAccount, sharedPassword);
     const desktop = await IrcClient.connect(
       desktopNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      fixtureChannel,
+      sharedAccount,
+      sharedPassword,
+      irc.channel,
     );
     const phone = await IrcClient.connect(
       phoneNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      fixtureChannel,
+      sharedAccount,
+      sharedPassword,
+      irc.channel,
     );
     try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/u }),
-      ).toBeVisible();
-      desktop.privmsg("weblounge", "from desktop nick");
-      phone.privmsg("weblounge", "from phone nick");
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
+      desktop.privmsg(irc.account, "from desktop nick");
+      phone.privmsg(irc.account, "from phone nick");
 
       await expect(
         page.getByRole("button", { name: new RegExp(`^${desktopNick},`) }),
@@ -425,50 +381,37 @@ test.describe("local Ergo user flow", () => {
 
   test("keeps operator status in members and omits it from transcript rows", async ({
     page,
+    irc,
   }) => {
-    const operator = await IrcClient.connect(
-      `operator${Date.now().toString().slice(-6)}`,
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/ }),
-      ).toBeVisible();
-      await operator.mode("#weblounge-test", "+o", "weblounge");
-      await page.getByRole("button", { name: "Toggle member list" }).click();
-      await expect(
-        page.getByRole("button", {
-          name: "Open direct message with weblounge",
-        }),
-      ).toContainText("@");
+    const operator = await irc.peer("operator");
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await operator.mode(irc.channel, "+o", irc.account);
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    await expect(
+      page.getByRole("button", {
+        name: `Open direct message with ${irc.account}`,
+      }),
+    ).toContainText("@");
 
-      const text = `operator send ${Date.now()}`;
-      await observeDeliveries(page, text);
-      await page.getByRole("textbox", { name: "Message" }).fill(text);
-      await page.getByRole("button", { name: "Send" }).click();
-      await expect
-        .poll(() => observedDeliveries(page))
-        .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
-      const row = page.locator(
-        `[data-message-row][data-message-text="${text}"]`,
-      );
-      await expect(row).toContainText("weblounge");
-      await expect(row).not.toContainText("@weblounge");
-    } finally {
-      operator.close();
-    }
+    const text = "operator send";
+    await observeDeliveries(page, text);
+    await page.getByRole("textbox", { name: "Message" }).fill(text);
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect
+      .poll(() => observedDeliveries(page))
+      .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
+    const row = page.locator(`[data-message-row][data-message-text="${text}"]`);
+    await expect(row).toContainText(irc.account);
+    await expect(row).not.toContainText(`@${irc.account}`);
   });
 
   test("preserves a long single-line message when confirmed", async ({
     page,
+    irc,
   }) => {
-    await page.goto("/?irc-password=weblounge-test");
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
     const text = `${"deployment update crossed every regional queue without changing the submitted text. ".repeat(8)}${Date.now()}`;
     expect(text.length).toBeGreaterThan(512);
 
@@ -485,60 +428,51 @@ test.describe("local Ergo user flow", () => {
 
   test("measures received history and live wrapped messages", async ({
     page,
+    irc,
   }) => {
     const prose = `wrapped dogfood ${"several words need a real measured row ".repeat(10)}${Date.now()}`;
     const url = `https://example.com/${"unbroken-segment".repeat(20)}?${Date.now()}`;
     const live = `live wrapped dogfood ${"incoming words must resize their row ".repeat(10)}${Date.now()}`;
     expect(prose.length).toBeGreaterThan(350);
-    const bot = await IrcClient.connect(
-      "wrapped-bot",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    try {
-      await bot.privmsgConfirmed("#weblounge-test", prose);
-      await bot.privmsgConfirmed("#weblounge-test", url);
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/ }),
-      ).toBeVisible();
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: prose }),
-      ).toBeVisible();
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: url }),
-      ).toBeVisible();
-      await expectMeasuredTimeline(page);
+    const bot = await irc.peer("wrapped-bot");
+    await bot.privmsgConfirmed(irc.channel, prose);
+    await bot.privmsgConfirmed(irc.channel, url);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: prose }),
+    ).toBeVisible();
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: url }),
+    ).toBeVisible();
+    await expectMeasuredTimeline(page);
 
-      await bot.privmsgConfirmed("#weblounge-test", live);
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: live }),
-      ).toBeVisible();
-      await expectMeasuredTimeline(page);
+    await bot.privmsgConfirmed(irc.channel, live);
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: live }),
+    ).toBeVisible();
+    await expectMeasuredTimeline(page);
 
-      await page.goto("/?irc-password=weblounge-test");
-      await expect(
-        page.getByRole("heading", { name: /#weblounge-test/ }),
-      ).toBeVisible();
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: live }),
-      ).toBeVisible();
-      await expectMeasuredTimeline(page);
-      await page.setViewportSize({ width: 800, height: 900 });
-      await expectMeasuredTimeline(page);
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await expect(
+      page.locator("[data-message-row]").filter({ hasText: live }),
+    ).toBeVisible();
+    await expectMeasuredTimeline(page);
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expectMeasuredTimeline(page);
 
-      await page.setViewportSize({ width: 402, height: 874 });
-      await expect(page.locator("[data-desktop-shell]")).toBeVisible();
-      await expectMeasuredTimeline(page);
-    } finally {
-      bot.close();
-    }
+    await page.setViewportSize({ width: 402, height: 874 });
+    await expect(page.locator("[data-desktop-shell]")).toBeVisible();
+    await expectMeasuredTimeline(page);
   });
 
-  test("confirms typed quit before desktop execution", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
+  test("confirms typed quit before desktop execution", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
     const composer = page.getByRole("textbox", { name: "Message" });
     await composer.fill("/quit later");
     await composer.press("Enter");
@@ -557,17 +491,18 @@ test.describe("local Ergo user flow", () => {
     await expect(confirmation).toHaveCount(0);
     await expect(composer).toHaveValue("/quit later");
     await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
+      page.getByRole("heading", { name: irc.channel }),
     ).toBeVisible();
   });
 
-  test("distinguishes version info from a cached topic", async ({ page }) => {
-    await page.goto("/?irc-password=weblounge-test");
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
+  test("distinguishes version info from a cached topic", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
     const composer = page.getByRole("textbox", { name: "Message" });
-    const topic = `browser topic ${Date.now()}`;
+    const topic = "browser topic";
 
     await composer.fill("/version");
     await composer.press("Enter");
@@ -589,53 +524,44 @@ test.describe("local Ergo user flow", () => {
       hasText: `Topic: ${topic}`,
     });
     await expect(notice).toBeVisible();
-    await expect(notice).toContainText(/set by weblounge/);
+    await expect(notice).toContainText(`set by ${irc.account}`);
   });
 
   test("shows existing channel history in a fresh browser", async ({
     page,
+    irc,
   }) => {
-    const seed = await IrcClient.connect(
-      "history-seed",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    const suffix = Date.now();
-    const older = `existing history older ${suffix}`;
-    const newer = `existing history newer ${suffix}`;
-    try {
-      await seed.privmsgConfirmed("#weblounge-test", older);
-      await seed.privmsgConfirmed("#weblounge-test", newer);
-      const resumedAt = Date.now() + 24 * 60 * 60 * 1_000;
-      await page.clock.setFixedTime(resumedAt);
-      await page.goto("/?irc-password=weblounge-test");
-      const olderRow = page
-        .getByText(older, { exact: true })
-        .locator("xpath=ancestor::*[@data-message-row]");
-      const newerRow = page
-        .getByText(newer, { exact: true })
-        .locator("xpath=ancestor::*[@data-message-row]");
-      await expect(olderRow).toBeVisible();
-      await expect(newerRow).toBeVisible();
-      await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
-      const renderedOrder = await page
-        .locator("[data-message-row]")
-        .evaluateAll((rows) =>
-          rows.map((row) => (row as HTMLElement).dataset.messageText),
-        );
-      expect(renderedOrder.indexOf(older)).toBeLessThan(
-        renderedOrder.indexOf(newer),
+    const seed = await irc.peer("history-seed");
+    const older = "existing history older";
+    const newer = "existing history newer";
+    await seed.privmsgConfirmed(irc.channel, older);
+    await seed.privmsgConfirmed(irc.channel, newer);
+    const resumedAt = Date.now() + 24 * 60 * 60 * 1_000;
+    await page.clock.setFixedTime(resumedAt);
+    await page.goto(irc.url());
+    const olderRow = page
+      .getByText(older, { exact: true })
+      .locator("xpath=ancestor::*[@data-message-row]");
+    const newerRow = page
+      .getByText(newer, { exact: true })
+      .locator("xpath=ancestor::*[@data-message-row]");
+    await expect(olderRow).toBeVisible();
+    await expect(newerRow).toBeVisible();
+    await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
+    const renderedOrder = await page
+      .locator("[data-message-row]")
+      .evaluateAll((rows) =>
+        rows.map((row) => (row as HTMLElement).dataset.messageText),
       );
-      for (const row of [olderRow, newerRow]) {
-        const dateTime = await row.locator("time").getAttribute("datetime");
-        expect(dateTime).not.toBeNull();
-        expect(new Date(dateTime ?? 0).getTime()).toBeLessThan(
-          resumedAt - 12 * 60 * 60 * 1_000,
-        );
-      }
-    } finally {
-      seed.close();
+    expect(renderedOrder.indexOf(older)).toBeLessThan(
+      renderedOrder.indexOf(newer),
+    );
+    for (const row of [olderRow, newerRow]) {
+      const dateTime = await row.locator("time").getAttribute("datetime");
+      expect(dateTime).not.toBeNull();
+      expect(new Date(dateTime ?? 0).getTime()).toBeLessThan(
+        resumedAt - 12 * 60 * 60 * 1_000,
+      );
     }
   });
 
@@ -716,91 +642,78 @@ test.describe("local Ergo user flow", () => {
 
   test("anchors live messages and preserves the away boundary", async ({
     page,
+    irc,
   }) => {
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    const channel = `#timeline-${Date.now()}`;
+    const channel = irc.channelNamed("timeline");
     const composer = page.getByRole("textbox", { name: "Message" });
     await composer.fill(`/join ${channel}`);
     await composer.press("Enter");
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-    const bot = await IrcClient.connect(
-      "timeline-bot",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      channel,
-    );
+    const bot = await irc.peer("timeline-bot", [channel]);
     const list = page.locator("[data-message-list]");
     const active = page.locator('[data-buffer-id][aria-current="page"]');
-    try {
-      await expect(
-        page.getByRole("button", { name: "Toggle member list" }),
-      ).toContainText("2");
-      const liveEdgeReady = `live edge ready ${Date.now()}`;
-      await bot.privmsgConfirmed(channel, liveEdgeReady);
-      await list.press("End");
-      await expect(
-        page.getByText(liveEdgeReady, { exact: true }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /new message/ }),
-      ).toHaveCount(0);
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
-      const seeds = Array.from(
-        { length: 30 },
-        (_, index) =>
-          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(6)}`,
-      );
-      for (const seed of seeds) {
-        await bot.privmsgConfirmed(channel, seed);
-      }
-      await expect(
-        page.getByText(seeds.at(-1) ?? "", { exact: true }),
-      ).toBeVisible();
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
-      await expect(active).toHaveAttribute("data-unread", "0", {
-        timeout: 3_000,
-      });
-
-      await scrollAwayFromLiveEdge(page, list);
-      const away = `while away ${Date.now()}`;
-      await bot.privmsgConfirmed(channel, away);
-      await expect(
-        page.getByRole("button", { name: /new message/ }),
-      ).toBeVisible();
-      await expect(active).toHaveAttribute("data-unread", "0");
-
-      await page.keyboard.press("End");
-      await expect(
-        page.getByRole("button", { name: /new message/ }),
-      ).toHaveCount(0);
-      await expect(page.getByText(away, { exact: true })).toBeVisible();
-      await expect(page.getByText("New", { exact: true })).toBeVisible();
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
-      await expect(active).toHaveAttribute("data-unread", "0", {
-        timeout: 3_000,
-      });
-    } finally {
-      bot.close();
+    await expect(
+      page.getByRole("button", { name: "Toggle member list" }),
+    ).toContainText("2");
+    const liveEdgeReady = "live edge ready";
+    await bot.privmsgConfirmed(channel, liveEdgeReady);
+    await list.press("End");
+    await expect(page.getByText(liveEdgeReady, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /new message/ })).toHaveCount(
+      0,
+    );
+    await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+    const seeds = Array.from(
+      { length: 30 },
+      (_, index) =>
+        `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(6)}`,
+    );
+    for (const seed of seeds) {
+      await bot.privmsgConfirmed(channel, seed);
     }
+    await expect(
+      page.getByText(seeds.at(-1) ?? "", { exact: true }),
+    ).toBeVisible();
+    await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+    await expect(active).toHaveAttribute("data-unread", "0", {
+      timeout: 3_000,
+    });
+
+    await scrollAwayFromLiveEdge(page, list);
+    const away = "while away";
+    await bot.privmsgConfirmed(channel, away);
+    await expect(
+      page.getByRole("button", { name: /new message/ }),
+    ).toBeVisible();
+    await expect(active).toHaveAttribute("data-unread", "0");
+
+    await page.keyboard.press("End");
+    await expect(page.getByRole("button", { name: /new message/ })).toHaveCount(
+      0,
+    );
+    await expect(page.getByText(away, { exact: true })).toBeVisible();
+    await expect(page.getByText("New", { exact: true })).toBeVisible();
+    await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+    await expect(active).toHaveAttribute("data-unread", "0", {
+      timeout: 3_000,
+    });
   });
 
   test("broadcasts pending and confirmed sends to a second tab", async ({
     context,
     page: secondTab,
+    irc,
   }) => {
     await secondTab.goto("/");
     await expect(secondTab.getByRole("status")).toHaveText(ready);
     const firstTab = await context.newPage();
-    await firstTab.goto("/?irc-password=weblounge-test");
-    await expect(
-      firstTab.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
-    await expect(
-      secondTab.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
+    await firstTab.goto(irc.url());
+    await expectSettled(firstTab, { conversation: irc.channel });
+    await expectSettled(secondTab, { conversation: irc.channel });
 
-    const text = `shared send ${Date.now()}`;
+    const text = "shared send";
     await observeDeliveries(secondTab, text);
     await firstTab.getByRole("textbox", { name: "Message" }).fill(text);
     await firstTab.getByRole("button", { name: "Send" }).click();
@@ -810,47 +723,36 @@ test.describe("local Ergo user flow", () => {
       .poll(() => observedDeliveries(secondTab))
       .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
 
-    const bot = await IrcClient.connect(
-      "read-sync-bot",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
+    const bot = await irc.peer("read-sync-bot");
+    const scrollSeeds = Array.from(
+      { length: 12 },
+      (_, index) =>
+        `shared read seed ${index} ${"wrapped message ".repeat(12)}`,
     );
-    try {
-      const scrollSeeds = Array.from(
-        { length: 12 },
-        (_, index) =>
-          `shared read seed ${index} ${"wrapped message ".repeat(12)}`,
-      );
-      for (const seed of scrollSeeds)
-        await bot.privmsgConfirmed("#weblounge-test", seed);
-      await expect(
-        secondTab.getByText(scrollSeeds.at(-1) ?? "", { exact: true }),
-      ).toBeVisible();
-      await scrollAwayFromLiveEdge(
-        secondTab,
-        secondTab.locator("[data-message-list]"),
-        { distance: 40 },
-      );
-      await firstTab.bringToFront();
-      await firstTab.keyboard.press("End");
-      const incoming = `read sync ${Date.now()}`;
-      bot.privmsg("#weblounge-test", incoming);
-      const secondActive = secondTab.locator(
-        '[data-buffer-id][aria-current="page"]',
-      );
-      const jump = secondTab.getByRole("button", { name: /1 new message/u });
-      await expect(jump).toBeVisible();
-      await expect(secondActive).toHaveAttribute("data-unread", "0", {
-        timeout: 3_000,
-      });
-      await jump.click();
-      await expect(
-        secondTab.getByText(incoming, { exact: true }),
-      ).toBeVisible();
-    } finally {
-      bot.close();
-    }
+    for (const seed of scrollSeeds)
+      await bot.privmsgConfirmed(irc.channel, seed);
+    await expect(
+      secondTab.getByText(scrollSeeds.at(-1) ?? "", { exact: true }),
+    ).toBeVisible();
+    await scrollAwayFromLiveEdge(
+      secondTab,
+      secondTab.locator("[data-message-list]"),
+      { distance: 40 },
+    );
+    await firstTab.bringToFront();
+    await firstTab.keyboard.press("End");
+    const incoming = "read sync";
+    bot.privmsg(irc.channel, incoming);
+    const secondActive = secondTab.locator(
+      '[data-buffer-id][aria-current="page"]',
+    );
+    const jump = secondTab.getByRole("button", { name: /1 new message/u });
+    await expect(jump).toBeVisible();
+    await expect(secondActive).toHaveAttribute("data-unread", "0", {
+      timeout: 3_000,
+    });
+    await jump.click();
+    await expect(secondTab.getByText(incoming, { exact: true })).toBeVisible();
   });
 });
 
