@@ -24,6 +24,14 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-13: inline images, slice 1 (design 30). The engine projects each network's advertised
+  FILEHOST origin; a message's first image URL on that origin renders under its text in a
+  fixed-height density slot (160/240 desktop, 160/200 phone), whose width follows the image and
+  whose height never changes, with an error tile for failures and a still first frame under reduced
+  motion. Other sites' images never inline, and link previews are paused. Activating an image opens
+  it in a new tab. Local Ergo advertises a fake HTTPS file host that the specs drive (held, 404,
+  foreign origin, compact, phone). Inline images work on beta once weblounge-server PR #77's CSP is
+  live. Next: the zoom/pan viewer, then a natural-size cache in `Space::Cache`.
 - 2026-11-13: numbered conversation jumps on desktop (`⌘1…9` in Tauri and the Mac app,
   `Alt+1…9` on web macOS/Windows, `Ctrl+Alt+1…9` on web Linux). They count the visible sidebar
   conversation rows top to bottom, and holding the jump modifier shows each row's number. Sidebar
@@ -562,7 +570,7 @@ The single place a fresh session reads to know where the project stands. Update 
   | Highlighted group or continuation | Same 16px/6px outer rhythm; band splits it 8px/8px or 3px/3px | Same 3px/3px rhythm | Message row pseudo-element; no added height |
   | Join, part, membership, notice, other system line | 12px before when following a message; 4px between consecutive line rows; 0px before after a divider; 0px after | 3px above and below; 0px before after a divider | System-row context and line-density tokens |
   | Day, New/unread, history loading/start | 20px above, 8px below | 14px above, 6px below | Divider top/bottom density tokens |
-  | Reaction chips or link preview | 4px internal content gap; outer message rhythm unchanged | 4px internal content gap; outer message rhythm unchanged | Inside the message content box |
+  | Reaction chips, inline image or link preview | 4px internal content gap; outer message rhythm unchanged | 4px internal content gap; outer message rhythm unchanged | Inside the message content box |
   | Own, pending, failed, confirmed delivery | Same group/continuation rhythm as any message | Same one-line rhythm as any message | Delivery label is inside the message row and adds no outer gap |
   | Typing status | 24px reserved in the composer; 0px transcript gap | 24px reserved in the composer; 0px transcript gap | Composer, outside the transcript |
   | First row | Its row-kind spacing from the phone list edge | 12px list inset, then its row-kind spacing | List edge plus the first row; no neighbouring-row margin |
