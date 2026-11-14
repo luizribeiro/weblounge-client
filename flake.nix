@@ -371,6 +371,8 @@
           WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
         };
         e2eShardCount = 4;
+        # Specs tagged @serial restart Ergo or show fixed names in screenshots.
+        e2eWorkers = 2;
         e2e = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e";
           version = "0.1.0";
@@ -437,7 +439,8 @@
                 cat forwarder.log >&2
                 exit 1
               fi
-              ${playwrightCommand ''--no-deps --shard="$WEBLOUNGE_E2E_SHARD"''}
+              ${playwrightCommand ''--no-deps --shard="$WEBLOUNGE_E2E_SHARD" --grep-invert=@serial --workers=${toString e2eWorkers}''}
+              ${playwrightCommand ''--no-deps --shard="$WEBLOUNGE_E2E_SHARD" --grep=@serial --workers=1 --pass-with-no-tests''}
             ''}
             runHook postBuild
           '';
