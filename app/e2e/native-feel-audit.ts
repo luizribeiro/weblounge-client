@@ -517,6 +517,7 @@ export async function auditMobileTextFieldZoom(page: Page): Promise<void> {
 
 export async function auditMessageSelection(
   page: Page,
+  sender: string,
   firstText: string,
   secondText: string,
 ): Promise<void> {
@@ -583,8 +584,8 @@ export async function auditMessageSelection(
   );
   expect(copied).toMatch(
     new RegExp(
-      `^\\[\\d{2}:\\d{2}\\] <native-audit> ${firstText}\\n` +
-        `\\[\\d{2}:\\d{2}\\] <native-audit> ${secondText}$`,
+      `^\\[\\d{2}:\\d{2}\\] <${sender}> ${firstText}\\n` +
+        `\\[\\d{2}:\\d{2}\\] <${sender}> ${secondText}$`,
     ),
   );
 }
