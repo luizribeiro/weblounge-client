@@ -1,4 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
+import { expectSettled } from "./settled";
 
 test.describe("buffer order against local Ergo", () => {
   test.skip(
@@ -6,14 +8,17 @@ test.describe("buffer order against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
-  test("keeps channel order stable across three reloads", async ({ page }) => {
+  test("keeps channel order stable across three reloads", async ({
+    page,
+    irc,
+  }) => {
     await page.addInitScript(() => {
       Object.defineProperty(globalThis, "SharedWorker", {
         configurable: true,
         value: undefined,
       });
     });
-    const suffix = Date.now().toString().slice(-6);
+    const suffix = irc.id;
     const channels = [
       `#zzz-stable-${suffix}`,
       `#aaa-stable-${suffix}`,
@@ -29,42 +34,36 @@ test.describe("buffer order against local Ergo", () => {
       [channels[0], channels[2], channels[1]],
     ];
 
-    try {
-      for (const [index, arrival] of arrivals.entries()) {
-        if (index === 0) {
-          await page.goto("/?irc-password=weblounge-test");
-          await partStableChannels(page);
-        } else {
-          await page.evaluate(() =>
-            history.replaceState(null, "", "/?irc-password=weblounge-test"),
-          );
-          await page.reload();
-        }
-        await page.getByRole("button", { name: /^#weblounge-test/ }).click();
-        await expect(
-          page.getByRole("heading", { name: /#weblounge-test/ }),
-        ).toBeVisible();
-        await expect(page.locator('[data-network-state="online"]')).toHaveCount(
-          1,
+    for (const [index, arrival] of arrivals.entries()) {
+      if (index === 0) {
+        await page.goto(irc.url());
+      } else {
+        await page.evaluate(
+          (url) => history.replaceState(null, "", url),
+          irc.url(),
         );
-        const composer = page.getByRole("textbox", { name: "Message" });
-        for (const channel of arrival) {
-          if (channel === undefined) continue;
-          const existing = page.getByRole("button", { name: channel });
-          if ((await existing.count()) === 0) {
-            await composer.fill(`/join ${channel}`);
-            await composer.press("Enter");
-          } else {
-            await existing.click();
-          }
-          await expect(
-            page.getByRole("heading", { name: channel }),
-          ).toBeVisible();
-        }
-        await expectStableChannelOrder(page, suffix, expected);
+        await page.reload();
       }
-    } finally {
-      await partStableChannels(page);
+      await page.getByRole("button", { name: irc.channel }).click();
+      await expectSettled(page, { conversation: irc.channel });
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        1,
+      );
+      const composer = page.getByRole("textbox", { name: "Message" });
+      for (const channel of arrival) {
+        if (channel === undefined) continue;
+        const existing = page.getByRole("button", { name: channel });
+        if ((await existing.count()) === 0) {
+          await composer.fill(`/join ${channel}`);
+          await composer.press("Enter");
+        } else {
+          await existing.click();
+        }
+        await expect(
+          page.getByRole("heading", { name: channel }),
+        ).toBeVisible();
+      }
+      await expectStableChannelOrder(page, `-stable-${suffix}`, expected);
     }
   });
 });
@@ -87,20 +86,4 @@ async function expectStableChannelOrder(
         ),
     )
     .toEqual(expected);
-}
-
-async function partStableChannels(page: Page): Promise<void> {
-  const names = await page
-    .locator('[data-buffer-id][aria-label*="-stable-"]')
-    .evaluateAll((channels) =>
-      channels.flatMap((channel) => channel.getAttribute("aria-label") ?? []),
-    );
-  for (const name of names) {
-    const channel = page.getByRole("button", { name, exact: true });
-    await channel.click();
-    const composer = page.getByRole("textbox", { name: "Message" });
-    await composer.fill("/part");
-    await composer.press("Enter");
-    await expect(composer).toHaveValue("");
-  }
 }

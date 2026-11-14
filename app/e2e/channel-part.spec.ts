@@ -1,7 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { IrcClient } from "./irc-client";
-
-const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
+import { expect, test } from "./irc-fixture";
 
 test.describe("channel departure against local Ergo", () => {
   test.skip(
@@ -11,11 +8,12 @@ test.describe("channel departure against local Ergo", () => {
 
   test("removes a parted channel whose name contains a slash", async ({
     page,
+    irc,
   }) => {
-    const channel = `#projects/${Date.now().toString(36)}`;
-    await page.goto("/?irc-password=weblounge-test");
+    const channel = `#projects/${irc.account}`;
+    await page.goto(irc.url());
     const composer = page.getByRole("textbox", {
-      name: `Message ${fixtureChannel}`,
+      name: `Message ${irc.channel}`,
     });
     await expect(composer).toBeVisible();
     await composer.fill(`/join ${channel}`);
@@ -37,48 +35,43 @@ test.describe("channel departure against local Ergo", () => {
     ).toHaveCount(0);
   });
 
-  test("keeps a kicked channel read-only until Rejoin", async ({ page }) => {
-    const suffix = Date.now().toString(36);
-    const channel = `#kick-${suffix}`;
-    const operator = await IrcClient.connectIsolated(
-      `operator-${suffix}`,
-      channel,
+  test("keeps a kicked channel read-only until Rejoin", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("kick");
+    const operator = await irc.peer("operator", [channel]);
+    await page.goto(irc.url());
+    const composer = page.getByRole("textbox", {
+      name: `Message ${irc.channel}`,
+    });
+    await expect(composer).toBeVisible();
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+
+    await operator.kick(channel, irc.account, "too loud");
+
+    const kickLine = page
+      .locator("[data-system-line]")
+      .filter({ hasText: `${operator.nickname} kicked you` });
+    await expect(kickLine).toHaveAccessibleName(
+      `${operator.nickname} kicked you: “too loud” · Rejoin`,
     );
-    try {
-      await page.goto("/?irc-password=weblounge-test");
-      const composer = page.getByRole("textbox", {
-        name: `Message ${fixtureChannel}`,
-      });
-      await expect(composer).toBeVisible();
-      await composer.fill(`/join ${channel}`);
-      await composer.press("Enter");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const kickedComposer = page.getByRole("textbox", {
+      name: `Message ${channel}`,
+    });
+    await expect(kickedComposer).toBeDisabled();
+    await expect(
+      page.getByRole("status").filter({
+        hasText: `You were kicked from ${channel}. Rejoin to send messages.`,
+      }),
+    ).toBeVisible();
 
-      await operator.kick(channel, "weblounge", "too loud");
-
-      const kickLine = page
-        .locator("[data-system-line]")
-        .filter({ hasText: `operator-${suffix} kicked you` });
-      await expect(kickLine).toHaveAccessibleName(
-        `operator-${suffix} kicked you: “too loud” · Rejoin`,
-      );
-      const kickedComposer = page.getByRole("textbox", {
-        name: `Message ${channel}`,
-      });
-      await expect(kickedComposer).toBeDisabled();
-      await expect(
-        page.getByRole("status").filter({
-          hasText: `You were kicked from ${channel}. Rejoin to send messages.`,
-        }),
-      ).toBeVisible();
-
-      await kickLine.getByRole("button", { name: "Rejoin channel" }).click();
-      await expect(kickedComposer).toBeEnabled();
-      await kickedComposer.fill("back again");
-      await kickedComposer.press("Enter");
-      await expect(page.getByText("back again", { exact: true })).toBeVisible();
-    } finally {
-      operator.close();
-    }
+    await kickLine.getByRole("button", { name: "Rejoin channel" }).click();
+    await expect(kickedComposer).toBeEnabled();
+    await kickedComposer.fill("back again");
+    await kickedComposer.press("Enter");
+    await expect(page.getByText("back again", { exact: true })).toBeVisible();
   });
 });
