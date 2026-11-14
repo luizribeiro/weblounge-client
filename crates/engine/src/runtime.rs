@@ -30,6 +30,7 @@ use crate::{
         time_millis,
     },
     timeline::{FixedOffsetCalendar, LocalCalendar},
+    upload_target::{self, ConnectionIdentity, UploadContext, UploadCredential},
 };
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -68,7 +69,7 @@ struct CompletionContext {
 
 struct RunningNetwork {
     instance: u64,
-    authentication_kind: AuthenticationKind,
+    identity: ConnectionIdentity,
     client: papo::Client,
     model: NetworkModel,
     connection_attempt: u32,
@@ -418,6 +419,11 @@ impl Runtime {
             EngineRequest::DismissNotificationPrompt => {
                 self.dismiss_notification_prompt(envelope.id)
             }
+            EngineRequest::ResolveUpload {
+                network_id,
+                approval,
+            } => self.resolve_upload(envelope.id, network_id, approval),
+            EngineRequest::ForgetUploadApprovals => self.forget_upload_approvals(envelope.id),
             EngineRequest::LoadPushDevice { relay } => self.load_push_device(envelope.id, relay),
             EngineRequest::LoadPushedMessages { network_id } => {
                 self.load_pushed_messages(envelope.id, network_id)
@@ -526,6 +532,58 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let event = match notification_settings::dismiss_prompt(storage.as_ref()).await {
+                Ok(()) => EngineToUi::CommandResult { id: command_id },
+                Err(_) => command_rejection(command_id, EngineMessageKey::StorageUnavailable),
+            };
+            let _ = outbound.send(event);
+        });
+        Vec::new()
+    }
+
+    fn resolve_upload(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        approval: Option<crate::UploadApproval>,
+    ) -> Vec<EngineToUi> {
+        let (storage, context) = {
+            let state = lock(&self.state);
+            let Some(running) = state
+                .network
+                .as_ref()
+                .filter(|running| running.model.id() == network_id)
+            else {
+                return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
+            };
+            let context = UploadContext {
+                identity: running.identity.clone(),
+                filehost: filehost::upload_endpoint(&running.client.state()),
+                online: running.model.is_online(),
+            };
+            (state.storage.clone(), context)
+        };
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let resolution = upload_target::resolve(storage.as_ref(), context, approval).await;
+            send_events(
+                &outbound,
+                vec![
+                    EngineToUi::UploadResolved {
+                        command_id: command_id.clone(),
+                        resolution,
+                    },
+                    EngineToUi::CommandResult { id: command_id },
+                ],
+            );
+        });
+        Vec::new()
+    }
+
+    fn forget_upload_approvals(&self, command_id: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let event = match crate::upload_approvals::forget_all(storage.as_ref()).await {
                 Ok(()) => EngineToUi::CommandResult { id: command_id },
                 Err(_) => command_rejection(command_id, EngineMessageKey::StorageUnavailable),
             };
@@ -1060,11 +1118,12 @@ impl Runtime {
             return rejected_command(command_id, EngineMessageKey::InvalidEndpoint);
         }
 
-        let authentication_kind = config.authentication.kind();
+        let identity = config.identity();
+        let authentication_kind = identity.kind();
         let snapshot_fingerprint = chat_list_snapshot::fingerprint(&config.label, &config.endpoint);
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_mut() {
-            if authentication_kind != running.authentication_kind {
+            if authentication_kind != running.identity.kind() {
                 return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
             return attach_shell(running, command_id);
@@ -1108,7 +1167,7 @@ impl Runtime {
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
             instance,
-            authentication_kind,
+            identity,
             client: client.clone(),
             model,
             connection_attempt: 1,
@@ -1160,7 +1219,7 @@ impl Runtime {
         let snapshot_fingerprint = chat_list_snapshot::fingerprint(&label, &endpoint);
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_mut() {
-            if running.authentication_kind != AuthenticationKind::HostedOAuth {
+            if running.identity.kind() != AuthenticationKind::HostedOAuth {
                 return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
             return attach_shell(running, command_id);
@@ -1197,7 +1256,7 @@ impl Runtime {
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
             instance,
-            authentication_kind: AuthenticationKind::HostedOAuth,
+            identity: ConnectionIdentity::hosted(endpoint.clone()),
             client,
             model,
             connection_attempt: 1,
@@ -1326,7 +1385,7 @@ impl Runtime {
         };
         let client = running.client.clone();
         let instance = running.instance;
-        let hosted = running.authentication_kind == AuthenticationKind::HostedOAuth;
+        let hosted = running.identity.kind() == AuthenticationKind::HostedOAuth;
         let online = running.model.is_online();
         let state_event = (!online).then(|| {
             let next = next_connection_state(
@@ -1384,7 +1443,7 @@ impl Runtime {
         };
         running.device_online = online;
         if online {
-            if running.authentication_kind == AuthenticationKind::HostedOAuth {
+            if running.identity.kind() == AuthenticationKind::HostedOAuth {
                 return vec![
                     EngineToUi::HostedTokenRequired { network_id },
                     EngineToUi::CommandResult { id: command_id },
@@ -1425,7 +1484,7 @@ impl Runtime {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if running.model.id() != network_id
-            || running.authentication_kind != AuthenticationKind::HostedOAuth
+            || running.identity.kind() != AuthenticationKind::HostedOAuth
         {
             state.network = Some(running);
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
@@ -1463,7 +1522,7 @@ impl Runtime {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut().filter(|running| {
             running.model.id() == network_id
-                && running.authentication_kind == AuthenticationKind::HostedOAuth
+                && running.identity.kind() == AuthenticationKind::HostedOAuth
         }) else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
@@ -2392,14 +2451,23 @@ enum ConnectionAuthentication {
     },
 }
 
-impl ConnectionAuthentication {
-    const fn kind(&self) -> AuthenticationKind {
-        match self {
-            Self::SaslPlain { .. } => AuthenticationKind::SaslPlain,
-            Self::HostedOAuth { .. } => AuthenticationKind::HostedOAuth,
+impl ConnectConfig {
+    fn identity(&self) -> ConnectionIdentity {
+        let credential = match &self.authentication {
+            ConnectionAuthentication::SaslPlain { account, password } => UploadCredential::Basic {
+                account: account.clone(),
+                password: password.clone(),
+            },
+            ConnectionAuthentication::HostedOAuth { .. } => UploadCredential::HostBearer,
+        };
+        ConnectionIdentity {
+            endpoint: self.endpoint.clone(),
+            credential,
         }
     }
+}
 
+impl ConnectionAuthentication {
     fn into_sasl(self) -> papo::Sasl {
         match self {
             Self::SaslPlain { account, password } => papo::Sasl::plain(account, password),
@@ -2412,6 +2480,15 @@ impl ConnectionAuthentication {
 enum AuthenticationKind {
     SaslPlain,
     HostedOAuth,
+}
+
+impl ConnectionIdentity {
+    const fn kind(&self) -> AuthenticationKind {
+        match self.credential {
+            UploadCredential::Basic { .. } => AuthenticationKind::SaslPlain,
+            UploadCredential::HostBearer => AuthenticationKind::HostedOAuth,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -4170,7 +4247,7 @@ fn process_disconnected_event(
         }
     }));
     let clear_authentication = process_disconnect(running, disconnected, output);
-    let refresh_token = running.authentication_kind == AuthenticationKind::HostedOAuth
+    let refresh_token = running.identity.kind() == AuthenticationKind::HostedOAuth
         && !clear_authentication
         && !matches!(disconnected.cause, papo::DisconnectCause::Requested { .. });
     if refresh_token {
@@ -4312,9 +4389,8 @@ fn process_disconnect(
         }
     }
     running.pending_sends = retained;
-    let hosted_authentication_failed = running.authentication_kind
-        == AuthenticationKind::HostedOAuth
-        && is_sasl_failure(disconnected);
+    let hosted_authentication_failed =
+        running.identity.kind() == AuthenticationKind::HostedOAuth && is_sasl_failure(disconnected);
     output.push(running.model.set_connection(
         next_connection_state(
             running.model.connection(),
@@ -5534,12 +5610,13 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HistoryPageBounds, HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL,
-        PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState,
-        RunningNetwork, Runtime, RuntimeState, SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS,
-        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
-        finish_history_page, flush_pending_sends, join_request_events, lock, next_connection_state,
+        AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionIdentity,
+        ConnectionTransition, HistoryPageBounds, HostedReconnectConfig, MemberViews,
+        PUSH_REFRESH_INTERVAL, PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX,
+        ReadRetryState, RunningNetwork, Runtime, RuntimeState,
+        SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS, attach_shell, completion_context,
+        connection_failure_notice, drain_events, fetch_history, finish_history_page,
+        flush_pending_sends, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
         queue_read_advance, read_retry_delay, record_read_advances, restore_target_rows,
         schedule_snapshot_write, spawn_history_fetch, spawn_online_direct_resolution,
@@ -6199,7 +6276,7 @@ async fn delay(duration: Duration) {
         ));
         let state = lock(&runtime.state);
         let running = state.network.as_ref().expect("hosted profile is retained");
-        assert_eq!(running.authentication_kind, AuthenticationKind::HostedOAuth);
+        assert_eq!(running.identity.kind(), AuthenticationKind::HostedOAuth);
         assert!(running.hosted_reconnect.is_some());
     }
 
@@ -7223,7 +7300,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -7299,7 +7376,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -7604,7 +7681,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
+                    identity: ConnectionIdentity::test_plain(),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -7698,7 +7775,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::HostedOAuth,
+                    identity: ConnectionIdentity::hosted("wss://127.0.0.1/socket".into()),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -7817,7 +7894,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -7969,7 +8046,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -8069,7 +8146,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -8162,7 +8239,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -8241,7 +8318,7 @@ async fn delay(duration: Duration) {
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -8356,7 +8433,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
+                    identity: ConnectionIdentity::test_plain(),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -8951,7 +9028,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
+                    identity: ConnectionIdentity::test_plain(),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -9086,7 +9163,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
+                    identity: ConnectionIdentity::test_plain(),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -9156,7 +9233,7 @@ async fn delay(duration: Duration) {
                 inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
+                    identity: ConnectionIdentity::test_plain(),
                     connection_attempt: 1,
                     device_online: true,
                     pending_sends: VecDeque::new(),
@@ -9505,7 +9582,7 @@ async fn delay(duration: Duration) {
             inflight_send_cancel: None,
             network: Some(RunningNetwork {
                 instance: 1,
-                authentication_kind: AuthenticationKind::SaslPlain,
+                identity: ConnectionIdentity::test_plain(),
                 connection_attempt: 1,
                 device_online: true,
                 pending_sends: VecDeque::new(),
@@ -11819,6 +11896,165 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn resolve_upload_answers_the_advertised_endpoint_with_basic() {
+        for (isupport, expected) in [
+            (
+                " draft/FILEHOST=https://files.example.org/upload",
+                crate::UploadResolution::Ready {
+                    endpoint: "https://files.example.org/upload".into(),
+                    authorization: crate::UploadAuthorization::Basic {
+                        header: "Basic d2VibG91bmdlOndlYmxvdW5nZS10ZXN0".into(),
+                    },
+                },
+            ),
+            (
+                " soju.im/FILEHOST=https://files.elsewhere.test/upload",
+                crate::UploadResolution::ApprovalRequired {
+                    host: "files.elsewhere.test".into(),
+                },
+            ),
+            ("", crate::UploadResolution::Unavailable),
+        ] {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            register_connection(&mut wire, &[], isupport, false).await;
+            let connected = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            let (state, outbound, mut receiver) = harness(client.clone());
+            let runtime = Runtime { state, outbound };
+            process_runtime_event(&runtime, connected);
+            collect(&mut receiver);
+
+            assert!(
+                runtime
+                    .request(EngineRequestEnvelope {
+                        id: "upload".into(),
+                        request: EngineRequest::ResolveUpload {
+                            network_id: NetworkId(1),
+                            approval: None,
+                        },
+                    })
+                    .is_empty()
+            );
+            let resolved = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .expect("resolution completes")
+                .expect("runtime event");
+            assert_eq!(
+                resolved,
+                EngineToUi::UploadResolved {
+                    command_id: "upload".into(),
+                    resolution: expected,
+                },
+                "{isupport:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_upload_refuses_before_the_network_is_online() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "upload".into(),
+                    request: EngineRequest::ResolveUpload {
+                        network_id: NetworkId(1),
+                        approval: None,
+                    },
+                })
+                .is_empty()
+        );
+        let resolved = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("resolution completes")
+            .expect("runtime event");
+        assert_eq!(
+            resolved,
+            EngineToUi::UploadResolved {
+                command_id: "upload".into(),
+                resolution: crate::UploadResolution::Offline,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn forget_upload_approvals_completes_the_request() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "forget".into(),
+                    request: EngineRequest::ForgetUploadApprovals,
+                })
+                .is_empty()
+        );
+        let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("forget completes")
+            .expect("runtime event");
+        assert_eq!(
+            result,
+            EngineToUi::CommandResult {
+                id: "forget".into()
+            }
+        );
+    }
+
+    #[test]
+    fn plain_connections_keep_their_endpoint_and_credential_for_uploads() {
+        let config = super::ConnectConfig {
+            label: "Example".into(),
+            endpoint: "wss://irc.example.org/socket".into(),
+            nickname: "luiz".into(),
+            authentication: ConnectionAuthentication::SaslPlain {
+                account: "luiz".into(),
+                password: papo::Secret::new("hunter2"),
+            },
+            autojoin: Vec::new(),
+            allow_insecure: false,
+        };
+        let identity = config.identity();
+        assert_eq!(identity.endpoint, "wss://irc.example.org/socket");
+        assert!(matches!(
+            identity.credential,
+            super::UploadCredential::Basic { ref account, ref password }
+                if account == "luiz" && password.expose() == "hunter2"
+        ));
+        assert_eq!(identity.kind(), AuthenticationKind::SaslPlain);
+        assert_eq!(
+            ConnectionIdentity::hosted("wss://beta.example.org/socket".into()).kind(),
+            AuthenticationKind::HostedOAuth
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_upload_rejects_an_unknown_network() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, _receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        assert_eq!(
+            runtime.request(EngineRequestEnvelope {
+                id: "upload".into(),
+                request: EngineRequest::ResolveUpload {
+                    network_id: NetworkId(9),
+                    approval: None,
+                },
+            }),
+            super::rejected_command("upload".into(), EngineMessageKey::NetworkNotFound)
+        );
+    }
+
+    #[tokio::test]
     async fn push_registration_uses_ergo_replies_and_typed_outcomes() {
         let (client, mut events, mut wire) = push_wire();
         register_push_connection(&mut wire, Some("home-vapid"), true).await;
@@ -12288,7 +12524,7 @@ async fn delay(duration: Duration) {
             .network
             .as_mut()
             .expect("network remains running")
-            .authentication_kind = AuthenticationKind::HostedOAuth;
+            .identity = ConnectionIdentity::hosted(String::new());
         assert_no_output(&runtime.request(push_request("register", "route-1")));
         let register = wire.next_sent().await;
         send_push_success(&mut wire, &register, false).await;
@@ -12709,7 +12945,7 @@ async fn delay(duration: Duration) {
         {
             let mut state = lock(&state);
             let running = state.network.as_mut().expect("network remains active");
-            running.authentication_kind = AuthenticationKind::HostedOAuth;
+            running.identity = ConnectionIdentity::hosted(String::new());
             running.hosted_reconnect = Some(HostedReconnectConfig {
                 endpoint: "wss://beta.weblounge.org/socket".into(),
                 nickname: "weblounge".into(),

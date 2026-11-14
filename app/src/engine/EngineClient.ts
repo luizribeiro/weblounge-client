@@ -6,6 +6,7 @@ import {
 } from "./decode-primitives";
 import { decodeCommandSpecs } from "./decodeCommandSpec";
 import { decodeTimelineItem } from "./decodeTimelineItem";
+import { decodeUploadResolution } from "./decodeUploadResolution";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
 import type {
   BufferProjection,
@@ -473,6 +474,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "upload_resolved": {
+      const resolution = decodeUploadResolution(value.resolution);
+      if (typeof value.command_id === "string" && resolution !== undefined) {
+        return { type: messageType, command_id: value.command_id, resolution };
+      }
+      break;
+    }
     case "push_state_changed": {
       const state = decodePushState(value.state);
       if (typeof value.network_id === "number" && state !== undefined) {
@@ -742,6 +750,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "hosted_token_required" ||
     value === "push_device_loaded" ||
     value === "notification_prompt_dismissal_loaded" ||
+    value === "upload_resolved" ||
     value === "push_state_changed" ||
     value === "push_route_required" ||
     value === "notice" ||

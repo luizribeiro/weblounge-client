@@ -8,10 +8,6 @@ mod members;
 mod name_key;
 mod notification_settings;
 mod protocol;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the upload credential rule is its only caller")
-)]
 mod public_suffix;
 mod push_device;
 mod pushed_messages;
@@ -23,16 +19,9 @@ mod state;
 pub mod storage;
 pub mod timeline;
 mod typing;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "upload resolution is its only caller")
-)]
 mod upload_approvals;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "upload resolution is its only caller")
-)]
 mod upload_policy;
+mod upload_target;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use std::sync::Arc;
@@ -52,7 +41,8 @@ pub use protocol::{
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
     PushDeploymentConfig, PushDeviceCredentials, PushFailure, PushRoute, PushState,
     PushUnsupportedReason, ReactionActorProjection, ReactionProjection, RedactedSecret,
-    SaslCredentials, ShellKind, TypingProjection, UiToEngine,
+    SaslCredentials, ShellKind, TypingProjection, UiToEngine, UploadApproval, UploadAuthorization,
+    UploadResolution,
 };
 
 /// Reads service-worker push records while constructing the web engine.

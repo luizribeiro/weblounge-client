@@ -17,6 +17,7 @@ import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushState } from "./PushState";
 import type { TimelineItem } from "./TimelineItem";
 import type { TypingProjection } from "./TypingProjection";
+import type { UploadResolution } from "./UploadResolution";
 
 /**
  * Events emitted to a UI client.
@@ -65,7 +66,15 @@ command_id: string,
 /**
  * Stored credentials, or none before this device is registered.
  */
-credentials: PushDeviceCredentials | null, } | { "type": "notification_prompt_dismissal_loaded",
+credentials: PushDeviceCredentials | null, } | { "type": "upload_resolved",
+/**
+ * Request correlation identifier.
+ */
+command_id: string,
+/**
+ * Endpoint and authorization, or why the upload cannot proceed.
+ */
+resolution: UploadResolution, } | { "type": "notification_prompt_dismissal_loaded",
 /**
  * Request correlation identifier.
  */

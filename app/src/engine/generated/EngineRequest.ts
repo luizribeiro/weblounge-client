@@ -7,6 +7,7 @@ import type { NetworkId } from "./NetworkId";
 import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushRoute } from "./PushRoute";
 import type { SaslCredentials } from "./SaslCredentials";
+import type { UploadApproval } from "./UploadApproval";
 
 /**
  * Engine requests implemented by the current vertical slice.
@@ -119,7 +120,15 @@ ready: boolean, } | { "type": "load_notification_prompt_dismissal" } | { "type":
 /**
  * Relay origin used as the durable namespace.
  */
-relay: string, } | { "type": "load_pushed_messages",
+relay: string, } | { "type": "resolve_upload",
+/**
+ * Network whose advertised file host receives the upload.
+ */
+network_id: NetworkId,
+/**
+ * The user's answer to an earlier approval question, if any.
+ */
+approval: UploadApproval | null, } | { "type": "forget_upload_approvals" } | { "type": "load_pushed_messages",
 /**
  * Network whose matching cached messages should become visible.
  */

@@ -120,6 +120,51 @@ pub struct PushDeviceCredentials {
     pub secret: RedactedSecret,
 }
 
+/// The user's consent to send the connection's password to a file host on another site.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct UploadApproval {
+    /// File host authority (`host` or `host:port`) the user was asked about.
+    pub host: String,
+    /// Whether this device remembers the approval for later uploads.
+    pub remember: bool,
+}
+
+/// How the UI authorizes one upload to the network's file host.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UploadAuthorization {
+    /// Send this complete `Authorization` header value.
+    Basic {
+        /// The `Basic …` header value built from the connection's SASL PLAIN credential.
+        #[ts(type = "string")]
+        header: RedactedSecret,
+    },
+    /// Send a fresh bearer token from the deployment's session-token endpoint.
+    HostBearer,
+}
+
+/// Where and how the UI may upload an image for one network.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UploadResolution {
+    /// The network advertises no file host.
+    Unavailable,
+    /// The network is not connected.
+    Offline,
+    /// The file host is on another site; ask before sending the password.
+    ApprovalRequired {
+        /// File host authority to name in the question.
+        host: String,
+    },
+    /// Upload to this endpoint with this authorization.
+    Ready {
+        /// The advertised HTTPS upload URL.
+        endpoint: String,
+        /// Authorization for this upload only.
+        authorization: UploadAuthorization,
+    },
+}
+
 /// Why a connected network cannot register Web Push.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -886,6 +931,15 @@ pub enum EngineRequest {
         /// Relay origin used as the durable namespace.
         relay: String,
     },
+    /// Resolve the file host endpoint and authorization for one image upload.
+    ResolveUpload {
+        /// Network whose advertised file host receives the upload.
+        network_id: NetworkId,
+        /// The user's answer to an earlier approval question, if any.
+        approval: Option<UploadApproval>,
+    },
+    /// Forget every remembered upload approval on this device.
+    ForgetUploadApprovals,
     /// Read service-worker message records into one running network.
     LoadPushedMessages {
         /// Network whose matching cached messages should become visible.
@@ -1055,6 +1109,13 @@ pub enum EngineToUi {
         command_id: String,
         /// Stored credentials, or none before this device is registered.
         credentials: Option<PushDeviceCredentials>,
+    },
+    /// Result of resolving an upload, sent only to the requesting UI.
+    UploadResolved {
+        /// Request correlation identifier.
+        command_id: String,
+        /// Endpoint and authorization, or why the upload cannot proceed.
+        resolution: UploadResolution,
     },
     /// Result of reading the device-local notification prompt preference.
     NotificationPromptDismissalLoaded {
