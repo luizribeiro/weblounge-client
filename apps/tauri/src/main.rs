@@ -10,6 +10,8 @@ mod window;
 
 use tauri::{App, AppHandle, RunEvent, Wry, plugin::Plugin};
 
+const BADGE_SCRIPT: &str = include_str!("badge.js");
+
 fn main() -> tauri::Result<()> {
     let app = tauri::Builder::default()
         .plugin(rust_side_opener())
@@ -58,7 +60,7 @@ fn install(app: &App) -> Result<(), SetupError> {
     window::create(
         app.handle(),
         !launch::starts_hidden(std::env::args()),
-        &notification_script,
+        &[BADGE_SCRIPT, &notification_script],
     )?;
     Ok(())
 }

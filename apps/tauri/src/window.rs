@@ -18,7 +18,6 @@ pub enum WindowError {
 }
 
 pub const MAIN_LABEL: &str = "main";
-const BADGE_SCRIPT: &str = include_str!("badge.js");
 pub const APP_URL: &str = "https://beta.weblounge.org";
 
 // Persisting visibility would restore a window hidden by close-to-hide as hidden at the next launch.
@@ -35,16 +34,18 @@ pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn create(
     app: &AppHandle,
     show_on_launch: bool,
-    notification_script: &str,
+    page_scripts: &[&str],
 ) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
-    let window = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
+    let mut builder = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
         .title("weblounge")
-        .visible(false)
-        .initialization_script(BADGE_SCRIPT)
-        .initialization_script(notification_script)
+        .visible(false);
+    for script in page_scripts {
+        builder = builder.initialization_script(*script);
+    }
+    let window = builder
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .inner_size(1280.0, 840.0)
         .min_inner_size(400.0, 480.0)
