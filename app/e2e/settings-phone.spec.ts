@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
 import {
   installNativeFeelInstrumentation,
@@ -6,18 +7,12 @@ import {
 } from "./native-feel-audit";
 import { choice, settingsScreenshot } from "./settings-fixture";
 
-test.beforeEach(async ({ page }) => {
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
+test.beforeEach(async ({ irc, page }) => {
   await emulateStandalone(page);
   await installNativeFeelInstrumentation(page);
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/?irc-password=weblounge-test");
-  await expect(
-    page.getByRole("button", { name: /^#weblounge-test/u }),
-  ).toBeVisible();
+  await page.goto(irc.url());
+  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
 });
 
 test("opens Settings from Chats and changes appearance live", async ({

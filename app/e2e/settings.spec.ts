@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -6,17 +7,13 @@ import {
 import { choose, settingsScreenshot } from "./settings-fixture";
 
 test.describe("desktop Settings against local Ergo", () => {
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
-
   test("opens from the header, changes appearance live and restores focus", async ({
+    irc,
     page,
   }) => {
     await installNativeFeelInstrumentation(page);
     await page.emulateMedia({ colorScheme: "light" });
-    const composer = await openHome(page);
+    const composer = await openHome(page, irc);
     const button = settingsButton(page);
     await expect(button).toHaveAttribute("title", "Settings (Ctrl+Shift+,)");
     await expect(button).toHaveAttribute(
@@ -77,6 +74,7 @@ test.describe("desktop Settings against local Ergo", () => {
   });
 
   test("paints the remembered appearance first and follows another tab", async ({
+    irc,
     context,
     page,
   }) => {
@@ -93,14 +91,14 @@ test.describe("desktop Settings against local Ergo", () => {
         });
       });
     });
-    await openHome(page);
+    await openHome(page, irc);
     await settingsButton(page).click();
     await choose(page, "Lounge Night");
     await choose(page, "Comfortable");
 
     const other = await context.newPage();
     await other.emulateMedia({ colorScheme: "light" });
-    await openHome(other);
+    await openHome(other, irc);
     await expect(other.locator("html")).toHaveAttribute(
       "data-theme",
       "lounge-night",
@@ -138,7 +136,7 @@ test.describe("desktop Settings against local Ergo", () => {
         density: "comfortable",
         theme: "lounge-night",
       });
-    await openHome(page);
+    await openHome(page, irc);
     await settingsButton(page).click();
     await expect(
       page.getByRole("radio", { name: "Lounge Night" }),
@@ -149,11 +147,12 @@ test.describe("desktop Settings against local Ergo", () => {
   });
 
   test("keeps the brand clear of both header buttons in the narrow drawer", async ({
+    irc,
     page,
   }) => {
     await page.setViewportSize({ width: 720, height: 800 });
     await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(irc.url());
     await page.getByRole("button", { name: "Toggle channel list" }).click();
     const drawer = page.getByRole("dialog", { name: "Channels" });
     const search = drawer.getByRole("button", { name: "Jump to" });
@@ -181,6 +180,7 @@ test.describe("desktop Settings against local Ergo", () => {
   });
 
   test("opens Settings from the Mac app menu and its native chord", async ({
+    irc,
     page,
   }) => {
     await page.addInitScript(() => {
@@ -188,7 +188,7 @@ test.describe("desktop Settings against local Ergo", () => {
         value: Object.freeze({ kind: "macos-app", version: "0.1.0" }),
       });
     });
-    const composer = await openHome(page);
+    const composer = await openHome(page, irc);
     const dialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsButton(page)).toHaveAttribute(
       "aria-keyshortcuts",
@@ -220,11 +220,11 @@ function settingsButton(page: Page) {
     .getByRole("button", { name: "Settings" });
 }
 
-async function openHome(page: Page) {
-  await page.goto("/?irc-password=weblounge-test");
-  await page.getByRole("button", { name: /^#weblounge-test/u }).click();
+async function openHome(page: Page, irc: IrcTestAccount) {
+  await page.goto(irc.url());
+  await page.getByRole("button", { name: irc.channel }).click();
   const composer = page.getByRole("textbox", {
-    name: "Message #weblounge-test",
+    name: `Message ${irc.channel}`,
   });
   await composer.focus();
   await expect(composer).toBeFocused();
