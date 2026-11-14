@@ -1,0 +1,68 @@
+{
+  "id": "black",
+  "name": "Black",
+  "order": 3,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#000000",
+    "surface": "#000000",
+    "panel": "#000000",
+    "panelFg": "#edefe5",
+    "panelMuted": "#a9b3a8",
+    "panelBorder": "#111111",
+    "panelAlt": "#0a0a0a",
+    "fg": "#edefe5",
+    "muted": "#a9b3a8",
+    "border": "#1a1f1c",
+    "accent": "#bdd9a7",
+    "accentFg": "#000000",
+    "selection": "#1a241d",
+    "selectionFg": "#edefe5",
+    "mentionBg": "#141c10",
+    "mentionBadge": "#eba293",
+    "mentionBadgeFg": "#000000",
+    "overlayScrim": "rgba(0,0,0,.6)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#edefe5",
+    "unread": "#eba293",
+    "inputBg": "#0a0a0a",
+    "chip": "#111111",
+    "codeBg": "#0a0a0a",
+    "online": "#bdd9a7",
+    "selfNick": "#bdd9a7",
+    "error": "#eba293",
+    "focusRing": "#bdd9a7"
+  },
+  "typography": {
+    "ui": "Inter, Inter Fallback, system-ui, sans-serif",
+    "mono": "SFMono-Regular, Consolas, Liberation Mono, monospace",
+    "title": "Inter, Inter Fallback, system-ui, sans-serif",
+    "base": "14px",
+    "sectionFamily": "SFMono-Regular, Consolas, Liberation Mono, monospace",
+    "sectionSize": "11px",
+    "sectionTransform": "uppercase",
+    "sectionTracking": "0.12em"
+  },
+  "shape": {
+    "control": "3px",
+    "avatar": "6px",
+    "icon": "6px",
+    "composer": "6px",
+    "palette": "6px",
+    "pill": "3px",
+    "round": "999px"
+  },
+  "effects": {
+    "overlayShadow": "0 20px 60px rgba(0,0,0,.6)",
+    "tooltipShadow": "0 8px 24px rgba(0,0,0,.6)",
+    "iconRing": "inset 0 0 0 1px rgba(237,239,229,.16)"
+  },
+  "nickPalette": [
+    "#8fd3c1",
+    "#e8c07a",
+    "#9cb8e8",
+    "#eba293",
+    "#c6aee8",
+    "#d9d48a"
+  ]
+}

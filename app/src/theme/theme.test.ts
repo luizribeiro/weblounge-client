@@ -14,10 +14,11 @@ import {
 } from "./theme-registry";
 
 describe("theme registry", () => {
-  it("loads Lounge themes and emits their tokens", () => {
+  it("loads every theme file in picker order and emits its tokens", () => {
     expect(themes.map((theme) => theme.id)).toEqual([
       "lounge",
       "lounge-night",
+      "black",
       "modern",
       "terminal",
       "retro",
@@ -57,6 +58,7 @@ describe("theme registry", () => {
     ).toEqual({
       lounge: "light",
       "lounge-night": "dark",
+      black: "dark",
       modern: "light",
       terminal: "dark",
       retro: "light",

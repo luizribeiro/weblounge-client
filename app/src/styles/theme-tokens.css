@@ -125,6 +125,62 @@
   --wl-nick-4: #c6aee8;
   --wl-nick-5: #d9d48a;
 }
+:root[data-theme="black"] {
+  color-scheme: dark;
+  --wl-color-bg: #000000;
+  --wl-color-surface: #000000;
+  --wl-color-panel: #000000;
+  --wl-color-panel-fg: #edefe5;
+  --wl-color-panel-muted: #a9b3a8;
+  --wl-color-panel-border: #111111;
+  --wl-color-panel-alt: #0a0a0a;
+  --wl-color-fg: #edefe5;
+  --wl-color-muted: #a9b3a8;
+  --wl-color-border: #1a1f1c;
+  --wl-color-accent: #bdd9a7;
+  --wl-color-accent-fg: #000000;
+  --wl-color-selection: #1a241d;
+  --wl-color-selection-fg: #edefe5;
+  --wl-color-mention-bg: #141c10;
+  --wl-color-mention-badge: #eba293;
+  --wl-color-mention-badge-fg: #000000;
+  --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
+  --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
+  --wl-color-viewer-fg: #edefe5;
+  --wl-color-unread: #eba293;
+  --wl-color-input-bg: #0a0a0a;
+  --wl-color-chip: #111111;
+  --wl-color-code-bg: #0a0a0a;
+  --wl-color-online: #bdd9a7;
+  --wl-color-self-nick: #bdd9a7;
+  --wl-color-error: #eba293;
+  --wl-color-focus-ring: #bdd9a7;
+  --wl-font-ui: Inter, Inter Fallback, system-ui, sans-serif;
+  --wl-font-mono: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-title: Inter, Inter Fallback, system-ui, sans-serif;
+  --wl-font-base: 14px;
+  --wl-font-section-family:
+    SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-section-size: 11px;
+  --wl-font-section-transform: uppercase;
+  --wl-font-section-tracking: 0.12em;
+  --wl-radius-control: 3px;
+  --wl-radius-avatar: 6px;
+  --wl-radius-icon: 6px;
+  --wl-radius-composer: 6px;
+  --wl-radius-palette: 6px;
+  --wl-radius-pill: 3px;
+  --wl-radius-round: 999px;
+  --wl-effect-overlay-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --wl-effect-tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --wl-effect-icon-ring: inset 0 0 0 1px rgba(237, 239, 229, 0.16);
+  --wl-nick-0: #8fd3c1;
+  --wl-nick-1: #e8c07a;
+  --wl-nick-2: #9cb8e8;
+  --wl-nick-3: #eba293;
+  --wl-nick-4: #c6aee8;
+  --wl-nick-5: #d9d48a;
+}
 :root[data-theme="modern"] {
   color-scheme: light;
   --wl-color-bg: #ffffff;
