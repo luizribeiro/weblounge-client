@@ -7,6 +7,7 @@ import type { NetworkId } from "./NetworkId";
 import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushRoute } from "./PushRoute";
 import type { SaslCredentials } from "./SaslCredentials";
+import type { SettingChange } from "./SettingChange";
 import type { UploadApproval } from "./UploadApproval";
 
 /**
@@ -116,7 +117,11 @@ online: boolean, } | { "type": "set_update_ready",
 /**
  * Whether a waiting service worker is ready to activate after this session closes.
  */
-ready: boolean, } | { "type": "load_notification_prompt_dismissal" } | { "type": "dismiss_notification_prompt" } | { "type": "load_push_device",
+ready: boolean, } | { "type": "load_settings" } | { "type": "change_setting",
+/**
+ * The setting and its new value.
+ */
+change: SettingChange, } | { "type": "load_notification_prompt_dismissal" } | { "type": "dismiss_notification_prompt" } | { "type": "load_push_device",
 /**
  * Relay origin used as the durable namespace.
  */

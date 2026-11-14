@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use ts_rs::TS;
 
 use crate::commands::CommandSpec;
+use crate::settings::{SettingChange, Settings};
 
 macro_rules! engine_message_keys {
     ($($variant:ident => $key:literal),+ $(,)?) => {
@@ -924,6 +925,13 @@ pub enum EngineRequest {
         /// Whether a waiting service worker is ready to activate after this session closes.
         ready: bool,
     },
+    /// Read this device's settings.
+    LoadSettings,
+    /// Validate, persist and broadcast one settings change.
+    ChangeSetting {
+        /// The setting and its new value.
+        change: SettingChange,
+    },
     /// Read whether this device dismissed the notification permission prompt.
     LoadNotificationPromptDismissal,
     /// Permanently dismiss the notification permission prompt on this device.
@@ -1118,6 +1126,18 @@ pub enum EngineToUi {
         command_id: String,
         /// Endpoint and authorization, or why the upload cannot proceed.
         resolution: UploadResolution,
+    },
+    /// Result of reading this device's settings.
+    SettingsLoaded {
+        /// Request correlation identifier.
+        command_id: String,
+        /// Every resolved setting.
+        settings: Settings,
+    },
+    /// A settings change was persisted; sent to every attached UI.
+    SettingsChanged {
+        /// Every resolved setting after the change.
+        settings: Settings,
     },
     /// Result of reading the device-local notification prompt preference.
     NotificationPromptDismissalLoaded {

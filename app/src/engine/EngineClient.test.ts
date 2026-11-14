@@ -525,6 +525,39 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes settings loads and settings changes", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const settings = {
+      app: { theme: "lounge-night", message_density: "compact" },
+    };
+    port.emit({ type: "settings_changed", settings });
+    port.emit({ type: "settings_loaded", command_id: "load", settings });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "settings_changed",
+      settings,
+    });
+    expect(listener).toHaveBeenCalledWith({
+      type: "settings_loaded",
+      command_id: "load",
+      settings,
+    });
+  });
+
+  it("rejects settings with an unknown theme", () => {
+    const { port } = fixture();
+
+    expect(() =>
+      port.emit({
+        type: "settings_changed",
+        settings: { app: { theme: "neon", message_density: "cozy" } },
+      }),
+    ).toThrow("invalid engine message");
+  });
+
   it("rejects an unknown push failure", () => {
     const { port } = fixture();
 

@@ -15,6 +15,7 @@ mod reactions;
 pub mod read_model;
 mod request_error;
 mod runtime;
+mod settings;
 mod state;
 pub mod storage;
 pub mod timeline;
@@ -30,6 +31,8 @@ use tokio::sync::mpsc;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use std::rc::Rc;
+
+pub use settings::{AppSetting, AppSettings, Density, SettingChange, Settings, ThemePreference};
 
 pub use protocol::{
     AccountProjection, BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus,

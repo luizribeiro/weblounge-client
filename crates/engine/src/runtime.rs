@@ -24,6 +24,7 @@ use crate::{
     filehost, notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
+    settings,
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
         NetworkModel, PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick,
@@ -413,6 +414,8 @@ impl Runtime {
                 self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
+            EngineRequest::LoadSettings => self.load_settings(envelope.id),
+            EngineRequest::ChangeSetting { change } => self.change_setting(envelope.id, change),
             EngineRequest::LoadNotificationPromptDismissal => {
                 self.load_notification_prompt_dismissal(envelope.id)
             }
@@ -506,6 +509,56 @@ impl Runtime {
     fn set_update_ready(&self, command_id: String, ready: bool) -> Vec<EngineToUi> {
         lock(&self.state).update_ready = ready;
         vec![EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn load_settings(&self, command_id: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let events = match settings::load(storage.as_ref()).await {
+                Ok(loaded) => {
+                    let mut events: Vec<_> = loaded
+                        .invalid_fields
+                        .into_iter()
+                        .map(|field| EngineToUi::Diagnostic {
+                            command_id: command_id.clone(),
+                            message: format!(
+                                "invalid stored setting `{field}` reset to its default"
+                            ),
+                        })
+                        .collect();
+                    events.push(EngineToUi::SettingsLoaded {
+                        command_id: command_id.clone(),
+                        settings: loaded.settings,
+                    });
+                    events.push(EngineToUi::CommandResult { id: command_id });
+                    events
+                }
+                Err(_) => rejected_command(command_id, EngineMessageKey::StorageUnavailable),
+            };
+            send_events(&outbound, events);
+        });
+        Vec::new()
+    }
+
+    fn change_setting(
+        &self,
+        command_id: String,
+        change: settings::SettingChange,
+    ) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let events = match settings::change(storage.as_ref(), change).await {
+                Ok(settings) => vec![
+                    EngineToUi::SettingsChanged { settings },
+                    EngineToUi::CommandResult { id: command_id },
+                ],
+                Err(_) => rejected_command(command_id, EngineMessageKey::StorageUnavailable),
+            };
+            send_events(&outbound, events);
+        });
+        Vec::new()
     }
 
     fn load_notification_prompt_dismissal(&self, command_id: String) -> Vec<EngineToUi> {
@@ -14448,5 +14501,137 @@ async fn delay(duration: Duration) {
             None
         );
         harness.drain.abort();
+    }
+
+    async fn settings_events(
+        runtime: &Runtime,
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+        id: &str,
+        request: EngineRequest,
+    ) -> Vec<EngineToUi> {
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: id.into(),
+                    request,
+                })
+                .is_empty()
+        );
+        let mut events = Vec::new();
+        loop {
+            let event = receiver.recv().await.expect("settings event");
+            let terminal = matches!(
+                &event,
+                EngineToUi::CommandResult { id: done } | EngineToUi::CommandRejected { id: done, .. }
+                    if done == id
+            );
+            events.push(event);
+            if terminal {
+                return events;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_setting_change_is_broadcast_and_then_loads_from_storage() {
+        use crate::settings::{AppSetting, Density, SettingChange, Settings};
+
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+        let change = SettingChange::App(AppSetting::MessageDensity(Density::Compact));
+        let mut expected = Settings::default();
+        expected.app.message_density = Density::Compact;
+
+        assert_eq!(
+            settings_events(
+                &runtime,
+                &mut receiver,
+                "change",
+                EngineRequest::ChangeSetting { change }
+            )
+            .await,
+            vec![
+                EngineToUi::SettingsChanged { settings: expected },
+                EngineToUi::CommandResult {
+                    id: "change".into()
+                },
+            ]
+        );
+        assert_eq!(
+            settings_events(&runtime, &mut receiver, "load", EngineRequest::LoadSettings).await,
+            vec![
+                EngineToUi::SettingsLoaded {
+                    command_id: "load".into(),
+                    settings: expected,
+                },
+                EngineToUi::CommandResult { id: "load".into() },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_invalid_stored_setting_is_diagnosed_and_loads_as_its_default() {
+        use crate::settings::Settings;
+
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+        let storage = lock(&runtime.state).storage.clone();
+        storage
+            .commit(
+                Space::Settings,
+                vec![Operation::Put {
+                    key: b"settings/app".to_vec(),
+                    value: br#"{"version":1,"fields":{"theme":"neon"}}"#.to_vec(),
+                }],
+            )
+            .await
+            .expect("seed settings");
+
+        let events =
+            settings_events(&runtime, &mut receiver, "load", EngineRequest::LoadSettings).await;
+
+        assert!(matches!(
+            &events[..],
+            [
+                EngineToUi::Diagnostic { command_id, message },
+                EngineToUi::SettingsLoaded { settings, .. },
+                EngineToUi::CommandResult { .. },
+            ] if command_id == "load" && message.contains("theme") && *settings == Settings::default()
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_newer_settings_record_rejects_changes_without_broadcasting() {
+        use crate::settings::{AppSetting, Density, SettingChange};
+
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+        let storage = lock(&runtime.state).storage.clone();
+        storage
+            .commit(
+                Space::Settings,
+                vec![Operation::Put {
+                    key: b"settings/app".to_vec(),
+                    value: br#"{"version":2,"fields":{}}"#.to_vec(),
+                }],
+            )
+            .await
+            .expect("seed settings");
+        let change = SettingChange::App(AppSetting::MessageDensity(Density::Compact));
+
+        assert_eq!(
+            settings_events(
+                &runtime,
+                &mut receiver,
+                "change",
+                EngineRequest::ChangeSetting { change }
+            )
+            .await,
+            vec![EngineToUi::CommandRejected {
+                id: "change".into(),
+                message_key: EngineMessageKey::StorageUnavailable,
+                values: None,
+            }]
+        );
     }
 }

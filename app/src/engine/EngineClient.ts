@@ -5,6 +5,7 @@ import {
   isRecord,
 } from "./decode-primitives";
 import { decodeCommandSpecs } from "./decodeCommandSpec";
+import { decodeSettings } from "./decodeSettings";
 import { decodeTimelineItem } from "./decodeTimelineItem";
 import { decodeUploadResolution } from "./decodeUploadResolution";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
@@ -466,6 +467,17 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "settings_loaded": {
+      const settings = decodeSettings(value.settings);
+      if (typeof value.command_id === "string" && settings !== undefined)
+        return { type: messageType, command_id: value.command_id, settings };
+      break;
+    }
+    case "settings_changed": {
+      const settings = decodeSettings(value.settings);
+      if (settings !== undefined) return { type: messageType, settings };
+      break;
+    }
     case "notification_prompt_dismissal_loaded":
       if (
         typeof value.command_id === "string" &&
@@ -753,6 +765,8 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "diagnostic" ||
     value === "hosted_token_required" ||
     value === "push_device_loaded" ||
+    value === "settings_loaded" ||
+    value === "settings_changed" ||
     value === "notification_prompt_dismissal_loaded" ||
     value === "upload_resolved" ||
     value === "push_state_changed" ||

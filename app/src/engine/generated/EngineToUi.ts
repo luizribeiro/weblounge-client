@@ -15,6 +15,7 @@ import type { NoticeAction } from "./NoticeAction";
 import type { NoticeTone } from "./NoticeTone";
 import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushState } from "./PushState";
+import type { Settings } from "./Settings";
 import type { TimelineItem } from "./TimelineItem";
 import type { TypingProjection } from "./TypingProjection";
 import type { UploadResolution } from "./UploadResolution";
@@ -74,7 +75,19 @@ command_id: string,
 /**
  * Endpoint and authorization, or why the upload cannot proceed.
  */
-resolution: UploadResolution, } | { "type": "notification_prompt_dismissal_loaded",
+resolution: UploadResolution, } | { "type": "settings_loaded",
+/**
+ * Request correlation identifier.
+ */
+command_id: string,
+/**
+ * Every resolved setting.
+ */
+settings: Settings, } | { "type": "settings_changed",
+/**
+ * Every resolved setting after the change.
+ */
+settings: Settings, } | { "type": "notification_prompt_dismissal_loaded",
 /**
  * Request correlation identifier.
  */
