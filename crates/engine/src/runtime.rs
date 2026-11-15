@@ -2571,28 +2571,33 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
             recipient,
             pin,
         } => {
-            let recipient = if let Some(pin) = pin {
-                match client.direct_pinned(&nick, &pin).await {
-                    Ok(recipient) => recipient,
-                    Err(papo::Error::PeerPinMismatch(mismatch)) => {
-                        return Err(SendError::PeerPinMismatch(mismatch));
-                    }
-                    Err(error) => return Err(classify_send_error(&error)),
-                }
-            } else if let Some(recipient) = recipient {
-                recipient
+            let recipient = direct_recipient(client, &nick, recipient, pin).await?;
+            if action {
+                client.action(recipient, pending.text.clone()).await
             } else {
-                return Err(SendError::Protocol);
-            };
-            {
-                if action {
-                    client.action(recipient, pending.text.clone()).await
-                } else {
-                    client.privmsg(recipient, pending.text.clone()).await
-                }
+                client.privmsg(recipient, pending.text.clone()).await
             }
         }
         .map_err(|error| classify_send_error(&error)),
+    }
+}
+
+async fn direct_recipient(
+    client: &papo::Client,
+    nick: &papo::Nick,
+    recipient: Option<papo::DirectRef>,
+    pin: Option<papo::PeerKey>,
+) -> Result<papo::DirectRef, SendError> {
+    match (pin, recipient) {
+        (Some(pin), _) => client
+            .direct_pinned(nick, &pin)
+            .await
+            .map_err(|error| match error {
+                papo::Error::PeerPinMismatch(mismatch) => SendError::PeerPinMismatch(mismatch),
+                error => classify_send_error(&error),
+            }),
+        (None, Some(recipient)) => Ok(recipient),
+        (None, None) => Err(SendError::Protocol),
     }
 }
 
