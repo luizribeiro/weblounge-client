@@ -1079,12 +1079,6 @@ impl NetworkModel {
             old.to_string(),
             Some(new.to_string()),
         );
-        if dedup
-            .as_ref()
-            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
-        {
-            return;
-        }
         let casemapping = self.casemapping;
         let own = changed.authorship == papo::Authorship::Own;
         let who = |nick: &papo::Nick| {
@@ -1097,26 +1091,17 @@ impl NetworkModel {
                 msgid: msgid.clone(),
             }
         };
-        let id = self.allocate_message_id();
-        let order = self.allocate_order(server_time_ms, time_millis(changed.received_at));
-        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-            return;
-        };
-        buffer.timeline.push(TimelineRecord {
-            id,
-            order,
-            day: self.calendar.day(order.primary_ms()),
-            body: RecordBody::Fold(FoldEvent::Nick {
-                old: who(old),
-                new: who(new),
-            }),
+        let body = RecordBody::Fold(FoldEvent::Nick {
+            old: who(old),
+            new: who(new),
         });
-        buffer.timeline.sort_by_key(|record| record.order);
-        buffer.system_server_times.insert(id, server_time_ms);
-        if let Some(dedup) = dedup {
-            buffer.system_dedup.insert(id, dedup);
-        }
-        self.dirty_timelines.insert(buffer_id);
+        self.push_system_record(
+            buffer_id,
+            body,
+            dedup,
+            server_time_ms,
+            time_millis(changed.received_at),
+        );
     }
 
     pub(crate) fn receive_mode_change(&mut self, event: &papo::event::ModeChanged) -> Option<()> {
@@ -1155,31 +1140,18 @@ impl NetworkModel {
             actor_name.clone(),
             Some(projected.iter().map(|change| change.raw.as_str()).collect()),
         );
-        if dedup
-            .as_ref()
-            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
-        {
-            return None;
-        }
-        let id = self.allocate_message_id();
-        let order = self.allocate_order(server_time_ms, time_millis(event.received_at));
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        buffer.timeline.push(TimelineRecord {
-            id,
-            order,
-            day: self.calendar.day(order.primary_ms()),
-            body: RecordBody::Fold(FoldEvent::Modes {
-                actor,
-                changes: projected,
-            }),
+        let body = RecordBody::Fold(FoldEvent::Modes {
+            actor,
+            changes: projected,
         });
-        buffer.timeline.sort_by_key(|record| record.order);
-        buffer.system_server_times.insert(id, server_time_ms);
-        if let Some(dedup) = dedup {
-            buffer.system_dedup.insert(id, dedup);
-        }
-        self.dirty_timelines.insert(buffer_id);
-        Some(())
+        self.push_system_record(
+            buffer_id,
+            body,
+            dedup,
+            server_time_ms,
+            time_millis(event.received_at),
+        )
+        .map(|_| ())
     }
 
     #[cfg(test)]
@@ -1847,12 +1819,6 @@ impl NetworkModel {
             nick.clone(),
             None,
         );
-        if dedup
-            .as_ref()
-            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
-        {
-            return None;
-        }
         let who = crate::timeline::Who {
             key: self.casemapping.fold(&nick).into_owned(),
             nick_color_index: nick_color_index(self.casemapping, &nick),
@@ -1865,14 +1831,40 @@ impl NetworkModel {
             MembershipKind::Parted => FoldEvent::Parted(who, reason),
             MembershipKind::Quit => FoldEvent::Quit(who, reason, None),
         };
+        self.push_system_record(
+            buffer_id,
+            RecordBody::Fold(event),
+            dedup,
+            server_time_ms,
+            received_at_ms,
+        )
+        .map(|_| ())
+    }
+
+    fn push_system_record(
+        &mut self,
+        buffer_id: BufferId,
+        body: RecordBody,
+        dedup: Option<SystemDedupReference>,
+        server_time_ms: Option<i64>,
+        received_at_ms: i64,
+    ) -> Option<MessageId> {
+        if !self.buffers.contains_key(&buffer_id)
+            || dedup
+                .as_ref()
+                .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
+        {
+            return None;
+        }
         let id = self.allocate_message_id();
         let order = self.allocate_order(server_time_ms, received_at_ms);
+        let day = self.calendar.day(order.primary_ms());
         let buffer = self.buffers.get_mut(&buffer_id)?;
         buffer.timeline.push(TimelineRecord {
             id,
             order,
-            day: self.calendar.day(order.primary_ms()),
-            body: RecordBody::Fold(event),
+            day,
+            body,
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
@@ -1880,7 +1872,7 @@ impl NetworkModel {
             buffer.system_dedup.insert(id, dedup);
         }
         self.dirty_timelines.insert(buffer_id);
-        Some(())
+        Some(id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1905,14 +1897,6 @@ impl NetworkModel {
             actor.clone(),
             Some(subject.clone()),
         );
-        if dedup
-            .as_ref()
-            .is_some_and(|reference| !self.system_dedup.insert(reference.clone()))
-        {
-            return None;
-        }
-        let id = self.allocate_message_id();
-        let order = self.allocate_order(server_time_ms, received_at_ms);
         let line = LineEvent::Kick {
             actor: Actor::User(person(self.casemapping, actor, false)),
             subject: if subject_own {
@@ -1922,22 +1906,17 @@ impl NetworkModel {
             },
             reason,
         };
+        self.push_system_record(
+            buffer_id,
+            RecordBody::Line(line),
+            dedup,
+            server_time_ms,
+            received_at_ms,
+        )?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         if subject_own && update_status {
             buffer.projection.channel_status = Some(ChannelStatus::Kicked);
         }
-        buffer.timeline.push(TimelineRecord {
-            id,
-            order,
-            day: self.calendar.day(order.primary_ms()),
-            body: RecordBody::Line(line),
-        });
-        buffer.timeline.sort_by_key(|record| record.order);
-        buffer.system_server_times.insert(id, server_time_ms);
-        if let Some(dedup) = dedup {
-            buffer.system_dedup.insert(id, dedup);
-        }
-        self.dirty_timelines.insert(buffer_id);
         Some(
             (subject_own && update_status)
                 .then(|| EngineToUi::BufferUpdated {
