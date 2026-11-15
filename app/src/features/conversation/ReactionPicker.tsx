@@ -1,17 +1,10 @@
-import {
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { t } from "../../strings";
 import { trapTab } from "../../ui/focus-trap";
-import { searchEmoji } from "./emoji-catalog";
 import { pickerPosition } from "./picker-position";
 import styles from "./ReactionPicker.module.css";
+import { ReactionPickerPanel } from "./ReactionPickerPanel";
 
 export function ReactionPicker(props: {
   readonly invoker: HTMLElement;
@@ -20,8 +13,6 @@ export function ReactionPicker(props: {
   readonly onPick: (reaction: string) => void;
   readonly onClose: () => void;
 }) {
-  const [query, setQuery] = createSignal("");
-  const groups = createMemo(() => searchEmoji(query()));
   let dialog: HTMLDivElement | undefined;
   let search: HTMLInputElement | undefined;
 
@@ -64,47 +55,14 @@ export function ReactionPicker(props: {
         ref={dialog}
         role="dialog"
       >
-        <label class={styles.label}>
-          {t("reaction.picker_title", { nick: props.nick })}
-          <input
-            class={styles.search}
-            onInput={(event) => setQuery(event.currentTarget.value)}
-            placeholder={t("reaction.search")}
-            ref={search}
-            type="search"
-            value={query()}
-          />
-        </label>
-        <div class={styles.groups} data-reaction-picker-groups="true">
-          <For each={groups()}>
-            {(group) => (
-              <section aria-label={group.name} class={styles.group}>
-                <h3 class={styles.groupName}>{group.name}</h3>
-                <div class={styles.grid}>
-                  <For each={group.entries}>
-                    {(entry) => (
-                      <button
-                        aria-label={entry.name}
-                        aria-pressed={props.mine.has(entry.emoji)}
-                        class={styles.emoji}
-                        onClick={() => pick(entry.emoji)}
-                        title={entry.name}
-                        type="button"
-                      >
-                        {entry.emoji}
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </section>
-            )}
-          </For>
-          <Show when={groups().length === 0}>
-            <p class={styles.empty}>
-              {t("reaction.no_match", { query: query().trim() })}
-            </p>
-          </Show>
-        </div>
+        <ReactionPickerPanel
+          mine={props.mine}
+          nick={props.nick}
+          onPick={pick}
+          searchRef={(element) => {
+            search = element;
+          }}
+        />
       </div>
     </Portal>
   );

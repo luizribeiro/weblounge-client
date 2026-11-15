@@ -5,16 +5,18 @@
   box-shadow: var(--wl-effect-overlay-shadow);
   box-sizing: border-box;
   color: var(--wl-color-fg);
-  display: flex;
-  flex-direction: column;
   font-family: var(--wl-font-ui);
-  gap: 10px;
   left: var(--wl-reaction-picker-left, 0);
   padding: 12px;
   position: fixed;
   top: var(--wl-reaction-picker-top, 0);
   width: 312px;
   z-index: 30;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .label {
   color: var(--wl-color-muted);
