@@ -121,14 +121,14 @@ interface MessageListProps {
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onToggleReaction?: ToggleReaction | undefined;
   /** Phone rows open their action sheet from a long press; the held message stays marked. */
-  readonly onMessageActions?:
-    | ((message: MessageProjection) => void)
-    | undefined;
+  readonly onMessageActions?: OpenMessageActions | undefined;
   readonly heldMessageId?: number | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
 }
+
+export type OpenMessageActions = (message: MessageProjection) => void;
 
 export interface MessageListController {
   readonly jumpBottom: () => void;
@@ -1504,9 +1504,7 @@ function TimelineRowView(props: {
   readonly onRejoin?: (() => void) | undefined;
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
-  readonly onMessageActions?:
-    | ((message: MessageProjection) => void)
-    | undefined;
+  readonly onMessageActions?: OpenMessageActions | undefined;
   readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1663,9 +1661,7 @@ function MessageRow(props: {
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
-  readonly onMessageActions?:
-    | ((message: MessageProjection) => void)
-    | undefined;
+  readonly onMessageActions?: OpenMessageActions | undefined;
   readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1694,7 +1690,7 @@ function MessageRow(props: {
       />
     );
   const react = reactionTarget(message, props.reactions?.toggle);
-  const toolbarReact = props.presentation === "mobile" ? undefined : react;
+  const hoverToolbarReact = props.presentation === "mobile" ? undefined : react;
   const toolbar = createRowToolbarVisibility();
   const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
   const openActions = props.onMessageActions;
@@ -1725,11 +1721,12 @@ function MessageRow(props: {
           if (restored !== undefined) focusControl(row, restored);
         });
       }}
-      tabindex={toolbarReact === undefined ? undefined : 0}
+      tabindex={hoverToolbarReact === undefined ? undefined : 0}
     >
       <Show
         when={
-          (toolbar.shown() || pickerInvoker() !== undefined) && toolbarReact
+          (toolbar.shown() || pickerInvoker() !== undefined) &&
+          hoverToolbarReact
         }
       >
         {(onReact) => (

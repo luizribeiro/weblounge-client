@@ -340,5 +340,6 @@ export function MobileConversation(props: MobileConversationProps) {
 }
 
 function copyText(text: string): void {
-  void navigator.clipboard?.writeText(text);
+  // A refused write (no permission, insecure context) leaves the clipboard as it was.
+  navigator.clipboard?.writeText(text).catch(() => undefined);
 }

@@ -85,6 +85,7 @@ export function MobileMessageActionSheet(props: MobileMessageActionSheetProps) {
                 {(action) => (
                   <button
                     class={styles.action}
+                    data-action={action.id}
                     data-tone={action.tone}
                     onClick={() => run(action.run)}
                     type="button"
