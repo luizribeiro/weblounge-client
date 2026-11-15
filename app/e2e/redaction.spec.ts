@@ -80,7 +80,6 @@ test.describe("message redaction on desktop against local Ergo", () => {
     await expect(redactedRow(page)).toContainText("Message deleted");
     await page.mouse.move(0, 0);
     await themedShots(page, "desktop-bars");
-    await nativeFeelAudit(page);
 
     await page.goto(irc.url());
     await expect(conversationButton(page, irc.channel)).toBeVisible();
@@ -90,6 +89,7 @@ test.describe("message redaction on desktop against local Ergo", () => {
     ).toBeVisible();
     await expect(page.getByText(text, { exact: true })).toHaveCount(0);
     await expect(redactedRow(page)).toHaveCount(0);
+    await nativeFeelAudit(page);
   });
 
   test("keeps what you read still when a message above it is deleted", async ({
