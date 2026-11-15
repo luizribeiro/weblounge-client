@@ -20,8 +20,12 @@ it("traps focus and dismisses a modal phone sheet", async () => {
   first.focus();
   fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
   expect(last).toHaveFocus();
-  fireEvent.keyDown(dialog, { key: "Escape" });
+  const back = vi.fn((event: KeyboardEvent) => event.defaultPrevented);
+  document.addEventListener("keydown", back);
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  document.removeEventListener("keydown", back);
   expect(dismiss).toHaveBeenCalledOnce();
+  expect(back).toHaveReturnedWith(true);
 });
 
 it("keeps a sheet's search field inside its Tab cycle", async () => {
@@ -42,4 +46,30 @@ it("keeps a sheet's search field inside its Tab cycle", async () => {
   expect(screen.getByRole("button", { name: "React" })).toHaveFocus();
   fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
   expect(search).toHaveFocus();
+});
+
+it("ignores the click that lifts the press opening it, then acts on later taps", () => {
+  const dismiss = vi.fn();
+  const react = vi.fn();
+  render(() => (
+    <MobileSheet label="Message actions" onDismiss={dismiss}>
+      <button onClick={react} type="button">
+        React
+      </button>
+    </MobileSheet>
+  ));
+  const [scrim] = screen.getAllByRole("button", { name: "Message actions" });
+  if (scrim === undefined) throw new Error("the scrim is missing");
+  const reaction = screen.getByRole("button", { name: "React" });
+
+  fireEvent.click(reaction, { detail: 1 });
+  fireEvent.click(scrim, { detail: 1 });
+  expect(react).not.toHaveBeenCalled();
+  expect(dismiss).not.toHaveBeenCalled();
+  fireEvent.pointerDown(reaction);
+  fireEvent.click(reaction, { detail: 1 });
+  expect(react).toHaveBeenCalledOnce();
+  fireEvent.pointerDown(scrim);
+  fireEvent.click(scrim, { detail: 1 });
+  expect(dismiss).toHaveBeenCalledOnce();
 });
