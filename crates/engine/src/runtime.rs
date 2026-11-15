@@ -67,6 +67,7 @@ struct CompletionContext {
     argument_hint: Option<String>,
     replacement_prefix: String,
     replacement_suffix: String,
+    auto_accept: bool,
 }
 
 struct RunningNetwork {
@@ -1153,9 +1154,17 @@ impl Runtime {
             CompletionTrigger::Command => {
                 command_candidates(&context.prefix, &running.model, &snapshot)
             }
-            CompletionTrigger::Person => {
-                person_candidates(&running.model, buffer_id, &context.prefix, &snapshot)
-            }
+            CompletionTrigger::Person => person_candidates(
+                &running.model,
+                buffer_id,
+                &context.prefix,
+                if context.auto_accept {
+                    NickMatch::Exact
+                } else {
+                    NickMatch::Prefix
+                },
+                &snapshot,
+            ),
             CompletionTrigger::Channel => {
                 channel_candidates(&running.model, &context.prefix, &snapshot)
             }
@@ -1171,7 +1180,7 @@ impl Runtime {
                 argument_hint: context.argument_hint,
                 replacement_prefix: context.replacement_prefix,
                 replacement_suffix: context.replacement_suffix,
-                auto_accept: false,
+                auto_accept: context.auto_accept && candidates.len() == 1,
                 candidates,
             },
             EngineToUi::CommandResult { id: command_id },
@@ -3139,6 +3148,9 @@ fn completion_context(
 ) -> Option<CompletionContext> {
     let end = byte_offset(input, cursor);
     let before = input.get(..end)?;
+    if !explicit && let Some(context) = terminated_mention_context(before) {
+        return Some(context);
+    }
     let replace_end = utf16_len(before);
     let word_start = word_start(before);
     let word = before.get(word_start..)?;
@@ -3151,6 +3163,7 @@ fn completion_context(
             argument_hint: None,
             replacement_prefix: "/".into(),
             replacement_suffix: " ".into(),
+            auto_accept: false,
         });
     }
     if let Some(context) = command_argument_context(before, word_start, replace_end, registry) {
@@ -3180,6 +3193,7 @@ fn completion_context(
         argument_hint: None,
         replacement_prefix: String::new(),
         replacement_suffix: replacement_suffix.into(),
+        auto_accept: false,
     })
 }
 
@@ -3191,6 +3205,40 @@ fn word_start(before: &str) -> usize {
 
 fn mention_suffix(word_start: usize) -> &'static str {
     if word_start == 0 { ": " } else { "" }
+}
+
+const TYPED_MENTION_PUNCTUATION: [char; 7] = [',', ':', ';', '.', '!', '?', ')'];
+
+fn ends_typed_mention(character: char) -> bool {
+    character.is_whitespace() || TYPED_MENTION_PUNCTUATION.contains(&character)
+}
+
+fn terminated_mention_context(before: &str) -> Option<CompletionContext> {
+    let terminator = before
+        .chars()
+        .next_back()
+        .filter(|character| ends_typed_mention(*character))?;
+    let mention = before.get(..before.len() - terminator.len_utf8())?;
+    let start = word_start(mention);
+    let nick = mention
+        .get(start..)?
+        .strip_prefix('@')
+        .filter(|nick| !nick.is_empty())?;
+    let replacement_suffix = if terminator.is_whitespace() {
+        format!("{}{terminator}", mention_suffix(start).trim_end())
+    } else {
+        terminator.to_string()
+    };
+    Some(CompletionContext {
+        trigger: CompletionTrigger::Person,
+        replace_start: utf16_len(mention.get(..start)?),
+        replace_end: utf16_len(before),
+        prefix: nick.to_owned(),
+        argument_hint: None,
+        replacement_prefix: String::new(),
+        replacement_suffix,
+        auto_accept: true,
+    })
 }
 
 fn command_argument_context(
@@ -3232,6 +3280,7 @@ fn command_argument_context(
         argument_hint: Some(spec.usage.clone()),
         replacement_prefix: String::new(),
         replacement_suffix: " ".into(),
+        auto_accept: false,
     })
 }
 
@@ -3284,10 +3333,26 @@ fn command_requirements_met(spec: &commands::CommandSpec, state: &papo::State) -
         })
 }
 
+#[derive(Clone, Copy)]
+enum NickMatch {
+    Prefix,
+    Exact,
+}
+
+impl NickMatch {
+    fn accepts(self, folded_nick: &str, folded_typed: &str) -> bool {
+        match self {
+            Self::Prefix => folded_nick.starts_with(folded_typed),
+            Self::Exact => folded_nick == folded_typed,
+        }
+    }
+}
+
 fn person_candidates(
     model: &NetworkModel,
     buffer_id: BufferId,
     prefix: &str,
+    nick_match: NickMatch,
     state: &papo::State,
 ) -> Vec<CompletionCandidate> {
     let mut nicks = model.recent_speakers(buffer_id, prefix, state);
@@ -3324,6 +3389,7 @@ fn person_candidates(
     let mut seen = std::collections::HashSet::new();
     nicks
         .into_iter()
+        .filter(|nick| nick_match.accepts(&state.casemapping().fold(nick), &folded_prefix))
         .filter(|nick| !is_own_nick(state, nick))
         .filter(|nick| seen.insert(state.casemapping().fold(nick).into_owned()))
         .take(COMPLETION_LIMIT)
@@ -5867,7 +5933,7 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionIdentity,
-        ConnectionTransition, HistoryPageBounds, HostedReconnectConfig, MemberViews,
+        ConnectionTransition, HistoryPageBounds, HostedReconnectConfig, MemberViews, NickMatch,
         PUSH_REFRESH_INTERVAL, PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX,
         ReadRetryState, RunningNetwork, Runtime, RuntimeState,
         SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS, attach_shell, completion_context,
@@ -7014,6 +7080,55 @@ async fn delay(duration: Duration) {
         assert!(completion_context("mail@an", 7, false, "#&", &registry).is_none());
         assert!(completion_context("hello /jo", 9, false, "#&", &registry).is_none());
         assert!(completion_context("hello al", 8, true, "#&", &registry).is_some());
+    }
+
+    #[test]
+    fn completion_context_accepts_a_terminated_typed_mention() {
+        let registry = commands::built_in_registry();
+        for (input, prefix, start, suffix) in [
+            ("@ana ", "ana", 0, ": "),
+            ("@ana\n", "ana", 0, ":\n"),
+            ("@ana,", "ana", 0, ","),
+            ("@ana:", "ana", 0, ":"),
+            ("hello @ana ", "ana", 6, " "),
+            ("thanks @ana!", "ana", 7, "!"),
+            ("(cc @ana)", "ana", 4, ")"),
+            ("ping @ana-x;", "ana-x", 5, ";"),
+            ("/me waves at @ana.", "ana", 13, "."),
+            ("hi @ána?", "ána", 3, "?"),
+        ] {
+            let context = completion_context(input, utf16_len(input), false, "#&", &registry)
+                .expect("context");
+            assert!(context.auto_accept, "{input}");
+            assert_eq!(context.trigger, CompletionTrigger::Person, "{input}");
+            assert_eq!(context.prefix, prefix, "{input}");
+            assert_eq!(context.replace_start, start, "{input}");
+            assert_eq!(context.replace_end, utf16_len(input), "{input}");
+            assert_eq!(context.replacement_prefix, "", "{input}");
+            assert_eq!(context.replacement_suffix, suffix, "{input}");
+        }
+        for input in ["@ ", "mail@ana ", "@ana", "hello ana ", "@ana-"] {
+            assert!(
+                completion_context(input, utf16_len(input), false, "#&", &registry)
+                    .is_none_or(|context| !context.auto_accept),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn tab_after_a_typed_mention_suggests_instead_of_accepting() {
+        let registry = commands::built_in_registry();
+        let tab = completion_context("@ana ", 5, true, "#&", &registry).expect("context");
+        assert!(!tab.auto_accept);
+    }
+
+    #[test]
+    fn a_typed_mention_is_read_up_to_the_caret() {
+        let registry = commands::built_in_registry();
+        let caret = completion_context("@ana hi", 5, false, "#&", &registry).expect("context");
+        assert_eq!(caret.replace_end, 5);
+        assert!(caret.auto_accept);
     }
 
     #[tokio::test]
@@ -8393,7 +8508,75 @@ async fn delay(duration: Duration) {
             .buffer_id_for_target(&SendTarget::Channel(known_channel(&client, "#new")))
             .expect("joined buffer exists");
 
-        assert!(person_candidates(&model, buffer_id, "lu", &state).is_empty());
+        assert!(person_candidates(&model, buffer_id, "lu", NickMatch::Prefix, &state).is_empty());
+    }
+
+    #[tokio::test]
+    async fn terminated_mention_completion_holds_only_the_exact_casemapped_nick() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@h JOIN #room").await;
+        wire.server(":offline.test 353 weblounge = #room :weblounge ana Ana[m] anabel")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        let buffer_id = {
+            let mut runtime = lock(&state);
+            let running = runtime.network.as_mut().expect("network remains running");
+            running.model.sync_channels(&client.state());
+            running
+                .model
+                .buffer_id_for_channel(&known_channel(&client, "#room"))
+                .expect("room buffer")
+        };
+        let runtime = Runtime { state, outbound };
+        let complete = |input: &str| {
+            let output = runtime.request(EngineRequestEnvelope {
+                id: format!("complete:{input}"),
+                request: EngineRequest::CompleteInput {
+                    buffer_id,
+                    input: input.into(),
+                    cursor: utf16_len(input),
+                    explicit: false,
+                },
+            });
+            let Some(EngineToUi::CompletionResult {
+                auto_accept,
+                candidates,
+                ..
+            }) = output.into_iter().next()
+            else {
+                panic!("completion result is first");
+            };
+            let nicks = candidates
+                .into_iter()
+                .filter_map(|candidate| match candidate {
+                    CompletionCandidate::Person { nick, .. } => Some(nick),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            (auto_accept, nicks)
+        };
+
+        assert_eq!(complete("@ANA "), (true, vec!["ana".to_owned()]));
+        assert_eq!(complete("@ANA{M} "), (true, vec!["Ana[m]".to_owned()]));
+        assert_eq!(complete("hi @anabel,"), (true, vec!["anabel".to_owned()]));
+        assert_eq!(complete("/msg @ana "), (true, vec!["ana".to_owned()]));
+        assert_eq!(complete("@anab "), (false, Vec::new()));
+        assert_eq!(complete("@weblounge "), (false, Vec::new()));
+        let (auto_accept, prefixed) = complete("@ana");
+        assert!(!auto_accept);
+        assert_eq!(prefixed.len(), 3);
     }
 
     fn command_candidate_names(events: &[EngineToUi]) -> Vec<&str> {
