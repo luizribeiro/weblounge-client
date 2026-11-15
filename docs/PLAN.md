@@ -10,7 +10,6 @@ The single place a fresh session reads to know where the project stands. Update 
 - Done and live: desktop wrapper phases 1 and 2 (design 27, Dock badge and page-posted
   notifications), conversation closing, the ⌘K switcher and command palette, inline images, the
   image viewer, image uploads (design 31) and Settings slice 1 (design 29).
-- Waiting on Luiz's checks: V1 to V3 in the Backlog (paste, viewer, wrapper end to end).
 - Next: buffer events 5, 6, 8, 9 (F1).
 
 ### In progress
@@ -102,9 +101,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - SV4: Ergo DM history is disabled on weblounge, so client-side search cannot cover DMs; a link-preview proxy has no standard and would be an SSRF surface. `docs/design/commands-catalog.md` gap 5.
 
 #### Device checks
-- V1: upload paste: iPhone Photos (HEIC), Android Gboard/WebView and the Mac app's ⌘V; Firefox paste is only unit-tested. Design 31.
-- V2: image viewer on real devices: pinch quality in WKWebView and Android WebView, double-tap zoom on Android. Design 30.
-- V3: desktop wrapper phase 2 end to end in the Mac app (hidden-window DM notification, Dock badge, click opens the DM, reading clears both) and ⌃Tab moving one conversation in 0.1.2. Design 27.
 - V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
 - V5: compare the mention rule with the server's push matching (soju source not available locally). Design 17.
 
@@ -113,6 +109,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: Luiz checked V1 to V3 on real devices (upload paste, image viewer, desktop wrapper phase 2 end to end) and they pass.
 - 2026-11-14: a Monokai theme from Luiz's wezterm colours: charcoal `#1c1c1c`, green accent, pink
   unread and mention badge, set in self-hosted Hack (400/700, upright and italic) that loads only
   when the theme is active. Design 08.
