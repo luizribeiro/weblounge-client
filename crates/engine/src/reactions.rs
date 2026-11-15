@@ -208,6 +208,7 @@ impl ReactionIndex {
                     text: summary.text.clone(),
                     mine: actors.iter().any(|actor| actor.mine),
                     actors,
+                    own_delivery: None,
                 })
             })
             .collect()

@@ -1210,7 +1210,11 @@ function decodeReactions(
       !isRecord(reaction) ||
       typeof reaction.text !== "string" ||
       typeof reaction.mine !== "boolean" ||
-      !Array.isArray(reaction.actors)
+      !Array.isArray(reaction.actors) ||
+      !(
+        reaction.own_delivery === undefined ||
+        isOneOf(reaction.own_delivery, ["sending", "failed"])
+      )
     )
       return undefined;
     const actors: { nick: string; mine: boolean }[] = [];
@@ -1223,7 +1227,14 @@ function decodeReactions(
         return undefined;
       actors.push({ nick: actor.nick, mine: actor.mine });
     }
-    reactions.push({ text: reaction.text, actors, mine: reaction.mine });
+    reactions.push({
+      text: reaction.text,
+      actors,
+      mine: reaction.mine,
+      ...(reaction.own_delivery === undefined
+        ? {}
+        : { own_delivery: reaction.own_delivery }),
+    });
   }
   return reactions;
 }

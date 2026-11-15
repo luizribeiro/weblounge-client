@@ -668,6 +668,20 @@ pub struct ReactionProjection {
     pub actors: Vec<ReactionActorProjection>,
     /// Whether the current account is among the actors.
     pub mine: bool,
+    /// Delivery of this account's unconfirmed change, absent once the server echoes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub own_delivery: Option<ReactionDelivery>,
+}
+
+/// Delivery state of the current account's reaction change awaiting its echo.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionDelivery {
+    /// Papo is sending the change.
+    Sending,
+    /// The change failed and activating the reaction retries it.
+    Failed,
 }
 
 /// UI projection of one chat message.

@@ -309,6 +309,12 @@ describe("WorkerEngineClient", () => {
           actors: [{ nick: "mel", mine: false }],
           mine: false,
         },
+        {
+          text: "🎉",
+          actors: [{ nick: "weblounge", mine: true }],
+          mine: true,
+          own_delivery: "sending",
+        },
       ],
       delivery: "received",
       local_send_id: null,
