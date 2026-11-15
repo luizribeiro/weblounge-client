@@ -10,7 +10,7 @@ The single place a fresh session reads to know where the project stands. Update 
 - Done and live: desktop wrapper phases 1 and 2 (design 27, Dock badge and page-posted
   notifications), conversation closing, the ⌘K switcher and command palette, inline images, the
   image viewer, image uploads (design 31) and Settings slice 1 (design 29).
-- Next: buffer events 5, 6, 8, 9 (F1).
+- Next: buffer events 6, 8, 9 (F1).
 
 ### In progress
 - Four new themes: Modern, Terminal, Retro and Black (OLED pitch black); each sets `viewerScrim`
@@ -35,7 +35,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DL9: papo gaps, on the papo agenda: typed `mute`, `BanTarget`, `motd()`/`whowas()`, typed CTCP are "later" in papo; search waits (soju-only); stabilise `unstable` in the order bouncer, persistence, webpush; ordered endpoint failover; filehost EXTJWT. `docs/design/commands-catalog.md` §Gaps, design 03.
 
 #### Features
-- F1: buffer events 5 (kicks, topic, modes, NOTICE variants; fixes the phone join-summary overflow where a wrapped "joined" overlaps the next row), 6 (invites with Join, renames, notes), 8 (tombstones, "Unverified", "Not sent, Retry"), 9 (server buffer). Design 26.
+- F1: buffer events 6 (invites with Join, renames, notes), 8 (tombstones, "Unverified", "Not sent, Retry"), 9 (server buffer). Design 26.
 - F2: buffer events 10 to 12: netsplit, cut-off multiline (needs a papo bump), send-path correctness. Design 26.
 - F3: the "Messages may be missing" gap line has no Retry button. Design 26, design 05.
 - F4: desktop wrapper phase 3, seamless title bar, after Luiz signs off its layout. Design 27.
@@ -95,6 +95,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - TD4: upload residual risks: the Public Suffix List is the trust boundary; other ports on the same site get the password (only port 443 auto-releases); Bearer tokens go to whatever host a hosted server advertises (same-site check, no prompt); token-login uploads are covered only by unit tests. Design 31.
 - TD5: read-state risks to watch: TS formula drift (golden fixtures are mandatory), msgid/exact-time carry through the relay, a slow first launch after a schema migration, mention classification fixed at arrival. Design 24.
 - TD6: the Settings slice 1 browser tests were never compared against a base build. Design 29.
+- TD7: `dispatchPersistedPageShow` is copied in `connection-resilience`, `direct-peer-return` and `engine` specs; switch them to `app/e2e/page-lifecycle.ts`.
 
 #### Server-side asks
 - SV1: upload-scoped tokens from concierge instead of login tokens; the file host receives login-capable tokens today. Design 31.
@@ -111,6 +112,15 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: buffer events 5 (F1). Topic changes, live and from history, are standalone lines
+  ("mel changed the topic" with the topic in fg on its own linked line; "cleared the topic"). A
+  topic card (title, "set by · date", linked topic) shows once after a join that creates the
+  channel or ends a kick, never on reconnect or snapshot restore, and on a bare `/topic`, which
+  replaces the local topic notice kind. Kick lines name the actor as you or the server when papo
+  says so. Modes and NOTICE variants had already landed in batches 3.3 and 4. The phone
+  join-summary overlap did not reproduce on Chromium or WebKit phone layouts (live growth, three
+  wrap widths, a message after the run); `system-lines.spec.ts` now asserts no row content
+  overlaps the next row. Design 26.
 - 2026-11-15: B11: the phone chat list rows inherit the theme UI font (the row button had the
   browser default sans); a Terminal-theme e2e asserts it.
 - 2026-11-15: Luiz checked V1 to V3 on real devices (upload paste, image viewer, desktop wrapper phase 2 end to end) and they pass.
