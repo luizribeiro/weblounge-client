@@ -51,24 +51,39 @@ export function estimateSystemLineHeight(
 
 const cardHeaderHeight = 18;
 const cardLineHeight = 21;
+const cardFontSize = 14;
+const cardMaxWidth = 620;
+const cardBorders = 2;
+const cardPadding = {
+  desktop: { block: 16, inline: 24, gap: 4 },
+  mobile: { block: 20, inline: 24, gap: 6 },
+} as const;
+const mobileTranscriptInline = 32;
+const desktopTextColumnOffset = 248;
 
 function estimateCardHeight(
   topic: string,
   viewportWidth: number,
   presentation: "desktop" | "mobile",
 ): number {
-  const mobile = presentation === "mobile";
-  const innerWidth = Math.max(
-    mobile ? viewportWidth - 58 : Math.min(viewportWidth - 248, 620) - 26,
-    80,
-  );
+  const padding = cardPadding[presentation];
+  const outerWidth =
+    presentation === "mobile"
+      ? viewportWidth - mobileTranscriptInline
+      : Math.min(viewportWidth - desktopTextColumnOffset, cardMaxWidth);
+  const innerWidth = Math.max(outerWidth - padding.inline - cardBorders, 80);
   const charactersPerLine = Math.max(
     1,
-    Math.floor(innerWidth / (14 * characterWidthFactor)),
+    Math.floor(innerWidth / (cardFontSize * characterWidthFactor)),
   );
   const lines = Math.max(1, Math.ceil(topic.length / charactersPerLine));
-  const [chrome, gap] = mobile ? [22, 6] : [18, 4];
-  return chrome + cardHeaderHeight + gap + lines * cardLineHeight;
+  return (
+    padding.block +
+    cardBorders +
+    cardHeaderHeight +
+    padding.gap +
+    lines * cardLineHeight
+  );
 }
 
 export function systemLineSizeRevision(
