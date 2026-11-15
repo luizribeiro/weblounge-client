@@ -100,6 +100,7 @@ async function pointerTouch(page: Page, start: Point): Promise<HeldTouch> {
 }
 
 async function centre(target: Locator): Promise<Point> {
+  await target.waitFor({ state: "visible" });
   const box = await target.boundingBox();
   if (box === null) throw new Error("touch target is not visible");
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
