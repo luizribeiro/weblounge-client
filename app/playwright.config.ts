@@ -43,6 +43,12 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-redaction-phone",
+      grep: /@phone/u,
+      testMatch: "**/redaction.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "android-close-phone",
       testMatch: "**/close-phone.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },

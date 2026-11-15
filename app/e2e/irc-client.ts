@@ -67,7 +67,7 @@ export class IrcClient {
       line.includes(" CAP * LS "),
     );
     this.send(
-      "CAP REQ :account-tag batch draft/multiline draft/read-marker echo-message message-tags sasl server-time",
+      "CAP REQ :account-tag batch draft/message-redaction draft/multiline draft/read-marker echo-message message-tags sasl server-time",
     );
     await this.waitFor(
       "requested capability acknowledgement",
@@ -75,6 +75,7 @@ export class IrcClient {
         line.includes(" CAP * ACK ") &&
         line.includes("account-tag") &&
         line.includes("batch") &&
+        line.includes("draft/message-redaction") &&
         line.includes("draft/multiline") &&
         line.includes("draft/read-marker") &&
         line.includes("message-tags") &&
@@ -319,6 +320,13 @@ export class IrcClient {
         line.includes(`+draft/react=${reaction}`) &&
         line.includes(`+draft/reply=${messageId}`) &&
         line.includes(` TAGMSG ${target}`),
+    );
+  }
+
+  async redactConfirmed(target: string, messageId: string): Promise<void> {
+    this.send(`REDACT ${target} ${messageId}`);
+    await this.waitFor(`echoed REDACT of ${messageId}`, (line) =>
+      line.includes(` REDACT ${target} ${messageId}`),
     );
   }
 
