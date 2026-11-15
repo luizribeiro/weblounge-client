@@ -1466,8 +1466,11 @@ impl NetworkModel {
     pub(crate) fn receive_redaction(
         &mut self,
         redacted: &papo::event::Redacted,
-    ) -> Option<EngineToUi> {
+    ) -> Vec<EngineToUi> {
         let target = redacted.redacts.to_string();
+        let withdrawn = EngineToUi::MessageRedacted {
+            msgids: vec![target.clone()],
+        };
         let redactor = Some(redactor_name(&redacted.actor));
         let Some((buffer_id, message_id)) = self
             .msgids
@@ -1478,9 +1481,16 @@ impl NetworkModel {
                 .buffer_id_for_conversation(redacted.conversation())
                 .filter(|buffer_id| self.redact_restored(*buffer_id, &target));
             self.early_redactions.remember(target, redactor);
-            return restored.and_then(|buffer_id| self.buffer_updated(buffer_id));
+            return restored
+                .and_then(|buffer_id| self.buffer_updated(buffer_id))
+                .into_iter()
+                .chain([withdrawn])
+                .collect();
         };
         self.redact_message(buffer_id, message_id, redactor)
+            .into_iter()
+            .chain([withdrawn])
+            .collect()
     }
 
     /// Forgets a deleted message known only from the restored chat list: its unread fact, and
@@ -1571,8 +1581,13 @@ impl NetworkModel {
         })
     }
 
-    pub(crate) fn confirm_own_redaction(&mut self, redaction: &OwnRedaction) -> Option<EngineToUi> {
+    pub(crate) fn confirm_own_redaction(&mut self, redaction: &OwnRedaction) -> Vec<EngineToUi> {
         self.redact_message(redaction.buffer_id, redaction.message_id, None)
+            .into_iter()
+            .chain([EngineToUi::MessageRedacted {
+                msgids: redaction.msgids.clone(),
+            }])
+            .collect()
     }
 
     /// Leaves the message in place, marked so that deleting it again retries.

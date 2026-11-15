@@ -1323,6 +1323,11 @@ pub enum EngineToUi {
         /// Complete current buffer projection.
         buffer: BufferProjection,
     },
+    /// Messages deleted from the server, so any notification showing them is withdrawn.
+    MessageRedacted {
+        /// Server identifiers of the deleted message's lines.
+        msgids: Vec<String>,
+    },
     /// A live peer message that should alert: a direct message or a mention, unread on arrival.
     NotifiableMessageReceived {
         /// Complete current projection of the message's buffer.

@@ -215,7 +215,11 @@ buffer_id: BufferId, } | { "type": "buffer_updated",
 /**
  * Complete current buffer projection.
  */
-buffer: BufferProjection, } | { "type": "notifiable_message_received",
+buffer: BufferProjection, } | { "type": "message_redacted",
+/**
+ * Server identifiers of the deleted message's lines.
+ */
+msgids: Array<string>, } | { "type": "notifiable_message_received",
 /**
  * Complete current projection of the message's buffer.
  */

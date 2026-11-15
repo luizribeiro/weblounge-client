@@ -377,6 +377,23 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(patch);
   });
 
+  it("delivers a deletion at once, even while the page is hidden", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({ type: "message_redacted", msgids: ["gone-1"] });
+    expect(() =>
+      port.emit({ type: "message_redacted", msgids: "gone-1" }),
+    ).toThrow("invalid engine message");
+
+    expect(frames).toHaveLength(0);
+    expect(listener).toHaveBeenCalledWith({
+      type: "message_redacted",
+      msgids: ["gone-1"],
+    });
+  });
+
   it("decodes a pending own deletion and rejects an unknown state", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

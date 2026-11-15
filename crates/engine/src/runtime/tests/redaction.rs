@@ -74,7 +74,14 @@ async fn live_redactions_tombstone_channel_and_direct_rows() {
         deliver(&mut wire, &mut events, process, line).await;
     }
 
-    let messages = changed_messages(&collect(&mut receiver))
+    let output = collect(&mut receiver);
+    for msgid in ["c1", "c2", "d1"] {
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageRedacted { msgids } if msgids == &[msgid.to_owned()]
+        )));
+    }
+    let messages = changed_messages(&output)
         .into_iter()
         .map(|(_, message)| message)
         .collect::<Vec<_>>();

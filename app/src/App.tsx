@@ -80,6 +80,7 @@ import {
 import { PageNotifications } from "./platform/page-notifications/page-notifications";
 import { PushPendingClock } from "./platform/page-notifications/push-pending-clock";
 import {
+  closeMessageNotifications,
   conversationReadMarkers,
   syncAppPushState,
 } from "./platform/push/app-badge";
@@ -603,6 +604,11 @@ export function App(props: AppProps) {
     const unsubscribe = mountedClient.subscribe((message) => {
       if (message.type === "notifiable_message_received") {
         notifications.handle(message);
+        return;
+      }
+      if (message.type === "message_redacted") {
+        notifications.closeMessages(message.msgids);
+        void closeMessageNotifications(message.msgids).catch(() => undefined);
         return;
       }
       if (message.type === "push_route_required") {

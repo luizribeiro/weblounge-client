@@ -249,6 +249,7 @@ export class WorkerEngineClient implements EngineClient {
     }
     if (
       message.type === "notifiable_message_received" ||
+      message.type === "message_redacted" ||
       message.type === "upload_resolved"
     ) {
       // The render queue holds events while the page is hidden. Alerts matter most then, and an
@@ -645,6 +646,10 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         return { type: messageType, buffer, message };
       break;
     }
+    case "message_redacted":
+      if (isStringArray(value.msgids))
+        return { type: messageType, msgids: value.msgids };
+      break;
     case "buffer_removed":
       if (typeof value.buffer_id === "number") {
         return { type: messageType, buffer_id: value.buffer_id };
@@ -784,6 +789,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffer_removed" ||
     value === "buffer_updated" ||
     value === "notifiable_message_received" ||
+    value === "message_redacted" ||
     value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||
     value === "typing_changed" ||
