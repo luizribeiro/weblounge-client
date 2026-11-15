@@ -153,7 +153,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
         const velocity = elapsed > 0 ? (event.clientX - lastX) / elapsed : 0;
         const result = releaseMobileRowSwipe(swipe, velocity);
         if (result === "tap") {
-          if (revealed()) {
+          if (revealed() && !isRowAction(event.target)) {
             suppressClick = true;
             settle("reset");
           }
@@ -289,6 +289,13 @@ export function MobileChatRow(props: MobileChatRowProps) {
         )}
       </button>
     </div>
+  );
+}
+
+function isRowAction(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest("[data-mobile-row-actions]") !== null
   );
 }
 

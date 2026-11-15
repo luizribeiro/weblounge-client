@@ -226,6 +226,56 @@ it("reveals row actions and runs Mark as read", () => {
   expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
 });
 
+it("lets a tap on a revealed action reach that action", () => {
+  const close = vi.fn();
+  const Harness = () => {
+    const [revealed, setRevealed] = createSignal(true);
+    return (
+      <MobileChatRow
+        buffer={buffer({ kind: "direct", title: "mel" })}
+        onOpen={vi.fn()}
+        onRequestClose={close}
+        onReset={() => setRevealed(false)}
+        onReveal={() => setRevealed(true)}
+        previews={true}
+        revealed={revealed()}
+      />
+    );
+  };
+  const { container } = render(Harness);
+  const wrapper = mobileRowWrapper(container);
+  const action = screen.getByRole("button", { name: "Close" });
+
+  fireEvent.pointerDown(action, pointer(340, 120, 0));
+  fireEvent.pointerUp(action, pointer(340, 120, 60));
+  expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+  fireEvent.click(action);
+
+  expect(close).toHaveBeenCalledOnce();
+  expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+});
+
+it("closes revealed actions on a tap on the row without opening it", () => {
+  const open = vi.fn();
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={buffer()}
+      onOpen={open}
+      previews={true}
+      revealed={true}
+    />
+  ));
+  const wrapper = mobileRowWrapper(container);
+  const row = screen.getByRole("button", { name: /^#garden,/u });
+
+  fireEvent.pointerDown(row, pointer(100, 120, 0));
+  fireEvent.pointerUp(row, pointer(100, 120, 60));
+  fireEvent.click(row);
+
+  expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+  expect(open).not.toHaveBeenCalled();
+});
+
 it("full-swipes a direct conversation into the existing close callback", () => {
   const close = vi.fn();
   const { container } = render(() => (

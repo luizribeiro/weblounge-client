@@ -146,7 +146,111 @@ test.describe("phone conversation closing against local Ergo", () => {
     await resetNativeFeelLayoutShift(page);
     await nativeFeelAudit(page);
   });
+
+  test("a touch tap on revealed Close or Leave removes the row for good", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("phone-tap-close");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await openChannel(page, irc, channel);
+    const peer = await irc.peer("tapper", [channel]);
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    await peer.privmsgConfirmed(irc.account, "tap close");
+    const directRow = rowFor(page, peer.nickname);
+    await expect(directRow).toBeVisible();
+
+    await revealActions(wrapperFor(directRow));
+    await tapAction(page, wrapperFor(directRow), "Close");
+    await expect(directRow).toHaveCount(0);
+
+    const channelRow = rowFor(page, channel);
+    await revealActions(wrapperFor(channelRow));
+    await tapAction(page, wrapperFor(channelRow), "Leave");
+    const confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${channel}?`,
+    });
+    await expect(confirmation).toBeVisible();
+    const parted = peer.waitForNextPart(channel, irc.account);
+    await confirmation.getByRole("button", { name: "Leave" }).click();
+    await parted;
+    await expect(channelRow).toHaveCount(0);
+
+    await expectSettled(page);
+    await expect(directRow).toHaveCount(0);
+    await page.goto(irc.url());
+    await expect(rowFor(page, irc.channel)).toBeVisible();
+    await expectSettled(page);
+    await expect(directRow).toHaveCount(0);
+    await expect(channelRow).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
 });
+
+interface TouchSample {
+  readonly left: number;
+  readonly down: number;
+  readonly at: number;
+}
+
+function samples(
+  left: number,
+  down: number,
+  durationMs: number,
+): readonly TouchSample[] {
+  const frames = Math.max(2, Math.round(durationMs / 16));
+  return Array.from({ length: frames + 1 }, (_, frame) => ({
+    left: Math.round((left * frame) / frames),
+    down: Math.round((down * frame) / frames),
+    at: Math.round((durationMs * frame) / frames),
+  }));
+}
+
+const gestureStartTimeStamp = 10_000;
+
+async function touchGesture(
+  wrapper: Locator,
+  gesture: readonly TouchSample[],
+): Promise<void> {
+  const [first, ...rest] = gesture;
+  const last = gesture.at(-1);
+  if (first === undefined || last === undefined)
+    throw new Error("a touch gesture needs samples");
+  const base = gestureStartTimeStamp;
+  await pointer(
+    wrapper,
+    "pointerdown",
+    first.left,
+    base + first.at,
+    first.down,
+  );
+  for (const sample of rest)
+    await pointer(
+      wrapper,
+      "pointermove",
+      sample.left,
+      base + sample.at,
+      sample.down,
+    );
+  await pointer(wrapper, "pointerup", last.left, base + last.at + 8, last.down);
+}
+
+async function revealActions(wrapper: Locator): Promise<void> {
+  await touchGesture(wrapper, samples(80, 4, 200));
+  await expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+  await expectOffset(wrapper, -148);
+}
+
+async function tapAction(
+  page: Page,
+  wrapper: Locator,
+  name: "Close" | "Leave",
+): Promise<void> {
+  const box = await wrapper.getByRole("button", { name }).boundingBox();
+  if (box === null) throw new Error(`${name} action has no box`);
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+}
 
 function rowFor(page: Page, title: string): Locator {
   return page.getByRole("button", {
