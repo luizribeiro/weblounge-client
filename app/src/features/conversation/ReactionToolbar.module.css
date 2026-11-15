@@ -35,6 +35,7 @@
 .button[aria-pressed="true"] {
   background: var(--wl-color-selection);
   color: var(--wl-color-selection-fg);
+  box-shadow: inset 0 0 0 1px var(--wl-color-accent);
 }
 .separator {
   background: var(--wl-color-border);

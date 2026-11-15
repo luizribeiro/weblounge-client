@@ -89,6 +89,7 @@
 }
 .emoji[aria-pressed="true"] {
   background: var(--wl-color-selection);
+  box-shadow: inset 0 0 0 1px var(--wl-color-accent);
 }
 .empty {
   color: var(--wl-color-muted);
