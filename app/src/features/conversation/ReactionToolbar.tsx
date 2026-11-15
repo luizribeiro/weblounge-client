@@ -1,9 +1,8 @@
 import { For, Show } from "solid-js";
 import { t } from "../../strings";
 import { AddReactionIcon } from "../../ui/icons/AddReactionIcon";
+import { desktopQuickReactions } from "./quick-reactions";
 import styles from "./ReactionToolbar.module.css";
-
-export const quickReactions = ["👍", "❤️", "😂"] as const;
 
 export function ReactionToolbar(props: {
   readonly mine: ReadonlySet<string>;
@@ -17,7 +16,7 @@ export function ReactionToolbar(props: {
       data-reaction-toolbar="true"
       role="toolbar"
     >
-      <For each={quickReactions}>
+      <For each={desktopQuickReactions}>
         {(reaction) => (
           <button
             aria-label={t("reaction.react_with", { reaction })}

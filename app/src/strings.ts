@@ -233,6 +233,8 @@ export const messages = {
   "mobile.action.leave": "Leave",
   "mobile.action.read": "Read",
   "mobile.actions_for": "Actions for {title}",
+  "mobile.message_actions": "Actions for {nick}’s message",
+  "mobile.copy_text": "Copy text",
   "mobile.chats": "Chats",
   "mobile.close_target": "Close {title}",
   "mobile.conversation.channel": "Channel",

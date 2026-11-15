@@ -64,7 +64,11 @@ import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionPicker } from "./ReactionPicker";
 import { ReactionToolbar } from "./ReactionToolbar";
-import { reactionTarget, type ToggleReaction } from "./reaction-target";
+import {
+  ownReactions,
+  reactionTarget,
+  type ToggleReaction,
+} from "./reaction-target";
 import {
   createRowReactions,
   focusControl,
@@ -1633,14 +1637,6 @@ function TimelineRowView(props: {
         </Switch>
       )}
     </Show>
-  );
-}
-
-function ownReactions(message: MessageProjection): ReadonlySet<string> {
-  return new Set(
-    (message.reactions ?? [])
-      .filter((reaction) => reaction.mine)
-      .map((reaction) => reaction.text),
   );
 }
 

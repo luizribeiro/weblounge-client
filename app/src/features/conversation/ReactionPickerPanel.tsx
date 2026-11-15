@@ -8,12 +8,13 @@ export function ReactionPickerPanel(props: {
   readonly nick: string;
   readonly mine: ReadonlySet<string>;
   readonly onPick: (reaction: string) => void;
+  readonly presentation?: "desktop" | "mobile" | undefined;
   readonly searchRef?: ((search: HTMLInputElement) => void) | undefined;
 }) {
   const [query, setQuery] = createSignal("");
   const groups = createMemo(() => searchEmoji(query()));
   return (
-    <div class={styles.panel}>
+    <div class={styles.panel} data-presentation={props.presentation}>
       <label class={styles.label}>
         {t("reaction.picker_title", { nick: props.nick })}
         <input

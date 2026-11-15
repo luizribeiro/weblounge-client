@@ -38,3 +38,11 @@ function isServerDelivered(message: MessageProjection): boolean {
     (message.delivery === "received" || message.delivery === "confirmed")
   );
 }
+
+export function ownReactions(message: MessageProjection): ReadonlySet<string> {
+  return new Set(
+    (message.reactions ?? [])
+      .filter((reaction) => reaction.mine)
+      .map((reaction) => reaction.text),
+  );
+}

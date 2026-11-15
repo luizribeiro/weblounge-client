@@ -98,3 +98,25 @@
   font-size: 12px;
   margin: 0;
 }
+.panel[data-presentation="mobile"] {
+  border-top: 1px solid var(--wl-color-border);
+  padding-top: 10px;
+}
+.panel[data-presentation="mobile"] .search {
+  font-size: 16px;
+  height: 40px;
+}
+.panel[data-presentation="mobile"] .groups {
+  height: min(440px, 52dvh);
+}
+.panel[data-presentation="mobile"] .groupName {
+  font-size: 12px;
+  padding-block: 4px;
+}
+.panel[data-presentation="mobile"] .grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.panel[data-presentation="mobile"] .emoji {
+  font-size: 24px;
+  height: 46px;
+}
