@@ -26,6 +26,7 @@ export default defineConfig({
         "**/close-phone.spec.ts",
         "**/reactions-phone.spec.ts",
         "**/reactions-phone-screenshots.spec.ts",
+        "**/redaction-phone.spec.ts",
         "**/settings-phone.spec.ts",
         "**/mobile-push-budget.spec.ts",
       ],
@@ -43,12 +44,6 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
-      name: "webkit-redaction-phone",
-      grep: /@phone/u,
-      testMatch: "**/redaction.spec.ts",
-      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
-    },
-    {
       name: "android-close-phone",
       testMatch: "**/close-phone.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },
@@ -58,12 +53,13 @@ export default defineConfig({
       testMatch: [
         "**/reactions-phone.spec.ts",
         "**/reactions-phone-screenshots.spec.ts",
+        "**/redaction-phone.spec.ts",
       ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
       name: "android-reactions-phone",
-      testMatch: "**/reactions-phone.spec.ts",
+      testMatch: ["**/reactions-phone.spec.ts", "**/redaction-phone.spec.ts"],
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
