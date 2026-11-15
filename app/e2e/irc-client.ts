@@ -330,6 +330,12 @@ export class IrcClient {
     );
   }
 
+  async waitForRedact(target: string, messageId: string): Promise<void> {
+    await this.waitFor(`REDACT of ${messageId}`, (line) =>
+      line.includes(` REDACT ${target} ${messageId}`),
+    );
+  }
+
   async unreactionConfirmed(
     target: string,
     messageId: string,

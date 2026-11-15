@@ -1714,6 +1714,19 @@ export function App(props: AppProps) {
               request: { type: "reconnect", network_id: networkId },
             });
           }}
+          onRedactMessage={(bufferId, messageId) => {
+            if (client === undefined) return;
+            void client
+              .send({
+                id: crypto.randomUUID(),
+                request: {
+                  type: "redact_message",
+                  buffer_id: bufferId,
+                  message_id: messageId,
+                },
+              })
+              .catch(() => undefined);
+          }}
           onToggleReaction={(bufferId, messageId, reaction) => {
             if (client === undefined) return;
             void client.send({

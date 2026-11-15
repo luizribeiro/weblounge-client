@@ -31,6 +31,70 @@ test.describe("message redaction against local Ergo", () => {
         );
       });
 
+      if (shell === "desktop")
+        test("deletes your own message after confirming, for everyone", async ({
+          page,
+          irc,
+        }) => {
+          const peer = await openWithPeer(page, irc, "own");
+          await openConversation(page, irc.channel);
+          const text = "I take this back";
+          await composer(page).fill(text);
+          await composer(page).press("Enter");
+          const sent = await peer.waitForPrivmsg(
+            irc.channel,
+            text,
+            irc.account,
+          );
+          const row = productionMessageRow(page, text);
+          await expect(row).toHaveAttribute("data-delivery", "confirmed");
+          await waitForReadDwell(irc, irc.channel, serverTime(sent));
+
+          await row.hover();
+          await page.getByRole("button", { name: "More actions" }).click();
+          await screenshot(page, "desktop-menu");
+          await page.keyboard.press("Escape");
+          await expect(page.getByRole("menu")).toHaveCount(0);
+
+          await row.locator("time").click({ button: "right" });
+          await page.getByRole("menuitem", { name: "Delete message" }).click();
+          const dialog = page.getByRole("alertdialog", {
+            name: "Delete this message?",
+          });
+          await expect(dialog).toBeVisible();
+          await screenshot(page, "desktop-confirm");
+          await dialog.getByRole("button", { name: "Cancel" }).click();
+          await expect(dialog).toHaveCount(0);
+          await expect(row).toContainText(text);
+
+          await composer(page).click();
+          await composer(page).press("ArrowUp");
+          await expect(
+            page.locator('li[data-selected="true"] [data-message-row]'),
+          ).toContainText(text);
+          await page.keyboard.press("Delete");
+          await dialog.getByRole("button", { name: "Delete" }).click();
+
+          await peer.waitForRedact(irc.channel, messageId(sent));
+          await expect(productionMessageRow(page, text)).toHaveCount(0);
+          await expect(redactedRow(page)).toContainText("Message deleted");
+          await page.mouse.move(0, 0);
+          await screenshot(page, "desktop-bars");
+          await nativeFeelAudit(page);
+
+          await page.goto(irc.url());
+          await expect(conversationButton(page, irc.channel)).toBeVisible();
+          await openConversation(page, irc.channel);
+          await expect(
+            page
+              .locator("[data-message-list]")
+              .getByText(peer.nickname)
+              .first(),
+          ).toBeVisible();
+          await expect(page.getByText(text, { exact: true })).toHaveCount(0);
+          await expect(redactedRow(page)).toHaveCount(0);
+        });
+
       test("shows a peer's direct-message deletion as bars", async ({
         page,
         irc,
@@ -110,6 +174,20 @@ async function waitForReadDwell(
   await expect
     .poll(async () => (await reader.readMarker(target)) ?? "")
     .toBe(time);
+}
+
+function composer(page: Page): Locator {
+  return page.getByRole("textbox", { name: /^Message/u });
+}
+
+async function screenshot(page: Page, name: string): Promise<void> {
+  const directory = process.env.WEBLOUNGE_REDACTION_SHOTS;
+  if (directory === undefined) return;
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({ path: `${directory}/${name}-${scheme}.png` });
+  }
+  await page.emulateMedia({ colorScheme: null });
 }
 
 function redactedRow(page: Page): Locator {

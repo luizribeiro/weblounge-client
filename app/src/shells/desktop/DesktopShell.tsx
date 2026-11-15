@@ -46,6 +46,10 @@ import {
   type ToggleBufferReaction,
 } from "../../features/conversation/reaction-target";
 import {
+  bufferRedaction,
+  type RedactBufferMessage,
+} from "../../features/conversation/redact-target";
+import {
   MemberPanel,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
@@ -149,6 +153,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
   readonly onToggleReaction?: ToggleBufferReaction | undefined;
+  readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
@@ -217,6 +222,9 @@ export function DesktopShell(props: DesktopShellProps) {
       activeNetwork(),
       props.onToggleReaction,
     ),
+  );
+  const redactMessage = createMemo(() =>
+    bufferRedaction(activeBuffer()?.id, activeNetwork(), props.onRedactMessage),
   );
   const activeBufferSync = createMemo(() => {
     const buffer = activeBuffer();
@@ -651,6 +659,7 @@ export function DesktopShell(props: DesktopShellProps) {
                     props.onRetry?.(buffer.id, localSendId);
                 }}
                 onToggleReaction={toggleReaction()}
+                onRedactMessage={redactMessage()}
                 readAtMs={activeBuffer()?.read_at_ms}
                 unread={activeBuffer()?.unread}
                 syncState={activeBuffer()?.sync_state}

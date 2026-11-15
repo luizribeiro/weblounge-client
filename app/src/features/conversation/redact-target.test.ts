@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
-import { canRedact } from "./redact-target";
+import { bufferRedaction, canRedact } from "./redact-target";
 
 const own: MessageProjection = {
   id: 9,
@@ -34,5 +34,30 @@ describe("canRedact", () => {
       { ...own, text: "", kind: { redacted: { by: null } } },
     ])
       expect(canRedact(message, redact)).toBe(false);
+  });
+});
+
+describe("bufferRedaction", () => {
+  const network = {
+    id: 1,
+    label: "Local",
+    nickname: "weblounge",
+    state: "online" as const,
+    can_redact: true,
+  };
+
+  it("binds the buffer while its network can delete messages", () => {
+    const deleted: [number, number][] = [];
+    bufferRedaction(4, network, (buffer, message) =>
+      deleted.push([buffer, message]),
+    )?.(9);
+
+    expect(deleted).toEqual([[4, 9]]);
+    expect(
+      bufferRedaction(4, { ...network, can_redact: false }, () => undefined),
+    ).toBeUndefined();
+    expect(
+      bufferRedaction(undefined, network, () => undefined),
+    ).toBeUndefined();
   });
 });
