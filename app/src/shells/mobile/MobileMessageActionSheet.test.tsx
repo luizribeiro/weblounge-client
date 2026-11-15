@@ -119,3 +119,28 @@ it("leaves out reaction controls without the capability but still copies the tex
   expect(copied).toEqual(["the relay only forwards ciphertext"]);
   expect(dismiss).toHaveBeenCalledOnce();
 });
+
+it("lists Delete as a danger action only when the message can be deleted", () => {
+  const deleted = vi.fn();
+  render(() => (
+    <MobileMessageActionSheet
+      actions={messageSheetActions(
+        { ...message, authorship: "own" },
+        { copyText: () => undefined, delete: deleted },
+      )}
+      message={message}
+      onDismiss={() => undefined}
+      onReact={undefined}
+    />
+  ));
+  const button = screen.getByRole("button", { name: "Delete message" });
+
+  expect(button).toHaveAttribute("data-tone", "danger");
+  fireEvent.click(button);
+  expect(deleted).toHaveBeenCalledOnce();
+  expect(
+    messageSheetActions(message, { copyText: () => undefined }).map(
+      (action) => action.id,
+    ),
+  ).toEqual(["copy-text"]);
+});
