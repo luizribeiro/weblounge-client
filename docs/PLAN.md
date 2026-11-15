@@ -61,7 +61,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   device was offline stays in a restored chat-list preview until history reloads, and its unread
   stub counts until a later mark covers it. A stub already evicted past `MAX_STUBS` stays behind the
   99+ gap. Operators deleting other people's messages, and a reason field, are out of scope. When
-  replies (F27) land, a reply to a deleted parent shows a "Deleted message" quote. Design 32.
+  replies (F27) land, a reply to a deleted parent shows a "Deleted message" quote. Design 32. Ergo removes a deleted message from history and keeps no tombstone, so a client that missed the live REDACT just never sees the message again; a message already on screen during a disconnect stays until reload.
 
 - F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
 - F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
@@ -73,6 +73,14 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   The two-frame start-state wait (design 15) adds ~33ms more per push; dropping it for a style flush
   is a design change for Luiz. `app/e2e/mobile-push-budget.spec.ts` guards the tap frame.
 - F27: replies: the one-line parent quote above the reply (activating it scrolls to and highlights the parent; a missing parent is fetched around its msgid; a deleted parent says so); the composer "Replying to <nick> <text>" bar, cancelled with × or Escape; the channel wire prefix "<nick>: ", hidden in our view; no swipe-to-reply. papo's reply API changes in the pending papo bump (`client.reply(&line, …)`). Design 25.
+- F30: browser history on the hosted web UI only: switching conversations pushes a history entry so Back/Forward move between conversations; not in the installed PWA (display-mode standalone), not in the Tauri apps, and not in the phone layout. Needs a short design. Luiz on IRC, 2026-11-15.
+- F31: log out / reset session in Settings: sign out of the weblounge account and clear this device's saved login, caches and push registration. Needs a design together with exposing other members-site features in the app (cookies, hosted auth). Luiz on IRC, 2026-11-15.
+- F32: parked: notify when a watched person comes online (MONITOR). Luiz: hold for now. Luiz on IRC, 2026-11-15.
+- F33: favicon badge for notifications using the same rules as notifications (DMs and mentions), with a Settings opt-out. Variant pending Luiz's pick from previews. Luiz on IRC, 2026-11-15.
+- F34: show who reacted: desktop tooltip on a reaction chip ("alice, bob and 3 others"); phone placement undecided (Luiz doesn't want it always shown; candidate: long-press a chip). Design 25. Luiz on IRC, 2026-11-15.
+- F35: animate the phone message action sheet (slide up and down like a native iOS sheet). Design 25. Luiz on IRC, 2026-11-15.
+- F36: Tauri iOS app distributed through TestFlight (120Hz scrolling): needs an Apple Developer account, a Mac build/signing host, and APNs push (Web Push doesn't work inside the app's web view). Needs a design. Related F16, F18. Luiz on IRC, 2026-11-15.
+- F37: IRC bot (the "bender" IRC account, GitHub account "bender-rodz") that files GitHub issues on weblounge-client from IRC bug reports and feature requests; lives in weblounge-server; later connect implementation agents to it. Luiz on IRC, 2026-11-15.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
