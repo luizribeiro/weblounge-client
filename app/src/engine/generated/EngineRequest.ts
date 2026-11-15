@@ -185,7 +185,19 @@ buffer_id: BufferId,
 /**
  * Stable local send identity to retry in place.
  */
-local_send_id: LocalSendId, } | { "type": "submit_input",
+local_send_id: LocalSendId, } | { "type": "toggle_reaction",
+/**
+ * Buffer containing the message.
+ */
+buffer_id: BufferId,
+/**
+ * Confirmed message receiving the reaction.
+ */
+message_id: MessageId,
+/**
+ * Exact reaction text.
+ */
+reaction: string, } | { "type": "submit_input",
 /**
  * Buffer whose composer produced the input.
  */

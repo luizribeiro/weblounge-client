@@ -1021,6 +1021,15 @@ pub enum EngineRequest {
         /// Stable local send identity to retry in place.
         local_send_id: LocalSendId,
     },
+    /// Add or remove this account's reaction, or retry its failed change.
+    ToggleReaction {
+        /// Buffer containing the message.
+        buffer_id: BufferId,
+        /// Confirmed message receiving the reaction.
+        message_id: MessageId,
+        /// Exact reaction text.
+        reaction: String,
+    },
     /// Parse and submit ordinary composer text or a supported slash command.
     SubmitInput {
         /// Buffer whose composer produced the input.

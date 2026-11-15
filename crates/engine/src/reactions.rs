@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::{BufferId, ReactionActorProjection, ReactionProjection};
+use crate::{BufferId, ReactionActorProjection, ReactionDelivery, ReactionProjection};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReactionAction {
@@ -58,6 +58,79 @@ struct ReactionSummary {
     ordinal: Option<u64>,
     text: String,
     facts: BTreeMap<String, ReactionFact>,
+    own: Option<OwnChange>,
+}
+
+#[derive(Clone, Debug)]
+struct OwnChange {
+    action: ReactionAction,
+    delivery: ReactionDelivery,
+    nick: String,
+}
+
+impl ReactionSummary {
+    fn new(text: &str) -> Self {
+        Self {
+            ordinal: None,
+            text: text.into(),
+            facts: BTreeMap::new(),
+            own: None,
+        }
+    }
+
+    fn confirmed_mine(&self) -> bool {
+        self.facts
+            .values()
+            .any(|fact| fact.actor.mine && fact.action == ReactionAction::Added)
+    }
+
+    fn assign_ordinal(&mut self, next_ordinal: &mut u64) {
+        let retained = self.own.is_some()
+            || self
+                .facts
+                .values()
+                .any(|fact| fact.action == ReactionAction::Added);
+        if retained && self.ordinal.is_none() {
+            self.ordinal = Some(*next_ordinal);
+            *next_ordinal += 1;
+        } else if !retained {
+            self.ordinal = None;
+        }
+    }
+
+    fn projection(&self) -> Option<ReactionProjection> {
+        let mut actors = self
+            .facts
+            .values()
+            .filter(|fact| fact.action == ReactionAction::Added)
+            .map(|fact| ReactionActorProjection {
+                nick: fact.actor.nick.clone(),
+                mine: fact.actor.mine,
+            })
+            .collect::<Vec<_>>();
+        let own_delivery = match &self.own {
+            None => None,
+            Some(own) if own.action == ReactionAction::Added && self.confirmed_mine() => None,
+            Some(own) if own.action == ReactionAction::Added => {
+                actors.push(ReactionActorProjection {
+                    nick: own.nick.clone(),
+                    mine: true,
+                });
+                Some(own.delivery)
+            }
+            Some(own) if own.delivery == ReactionDelivery::Sending => {
+                actors.retain(|actor| !actor.mine);
+                None
+            }
+            Some(own) => Some(own.delivery),
+        };
+        (!actors.is_empty()).then(|| ReactionProjection {
+            text: self.text.clone(),
+            mine: actors.iter().any(|actor| actor.mine),
+            actors,
+            own_delivery,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -133,11 +206,7 @@ impl ReactionIndex {
         let summary = target_reactions
             .reactions
             .entry(reaction_key.clone())
-            .or_insert_with(|| ReactionSummary {
-                ordinal: None,
-                text: text.into(),
-                facts: BTreeMap::new(),
-            });
+            .or_insert_with(|| ReactionSummary::new(text));
         if summary
             .facts
             .get(&actor_key)
@@ -149,6 +218,9 @@ impl ReactionIndex {
             .facts
             .get(&actor_key)
             .is_some_and(|fact| fact.preloaded);
+        if actor.mine && summary.own.as_ref().is_some_and(|own| own.action == action) {
+            summary.own = None;
+        }
         summary.facts.insert(
             actor_key.clone(),
             ReactionFact {
@@ -158,16 +230,7 @@ impl ReactionIndex {
                 version,
             },
         );
-        let active = summary
-            .facts
-            .values()
-            .any(|fact| fact.action == ReactionAction::Added);
-        if active && summary.ordinal.is_none() {
-            summary.ordinal = Some(self.next_ordinal);
-            self.next_ordinal += 1;
-        } else if !active {
-            summary.ordinal = None;
-        }
+        summary.assign_ordinal(&mut self.next_ordinal);
         if !message_loaded && !was_preloaded {
             self.preload
                 .entry(buffer_id)
@@ -194,24 +257,58 @@ impl ReactionIndex {
         summaries.sort_by_key(|summary| summary.ordinal);
         summaries
             .into_iter()
-            .filter_map(|summary| {
-                let actors = summary
-                    .facts
-                    .values()
-                    .filter(|fact| fact.action == ReactionAction::Added)
-                    .map(|fact| ReactionActorProjection {
-                        nick: fact.actor.nick.clone(),
-                        mine: fact.actor.mine,
-                    })
-                    .collect::<Vec<_>>();
-                (!actors.is_empty()).then(|| ReactionProjection {
-                    text: summary.text.clone(),
-                    mine: actors.iter().any(|actor| actor.mine),
-                    actors,
-                    own_delivery: None,
-                })
-            })
+            .filter_map(ReactionSummary::projection)
             .collect()
+    }
+
+    /// Starts this account's change to `text` on a loaded message and returns the action to send.
+    ///
+    /// A failed change is retried as-is; a change still sending is not sent twice.
+    pub(crate) fn toggle_own(
+        &mut self,
+        buffer_id: BufferId,
+        target: &str,
+        text: &str,
+        nick: &str,
+    ) -> Option<ReactionAction> {
+        let summary = self
+            .targets
+            .entry(target.into())
+            .or_insert_with(|| TargetReactions {
+                buffer_id,
+                reactions: BTreeMap::new(),
+            })
+            .reactions
+            .entry(ReactionKey(text.into()))
+            .or_insert_with(|| ReactionSummary::new(text));
+        let action = match &summary.own {
+            Some(own) if own.delivery == ReactionDelivery::Sending => return None,
+            Some(own) => own.action,
+            None if summary.confirmed_mine() => ReactionAction::Removed,
+            None => ReactionAction::Added,
+        };
+        summary.own = Some(OwnChange {
+            action,
+            delivery: ReactionDelivery::Sending,
+            nick: nick.into(),
+        });
+        summary.assign_ordinal(&mut self.next_ordinal);
+        Some(action)
+    }
+
+    /// Marks this account's still-unconfirmed `action` on `text` as failed.
+    pub(crate) fn fail_own(&mut self, target: &str, text: &str, action: ReactionAction) -> bool {
+        let Some(own) = self
+            .targets
+            .get_mut(target)
+            .and_then(|target| target.reactions.get_mut(&ReactionKey(text.into())))
+            .and_then(|summary| summary.own.as_mut())
+            .filter(|own| own.action == action && own.delivery == ReactionDelivery::Sending)
+        else {
+            return false;
+        };
+        own.delivery = ReactionDelivery::Failed;
+        true
     }
 
     pub(crate) fn mark_loaded(&mut self, target: &str) {
@@ -285,7 +382,7 @@ impl ReactionIndex {
         {
             summary.facts.remove(&fact.actor);
         }
-        if summary.facts.is_empty() {
+        if summary.facts.is_empty() && summary.own.is_none() {
             target.reactions.remove(&fact.reaction);
         }
         if target.reactions.is_empty() {
@@ -307,7 +404,7 @@ impl ReactionIndex {
 #[cfg(test)]
 mod tests {
     use super::{ReactionAction, ReactionActor, ReactionIndex, ReactionUpdate, ReactionVersion};
-    use crate::BufferId;
+    use crate::{BufferId, ReactionDelivery};
 
     fn actor(key: &str, nick: &str, mine: bool) -> ReactionActor {
         ReactionActor {
@@ -558,5 +655,195 @@ mod tests {
 
         assert!(index.summaries("first").is_empty());
         assert_eq!(index.preload_fact_count(BufferId(2)), 2);
+    }
+
+    fn confirm(index: &mut ReactionIndex, actor: ReactionActor, action: ReactionAction, time: i64) {
+        index.apply(
+            BufferId(2),
+            "message",
+            "👍",
+            update(
+                actor,
+                action,
+                ReactionVersion::new(time, format!("own-{time}")),
+            ),
+            true,
+        );
+    }
+
+    #[test]
+    fn own_addition_shows_as_sending_until_its_echo() {
+        let mut index = ReactionIndex::default();
+        confirm(
+            &mut index,
+            actor("ana", "ana", false),
+            ReactionAction::Added,
+            1,
+        );
+
+        assert_eq!(
+            index.toggle_own(BufferId(2), "message", "👍", "luiz"),
+            Some(ReactionAction::Added)
+        );
+        let sending = &index.summaries("message")[0];
+        assert_eq!(sending.own_delivery, Some(ReactionDelivery::Sending));
+        assert!(sending.mine);
+        assert_eq!(sending.actors.len(), 2);
+
+        confirm(
+            &mut index,
+            actor("me", "luiz", true),
+            ReactionAction::Added,
+            2,
+        );
+        let confirmed = &index.summaries("message")[0];
+        assert_eq!(confirmed.own_delivery, None);
+        assert_eq!(confirmed.actors.len(), 2);
+    }
+
+    #[test]
+    fn own_removal_hides_the_actor_until_its_echo() {
+        let mut index = ReactionIndex::default();
+        confirm(
+            &mut index,
+            actor("me", "luiz", true),
+            ReactionAction::Added,
+            1,
+        );
+
+        assert_eq!(
+            index.toggle_own(BufferId(2), "message", "👍", "luiz"),
+            Some(ReactionAction::Removed)
+        );
+        assert!(index.summaries("message").is_empty());
+
+        confirm(
+            &mut index,
+            actor("me", "luiz", true),
+            ReactionAction::Removed,
+            2,
+        );
+        assert!(index.summaries("message").is_empty());
+        assert_eq!(
+            index.toggle_own(BufferId(2), "message", "👍", "luiz"),
+            Some(ReactionAction::Added)
+        );
+    }
+
+    #[test]
+    fn a_sending_addition_never_duplicates_a_confirmed_own_actor() {
+        let mut index = ReactionIndex::default();
+        index.toggle_own(BufferId(2), "message", "👍", "luiz");
+
+        index.apply(
+            BufferId(2),
+            "message",
+            "👍",
+            update(
+                actor("me", "luiz", true),
+                ReactionAction::Removed,
+                ReactionVersion::new(1, "other-device-remove"),
+            ),
+            true,
+        );
+        index.apply(
+            BufferId(2),
+            "message",
+            "👍",
+            update(
+                actor("me", "luiz", true),
+                ReactionAction::Added,
+                ReactionVersion::new(2, "other-device-add"),
+            ),
+            true,
+        );
+
+        let summary = &index.summaries("message")[0];
+        assert_eq!(summary.actors.len(), 1);
+        assert_eq!(summary.own_delivery, None);
+    }
+
+    #[test]
+    fn a_sending_change_is_not_sent_twice() {
+        let mut index = ReactionIndex::default();
+
+        index.toggle_own(BufferId(2), "message", "👍", "luiz");
+
+        assert_eq!(index.toggle_own(BufferId(2), "message", "👍", "luiz"), None);
+    }
+
+    #[test]
+    fn a_failed_change_keeps_its_chip_and_retries_the_same_action() {
+        let mut index = ReactionIndex::default();
+        index.toggle_own(BufferId(2), "message", "👍", "luiz");
+
+        assert!(index.fail_own("message", "👍", ReactionAction::Added));
+        assert_eq!(
+            index.summaries("message")[0].own_delivery,
+            Some(ReactionDelivery::Failed)
+        );
+        assert_eq!(
+            index.toggle_own(BufferId(2), "message", "👍", "luiz"),
+            Some(ReactionAction::Added)
+        );
+        assert_eq!(
+            index.summaries("message")[0].own_delivery,
+            Some(ReactionDelivery::Sending)
+        );
+    }
+
+    #[test]
+    fn a_failed_removal_restores_the_own_chip_as_failed() {
+        let mut index = ReactionIndex::default();
+        confirm(
+            &mut index,
+            actor("me", "luiz", true),
+            ReactionAction::Added,
+            1,
+        );
+        index.toggle_own(BufferId(2), "message", "👍", "luiz");
+
+        assert!(index.fail_own("message", "👍", ReactionAction::Removed));
+
+        let failed = &index.summaries("message")[0];
+        assert!(failed.mine);
+        assert_eq!(failed.own_delivery, Some(ReactionDelivery::Failed));
+    }
+
+    #[test]
+    fn a_failure_after_the_echo_changes_nothing() {
+        let mut index = ReactionIndex::default();
+        index.toggle_own(BufferId(2), "message", "👍", "luiz");
+        confirm(
+            &mut index,
+            actor("me", "luiz", true),
+            ReactionAction::Added,
+            1,
+        );
+
+        assert!(!index.fail_own("message", "👍", ReactionAction::Added));
+        assert_eq!(index.summaries("message")[0].own_delivery, None);
+    }
+
+    #[test]
+    fn a_new_own_reaction_follows_existing_chips() {
+        let mut index = ReactionIndex::default();
+        confirm(
+            &mut index,
+            actor("ana", "ana", false),
+            ReactionAction::Added,
+            1,
+        );
+
+        index.toggle_own(BufferId(2), "message", "🎉", "luiz");
+
+        assert_eq!(
+            index
+                .summaries("message")
+                .iter()
+                .map(|item| item.text.as_str())
+                .collect::<Vec<_>>(),
+            ["👍", "🎉"]
+        );
     }
 }

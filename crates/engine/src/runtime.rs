@@ -23,12 +23,13 @@ use crate::{
     commands::{self, Command},
     filehost, notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
+    reactions::ReactionAction,
     request_error::{StateLimitOutcome, state_limit_outcome},
     settings,
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
-        NetworkModel, PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick,
-        time_millis,
+        NetworkModel, OwnReactionChange, PendingSend, PendingTargetState, ReadAdvance, SendTarget,
+        is_own_nick, time_millis,
     },
     timeline::{FixedOffsetCalendar, LocalCalendar},
     upload_target::{self, ConnectionIdentity, UploadContext, UploadCredential},
@@ -452,6 +453,11 @@ impl Runtime {
                 buffer_id,
                 local_send_id,
             } => self.retry_message(envelope.id, buffer_id, local_send_id),
+            EngineRequest::ToggleReaction {
+                buffer_id,
+                message_id,
+                reaction,
+            } => self.toggle_reaction(envelope.id, buffer_id, message_id, reaction),
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
@@ -1690,6 +1696,54 @@ impl Runtime {
         output
     }
 
+    fn toggle_reaction(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        message_id: MessageId,
+        reaction: String,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
+        };
+        if !can_react(&running.client.state()) {
+            return rejected_command(command_id, EngineMessageKey::CommandRefused);
+        }
+        let Some(change) = running
+            .model
+            .toggle_own_reaction(buffer_id, message_id, reaction)
+        else {
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        let output = finish_timeline_turn(state, Vec::new());
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let result = send_reaction(&client, &change).await;
+            let mut state = lock(&state);
+            if let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            {
+                match result {
+                    // TODO(papo-0.1 reaction-confirm): stamp with the echo's server time
+                    // once papo resolves reactions to `Confirmed { msgid, server_time }`.
+                    Ok(()) => running
+                        .model
+                        .confirm_own_reaction(&change, time_millis(papo::time::now())),
+                    Err(_) => running.model.fail_own_reaction(&change),
+                }
+                send_events(&outbound, finish_timeline_turn(state, Vec::new()));
+            }
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
+        output
+    }
+
     fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {
         let Some((client, instance)) = lock(&self.state)
             .network
@@ -2599,6 +2653,38 @@ async fn direct_recipient(
         (None, Some(recipient)) => Ok(recipient),
         (None, None) => Err(SendError::Protocol),
     }
+}
+
+/// Papo resolves a reaction after its labeled echo only when echoes are negotiated.
+fn can_react(state: &papo::State) -> bool {
+    [
+        papo::Feature::Reactions,
+        papo::Feature::EchoMessages,
+        papo::Feature::LabeledResponse,
+    ]
+    .into_iter()
+    .all(|feature| state.supports(feature))
+}
+
+async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
+    let message: papo::MessageRef = match change.target.clone() {
+        SendTarget::Channel(channel) => (channel, change.msgid.clone()).into(),
+        SendTarget::Direct {
+            nick,
+            recipient,
+            pin,
+        } => (
+            direct_recipient(client, &nick, recipient, pin).await?,
+            change.msgid.clone(),
+        )
+            .into(),
+    };
+    let text = change.text.clone();
+    match change.action {
+        ReactionAction::Added => client.react(message, text).await,
+        ReactionAction::Removed => client.unreact(message, text).await,
+    }
+    .map_err(|error| classify_send_error(&error))
 }
 
 fn spawn_typing(client: papo::Client, target: SendTarget, typing: papo::Typing) {
@@ -14448,6 +14534,195 @@ async fn delay(duration: Duration) {
                 .expect("history reaction")
                 .mine
         );
+        harness.drain.abort();
+    }
+
+    const REACTION_CAPS: &str = "message-tags echo-message server-time labeled-response batch";
+
+    impl ReplayHarness {
+        async fn live_room_message(&mut self, msgid: &str, text: &str) -> (BufferId, MessageId) {
+            self.wire
+                .server(format!(
+                    "@time=2026-10-27T13:01:00.000Z;msgid={msgid} :alice!a@host PRIVMSG #room :{text}"
+                ))
+                .await;
+            _ = self.timeline_output(&[text]).await;
+            let state = lock(&self.state);
+            let model = &state
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .model;
+            let buffer_id = model
+                .buffer_id_for_channel(&known_channel(&self.client, "#room"))
+                .expect("channel buffer");
+            let message_id = model
+                .projected_messages(buffer_id)
+                .into_iter()
+                .find(|message| message.text == text)
+                .expect("live message")
+                .id;
+            (buffer_id, message_id)
+        }
+
+        fn toggle_reaction(&self, buffer_id: BufferId, message_id: MessageId) -> Vec<EngineToUi> {
+            Runtime {
+                state: Arc::clone(&self.state),
+                outbound: self.outbound.clone(),
+            }
+            .request(EngineRequestEnvelope {
+                id: "react".into(),
+                request: EngineRequest::ToggleReaction {
+                    buffer_id,
+                    message_id,
+                    reaction: "👍".into(),
+                },
+            })
+        }
+
+        async fn reaction_until(
+            &mut self,
+            text: &str,
+            accept: impl Fn(Option<&crate::ReactionProjection>) -> bool,
+        ) -> Option<crate::ReactionProjection> {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    let event = self.receiver.recv().await.expect("runtime remains active");
+                    let events = [event];
+                    if timeline_messages(&events)
+                        .iter()
+                        .any(|message| message.text == text)
+                    {
+                        let reaction = projected_reaction(&events, text);
+                        if accept(reaction) {
+                            return reaction.cloned();
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("the reaction projection arrives")
+        }
+    }
+
+    // TODO(papo-0.1 reaction-confirm): the labeled echo only resolves papo's future today, so
+    // this proves confirmation from that resolution; once papo returns
+    // `Confirmed { msgid, server_time }`, assert the echoed msgid versions the own fact.
+    #[tokio::test]
+    async fn own_reaction_sends_through_papo_and_confirms_on_echo() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, message_id) = harness.live_room_message("target", "react here").await;
+
+        let output = harness.toggle_reaction(buffer_id, message_id);
+
+        let sending = projected_reaction(&output, "react here").expect("optimistic reaction");
+        assert!(sending.mine);
+        assert_eq!(sending.own_delivery, Some(crate::ReactionDelivery::Sending));
+        let sent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
+        assert!(sent.contains("+draft/react=👍"), "{sent}");
+        assert!(sent.contains("reply=target"), "{sent}");
+
+        harness
+            .wire
+            .server(format!("@label={};time=2026-10-27T13:02:00.000Z;msgid=own-react;+draft/react=👍;+draft/reply=target :weblounge!u@host TAGMSG #room", line_label(&sent)))
+            .await;
+        let confirmed = harness
+            .reaction_until("react here", |reaction| {
+                reaction.is_some_and(|reaction| reaction.own_delivery.is_none())
+            })
+            .await
+            .expect("confirmed reaction");
+        assert!(confirmed.mine);
+        harness.drain.abort();
+    }
+
+    // TODO(papo-0.1 reaction-confirm): the labeled echo only resolves papo's future today, so
+    // this proves confirmation from that resolution; once papo returns
+    // `Confirmed { msgid, server_time }`, assert the echoed msgid versions the own fact.
+    #[tokio::test]
+    async fn own_unreaction_removes_the_chip_after_its_echo() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, message_id) = harness.live_room_message("target", "unreact here").await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:02:00.000Z;msgid=own-react;+draft/react=👍;+draft/reply=target :weblounge!u@host TAGMSG #room")
+            .await;
+        _ = harness
+            .reaction_until("unreact here", |reaction| reaction.is_some())
+            .await;
+
+        let output = harness.toggle_reaction(buffer_id, message_id);
+
+        assert!(projected_reaction(&output, "unreact here").is_none());
+        let sent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
+        assert!(sent.contains("+draft/unreact=👍"), "{sent}");
+        harness
+            .wire
+            .server(format!("@label={};time=2026-10-27T13:03:00.000Z;msgid=own-unreact;+draft/unreact=👍;+draft/reply=target :weblounge!u@host TAGMSG #room", line_label(&sent)))
+            .await;
+        _ = harness.live_room_message("after", "after unreact").await;
+
+        let again = harness.toggle_reaction(buffer_id, message_id);
+
+        assert!(projected_reaction(&again, "unreact here").is_some());
+        let resent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
+        assert!(resent.contains("+draft/react=👍"), "{resent}");
+        harness.drain.abort();
+    }
+
+    fn line_label(line: &str) -> &str {
+        line.split([';', ' '])
+            .find_map(|tag| tag.trim_start_matches('@').strip_prefix("label="))
+            .expect("labeled request")
+    }
+
+    #[tokio::test]
+    async fn refused_own_reaction_fails_and_retries() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, message_id) = harness.live_room_message("target", "refused here").await;
+
+        _ = harness.toggle_reaction(buffer_id, message_id);
+        let sent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
+        harness
+            .wire
+            .server(format!(
+                "@label={} :offline.test FAIL TAGMSG INVALID_TARGET #room :refused",
+                line_label(&sent)
+            ))
+            .await;
+
+        let failed = harness
+            .reaction_until("refused here", |reaction| {
+                reaction.is_some_and(|reaction| {
+                    reaction.own_delivery == Some(crate::ReactionDelivery::Failed)
+                })
+            })
+            .await
+            .expect("failed reaction");
+        assert!(failed.mine);
+        let retried = harness.toggle_reaction(buffer_id, message_id);
+        assert_eq!(
+            projected_reaction(&retried, "refused here").and_then(|reaction| reaction.own_delivery),
+            Some(crate::ReactionDelivery::Sending)
+        );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn own_reaction_is_refused_without_the_reaction_capability() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        harness
+            .wire
+            .server(":offline.test 005 weblounge CLIENTTAGDENY=draft/react :supported")
+            .await;
+        let (buffer_id, message_id) = harness.live_room_message("target", "denied here").await;
+
+        let output = harness.toggle_reaction(buffer_id, message_id);
+
+        assert!(matches!(
+            output.as_slice(),
+            [EngineToUi::CommandRejected { .. }]
+        ));
         harness.drain.abort();
     }
 

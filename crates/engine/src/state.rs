@@ -451,6 +451,17 @@ pub(crate) struct PendingSend {
     pub(crate) kind: MessageKind,
 }
 
+/// This account's reaction change awaiting papo and the server's echo.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnReactionChange {
+    pub(crate) buffer_id: BufferId,
+    pub(crate) message_id: MessageId,
+    pub(crate) target: SendTarget,
+    pub(crate) msgid: String,
+    pub(crate) text: String,
+    pub(crate) action: ReactionAction,
+}
+
 pub(crate) enum PendingTargetState {
     Waiting,
     Ready,
@@ -1328,8 +1339,88 @@ impl NetworkModel {
         ) {
             return None;
         }
-        let reactions = nonempty_reactions(self.reactions.summaries(&target));
         let (_, message_id) = loaded?;
+        self.refresh_reactions(buffer_id, message_id, &target)
+    }
+
+    /// Starts this account's reaction change on a confirmed message.
+    pub(crate) fn toggle_own_reaction(
+        &mut self,
+        buffer_id: BufferId,
+        message_id: MessageId,
+        text: String,
+    ) -> Option<OwnReactionChange> {
+        let target = self.send_target(buffer_id)?;
+        let msgid = self
+            .buffers
+            .get(&buffer_id)?
+            .timeline
+            .iter()
+            .find(|record| record.id == message_id)
+            .and_then(chat_projection)
+            .filter(|message| {
+                matches!(
+                    message.delivery,
+                    MessageDelivery::Received | MessageDelivery::Confirmed
+                )
+            })?
+            .server_ids
+            .first()?
+            .clone();
+        let action = self
+            .reactions
+            .toggle_own(buffer_id, &msgid, &text, &self.network.nickname)?;
+        self.refresh_reactions(buffer_id, message_id, &msgid);
+        Some(OwnReactionChange {
+            buffer_id,
+            message_id,
+            target,
+            msgid,
+            text,
+            action,
+        })
+    }
+
+    /// Records a reaction change that papo reports the server echoed.
+    // TODO(papo-0.1 reaction-confirm): papo 40c6722 consumes the labeled echo and resolves
+    // react/unreact to `()`, so this fact carries local time and no msgid. Papo's approved
+    // reaction-confirm change resolves them to `Confirmed { msgid, server_time }` or
+    // `Unconfirmed`; version the fact from that and delete this TODO.
+    pub(crate) fn confirm_own_reaction(&mut self, change: &OwnReactionChange, time_ms: i64) {
+        let nick = self.network.nickname.clone();
+        let actor = ReactionActor {
+            key: nick_reaction_actor_key(&self.casemapping.nick(nick.clone())),
+            nick,
+            mine: true,
+        };
+        if self.reactions.apply(
+            change.buffer_id,
+            &change.msgid,
+            &change.text,
+            ReactionUpdate::new(actor, change.action, ReactionVersion::new(time_ms, "")),
+            true,
+        ) {
+            self.refresh_reactions(change.buffer_id, change.message_id, &change.msgid);
+        }
+    }
+
+    /// Shows a reaction change that papo could not send as failed.
+    pub(crate) fn fail_own_reaction(&mut self, change: &OwnReactionChange) {
+        if self
+            .reactions
+            .fail_own(&change.msgid, &change.text, change.action)
+        {
+            self.refresh_reactions(change.buffer_id, change.message_id, &change.msgid);
+        }
+    }
+
+    fn refresh_reactions(
+        &mut self,
+        buffer_id: BufferId,
+        message_id: MessageId,
+        target: &str,
+    ) -> Option<()> {
+        let reactions = nonempty_reactions(self.reactions.summaries(target));
         let record = self
             .buffers
             .get_mut(&buffer_id)?
@@ -4711,7 +4802,11 @@ mod notice_source_tests {
 fn reaction_actor_key(actor: &papo::UserSource) -> String {
     // History can omit an account tag that was present live. Existing facts retain the
     // nick-at-event across later nick changes; a subsequent reaction uses the new nick.
-    format!("nick:{}", actor.nick().key())
+    nick_reaction_actor_key(actor.nick())
+}
+
+fn nick_reaction_actor_key(nick: &papo::Nick) -> String {
+    format!("nick:{}", nick.key())
 }
 
 fn nonempty_reactions(
