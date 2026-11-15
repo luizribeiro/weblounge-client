@@ -22,10 +22,27 @@
   padding-inline: 7px;
   white-space: nowrap;
 }
+button.chip {
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
 .own {
   background: var(--wl-color-selection);
   border-color: var(--wl-color-accent);
   color: var(--wl-color-selection-fg);
+}
+.chip[data-reaction-delivery="sending"] {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.chip[data-reaction-delivery="failed"] {
+  background: var(--wl-color-bg);
+  border-color: var(--wl-color-error);
+  color: var(--wl-color-error);
+}
+.chip[data-reaction-delivery="failed"] .count {
+  font-weight: 700;
 }
 .text,
 .count {
