@@ -7,6 +7,7 @@ import {
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
+import { choice } from "./settings-fixture";
 
 test.use({
   colorScheme: "light",
@@ -63,6 +64,40 @@ test.describe("mobile chat list against local Ergo", () => {
     await expectCentredBadge(row, "123");
     await page.emulateMedia({ colorScheme: "light" });
     await expectCentredBadge(row, "123");
+  });
+
+  test("sets row text in the theme's UI font", async ({ page, irc }) => {
+    const bot = await irc.peer("fonts");
+    await page.goto(irc.url());
+    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+    bot.privmsg(irc.account, "preview in the theme font");
+    const row = directRow(page, bot.nickname);
+    await expect(row).toBeVisible();
+
+    await page
+      .getByRole("region", { name: "Chats" })
+      .getByRole("button", { name: "Settings" })
+      .tap();
+    await page.getByRole("button", { name: /^Appearance/u }).tap();
+    await choice(page, "Terminal").tap();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      "terminal",
+    );
+    await page.getByRole("button", { name: "Back to Settings" }).tap();
+    await page.getByRole("button", { name: "Back to Chats" }).tap();
+    await expect(row).toBeVisible();
+
+    const themeFont = await page.evaluate(
+      () => getComputedStyle(document.body).fontFamily,
+    );
+    expect(themeFont).toMatch(/Mono/u);
+    for (const text of [bot.nickname, "preview in the theme font"])
+      await expect(row.getByText(text, { exact: true })).toHaveCSS(
+        "font-family",
+        themeFont,
+      );
+    await expect(row.locator("time")).toHaveCSS("font-family", themeFont);
   });
 
   test("keeps 35px filter chips tappable across a 44px target", async ({

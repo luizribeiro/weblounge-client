@@ -74,7 +74,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - B8: slow launch with many buffers: history replies trail papo's post-JOIN burst by ~1.5s; a no-cache launch sends 48 commands, 17 history commands exceed the budget by one; the 30-day TARGETS window can omit older DMs. Waits on papo. Known limits.
 - B9: the engine keeps its own "MONITOR offline" memory because papo keeps a held-direct-handle peer in monitor_online; `presence()` in newer papo replaces it; away for MONITOR-only peers needs extended-monitor. Waits on papo.
 - B10: Chromium appears to apply a tagged persistent notification's `close()` asynchronously to whatever notification holds that tag (close-then-show of one tag lost the new one in 6 of 1600 tries locally). So closing a read conversation's notification (page `closeReadConversationNotifications` or worker `tidyReadNotifications`) could drop a new unread push for that tag shown just after the close was issued. Unconfirmed in the app; a fix would serialize closes and shows per tag in the worker. `app/e2e/push-notifications.spec.ts` `replaceWithConversationNotification`.
-- B11: the phone chat list's row name, time and preview render in the browser's default sans instead of the theme's UI font (seen in Terminal and Monokai, which are all-monospace); the row button likely lacks `font: inherit`. `app/src/shells/mobile/MobileChatRow.module.css`.
 
 #### Test flakes
 - T1: `spacing-audit.spec.ts:133` opens at the top of the transcript instead of the live edge (2 in ~80 main runs); under 10x CPU throttle three later steps also fail. Failures attach `transcript-geometry`; hypothesis: TanStack drops the in-flight `scrollToEnd` and MessageList never re-issues it.
@@ -112,6 +111,8 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: B11: the phone chat list rows inherit the theme UI font (the row button had the
+  browser default sans); a Terminal-theme e2e asserts it.
 - 2026-11-15: Luiz checked V1 to V3 on real devices (upload paste, image viewer, desktop wrapper phase 2 end to end) and they pass.
 - 2026-11-14: a Monokai theme from Luiz's wezterm colours: charcoal `#1c1c1c`, green accent, pink
   unread and mention badge, set in self-hosted Hack (400/700, upright and italic) that loads only

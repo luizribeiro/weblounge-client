@@ -49,6 +49,7 @@
   border: 0;
   color: var(--wl-color-fg);
   display: flex;
+  font: inherit;
   gap: 12px;
   height: var(--wl-density-mobile-row-height);
   padding: 8px 14px;
