@@ -684,16 +684,16 @@ pub struct ReactionProjection {
     /// Delivery of this account's unconfirmed change, absent once the server echoes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub own_delivery: Option<ReactionDelivery>,
+    pub own_delivery: Option<OwnChangeDelivery>,
 }
 
-/// Delivery state of the current account's reaction change awaiting its echo.
+/// Delivery state of the current account's reaction or deletion awaiting confirmation.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum ReactionDelivery {
+pub enum OwnChangeDelivery {
     /// Papo is sending the change.
     Sending,
-    /// The change failed and activating the reaction retries it.
+    /// The change failed and activating it again retries it.
     Failed,
 }
 

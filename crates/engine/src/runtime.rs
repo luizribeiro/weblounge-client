@@ -14639,7 +14639,10 @@ async fn delay(duration: Duration) {
 
         let sending = projected_reaction(&output, "react here").expect("optimistic reaction");
         assert!(sending.mine);
-        assert_eq!(sending.own_delivery, Some(crate::ReactionDelivery::Sending));
+        assert_eq!(
+            sending.own_delivery,
+            Some(crate::OwnChangeDelivery::Sending)
+        );
         let sent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
         assert!(sent.contains("+draft/react=👍"), "{sent}");
         assert!(sent.contains("reply=target"), "{sent}");
@@ -14756,7 +14759,7 @@ async fn delay(duration: Duration) {
         let failed = harness
             .reaction_until("refused here", |reaction| {
                 reaction.is_some_and(|reaction| {
-                    reaction.own_delivery == Some(crate::ReactionDelivery::Failed)
+                    reaction.own_delivery == Some(crate::OwnChangeDelivery::Failed)
                 })
             })
             .await
@@ -14765,7 +14768,7 @@ async fn delay(duration: Duration) {
         let retried = harness.toggle_reaction(buffer_id, message_id);
         assert_eq!(
             projected_reaction(&retried, "refused here").and_then(|reaction| reaction.own_delivery),
-            Some(crate::ReactionDelivery::Sending)
+            Some(crate::OwnChangeDelivery::Sending)
         );
         harness.drain.abort();
     }

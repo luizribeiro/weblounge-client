@@ -44,8 +44,8 @@ pub use protocol::{
     MemberGroup, MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship,
     MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
-    PeerPresence, PushDeploymentConfig, PushDeviceCredentials, PushFailure, PushRoute, PushState,
-    PushUnsupportedReason, ReactionActorProjection, ReactionDelivery, ReactionProjection,
+    OwnChangeDelivery, PeerPresence, PushDeploymentConfig, PushDeviceCredentials, PushFailure,
+    PushRoute, PushState, PushUnsupportedReason, ReactionActorProjection, ReactionProjection,
     RedactedSecret, Redaction, SaslCredentials, ShellKind, TypingProjection, UiToEngine,
     UploadApproval, UploadAuthorization, UploadResolution,
 };

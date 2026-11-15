@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::{BufferId, ReactionActorProjection, ReactionDelivery, ReactionProjection};
+use crate::{BufferId, OwnChangeDelivery, ReactionActorProjection, ReactionProjection};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReactionAction {
@@ -64,7 +64,7 @@ struct ReactionSummary {
 #[derive(Clone, Debug)]
 struct OwnChange {
     action: ReactionAction,
-    delivery: ReactionDelivery,
+    delivery: OwnChangeDelivery,
     nick: String,
 }
 
@@ -118,7 +118,7 @@ impl ReactionSummary {
                 });
                 Some(own.delivery)
             }
-            Some(own) if own.delivery == ReactionDelivery::Sending => {
+            Some(own) if own.delivery == OwnChangeDelivery::Sending => {
                 actors.retain(|actor| !actor.mine);
                 None
             }
@@ -282,14 +282,14 @@ impl ReactionIndex {
             .entry(ReactionKey(text.into()))
             .or_insert_with(|| ReactionSummary::new(text));
         let action = match &summary.own {
-            Some(own) if own.delivery == ReactionDelivery::Sending => return None,
+            Some(own) if own.delivery == OwnChangeDelivery::Sending => return None,
             Some(own) => own.action,
             None if summary.confirmed_mine() => ReactionAction::Removed,
             None => ReactionAction::Added,
         };
         summary.own = Some(OwnChange {
             action,
-            delivery: ReactionDelivery::Sending,
+            delivery: OwnChangeDelivery::Sending,
             nick: nick.into(),
         });
         summary.assign_ordinal(&mut self.next_ordinal);
@@ -303,11 +303,11 @@ impl ReactionIndex {
             .get_mut(target)
             .and_then(|target| target.reactions.get_mut(&ReactionKey(text.into())))
             .and_then(|summary| summary.own.as_mut())
-            .filter(|own| own.action == action && own.delivery == ReactionDelivery::Sending)
+            .filter(|own| own.action == action && own.delivery == OwnChangeDelivery::Sending)
         else {
             return false;
         };
-        own.delivery = ReactionDelivery::Failed;
+        own.delivery = OwnChangeDelivery::Failed;
         true
     }
 
@@ -404,7 +404,7 @@ impl ReactionIndex {
 #[cfg(test)]
 mod tests {
     use super::{ReactionAction, ReactionActor, ReactionIndex, ReactionUpdate, ReactionVersion};
-    use crate::{BufferId, ReactionDelivery};
+    use crate::{BufferId, OwnChangeDelivery};
 
     fn actor(key: &str, nick: &str, mine: bool) -> ReactionActor {
         ReactionActor {
@@ -686,7 +686,7 @@ mod tests {
             Some(ReactionAction::Added)
         );
         let sending = &index.summaries("message")[0];
-        assert_eq!(sending.own_delivery, Some(ReactionDelivery::Sending));
+        assert_eq!(sending.own_delivery, Some(OwnChangeDelivery::Sending));
         assert!(sending.mine);
         assert_eq!(sending.actors.len(), 2);
 
@@ -780,7 +780,7 @@ mod tests {
         assert!(index.fail_own("message", "👍", ReactionAction::Added));
         assert_eq!(
             index.summaries("message")[0].own_delivery,
-            Some(ReactionDelivery::Failed)
+            Some(OwnChangeDelivery::Failed)
         );
         assert_eq!(
             index.toggle_own(BufferId(2), "message", "👍", "luiz"),
@@ -788,7 +788,7 @@ mod tests {
         );
         assert_eq!(
             index.summaries("message")[0].own_delivery,
-            Some(ReactionDelivery::Sending)
+            Some(OwnChangeDelivery::Sending)
         );
     }
 
@@ -807,7 +807,7 @@ mod tests {
 
         let failed = &index.summaries("message")[0];
         assert!(failed.mine);
-        assert_eq!(failed.own_delivery, Some(ReactionDelivery::Failed));
+        assert_eq!(failed.own_delivery, Some(OwnChangeDelivery::Failed));
     }
 
     #[test]
