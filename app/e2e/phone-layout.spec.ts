@@ -3,7 +3,10 @@ import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { messageId } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
+import { expectSettled } from "./settled";
+import { waitForStableGeometry } from "./stable-geometry";
 import { armMessageTime } from "./time-rewrite";
+import { tap } from "./touch";
 import { screenshotPixelVariance } from "./transcript-paint";
 
 test.skip(
@@ -151,6 +154,47 @@ test("groups phone messages without losing timestamps or the live edge", async (
   await expect(visibleBotRow.locator("[data-message-avatar]")).toHaveCount(0);
 });
 
+for (const keyboard of ["closed", "open"] as const)
+  test(`keeps the latest message above a wrapping phone composer with the keyboard ${keyboard}`, async ({
+    page,
+    irc,
+  }, testInfo) => {
+    test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
+    const channel = irc.channelNamed("composer-wrap");
+    const sender = await irc.peer("wrap-bot", [channel]);
+    for (let index = 0; index < 12; index += 1)
+      sender.privmsg(
+        channel,
+        `wrap backlog ${index} ${irc.id} ${"fill the narrow phone transcript ".repeat(4)}`,
+      );
+    const last = `wrap last ${irc.id}`;
+    await sender.privmsgConfirmed(channel, last);
+    await page.goto(irc.url({ autojoin: [channel] }));
+    await page.getByRole("button", { name: channel }).click();
+    await expectSettled(page, { conversation: channel });
+    const lastRow = messageRow(page, last);
+    await expect(lastRow).toBeVisible();
+    const composer = page.getByRole("textbox", { name: `Message ${channel}` });
+    await tap(page, composer);
+    await expect(composer).toBeFocused();
+    if (keyboard === "open") await openSoftKeyboard(page);
+    await expectSettled(page, { conversation: channel });
+    await expectAboveComposer(page, lastRow);
+
+    const heights = new Set<number>();
+    for (const word of wrappingDraftWords()) {
+      await composer.pressSequentially(`${word} `);
+      const height = await textareaHeight(composer);
+      if (heights.has(height)) continue;
+      heights.add(height);
+      await waitForStableGeometry(page.locator("[data-mobile-chat]"));
+      await expectAboveComposer(page, lastRow);
+      if (await isCapped(composer)) break;
+    }
+    expect(heights.size).toBeGreaterThanOrEqual(4);
+    expect(await isCapped(composer)).toBe(true);
+  });
+
 test("keeps the desktop row while replacing its bot label", async ({
   page,
   irc,
@@ -241,6 +285,56 @@ test("paints message and member bot icons under the beta CSP", async ({
     await page.evaluate(() => Reflect.get(globalThis, "botIconCspViolations")),
   ).toEqual([]);
 });
+
+async function openSoftKeyboard(page: Page): Promise<void> {
+  const viewport = page.viewportSize();
+  if (viewport === null) throw new Error("phone project has no viewport");
+  await page.setViewportSize({
+    width: viewport.width,
+    height: Math.round(viewport.height * softKeyboardVisibleShare),
+  });
+}
+
+function wrappingDraftWords(): readonly string[] {
+  return Array.from({ length: 80 }, (_, index) => `draft${index}`);
+}
+
+function textareaHeight(composer: Locator): Promise<number> {
+  return composer.evaluate((element) => element.getBoundingClientRect().height);
+}
+
+function isCapped(composer: Locator): Promise<boolean> {
+  return composer.evaluate(
+    (element) => element.scrollHeight > element.clientHeight,
+  );
+}
+
+async function expectAboveComposer(page: Page, row: Locator): Promise<void> {
+  const geometry = await row.evaluate((element) => {
+    const composer = document.querySelector("[data-composer]");
+    const list = element.closest("[data-message-list]");
+    if (composer === null || list === null)
+      throw new Error("phone conversation is missing its list or composer");
+    return {
+      composerTop: composer.getBoundingClientRect().top,
+      listBottom: list.getBoundingClientRect().bottom,
+      listTop: list.getBoundingClientRect().top,
+      rowBottom: element.getBoundingClientRect().bottom,
+      rowTop: element.getBoundingClientRect().top,
+    };
+  });
+  const message = JSON.stringify(geometry);
+  expect(geometry.listBottom, message).toBeLessThanOrEqual(
+    geometry.composerTop + 0.5,
+  );
+  expect(geometry.rowTop, message).toBeGreaterThanOrEqual(geometry.listTop);
+  expect(geometry.rowBottom, message).toBeLessThanOrEqual(
+    geometry.listBottom + 0.5,
+  );
+  await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+}
+
+const softKeyboardVisibleShare = 0.55;
 
 function isPhoneProject(name: string): boolean {
   return name === "android-phone-layout" || name === "webkit-phone-layout";

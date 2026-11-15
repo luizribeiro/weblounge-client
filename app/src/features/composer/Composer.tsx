@@ -31,6 +31,7 @@ import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
+  withBlockSizeHeld,
 } from "./geometry";
 import { InlineConfirmation } from "./InlineConfirmation";
 import { SuggestionList } from "./SuggestionList";
@@ -164,13 +165,17 @@ export function Composer(props: ComposerProps) {
     const previousHeight = textarea.style.height;
     const previousScrollTop = textarea.scrollTop;
     const caretIsAtEnd = textarea.selectionEnd === textarea.value.length;
-    textarea.style.height = "0";
-    const nextHeight = `${textarea.scrollHeight}px`;
-    if (nextHeight !== previousHeight)
-      textarea.dispatchEvent(
-        new Event(composerGeometryWillChangeEvent, { bubbles: true }),
-      );
-    textarea.style.height = nextHeight;
+    const input = textarea;
+    const nextHeight = withBlockSizeHeld(input.parentElement, () => {
+      input.style.height = "0";
+      const measured = `${input.scrollHeight}px`;
+      if (measured !== previousHeight)
+        input.dispatchEvent(
+          new Event(composerGeometryWillChangeEvent, { bubbles: true }),
+        );
+      input.style.height = measured;
+      return measured;
+    });
     const caretNeedsDeferredReveal =
       caretIsAtEnd &&
       platform.environment().input === "touch" &&

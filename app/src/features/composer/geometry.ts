@@ -1,3 +1,22 @@
 export const composerGeometryWillChangeEvent =
   "weblounge:composer-geometry-will-change";
 export const composerGeometryChangeEvent = "weblounge:composer-geometry-change";
+
+/**
+ * Runs a measurement that briefly collapses content inside `element` while the
+ * element keeps its laid-out block size. A scroll container beside `element`
+ * clamps its scroll offset whenever that collapse reaches layout.
+ */
+export function withBlockSizeHeld<T>(
+  element: HTMLElement | null,
+  measure: () => T,
+): T {
+  if (element === null) return measure();
+  const inlineBlockSize = element.style.blockSize;
+  element.style.blockSize = `${element.getBoundingClientRect().height}px`;
+  try {
+    return measure();
+  } finally {
+    element.style.blockSize = inlineBlockSize;
+  }
+}
