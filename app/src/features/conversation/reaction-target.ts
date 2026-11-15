@@ -33,7 +33,7 @@ export function reactionTarget(
   return (reaction) => toggle(message.id, reaction);
 }
 
-function isServerDelivered(message: MessageProjection): boolean {
+export function isServerDelivered(message: MessageProjection): boolean {
   return (
     message.server_ids.length > 0 &&
     !isRedacted(message.kind) &&
