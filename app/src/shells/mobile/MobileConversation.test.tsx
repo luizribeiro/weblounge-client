@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal, onMount } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
@@ -14,10 +14,16 @@ vi.mock("../../features/composer/Composer", () => ({
   ),
 }));
 
+const list = vi.hoisted(() => ({
+  openActions: undefined as ((message: unknown) => void) | undefined,
+}));
+
 vi.mock("../../features/conversation/MessageList", () => ({
   MessageList: (props: {
     readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
+    readonly onMessageActions?: (message: unknown) => void;
   }) => {
+    list.openActions = props.onMessageActions;
     onMount(() => props.onLiveEdgeChange?.(true));
     return <div data-message-list="true" />;
   },
@@ -306,6 +312,51 @@ it("shows an identity mismatch, blocks sending, and routes both decisions", () =
   screen.getByRole("button", { name: "Not now" }).click();
   expect(trust).toHaveBeenCalledWith(2);
   expect(defer).toHaveBeenCalledWith(2);
+});
+
+it("offers Delete in the sheet only for own messages the network can delete", () => {
+  const own: MessageProjection = {
+    ...message,
+    authorship: "own",
+    delivery: "confirmed",
+  };
+  const network = {
+    id: 1,
+    label: "Local",
+    nickname: "weblounge",
+    state: "online" as const,
+  };
+  const [canRedact, setCanRedact] = createSignal(true);
+  render(() => (
+    <MobileConversation
+      buffer={buffer}
+      memberships={[]}
+      messages={[own]}
+      network={{ ...network, can_redact: canRedact() }}
+      onBack={() => {}}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenMembers={() => {}}
+      onRedactMessage={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const offered = (target: MessageProjection) => {
+    list.openActions?.(target);
+    const shown = screen.queryByRole("button", { name: "Delete message" });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    return shown !== null;
+  };
+
+  expect(offered(own)).toBe(true);
+  expect(offered(message)).toBe(false);
+  expect(offered({ ...own, own_redaction: "sending" })).toBe(false);
+  expect(offered({ ...own, delivery: "optimistic", server_ids: [] })).toBe(
+    false,
+  );
+  setCanRedact(false);
+  expect(offered(own)).toBe(false);
 });
 
 function renderConversation(

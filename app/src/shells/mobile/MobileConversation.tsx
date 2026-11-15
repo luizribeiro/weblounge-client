@@ -32,6 +32,11 @@ import {
   type ToggleBufferReaction,
 } from "../../features/conversation/reaction-target";
 import {
+  bufferRedaction,
+  canRedact,
+  type RedactBufferMessage,
+} from "../../features/conversation/redact-target";
+import {
   createReadDwell,
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -86,6 +91,7 @@ export interface MobileConversationProps {
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onToggleReaction?: ToggleBufferReaction | undefined;
+  readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly visible?: boolean | undefined;
 }
 
@@ -112,12 +118,19 @@ export function MobileConversation(props: MobileConversationProps) {
       focusBeforeActions.focus({ preventScroll: true });
     focusBeforeActions = null;
   };
+  // Dismissing the sheet hands focus back to where it was, so the confirmation must open after
+  // that or it would lose focus.
+  const confirmDeleteAfterSheet = (message: MessageProjection) =>
+    queueMicrotask(() => listController?.confirmDelete(message.id));
   const toggleReaction = createMemo(() =>
     bufferReactionToggle(
       props.buffer.id,
       props.network,
       props.onToggleReaction,
     ),
+  );
+  const redactMessage = createMemo(() =>
+    bufferRedaction(props.buffer.id, props.network, props.onRedactMessage),
   );
   const newestMessageId = createMemo(() =>
     props.timeline === undefined
@@ -269,6 +282,7 @@ export function MobileConversation(props: MobileConversationProps) {
               props.onRetry?.(props.buffer.id, localSendId)
             }
             onToggleReaction={toggleReaction()}
+            onRedactMessage={redactMessage()}
             onMessageActions={openMessageActions}
             heldMessageId={heldMessage()?.id}
             presentation="mobile"
@@ -328,7 +342,12 @@ export function MobileConversation(props: MobileConversationProps) {
       <Show when={heldMessage()} keyed>
         {(message) => (
           <MobileMessageActionSheet
-            actions={messageSheetActions(message, { copyText })}
+            actions={messageSheetActions(message, {
+              copyText,
+              delete: canRedact(message, redactMessage())
+                ? () => confirmDeleteAfterSheet(message)
+                : undefined,
+            })}
             message={message}
             onDismiss={dismissMessageActions}
             onReact={reactionTarget(message, toggleReaction())}

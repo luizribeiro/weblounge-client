@@ -14,6 +14,7 @@ import type {
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
 import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
+import type { RedactBufferMessage } from "../../features/conversation/redact-target";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import {
   MobileSettings,
@@ -74,6 +75,7 @@ export interface MobileShellData extends NotificationPromptControls {
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
   readonly onToggleReaction?: ToggleBufferReaction | undefined;
+  readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
@@ -235,6 +237,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onRetry={props.onRetry}
           onSend={props.onSend}
           onToggleReaction={props.onToggleReaction}
+          onRedactMessage={props.onRedactMessage}
           visible={!props.inactive && !props.retained}
         />
       ) : null}

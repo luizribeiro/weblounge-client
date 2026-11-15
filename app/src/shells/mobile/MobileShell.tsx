@@ -769,6 +769,7 @@ export function MobileShell(props: MobileShellProps) {
             onRetryNetwork={props.onRetryNetwork}
             onRetry={props.onRetry}
             onToggleReaction={props.onToggleReaction}
+            onRedactMessage={props.onRedactMessage}
             onScroll={(nextScrollTop) => {
               if (
                 stack().active.kind === "chats" &&
