@@ -1,0 +1,97 @@
+.picker {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-palette);
+  box-shadow: var(--wl-effect-overlay-shadow);
+  box-sizing: border-box;
+  color: var(--wl-color-fg);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--wl-font-ui);
+  gap: 10px;
+  left: var(--wl-reaction-picker-left, 0);
+  padding: 12px;
+  position: fixed;
+  top: var(--wl-reaction-picker-top, 0);
+  width: 312px;
+  z-index: 30;
+}
+.label {
+  color: var(--wl-color-muted);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--wl-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  gap: 4px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.search {
+  background: var(--wl-color-input-bg);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-control);
+  box-sizing: border-box;
+  color: var(--wl-color-fg);
+  font-family: var(--wl-font-ui);
+  font-size: 13px;
+  height: 32px;
+  letter-spacing: 0;
+  padding: 0 10px;
+  text-transform: none;
+}
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 248px;
+  margin-inline: -4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline: 4px;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.groupName {
+  background: var(--wl-color-panel-alt);
+  color: var(--wl-color-muted);
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0;
+  padding-block: 2px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.grid {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+.emoji {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-size: 18px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+}
+.emoji:hover {
+  background: var(--wl-color-chip);
+}
+.emoji[aria-pressed="true"] {
+  background: var(--wl-color-selection);
+}
+.empty {
+  color: var(--wl-color-muted);
+  font-size: 12px;
+  margin: 0;
+}
