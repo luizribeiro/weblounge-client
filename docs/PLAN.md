@@ -66,7 +66,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   small overscan and widen it once the slide settles; batch the virtualizer's per-row notifies.
   The two-frame start-state wait (design 15) adds ~33ms more per push; dropping it for a style flush
   is a design change for Luiz. `app/e2e/mobile-push-budget.spec.ts` guards the tap frame.
-- F26: reactions batch 3, phone: the long-press sheet with 👍 ❤️ 😂 🎉 👀 ✅, add reaction, Reply and Copy text. Design 25.
 - F27: replies: the one-line parent quote above the reply (activating it scrolls to and highlights the parent; a missing parent is fetched around its msgid; a deleted parent says so); the composer "Replying to <nick> <text>" bar, cancelled with × or Escape; the channel wire prefix "<nick>: ", hidden in our view; no swipe-to-reply. papo's reply API changes in the pending papo bump (`client.reply(&line, …)`). Design 25.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
