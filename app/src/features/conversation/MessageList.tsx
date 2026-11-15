@@ -1769,71 +1769,25 @@ function LocalNoticeRow(props: {
   readonly onOpenExternal?: ((href: string) => void) | undefined;
 }) {
   const message = props.message;
-  const notice = message.kind.notice;
-  switch (notice.type) {
-    case "info":
-      return (
-        <div
-          class={styles.notice}
-          data-message-row="true"
-          data-message-text={message.text}
-          data-notice-kind="info"
-          data-notice-row="true"
-        >
-          <Selectable
-            class={styles.noticeText}
-            surfaceId={`message-${message.id}`}
-          >
-            <MessageText
-              authors={props.nickLookup}
-              onOpenChannel={props.onOpenChannel}
-              onOpenDirect={props.onOpenDirect}
-              onOpenExternal={props.onOpenExternal}
-              text={message.text}
-            />
-          </Selectable>
-        </div>
-      );
-    case "topic":
-      return (
-        <div
-          class={styles.notice}
-          data-message-row="true"
-          data-message-text={message.text}
-          data-notice-kind="topic"
-          data-notice-row="true"
-        >
-          <span>{t("messages.topic_prefix")}</span>
-          <Selectable
-            class={styles.noticeTopic}
-            surfaceId={`message-${message.id}`}
-          >
-            {message.text === "" ? (
-              t("messages.topic.empty")
-            ) : (
-              <MessageText
-                authors={props.nickLookup}
-                onOpenChannel={props.onOpenChannel}
-                onOpenDirect={props.onOpenDirect}
-                onOpenExternal={props.onOpenExternal}
-                text={message.text}
-              />
-            )}
-          </Selectable>
-          {notice.setter !== null && notice.setter !== "" && (
-            <span>{t("messages.topic.setter", { setter: notice.setter })}</span>
-          )}
-          {notice.set_at !== null && (
-            <time dateTime={new Date(notice.set_at).toISOString()}>
-              {" ·"}
-              {formatNoticeTime(notice.set_at)}
-            </time>
-          )}
-        </div>
-      );
-    default:
-      return assertNever(notice);
-  }
+  return (
+    <div
+      class={styles.notice}
+      data-message-row="true"
+      data-message-text={message.text}
+      data-notice-kind={message.kind.notice.type}
+      data-notice-row="true"
+    >
+      <Selectable class={styles.noticeText} surfaceId={`message-${message.id}`}>
+        <MessageText
+          authors={props.nickLookup}
+          onOpenChannel={props.onOpenChannel}
+          onOpenDirect={props.onOpenDirect}
+          onOpenExternal={props.onOpenExternal}
+          text={message.text}
+        />
+      </Selectable>
+    </div>
+  );
 }
 
 function Delivery(props: {
@@ -2227,12 +2181,6 @@ function formatEngineOrder(order: TimelineItem["order"] | undefined) {
   return order?.join(":");
 }
 
-function formatNoticeTime(milliseconds: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(milliseconds);
-}
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight);
 }
@@ -2474,31 +2422,7 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
         text: row.message.text,
       };
     if (row.kind === "message" && isLocalNoticeMessage(row.message))
-      return { kind: "system", text: noticeText(row.message) };
+      return { kind: "system", text: row.message.text };
     return undefined;
   });
-}
-
-function noticeText(message: LocalNoticeMessage): string {
-  const notice = message.kind.notice;
-  switch (notice.type) {
-    case "info":
-      return message.text;
-    case "topic": {
-      const topic = message.text || t("messages.topic.empty");
-      const setter =
-        notice.setter === null || notice.setter === ""
-          ? ""
-          : t("messages.topic.setter", { setter: notice.setter });
-      const time =
-        notice.set_at === null ? "" : ` · ${formatNoticeTime(notice.set_at)}`;
-      return t("messages.topic", { topic, setter, time });
-    }
-    default:
-      return assertNever(notice);
-  }
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Unhandled notice kind: ${String(value)}`);
 }

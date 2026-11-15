@@ -1705,37 +1705,6 @@ it("renders the signed empty direct row after history settles", async () => {
   expect(container.querySelector("[data-history-edge]")).toBeNull();
 });
 
-it("renders topic notices with their setter and time", async () => {
-  const setAt = Date.UTC(2026, 9, 28, 12);
-  render(() => (
-    <MessageList
-      messages={[
-        {
-          ...message,
-          author: "",
-          authorship: "own",
-          delivery: "received",
-          highlighted: false,
-          kind: {
-            notice: { type: "topic", setter: "mel", set_at: setAt },
-          },
-          server_time_ms: null,
-          text: "A quiet room",
-        },
-      ]}
-    />
-  ));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
-
-  const row = screen.getByText(/set by mel/).closest("[data-notice-row]");
-  expect(row).toHaveAttribute("data-notice-kind", "topic");
-  expect(row).toHaveTextContent("Topic: A quiet room");
-  expect(row?.querySelector("time")).toHaveAttribute(
-    "datetime",
-    new Date(setAt).toISOString(),
-  );
-});
-
 it("renders info notices as plain muted event rows", async () => {
   render(() => (
     <MessageList

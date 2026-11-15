@@ -646,14 +646,6 @@ pub enum NoticeSource {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NoticeKind {
-    /// A cached channel topic and the server facts describing it.
-    Topic {
-        /// Nick reported as the topic setter, when known.
-        setter: Option<String>,
-        /// Server timestamp in Unix milliseconds, when known.
-        #[ts(type = "number | null")]
-        set_at: Option<i64>,
-    },
     /// A neutral informational event without topic semantics.
     Info,
 }

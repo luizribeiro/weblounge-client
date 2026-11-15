@@ -240,8 +240,8 @@ describe("estimateMessageHeight", () => {
 
     messageSizeRevision({
       delivery: "received",
-      kind: { notice: { type: "topic", setter: "alice", set_at: 42 } },
-      text: "new topic",
+      kind: { notice: { type: "info" } },
+      text: "joined #weblounge",
     });
 
     expect(stringify).not.toHaveBeenCalled();

@@ -186,17 +186,7 @@ export function messageSizeRevision(
 function messageKindRevision(kind: EstimatedMessage["kind"]): string {
   if (typeof kind === "string") return kind;
   if ("irc_notice" in kind) return `irc_notice:${kind.irc_notice}`;
-  const notice = kind.notice;
-  switch (notice.type) {
-    case "info":
-      return "notice:info";
-    case "topic":
-      return `notice:topic:${notice.setter ?? ""}:${notice.set_at ?? ""}`;
-    default: {
-      const exhaustive: never = notice;
-      return exhaustive;
-    }
-  }
+  return `notice:${kind.notice.type}`;
 }
 
 export function currentMessageDensity(root: HTMLElement): DensityId {

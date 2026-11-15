@@ -1245,15 +1245,7 @@ function decodeNoticeKind(
   | Extract<MessageProjection["kind"], { notice: unknown }>["notice"]
   | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.type === "info") return { type: "info" };
-  if (
-    value.type === "topic" &&
-    (value.setter === null || typeof value.setter === "string") &&
-    (value.set_at === null || typeof value.set_at === "number")
-  ) {
-    return { type: "topic", setter: value.setter, set_at: value.set_at };
-  }
-  return undefined;
+  return value.type === "info" ? { type: "info" } : undefined;
 }
 
 function isStringArray(value: unknown): value is string[] {

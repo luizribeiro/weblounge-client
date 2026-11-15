@@ -3,12 +3,4 @@
 /**
  * Semantic presentation of a local timeline notice.
  */
-export type NoticeKind = { "type": "topic",
-/**
- * Nick reported as the topic setter, when known.
- */
-setter: string | null,
-/**
- * Server timestamp in Unix milliseconds, when known.
- */
-set_at: number | null, } | { "type": "info" };
+export type NoticeKind = { "type": "info" };

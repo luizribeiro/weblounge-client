@@ -150,8 +150,7 @@
 }
 .text .nickAction,
 .actionText .nickAction,
-.noticeText .nickAction,
-.noticeTopic .nickAction {
+.noticeText .nickAction {
   -webkit-touch-callout: default;
   user-select: text;
 }
@@ -159,7 +158,6 @@
   .text .nickAction,
   .actionText .nickAction,
   .noticeText .nickAction,
-  .noticeTopic .nickAction,
   .nickColumn .nickAction {
     cursor: pointer;
   }
@@ -197,8 +195,7 @@
 }
 .text a.messageLink,
 .actionText a.messageLink,
-.noticeText a.messageLink,
-.noticeTopic a.messageLink {
+.noticeText a.messageLink {
   cursor: pointer;
 }
 .pending,
@@ -270,9 +267,6 @@
 }
 .noticeText {
   color: inherit;
-}
-.noticeTopic {
-  color: var(--wl-color-fg);
 }
 .jump {
   background: var(--wl-color-accent);
