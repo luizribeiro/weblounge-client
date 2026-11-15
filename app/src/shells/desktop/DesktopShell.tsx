@@ -42,6 +42,10 @@ import {
   type MessageListController,
 } from "../../features/conversation/MessageList";
 import {
+  bufferReactionToggle,
+  type ToggleBufferReaction,
+} from "../../features/conversation/reaction-target";
+import {
   MemberPanel,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
@@ -144,9 +148,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
-  readonly onToggleReaction?:
-    | ((bufferId: number, messageId: number, reaction: string) => void)
-    | undefined;
+  readonly onToggleReaction?: ToggleBufferReaction | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
@@ -209,18 +211,13 @@ export function DesktopShell(props: DesktopShellProps) {
     const networkId = activeBuffer()?.network_id;
     return props.networks.find((network) => network.id === networkId);
   });
-  const toggleReaction = createMemo(() => {
-    const buffer = activeBuffer();
-    const toggle = props.onToggleReaction;
-    if (
-      buffer === undefined ||
-      toggle === undefined ||
-      activeNetwork()?.can_react !== true
-    )
-      return undefined;
-    return (messageId: number, reaction: string) =>
-      toggle(buffer.id, messageId, reaction);
-  });
+  const toggleReaction = createMemo(() =>
+    bufferReactionToggle(
+      activeBuffer()?.id,
+      activeNetwork(),
+      props.onToggleReaction,
+    ),
+  );
   const activeBufferSync = createMemo(() => {
     const buffer = activeBuffer();
     return buffer === undefined

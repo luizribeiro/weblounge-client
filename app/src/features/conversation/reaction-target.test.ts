@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
-import { reactionTarget } from "./reaction-target";
+import type { NetworkProjection } from "../../engine/generated/NetworkProjection";
+import { bufferReactionToggle, reactionTarget } from "./reaction-target";
 
 const message: MessageProjection = {
   id: 7,
@@ -39,6 +40,30 @@ describe("reactionTarget", () => {
       expect(reactionTarget({ ...message, delivery }, toggle)).toBeUndefined();
     expect(
       reactionTarget({ ...message, server_ids: [] }, toggle),
+    ).toBeUndefined();
+  });
+});
+
+describe("bufferReactionToggle", () => {
+  const network = { can_react: true } as NetworkProjection;
+
+  it("addresses the buffer's messages while its network can react", () => {
+    const toggled: [number, number, string][] = [];
+
+    bufferReactionToggle(3, network, (buffer, id, reaction) =>
+      toggled.push([buffer, id, reaction]),
+    )?.(7, "🎉");
+
+    expect(toggled).toEqual([[3, 7, "🎉"]]);
+  });
+
+  it("offers no toggle without a buffer, a sender or the capability", () => {
+    const toggle = () => undefined;
+    expect(bufferReactionToggle(undefined, network, toggle)).toBeUndefined();
+    expect(bufferReactionToggle(3, network, undefined)).toBeUndefined();
+    expect(bufferReactionToggle(3, undefined, toggle)).toBeUndefined();
+    expect(
+      bufferReactionToggle(3, { ...network, can_react: false }, toggle),
     ).toBeUndefined();
   });
 });
