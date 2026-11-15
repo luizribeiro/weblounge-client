@@ -1,5 +1,5 @@
 use crate::{
-    read_model::{MessageStub, ReadFacts, ServerTimeMs, merge_max},
+    read_model::{MessageStub, ReadFacts, ServerTimeMs, StubTombstone, merge_max},
     storage::{KvBackend, Space, StorageError},
 };
 use serde::{Deserialize, Serialize};
@@ -287,6 +287,8 @@ pub(crate) struct SnapshotRow {
     pub(crate) pending_read_at_ms: Option<i64>,
     #[serde(default)]
     pub(crate) stubs: Vec<MessageStub>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) redacted_stubs: Vec<StubTombstone>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) gap_until: Option<ServerTimeMs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -317,6 +319,7 @@ impl SnapshotRow {
         self.raw_read_at_ms = facts.raw_mark().map(ServerTimeMs::value);
         self.pending_read_at_ms = facts.pending().map(ServerTimeMs::value);
         self.stubs = facts.stubs().to_vec();
+        self.redacted_stubs = facts.redacted().to_vec();
         self.gap_until = facts.gap_until();
     }
 }
@@ -404,6 +407,7 @@ fn read_facts(row: &SnapshotRow) -> ReadFacts {
     for stub in &row.stubs {
         facts.merge_stub(stub.clone());
     }
+    facts.merge_redacted(row.redacted_stubs.iter().cloned());
     if let Some(gap_until) = row.gap_until {
         facts.merge_gap_until(gap_until);
     }
@@ -424,7 +428,7 @@ mod tests {
         SnapshotRemoval, SnapshotRow, clear, fingerprint, read, truncate_preview, write,
         write_changes,
     };
-    use crate::read_model::{MessageStub, ServerTimeMs};
+    use crate::read_model::{MessageStub, ServerTimeMs, StubTombstone};
     use crate::storage::MemoryKv;
 
     fn snapshot() -> ChatListSnapshot {
@@ -451,6 +455,7 @@ mod tests {
                         provisional_time: None,
                         mention: false,
                     }],
+                    redacted_stubs: Vec::new(),
                     gap_until: None,
                     peer_pin: None,
                 },
@@ -471,6 +476,7 @@ mod tests {
                         provisional_time: None,
                         mention: true,
                     }],
+                    redacted_stubs: Vec::new(),
                     gap_until: Some(ServerTimeMs::new(1_700_000_000_000)),
                     peer_pin: Some("papo-peer-v1;scope=server%3Aexample;account=alice".into()),
                 },
@@ -508,6 +514,31 @@ mod tests {
         );
         assert!(value["rows"][0].get("id").is_none());
         assert!(value["rows"][0].get("timestamp").is_none());
+    }
+
+    #[test]
+    fn deleted_stubs_persist_and_win_over_an_older_copy_of_the_row() {
+        let older = snapshot();
+        let mut deleted = older.clone();
+        let row = &mut deleted.rows[0];
+        let stub = row.stubs.remove(0);
+        row.redacted_stubs = vec![StubTombstone {
+            msgid: stub.msgid,
+            time: stub.time,
+        }];
+        let encoded = deleted.encode().expect("encode");
+        let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
+        assert!(value["rows"][1].get("redacted_stubs").is_none());
+
+        let mut decoded = ChatListSnapshot::decode(&encoded, &deleted.fingerprint).expect("decode");
+        assert_eq!(
+            decoded.rows[0].redacted_stubs,
+            deleted.rows[0].redacted_stubs
+        );
+        decoded.merge_row(older.rows[0].clone());
+
+        assert!(decoded.rows[0].stubs.is_empty());
+        assert_eq!(decoded.rows[0].redacted_stubs.len(), 1);
     }
 
     #[test]

@@ -6,6 +6,9 @@ use crate::{MessageKind, MessageProjection, Redaction};
 
 const EARLY_REDACTION_LIMIT: usize = 256;
 
+/// The chat-list preview of a conversation whose only loaded messages were deleted.
+pub(crate) const REDACTED_PREVIEW: &str = "Message deleted";
+
 /// Redactions whose message has not arrived, keyed by the redacted msgid.
 #[derive(Debug, Default)]
 pub(crate) struct EarlyRedactions {

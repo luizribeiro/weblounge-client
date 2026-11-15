@@ -402,3 +402,86 @@ async fn network_offers_redaction_only_with_labeled_responses() {
         harness.drain.abort();
     }
 }
+
+fn latest_buffer<'a>(events: &'a [EngineToUi], title: &str) -> &'a crate::BufferProjection {
+    events
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            EngineToUi::BufferUpdated { buffer } if buffer.title == title => Some(buffer),
+            _ => None,
+        })
+        .expect("the conversation is projected")
+}
+
+#[tokio::test]
+async fn deleting_unread_messages_rewrites_the_preview_counts_and_snapshot() {
+    let (client, mut events, mut wire) =
+        wire(papo::Client::builder("irc://offline.test", "weblounge"));
+    wire.register(&REDACTION_CAPS).await;
+    _ = next_matching(&mut events, |event| {
+        matches!(event, papo::Event::Connected(_))
+    })
+    .await;
+    let (state, outbound, mut receiver) = harness(client.clone());
+    let process = |event| {
+        process_event(&state, &outbound, &client, 1, event);
+    };
+    for line in [
+        "@msgid=p1;time=2026-11-14T12:00:00.000Z :carol!c@host PRIVMSG weblounge :older",
+        "@msgid=p2;time=2026-11-14T12:00:01.000Z :carol!c@host PRIVMSG weblounge :newer",
+    ] {
+        deliver(&mut wire, &mut events, process, line).await;
+    }
+    let before_deletion = lock(&state)
+        .network
+        .as_ref()
+        .expect("network remains active")
+        .model
+        .chat_list_snapshot("fingerprint".into());
+    assert_eq!(latest_buffer(&collect(&mut receiver), "carol").unread, 2);
+
+    deliver(
+        &mut wire,
+        &mut events,
+        process,
+        "@msgid=r1;time=2026-11-14T12:00:02.000Z :carol!c@host REDACT weblounge p2",
+    )
+    .await;
+    let after_one = collect(&mut receiver);
+    let carol = latest_buffer(&after_one, "carol");
+    assert_eq!(
+        (carol.unread, carol.mentions, carol.preview.as_deref()),
+        (1, 1, Some("older"))
+    );
+    assert_eq!(carol.last_activity_ms, Some(1_794_657_601_000));
+
+    deliver(
+        &mut wire,
+        &mut events,
+        process,
+        "@msgid=r2;time=2026-11-14T12:00:03.000Z :carol!c@host REDACT weblounge p1",
+    )
+    .await;
+    let carol = latest_buffer(&collect(&mut receiver), "carol").clone();
+    assert_eq!(
+        (carol.unread, carol.preview.as_deref()),
+        (0, Some("Message deleted"))
+    );
+
+    let state = lock(&state);
+    let model = &state
+        .network
+        .as_ref()
+        .expect("network remains active")
+        .model;
+    let merged = model.merge_chat_list_snapshot("fingerprint".into(), &before_deletion);
+    let row = merged
+        .rows
+        .iter()
+        .find(|row| row.title == "carol")
+        .expect("carol's row");
+    assert!(row.stubs.is_empty(), "{:?}", row.stubs);
+    assert_eq!(row.redacted_stubs.len(), 2);
+    assert_eq!(row.preview.as_deref(), Some("Message deleted"));
+}

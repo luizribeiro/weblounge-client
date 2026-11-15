@@ -19,7 +19,7 @@ use crate::{
     read_model::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
-    redaction::{EarlyRedactions, redact_projection, redactor_name},
+    redaction::{EarlyRedactions, REDACTED_PREVIEW, redact_projection, redactor_name},
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
         LocalCalendar, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person, RecordBody,
@@ -736,6 +736,7 @@ impl NetworkModel {
                         .max(next_message_id_after_stub(&stub.msgid));
                     buffer.read_facts.merge_stub(stub);
                 }
+                buffer.read_facts.merge_redacted(row.redacted_stubs);
                 if let Some(gap_until) = row.gap_until {
                     buffer.read_facts.merge_gap_until(gap_until);
                 }
@@ -934,12 +935,15 @@ impl NetworkModel {
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
                 copy_read_facts_to_snapshot(buffer, &mut row);
+                if buffer.provisional_preview.is_some() {
+                    row.preview.clone_from(&buffer.provisional_preview);
+                }
                 if let Some(message) = latest_real_message(buffer).filter(|message| {
                     row.last_activity_ms
-                        .is_none_or(|cached| message_time(message) > cached)
+                        .is_none_or(|cached| message_time(message) >= cached)
                 }) {
                     row.last_activity_ms = Some(message_time(message));
-                    row.preview = Some(snapshot_preview(&buffer.projection, message));
+                    row.preview = chat_preview(buffer);
                 }
                 Some(row)
             })
@@ -1470,10 +1474,35 @@ impl NetworkModel {
             .get(&target)
             .and_then(|reference| reference.location)
         else {
+            let restored = self
+                .buffer_id_for_conversation(redacted.conversation())
+                .filter(|buffer_id| self.redact_restored(*buffer_id, &target));
             self.early_redactions.remember(target, redactor);
-            return None;
+            return restored.and_then(|buffer_id| self.buffer_updated(buffer_id));
         };
         self.redact_message(buffer_id, message_id, redactor)
+    }
+
+    /// Forgets a deleted message known only from the restored chat list: its unread fact, and
+    /// the cached preview when that message was the conversation's newest.
+    fn redact_restored(&mut self, buffer_id: BufferId, msgid: &str) -> bool {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return false;
+        };
+        let counted = buffer.read_facts.redact_stub(msgid);
+        let previewed = buffer.provisional_preview.is_some()
+            && buffer
+                .newest
+                .as_ref()
+                .and_then(|cursor| cursor.msgid.as_ref())
+                .is_some_and(|newest| *newest == msgid);
+        if previewed {
+            buffer.provisional_preview = Some(REDACTED_PREVIEW.to_owned());
+        }
+        if counted || previewed {
+            derive_read_projection(buffer);
+        }
+        counted || previewed
     }
 
     fn apply_early_redaction(&mut self, message: &mut MessageProjection) {
@@ -1574,6 +1603,9 @@ impl NetworkModel {
             return None;
         }
         let msgids = message.server_ids.clone();
+        for msgid in &msgids {
+            buffer.read_facts.redact_stub(msgid);
+        }
         if let Some(metadata) = buffer.chat_metadata.get_mut(&message_id) {
             metadata.counts_as_mention = false;
             metadata.send_text = None;
@@ -4406,6 +4438,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
         raw_read_at_ms: buffer.read_facts.raw_mark().map(ServerTimeMs::value),
         pending_read_at_ms: buffer.read_facts.pending().map(ServerTimeMs::value),
         stubs: buffer.read_facts.stubs().to_vec(),
+        redacted_stubs: buffer.read_facts.redacted().to_vec(),
         gap_until: buffer.read_facts.gap_until(),
         peer_pin: buffer
             .direct_pin
@@ -4420,6 +4453,7 @@ fn copy_read_facts_to_snapshot(buffer: &BufferState, row: &mut SnapshotRow) {
     row.raw_read_at_ms = buffer.read_facts.raw_mark().map(ServerTimeMs::value);
     row.pending_read_at_ms = buffer.read_facts.pending().map(ServerTimeMs::value);
     row.stubs = buffer.read_facts.stubs().to_vec();
+    row.redacted_stubs = buffer.read_facts.redacted().to_vec();
     row.gap_until = buffer.read_facts.gap_until();
 }
 
@@ -4767,26 +4801,42 @@ fn next_message_id_after_stub(msgid: &str) -> u64 {
 
 fn derive_chat_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = latest_real_message(buffer).cloned();
-    buffer.projection.preview = buffer
-        .projection
-        .last_message
-        .as_ref()
-        .map(|message| snapshot_preview(&buffer.projection, message))
-        .or_else(|| buffer.provisional_preview.clone());
+    buffer.projection.preview = chat_preview(buffer).or_else(|| buffer.provisional_preview.clone());
     buffer.projection.last_activity_ms = chat_activity_time(buffer);
 }
 
 fn latest_real_message(buffer: &BufferState) -> Option<&MessageProjection> {
+    latest_chat_message(buffer, |_| true)
+}
+
+fn latest_chat_message(
+    buffer: &BufferState,
+    accept: impl Fn(&MessageProjection) -> bool,
+) -> Option<&MessageProjection> {
     buffer
         .timeline
         .iter()
         .filter(|record| {
             chat_projection(record).is_some_and(|message| {
-                is_committed(message) && !matches!(&message.kind, MessageKind::Notice(_))
+                is_committed(message)
+                    && !matches!(&message.kind, MessageKind::Notice(_))
+                    && accept(message)
             })
         })
         .max_by_key(|record| record.order)
         .and_then(chat_projection)
+}
+
+/// Previews the latest readable message, so a deletion shows what came before it; `None` only
+/// when no message is loaded.
+fn chat_preview(buffer: &BufferState) -> Option<String> {
+    let readable = latest_chat_message(buffer, |message| {
+        !matches!(message.kind, MessageKind::Redacted(_))
+    });
+    match readable {
+        Some(message) => Some(snapshot_preview(&buffer.projection, message)),
+        None => latest_real_message(buffer).map(|_| REDACTED_PREVIEW.to_owned()),
+    }
 }
 
 fn chat_activity_time(buffer: &BufferState) -> Option<i64> {
@@ -5731,6 +5781,7 @@ mod tests {
                     provisional_time: None,
                     mention: true,
                 }],
+                redacted_stubs: Vec::new(),
                 gap_until: Some(ServerTimeMs::new(200)),
                 peer_pin: None,
             }],
@@ -6802,6 +6853,66 @@ mod tests {
     }
 
     #[test]
+    fn deleting_a_restored_newest_message_drops_its_unread_fact_and_preview() {
+        let (mut model, state) = model(10);
+        let stubs = snapshot_stubs(2, 2, 100);
+        let newest = stubs[1].msgid.clone();
+        let restored = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(100),
+                stubs,
+                redacted_stubs: Vec::new(),
+                gap_until: None,
+                preview: Some("the secret".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some(newest.clone()),
+                    server_time_ms: 100,
+                }),
+                read_at_ms: None,
+                raw_read_at_ms: None,
+                pending_read_at_ms: None,
+                peer_pin: None,
+            }],
+        );
+        model.restore_chat_list(restored.clone());
+        let nick = nick_name(&state, "alice");
+        _ = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(100));
+        let buffer_id = model.names[&NameKey::Direct(nick)];
+
+        assert!(!model.redact_restored(buffer_id, "never-seen"));
+        assert!(model.redact_restored(buffer_id, &newest));
+
+        let projection = &model.buffers[&buffer_id].projection;
+        assert_eq!(
+            (
+                projection.unread,
+                projection.mentions,
+                projection.preview.as_deref()
+            ),
+            (1, 1, Some("Message deleted"))
+        );
+        let row = model
+            .merge_chat_list_snapshot("network".into(), &restored)
+            .rows
+            .into_iter()
+            .find(|row| {
+                row.conversation
+                    == SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    }
+            })
+            .expect("Alice's row");
+        assert_eq!(row.stubs.len(), 1);
+        assert_eq!(row.redacted_stubs.len(), 1);
+        assert_eq!(row.preview.as_deref(), Some("Message deleted"));
+    }
+
+    #[test]
     fn unchanged_conversation_restores_its_unread_facts_without_a_fetch() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
@@ -6813,6 +6924,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(100),
                 stubs: snapshot_stubs(3, 3, 100),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: None,
@@ -6847,6 +6959,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(100),
                 stubs: snapshot_stubs(1, 1, 100),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: None,
@@ -6882,6 +6995,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(300),
                 stubs: snapshot_stubs(3, 3, 300),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("newest".into()),
                 newest: Some(SnapshotCursor {
@@ -6916,6 +7030,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(100),
                 stubs: snapshot_stubs(1, 1, 100),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: None,
@@ -6954,6 +7069,7 @@ mod tests {
                     title: "#room".into(),
                     last_activity_ms: Some(100),
                     stubs: snapshot_stubs(1, 0, 100),
+                    redacted_stubs: Vec::new(),
                     gap_until: None,
                     preview: Some("cached".into()),
                     newest: Some(SnapshotCursor {
@@ -7035,6 +7151,7 @@ mod tests {
                 title: "#room".into(),
                 last_activity_ms: Some(100),
                 stubs: snapshot_stubs(1, 0, 100),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached".into()),
                 newest: Some(SnapshotCursor {
@@ -7086,6 +7203,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: None,
                 stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: None,
                 newest: None,
@@ -7117,6 +7235,7 @@ mod tests {
                 title: "#room".into(),
                 last_activity_ms: None,
                 stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: None,
                 newest: None,
@@ -7154,6 +7273,7 @@ mod tests {
                     provisional_time: None,
                     mention: false,
                 }],
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("newest".into()),
                 newest: Some(SnapshotCursor {
@@ -7242,6 +7362,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(200),
                 stubs: snapshot_stubs(100, 100, 200),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: Some(SnapshotCursor {
@@ -7312,6 +7433,7 @@ mod tests {
                 title: "#room".into(),
                 last_activity_ms: Some(100),
                 stubs: snapshot_stubs(1, 0, 100),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached".into()),
                 newest: Some(SnapshotCursor {
@@ -9584,6 +9706,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(1_000),
                 stubs: snapshot_stubs(1, 0, 1_000),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("hello".into()),
                 newest: None,
@@ -9624,6 +9747,7 @@ mod tests {
                 title: "#gone".into(),
                 last_activity_ms: Some(1_000),
                 stubs: snapshot_stubs(1, 0, 1_000),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("cached".into()),
                 newest: None,
@@ -9675,6 +9799,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: Some(1_000),
                 stubs: snapshot_stubs(3, 3, 1_000),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("stale preview".into()),
                 newest: None,
@@ -9733,6 +9858,7 @@ mod tests {
                 title: "Alice".into(),
                 last_activity_ms: None,
                 stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: None,
                 newest: None,
@@ -9761,6 +9887,7 @@ mod tests {
             title: "#slow cached".into(),
             last_activity_ms: Some(100),
             stubs: snapshot_stubs(4, 0, 100),
+            redacted_stubs: Vec::new(),
             gap_until: None,
             preview: Some("cached channel preview".into()),
             newest: None,
@@ -9780,6 +9907,7 @@ mod tests {
                     title: "Alice cached".into(),
                     last_activity_ms: Some(200),
                     stubs: snapshot_stubs(2, 2, 200),
+                    redacted_stubs: Vec::new(),
                     gap_until: None,
                     preview: Some("cached direct preview".into()),
                     newest: None,
@@ -9827,6 +9955,7 @@ mod tests {
             title: "alice".into(),
             last_activity_ms: Some(200),
             stubs: snapshot_stubs(1, 1, 200),
+            redacted_stubs: Vec::new(),
             gap_until: None,
             preview: Some("cached direct".into()),
             newest: None,
@@ -9842,6 +9971,7 @@ mod tests {
             title: "#slow".into(),
             last_activity_ms: Some(100),
             stubs: snapshot_stubs(4, 0, 100),
+            redacted_stubs: Vec::new(),
             gap_until: None,
             preview: Some("cached channel".into()),
             newest: None,
@@ -9895,6 +10025,7 @@ mod tests {
                 title: "alice".into(),
                 last_activity_ms: Some(2_000),
                 stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("stale cached direct".into()),
                 newest: Some(SnapshotCursor {
@@ -9947,6 +10078,7 @@ mod tests {
             title: "#room".into(),
             last_activity_ms: Some(100),
             stubs: snapshot_stubs(1, 0, 100),
+            redacted_stubs: Vec::new(),
             gap_until: None,
             preview: Some("cached preview".into()),
             newest: Some(SnapshotCursor {
@@ -9970,6 +10102,7 @@ mod tests {
             merged.rows,
             vec![SnapshotRow {
                 stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 read_at_ms: Some(100),
                 raw_read_at_ms: Some(100),
@@ -9988,6 +10121,7 @@ mod tests {
             title: "Alice cached".into(),
             last_activity_ms: Some(100),
             stubs: snapshot_stubs(1, 1, 100),
+            redacted_stubs: Vec::new(),
             gap_until: None,
             preview: Some("cached preview".into()),
             newest: None,
@@ -10051,6 +10185,7 @@ mod tests {
                     provisional_time: None,
                     mention: true,
                 }],
+                redacted_stubs: Vec::new(),
                 gap_until: None,
                 preview: Some("alice: arrived while closed".into()),
                 newest: Some(SnapshotCursor {
