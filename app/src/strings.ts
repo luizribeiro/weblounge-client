@@ -183,6 +183,7 @@ export const messages = {
   "engine.offline": "That command needs a connection.",
   "engine.read_marker_invalid":
     "That read position isn't available on this server.",
+  "engine.redact_failed": "Couldn't delete the message.",
   "engine.send_failed": "The message couldn't be sent.",
   "engine.state_inconsistent":
     "The conversation changed unexpectedly. Try again.",

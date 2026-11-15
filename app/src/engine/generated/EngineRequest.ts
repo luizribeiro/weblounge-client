@@ -185,7 +185,15 @@ buffer_id: BufferId,
 /**
  * Stable local send identity to retry in place.
  */
-local_send_id: LocalSendId, } | { "type": "toggle_reaction",
+local_send_id: LocalSendId, } | { "type": "redact_message",
+/**
+ * Buffer containing the message.
+ */
+buffer_id: BufferId,
+/**
+ * Own confirmed message to delete.
+ */
+message_id: MessageId, } | { "type": "toggle_reaction",
 /**
  * Buffer containing the message.
  */

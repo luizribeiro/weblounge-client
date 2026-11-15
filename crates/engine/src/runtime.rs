@@ -28,8 +28,8 @@ use crate::{
     settings,
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
-        NetworkModel, OwnReactionChange, PendingSend, PendingTargetState, ReadAdvance, SendTarget,
-        is_own_nick, time_millis,
+        NetworkModel, OwnReactionChange, OwnRedaction, PendingSend, PendingTargetState,
+        ReadAdvance, SendTarget, is_own_nick, time_millis,
     },
     timeline::{FixedOffsetCalendar, LocalCalendar},
     upload_target::{self, ConnectionIdentity, UploadContext, UploadCredential},
@@ -458,6 +458,10 @@ impl Runtime {
                 message_id,
                 reaction,
             } => self.toggle_reaction(envelope.id, buffer_id, message_id, reaction),
+            EngineRequest::RedactMessage {
+                buffer_id,
+                message_id,
+            } => self.redact_message(envelope.id, buffer_id, message_id),
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
@@ -1746,6 +1750,53 @@ impl Runtime {
         output
     }
 
+    fn redact_message(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        message_id: MessageId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
+        };
+        if !running.model.can_redact() {
+            return rejected_command(command_id, EngineMessageKey::CommandRefused);
+        }
+        let Some(redaction) = running.model.begin_own_redaction(buffer_id, message_id) else {
+            return rejected_command(command_id, EngineMessageKey::CommandRefused);
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        let output = finish_timeline_turn(state, Vec::new());
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let deleted = send_redaction(&client, &redaction).await;
+            let mut state = lock(&state);
+            if let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            {
+                let mut events = Vec::new();
+                // TODO(papo-0.1 reaction-confirm): papo resolves `redact` with `()` once its
+                // labeled response arrives, so that stands in for the server's confirming REDACT.
+                // Once any line is gone from the server the row is a tombstone, as a received
+                // redaction of any one of its lines makes it.
+                if deleted > 0 {
+                    events.extend(running.model.confirm_own_redaction(&redaction));
+                } else {
+                    running.model.fail_own_redaction(&redaction);
+                    events.push(EngineToUi::error_notice(EngineMessageKey::RedactFailed));
+                }
+                send_events(&outbound, finish_timeline_turn(state, events));
+            }
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
+        output
+    }
+
     fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {
         let Some((client, instance)) = lock(&self.state)
             .network
@@ -2668,19 +2719,57 @@ fn can_react(state: &papo::State) -> bool {
     .all(|feature| state.supports(feature))
 }
 
-async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
-    let message: papo::MessageRef = match change.target.clone() {
-        SendTarget::Channel(channel) => (channel, change.msgid.clone()).into(),
+/// Offline connections offer neither change, since neither could be confirmed.
+fn project_own_change_actions(model: &mut NetworkModel, online: Option<&papo::State>) {
+    model.set_own_change_actions(
+        online.is_some_and(can_react),
+        online.is_some_and(can_redact),
+    );
+}
+
+/// Papo resolves a redaction only after its labeled response.
+fn can_redact(state: &papo::State) -> bool {
+    state.supports(papo::Feature::Redaction) && state.supports(papo::Feature::LabeledResponse)
+}
+
+async fn message_reference(
+    client: &papo::Client,
+    target: SendTarget,
+    msgid: String,
+) -> Result<papo::MessageRef, SendError> {
+    Ok(match target {
+        SendTarget::Channel(channel) => (channel, msgid).into(),
         SendTarget::Direct {
             nick,
             recipient,
             pin,
         } => (
             direct_recipient(client, &nick, recipient, pin).await?,
-            change.msgid.clone(),
+            msgid,
         )
             .into(),
+    })
+}
+
+/// Redacts the row's lines in order and returns how many the server deleted before any error.
+async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> usize {
+    let first = redaction.msgids.first().cloned().unwrap_or_default();
+    let Ok(reference) = message_reference(client, redaction.target.clone(), first).await else {
+        return 0;
     };
+    let mut deleted = 0;
+    for msgid in &redaction.msgids {
+        let message = papo::MessageRef::from((&reference, msgid.clone()));
+        if client.redact(message, "").await.is_err() {
+            break;
+        }
+        deleted += 1;
+    }
+    deleted
+}
+
+async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
+    let message = message_reference(client, change.target.clone(), change.msgid.clone()).await?;
     let text = change.text.clone();
     match change.action {
         ReactionAction::Added => client.react(message, text).await,
@@ -4211,7 +4300,7 @@ fn process_papo_event(
         }
         papo::Event::Redacted(redacted) => receive_redaction(&mut running.model, &redacted, output),
         papo::Event::FeaturesChanged(_) => {
-            running.model.set_can_react(can_react(snapshot));
+            project_own_change_actions(&mut running.model, Some(snapshot));
             output.push(running.model.network_event());
             Vec::new()
         }
@@ -4407,7 +4496,7 @@ fn process_disconnected_event(
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.typing = crate::typing::OutgoingTyping::default();
-    running.model.set_can_react(false);
+    project_own_change_actions(&mut running.model, None);
     output.extend(running.model.conversation_buffers().map(|(buffer_id, _)| {
         EngineToUi::TypingChanged {
             buffer_id,
@@ -4477,7 +4566,7 @@ fn process_connected(
     running
         .model
         .set_filehost_origin(filehost::origin(snapshot));
-    running.model.set_can_react(can_react(snapshot));
+    project_own_change_actions(&mut running.model, Some(snapshot));
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
         snapshot.supports(papo::Feature::History),

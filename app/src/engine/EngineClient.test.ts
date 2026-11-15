@@ -377,6 +377,46 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(patch);
   });
 
+  it("decodes a pending own deletion and rejects an unknown state", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const own = {
+      id: 12,
+      author: "weblounge",
+      text: "take this back",
+      kind: "text",
+      bot: null,
+      authorship: "own",
+      nick_color_index: 0,
+      highlighted: false,
+      own_redaction: "sending",
+      delivery: "confirmed",
+      local_send_id: null,
+      server_ids: ["mine-1"],
+      server_time_ms: 20,
+      received_at_ms: 30,
+    };
+    const patch = {
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [timelineMessage(own)],
+      removed: [],
+    };
+
+    port.emit(patch);
+    expect(() =>
+      port.emit({
+        ...patch,
+        upserted: [timelineMessage({ ...own, own_redaction: "done" })],
+      }),
+    ).toThrow("invalid engine message");
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(patch);
+  });
+
   it("decodes redacted messages and rejects a malformed redactor", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
@@ -449,7 +489,7 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
-  it("decodes whether a network can send reactions", () => {
+  it("decodes whether a network can send reactions and deletions", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
@@ -459,15 +499,17 @@ describe("WorkerEngineClient", () => {
       nickname: "weblounge",
       state: "online",
       can_react: true,
+      can_redact: true,
     };
 
     port.emit({ type: "network_state_changed", network });
-    expect(() =>
-      port.emit({
-        type: "network_state_changed",
-        network: { ...network, can_react: "yes" },
-      }),
-    ).toThrow("invalid engine message");
+    for (const invalid of [{ can_react: "yes" }, { can_redact: 1 }])
+      expect(() =>
+        port.emit({
+          type: "network_state_changed",
+          network: { ...network, ...invalid },
+        }),
+      ).toThrow("invalid engine message");
     frames[0]?.(0);
 
     expect(listener.mock.calls.map(([message]) => message)).toEqual([

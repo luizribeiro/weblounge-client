@@ -9,7 +9,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
     EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OwnChangeDelivery,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -463,6 +463,15 @@ pub(crate) struct OwnReactionChange {
     pub(crate) action: ReactionAction,
 }
 
+/// One of this account's messages being deleted, with everything papo needs to send it.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnRedaction {
+    pub(crate) buffer_id: BufferId,
+    pub(crate) message_id: MessageId,
+    pub(crate) target: SendTarget,
+    pub(crate) msgids: Vec<String>,
+}
+
 pub(crate) enum PendingTargetState {
     Waiting,
     Ready,
@@ -590,6 +599,7 @@ impl NetworkModel {
                 state: NetworkConnectionState::Connecting,
                 filehost_origin: None,
                 can_react: false,
+                can_redact: false,
             },
             server_buffer_id: server_id,
             casemapping,
@@ -661,8 +671,13 @@ impl NetworkModel {
         self.network.filehost_origin = origin;
     }
 
-    pub(crate) fn set_can_react(&mut self, can_react: bool) {
-        self.network.can_react = can_react;
+    pub(crate) const fn can_redact(&self) -> bool {
+        self.network.can_redact
+    }
+
+    pub(crate) fn set_own_change_actions(&mut self, react: bool, delete: bool) {
+        self.network.can_react = react;
+        self.network.can_redact = delete;
     }
 
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
@@ -1487,6 +1502,61 @@ impl NetworkModel {
             .is_some_and(|message| matches!(message.kind, MessageKind::Redacted(_)))
     }
 
+    fn chat_message_mut(
+        &mut self,
+        buffer_id: BufferId,
+        message_id: MessageId,
+    ) -> Option<&mut MessageProjection> {
+        self.buffers
+            .get_mut(&buffer_id)?
+            .timeline
+            .iter_mut()
+            .find(|record| record.id == message_id)
+            .and_then(chat_projection_mut)
+    }
+
+    /// Marks an own, server-confirmed message as being deleted, unless a deletion is in flight.
+    pub(crate) fn begin_own_redaction(
+        &mut self,
+        buffer_id: BufferId,
+        message_id: MessageId,
+    ) -> Option<OwnRedaction> {
+        let target = self.send_target(buffer_id)?;
+        let message = self.chat_message_mut(buffer_id, message_id)?;
+        let redactable = message.authorship == MessageAuthorship::Own
+            && matches!(message.kind, MessageKind::Text | MessageKind::Action)
+            && is_committed(message)
+            && !message.server_ids.is_empty()
+            && message.own_redaction != Some(OwnChangeDelivery::Sending);
+        if !redactable {
+            return None;
+        }
+        message.own_redaction = Some(OwnChangeDelivery::Sending);
+        let msgids = message.server_ids.clone();
+        self.dirty_timelines.insert(buffer_id);
+        Some(OwnRedaction {
+            buffer_id,
+            message_id,
+            target,
+            msgids,
+        })
+    }
+
+    pub(crate) fn confirm_own_redaction(&mut self, redaction: &OwnRedaction) -> Option<EngineToUi> {
+        self.redact_message(redaction.buffer_id, redaction.message_id, None)
+    }
+
+    /// Leaves the message in place, marked so that deleting it again retries.
+    pub(crate) fn fail_own_redaction(&mut self, redaction: &OwnRedaction) {
+        let Some(message) = self.chat_message_mut(redaction.buffer_id, redaction.message_id) else {
+            return;
+        };
+        if message.own_redaction == Some(OwnChangeDelivery::Sending) {
+            message.own_redaction = Some(OwnChangeDelivery::Failed);
+            self.dirty_timelines.insert(redaction.buffer_id);
+        }
+    }
+
     fn redact_message(
         &mut self,
         buffer_id: BufferId,
@@ -1647,6 +1717,7 @@ impl NetworkModel {
             highlighted: false,
             unverified_sender: None,
             reactions: None,
+            own_redaction: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -1894,6 +1965,7 @@ impl NetworkModel {
             highlighted: false,
             unverified_sender: None,
             reactions: None,
+            own_redaction: None,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -3832,6 +3904,7 @@ impl NetworkModel {
                 .as_deref()
                 .map(|msgid| self.reactions.summaries(msgid))
                 .and_then(nonempty_reactions),
+            own_redaction: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.clone().into_iter().collect(),

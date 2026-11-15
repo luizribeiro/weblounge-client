@@ -64,6 +64,7 @@ engine_message_keys! {
     NotInChannel => "engine.not_in_channel",
     Offline => "engine.offline",
     ReadMarkerInvalid => "engine.read_marker_invalid",
+    RedactFailed => "engine.redact_failed",
     SendFailed => "engine.send_failed",
     StateInconsistent => "engine.state_inconsistent",
     StorageUnavailable => "engine.storage_unavailable",
@@ -418,6 +419,10 @@ pub struct NetworkProjection {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub can_react: bool,
+    /// Whether this connection can delete the current account's messages and learn the outcome.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub can_redact: bool,
 }
 
 /// Conversation represented by a buffer.
@@ -725,6 +730,11 @@ pub struct MessageProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reactions: Option<Vec<ReactionProjection>>,
+    /// Delivery state of this account's request to delete the message, while it is pending or
+    /// after it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub own_redaction: Option<OwnChangeDelivery>,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.
@@ -1033,6 +1043,13 @@ pub enum EngineRequest {
         buffer_id: BufferId,
         /// Stable local send identity to retry in place.
         local_send_id: LocalSendId,
+    },
+    /// Delete one of this account's messages for everyone, or retry a failed deletion.
+    RedactMessage {
+        /// Buffer containing the message.
+        buffer_id: BufferId,
+        /// Own confirmed message to delete.
+        message_id: MessageId,
     },
     /// Add or remove this account's reaction, or retry its failed change.
     ToggleReaction {

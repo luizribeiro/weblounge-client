@@ -29,4 +29,8 @@ filehost_origin?: string,
 /**
  * Whether this connection can send and confirm the current account's reactions.
  */
-can_react?: boolean, };
+can_react?: boolean,
+/**
+ * Whether this connection can delete the current account's messages and learn the outcome.
+ */
+can_redact?: boolean, };

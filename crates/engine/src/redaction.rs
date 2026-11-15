@@ -76,6 +76,7 @@ pub(crate) fn redact_projection(
     message.text.clear();
     message.reactions = None;
     message.highlighted = false;
+    message.own_redaction = None;
     true
 }
 
@@ -107,6 +108,7 @@ mod tests {
                 mine: false,
                 own_delivery: None,
             }]),
+            own_redaction: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: vec!["m1".into()],

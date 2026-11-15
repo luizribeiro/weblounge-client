@@ -999,6 +999,9 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
       typeof value.filehost_origin === "string"
     ) ||
     !(value.can_react === undefined || typeof value.can_react === "boolean") ||
+    !(
+      value.can_redact === undefined || typeof value.can_redact === "boolean"
+    ) ||
     state === undefined
   ) {
     return undefined;
@@ -1012,6 +1015,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
       ? { filehost_origin: value.filehost_origin }
       : {}),
     ...(value.can_react === true ? { can_react: true } : {}),
+    ...(value.can_redact === true ? { can_redact: true } : {}),
   };
 }
 
@@ -1163,6 +1167,10 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
       typeof value.unverified_sender === "boolean"
     ) ||
     (value.reactions !== undefined && reactions === undefined) ||
+    !(
+      value.own_redaction === undefined ||
+      isOneOf(value.own_redaction, ["sending", "failed"])
+    ) ||
     !isOneOf(value.delivery, [
       "received",
       "optimistic",
@@ -1193,6 +1201,9 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
       ? {}
       : { unverified_sender: value.unverified_sender }),
     ...(reactions === undefined ? {} : { reactions }),
+    ...(value.own_redaction === undefined
+      ? {}
+      : { own_redaction: value.own_redaction }),
     delivery: value.delivery,
     local_send_id: value.local_send_id,
     server_ids: value.server_ids,

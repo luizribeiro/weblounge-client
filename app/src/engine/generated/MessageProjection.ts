@@ -4,6 +4,7 @@ import type { MessageAuthorship } from "./MessageAuthorship";
 import type { MessageDelivery } from "./MessageDelivery";
 import type { MessageId } from "./MessageId";
 import type { MessageKind } from "./MessageKind";
+import type { OwnChangeDelivery } from "./OwnChangeDelivery";
 import type { ReactionProjection } from "./ReactionProjection";
 
 /**
@@ -50,6 +51,11 @@ unverified_sender?: boolean,
  * Reactions ordered by when each reaction value first appeared.
  */
 reactions?: Array<ReactionProjection>,
+/**
+ * Delivery state of this account's request to delete the message, while it is pending or
+ * after it failed.
+ */
+own_redaction?: OwnChangeDelivery,
 /**
  * Current delivery state.
  */
