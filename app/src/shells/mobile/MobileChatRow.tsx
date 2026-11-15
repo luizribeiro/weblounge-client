@@ -6,6 +6,7 @@ import { claimHorizontalTouchMove } from "../../platform/touch-move-lock";
 import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
+import { longPressMilliseconds } from "../../ui/long-press";
 import {
   type PointerSample,
   recentPointerSamples,
@@ -136,7 +137,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
             endPointer();
             settle("reset");
             requestActions();
-          }, 500);
+          }, longPressMilliseconds);
         }
       }}
       onPointerMove={(event) => {
