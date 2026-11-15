@@ -19,6 +19,29 @@ describe("estimateMessageHeight", () => {
     );
   });
 
+  it("estimates a redacted message as one sender line", () => {
+    const line = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "hi",
+    };
+    const redacted = {
+      delivery: "received" as const,
+      kind: { redacted: { by: null } },
+      text: "",
+    };
+
+    for (const width of [402, 1_440])
+      for (const density of ["compact", "cozy"] as const)
+        for (const presentation of ["desktop", "mobile"] as const)
+          expect(
+            estimateMessageHeight(redacted, width, density, presentation),
+          ).toBe(estimateMessageHeight(line, width, density, presentation));
+    expect(messageSizeRevision(redacted)).not.toBe(
+      messageSizeRevision({ ...redacted, kind: { redacted: { by: "op" } } }),
+    );
+  });
+
   it("accounts for explicit lines and density", () => {
     const message = {
       delivery: "received" as const,

@@ -1,5 +1,6 @@
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
 import type { NetworkProjection } from "../../engine/generated/NetworkProjection";
+import { isRedacted } from "../../engine/message-kind";
 
 export type ToggleReaction = (messageId: number, reaction: string) => void;
 export type ToggleBufferReaction = (
@@ -35,6 +36,7 @@ export function reactionTarget(
 function isServerDelivered(message: MessageProjection): boolean {
   return (
     message.server_ids.length > 0 &&
+    !isRedacted(message.kind) &&
     (message.delivery === "received" || message.delivery === "confirmed")
   );
 }

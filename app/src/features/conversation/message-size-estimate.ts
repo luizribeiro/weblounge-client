@@ -4,6 +4,7 @@ import {
   densityDefaults,
   densityPresets,
 } from "../../density/density";
+import { isRedacted } from "../../engine/message-kind";
 import type { MessageProjection } from "../../engine/protocol";
 import type { RowSpacing as LineSpacing } from "./timeline/row-spacing";
 
@@ -63,7 +64,7 @@ export function estimateMessageHeight(
       padding
     );
   }
-  if (typeof message.kind === "object") {
+  if (typeof message.kind === "object" && !isRedacted(message.kind)) {
     const textWidth = Math.max(
       rowWidth - (presentation === "mobile" ? 26 : 230),
       fontSize * 4,
@@ -186,7 +187,7 @@ export function messageSizeRevision(
 function messageKindRevision(kind: EstimatedMessage["kind"]): string {
   if (typeof kind === "string") return kind;
   if ("irc_notice" in kind) return `irc_notice:${kind.irc_notice}`;
-  if ("redacted" in kind) return `redacted:${kind.redacted.by ?? ""}`;
+  if (isRedacted(kind)) return `redacted:${kind.redacted.by ?? ""}`;
   return `notice:${kind.notice.type}`;
 }
 
@@ -207,7 +208,7 @@ function messageChromeWidth(
 }
 
 function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
-  return kind === "text" || (typeof kind === "object" && "redacted" in kind);
+  return kind === "text" || isRedacted(kind);
 }
 
 function deliveryChromeWidth(delivery: EstimatedMessage["delivery"]): number {

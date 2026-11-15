@@ -20,6 +20,16 @@ const message: MessageProjection = {
 };
 
 describe("reactionTarget", () => {
+  it("offers no reactions on a deleted message", () => {
+    const redacted: MessageProjection = {
+      ...message,
+      text: "",
+      kind: { redacted: { by: null } },
+    };
+
+    expect(reactionTarget(redacted, () => undefined)).toBeUndefined();
+  });
+
   it("toggles reactions on a server message by its timeline id", () => {
     const toggled: [number, string][] = [];
 
