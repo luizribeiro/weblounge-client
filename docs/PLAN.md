@@ -112,6 +112,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: phone chat-row actions. A touch tap on a revealed Close or Leave now runs the
+  action: the tap's pointerup used to bubble to the row, snap it shut and make the actions inert
+  before the click, so no DM closed and no Leave confirmation appeared. Row swipes are easier to
+  start: release velocity is measured over the last 100ms (shared with the pan gestures), so short
+  flicks reveal, and the row claims its horizontal touchmove so iOS scrolling no longer cancels a
+  slightly diagonal drag. Design 15.
 - 2026-11-15: buffer events 5 (F1). Topic changes, live and from history, are standalone lines
   ("mel changed the topic" with the topic in fg on its own linked line; "cleared the topic"). A
   topic card (title, "set by · date", linked topic) shows once after a join that creates the
