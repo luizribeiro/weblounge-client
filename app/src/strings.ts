@@ -257,6 +257,8 @@ export const messages = {
   "mobile.show_members": "Show members",
   "messages.date.today": "Today",
   "messages.date.yesterday": "Yesterday",
+  "messages.deleted": "Message deleted",
+  "messages.deleted_by": "Message deleted by {nick}",
   "messages.delivery.failed": "Failed",
   "messages.delivery.failed_retry": "Failed · Retry",
   "messages.delivery.sending": "Sending…",

@@ -176,6 +176,41 @@ it("keeps phone rows out of the tab order and free of the hover toolbar", () => 
   expect(screen.queryByRole("toolbar")).toBeNull();
 });
 
+it("draws a redacted message as aria-hidden bars with no toolbar or reactions", () => {
+  const redacted: MessageProjection = {
+    ...message,
+    text: "the secret plan",
+    kind: { redacted: { by: "op" } },
+    highlighted: false,
+    delivery: "received",
+    server_ids: ["01JCXK4V7Q8"],
+  };
+  render(() => (
+    <MessageList
+      messages={[
+        redacted,
+        { ...redacted, id: 2, kind: { redacted: { by: null } } },
+      ]}
+      onToggleReaction={() => undefined}
+    />
+  ));
+  const label = screen.getByText("Message deleted by op");
+  const row = label.closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("redacted row is missing");
+  expect(screen.getByText("Message deleted")).toBeInTheDocument();
+  expect(screen.queryByText(/secret plan/u)).toBeNull();
+  expect(row).toHaveAttribute("data-message-text", "");
+  expect(row.querySelector("[data-redaction-bars]")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  expect(row.querySelectorAll("[data-redaction-bar]")).toHaveLength(5);
+  expect(row.querySelector("[data-selectable]")).toBeNull();
+  expect(row).not.toHaveAttribute("tabindex");
+  fireEvent.pointerEnter(row);
+  expect(screen.queryByRole("toolbar")).toBeNull();
+});
+
 it("inlines only the network's file host images and follows its origin", () => {
   const [origin, setOrigin] = createSignal<string | undefined>();
   const image = "https://files.example.test/aZ09.png";

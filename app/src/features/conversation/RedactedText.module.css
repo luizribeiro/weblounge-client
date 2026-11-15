@@ -1,0 +1,30 @@
+.redacted {
+  display: block;
+  position: relative;
+  min-width: 0;
+}
+
+.label {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.bars {
+  column-gap: 0.5ch;
+  display: flex;
+  flex-wrap: wrap;
+  height: 1lh;
+  overflow: hidden;
+}
+
+.bar {
+  background: var(--wl-color-redaction-bar);
+  border-radius: min(2px, var(--wl-radius-control));
+  flex: none;
+  height: 0.9em;
+  margin-block: calc((1lh - 0.9em) / 2);
+}

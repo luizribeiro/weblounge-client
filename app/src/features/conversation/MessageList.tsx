@@ -18,6 +18,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { densityPresets } from "../../density/density";
 import type { SystemProjection } from "../../engine/generated/SystemProjection";
 import type { TimelineItem } from "../../engine/generated/TimelineItem";
+import { isRedacted } from "../../engine/message-kind";
 import type {
   BufferProjection,
   HistoryState,
@@ -65,6 +66,7 @@ import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionPicker } from "./ReactionPicker";
 import { ReactionToolbar } from "./ReactionToolbar";
+import { RedactedText, redactedLabel } from "./RedactedText";
 import {
   ownReactions,
   reactionTarget,
@@ -1705,7 +1707,7 @@ function MessageRow(props: {
       data-held={props.held || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
-      data-message-text={message.text}
+      data-message-text={isRedacted(message.kind) ? "" : message.text}
       data-pressing={longPress?.pressing() || undefined}
       data-unverified-sender={message.unverified_sender === true || undefined}
       onFocusIn={toolbar.onFocusIn}
@@ -1824,26 +1826,38 @@ function MessageRow(props: {
             <UnverifiedSenderMark message={message} />
           </Line>
           <div class={styles.content}>
-            <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
-              <MessageText
-                authors={props.nickLookup}
-                onOpenChannel={props.onOpenChannel}
-                onOpenDirect={props.onOpenDirect}
-                onOpenExternal={props.onOpenExternal}
-                text={message.text}
+            {isRedacted(message.kind) ? (
+              <RedactedText
+                msgid={message.server_ids[0] ?? ""}
+                redaction={message.kind.redacted}
               />
-            </Selectable>
-            <MessageImage
-              message={message}
-              onOpenExternal={props.onOpenExternal}
-              presentation={props.presentation}
-              url={props.inlineImage}
-            />
-            <MessageReactions
-              message={message}
-              onToggle={props.reactions?.toggle}
-              presentation={props.presentation}
-            />
+            ) : (
+              <>
+                <Selectable
+                  class={styles.text}
+                  surfaceId={`message-${message.id}`}
+                >
+                  <MessageText
+                    authors={props.nickLookup}
+                    onOpenChannel={props.onOpenChannel}
+                    onOpenDirect={props.onOpenDirect}
+                    onOpenExternal={props.onOpenExternal}
+                    text={message.text}
+                  />
+                </Selectable>
+                <MessageImage
+                  message={message}
+                  onOpenExternal={props.onOpenExternal}
+                  presentation={props.presentation}
+                  url={props.inlineImage}
+                />
+                <MessageReactions
+                  message={message}
+                  onToggle={props.reactions?.toggle}
+                  presentation={props.presentation}
+                />
+              </>
+            )}
           </div>
           <Delivery message={message} onRetry={props.onRetry} />
         </>
@@ -2543,14 +2557,23 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
       row.kind === "message" &&
       (row.message.kind === "text" || isIrcNoticeMessage(row.message))
     )
-      return {
-        kind: "message",
-        time: new Date(messageTime(row.message)),
-        author: row.message.author,
-        text: row.message.text,
-      };
+      return messageCopyRow(row.message, row.message.text);
     if (row.kind === "message" && isLocalNoticeMessage(row.message))
       return { kind: "system", text: row.message.text };
+    if (row.kind === "message" && isRedacted(row.message.kind))
+      return messageCopyRow(
+        row.message,
+        redactedLabel(row.message.kind.redacted),
+      );
     return undefined;
   });
+}
+
+function messageCopyRow(message: MessageProjection, text: string): CopyRow {
+  return {
+    kind: "message",
+    time: new Date(messageTime(message)),
+    author: message.author,
+    text,
+  };
 }
