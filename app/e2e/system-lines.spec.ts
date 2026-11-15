@@ -93,6 +93,8 @@ for (const [layout, viewport] of [
 
       const modeBreaker = `mode breaker ${suffix}`;
       await operator.privmsgConfirmed(channel, modeBreaker);
+      await expect(page.getByText(modeBreaker, { exact: true })).toBeVisible();
+      await expectNoRowOverlap(page);
       const banMask = `blocked-${suffix}!*@*`;
       await operator.mode(channel, "+ovb", opTarget, voiceTarget, banMask);
       const modes = systemLine(page, "gave op", [
