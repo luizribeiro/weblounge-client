@@ -377,6 +377,45 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(patch);
   });
 
+  it("decodes redacted messages and rejects a malformed redactor", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const redacted = {
+      id: 11,
+      author: "alice",
+      text: "",
+      kind: { redacted: { by: "op" } },
+      bot: null,
+      authorship: "other",
+      nick_color_index: 0,
+      highlighted: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: ["gone-1"],
+      server_time_ms: 20,
+      received_at_ms: 30,
+    };
+    const patch = {
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [timelineMessage(redacted)],
+      removed: [],
+    };
+
+    port.emit(patch);
+    expect(() =>
+      port.emit({
+        ...patch,
+        upserted: [timelineMessage({ ...redacted, kind: { redacted: {} } })],
+      }),
+    ).toThrow("invalid engine message");
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(patch);
+  });
+
   it("decodes a network's optional file host origin", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

@@ -1248,6 +1248,11 @@ function decodeMessageKind(
   if (!isRecord(value)) return undefined;
   if (isOneOf(value.irc_notice, ["user", "service", "server"]))
     return { irc_notice: value.irc_notice };
+  if (
+    isRecord(value.redacted) &&
+    (value.redacted.by === null || typeof value.redacted.by === "string")
+  )
+    return { redacted: { by: value.redacted.by } };
   const notice = decodeNoticeKind(value.notice);
   return notice === undefined ? undefined : { notice };
 }

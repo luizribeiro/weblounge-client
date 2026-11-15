@@ -87,7 +87,7 @@ export function newestCommittedMessageId(
 
 function participatesInReadDwell(kind: MessageProjection["kind"]): boolean {
   if (kind === "text" || kind === "action") return true;
-  if ("irc_notice" in kind) return true;
+  if ("irc_notice" in kind || "redacted" in kind) return true;
   if ("notice" in kind) return false;
   return assertNever(kind);
 }

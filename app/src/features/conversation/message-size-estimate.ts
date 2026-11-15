@@ -186,6 +186,7 @@ export function messageSizeRevision(
 function messageKindRevision(kind: EstimatedMessage["kind"]): string {
   if (typeof kind === "string") return kind;
   if ("irc_notice" in kind) return `irc_notice:${kind.irc_notice}`;
+  if ("redacted" in kind) return `redacted:${kind.redacted.by ?? ""}`;
   return `notice:${kind.notice.type}`;
 }
 
@@ -206,7 +207,7 @@ function messageChromeWidth(
 }
 
 function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
-  return kind === "text";
+  return kind === "text" || (typeof kind === "object" && "redacted" in kind);
 }
 
 function deliveryChromeWidth(delivery: EstimatedMessage["delivery"]): number {

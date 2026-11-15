@@ -1619,7 +1619,9 @@ impl Runtime {
                     .model
                     .begin_action(buffer_id, text, &running.client.state())
             }
-            crate::MessageKind::IrcNotice(_) | crate::MessageKind::Notice(_) => None,
+            crate::MessageKind::IrcNotice(_)
+            | crate::MessageKind::Notice(_)
+            | crate::MessageKind::Redacted(_) => None,
         };
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));

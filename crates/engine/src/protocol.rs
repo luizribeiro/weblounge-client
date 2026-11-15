@@ -631,6 +631,15 @@ pub enum MessageKind {
     IrcNotice(NoticeSource),
     /// A local row generated from current engine state.
     Notice(NoticeKind),
+    /// A message deleted by message redaction; its text is gone.
+    Redacted(Redaction),
+}
+
+/// Facts about a deleted message that remain after its text is dropped.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct Redaction {
+    /// The redactor's nick when someone other than the sender deleted the message.
+    pub by: Option<String>,
 }
 
 /// Identity class that determines an IRC notice's presentation.
