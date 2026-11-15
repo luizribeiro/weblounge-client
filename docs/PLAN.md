@@ -147,6 +147,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: the phone transcript keeps its latest message above a composer that wraps to
+  several lines. Each keystroke's textarea measurement had briefly collapsed the composer, which
+  clamped the list's scroll offset one line short of the end. Covered on iPhone and Android, with
+  the keyboard closed and open.
 - 2026-11-15: message redaction (design 32). A deleted message keeps its time and nick and shows
   3–8 bars seeded from its msgid, one line high, in a per-theme `redactionBar` colour, with
   "Message deleted" for screen readers and copy. Received REDACT, live or from history, in
