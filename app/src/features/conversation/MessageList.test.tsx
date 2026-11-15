@@ -152,6 +152,30 @@ it("shows the reaction toolbar on hover and keyboard focus of a server message",
   expect(screen.queryByRole("toolbar")).toBeNull();
 });
 
+it("keeps phone rows out of the tab order and free of the hover toolbar", () => {
+  const received: MessageProjection = {
+    ...message,
+    delivery: "received",
+    server_ids: ["msg-1"],
+  };
+  render(() => (
+    <MessageList
+      messages={[received]}
+      onToggleReaction={() => undefined}
+      presentation="mobile"
+    />
+  ));
+  const row = screen
+    .getByText("hello weblounge")
+    .closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("message row is missing");
+
+  fireEvent.pointerEnter(row);
+
+  expect(row).not.toHaveAttribute("tabindex");
+  expect(screen.queryByRole("toolbar")).toBeNull();
+});
+
 it("inlines only the network's file host images and follows its origin", () => {
   const [origin, setOrigin] = createSignal<string | undefined>();
   const image = "https://files.example.test/aZ09.png";

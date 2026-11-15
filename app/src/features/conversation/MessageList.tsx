@@ -1680,6 +1680,7 @@ function MessageRow(props: {
       />
     );
   const react = reactionTarget(message, props.reactions?.toggle);
+  const toolbarReact = props.presentation === "mobile" ? undefined : react;
   const toolbar = createRowToolbarVisibility();
   const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
   return (
@@ -1702,9 +1703,13 @@ function MessageRow(props: {
           if (restored !== undefined) focusControl(row, restored);
         })
       }
-      tabindex={react === undefined ? undefined : 0}
+      tabindex={toolbarReact === undefined ? undefined : 0}
     >
-      <Show when={(toolbar.shown() || pickerInvoker() !== undefined) && react}>
+      <Show
+        when={
+          (toolbar.shown() || pickerInvoker() !== undefined) && toolbarReact
+        }
+      >
         {(onReact) => (
           <>
             <ReactionToolbar

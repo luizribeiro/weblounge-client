@@ -118,3 +118,27 @@ it("marks sending and failed own reactions and retries a failed one", async () =
 
   expect(toggled).toEqual(["👍"]);
 });
+
+it("toggles phone chips without leaving a who tooltip behind the tap", () => {
+  const toggled: string[] = [];
+  render(() => (
+    <ReactionChips
+      onToggle={(reaction) => toggled.push(reaction)}
+      presentation="mobile"
+      reactions={[
+        {
+          text: "👀",
+          actors: [{ nick: "alice", mine: false }],
+          mine: false,
+        },
+      ]}
+    />
+  ));
+
+  const chip = screen.getByRole("button", { name: "👀, 1 reaction" });
+  fireEvent.focus(chip);
+  fireEvent.click(chip);
+
+  expect(toggled).toEqual(["👀"]);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});

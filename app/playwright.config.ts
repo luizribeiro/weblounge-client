@@ -24,6 +24,7 @@ export default defineConfig({
         "**/mobile-read-state.spec.ts",
         "**/connection-resilience.spec.ts",
         "**/close-phone.spec.ts",
+        "**/reactions-phone.spec.ts",
         "**/settings-phone.spec.ts",
         "**/mobile-push-budget.spec.ts",
       ],
@@ -43,6 +44,16 @@ export default defineConfig({
     {
       name: "android-close-phone",
       testMatch: "**/close-phone.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
+      name: "webkit-reactions-phone",
+      testMatch: "**/reactions-phone.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-reactions-phone",
+      testMatch: "**/reactions-phone.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {

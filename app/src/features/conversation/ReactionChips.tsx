@@ -48,7 +48,12 @@ export function ReactionChips(props: {
                   </button>
                 )}
               </Show>
-              <Show when={active() === reaction().text}>
+              <Show
+                when={
+                  props.presentation !== "mobile" &&
+                  active() === reaction().text
+                }
+              >
                 <span class={styles.tooltip} role="tooltip">
                   <Show
                     when={reaction().own_delivery !== "failed"}

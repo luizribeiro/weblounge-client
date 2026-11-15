@@ -13,6 +13,7 @@ import type {
   TypingProjection,
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
+import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import {
   MobileSettings,
@@ -72,6 +73,7 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
+  readonly onToggleReaction?: ToggleBufferReaction | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
@@ -232,6 +234,7 @@ export function MobileScreen(props: MobileScreenProps) {
           showConnectionError={!props.retained}
           onRetry={props.onRetry}
           onSend={props.onSend}
+          onToggleReaction={props.onToggleReaction}
           visible={!props.inactive && !props.retained}
         />
       ) : null}

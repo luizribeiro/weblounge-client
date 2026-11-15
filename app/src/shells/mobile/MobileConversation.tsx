@@ -27,6 +27,10 @@ import {
   type MessageListController,
 } from "../../features/conversation/MessageList";
 import {
+  bufferReactionToggle,
+  type ToggleBufferReaction,
+} from "../../features/conversation/reaction-target";
+import {
   createReadDwell,
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -78,6 +82,7 @@ export interface MobileConversationProps {
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly onToggleReaction?: ToggleBufferReaction | undefined;
   readonly visible?: boolean | undefined;
 }
 
@@ -88,6 +93,13 @@ export function MobileConversation(props: MobileConversationProps) {
     connectionPresentation(props.network === undefined ? [] : [props.network]);
   const sync = () => bufferSyncPresentation(props.buffer, props.network);
   const bufferId = createMemo(() => props.buffer.id);
+  const toggleReaction = createMemo(() =>
+    bufferReactionToggle(
+      props.buffer.id,
+      props.network,
+      props.onToggleReaction,
+    ),
+  );
   const newestMessageId = createMemo(() =>
     props.timeline === undefined
       ? newestCommittedMessageId(props.messages)
@@ -237,6 +249,7 @@ export function MobileConversation(props: MobileConversationProps) {
             onRetry={(localSendId) =>
               props.onRetry?.(props.buffer.id, localSendId)
             }
+            onToggleReaction={toggleReaction()}
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
             syncState={props.buffer.sync_state}
