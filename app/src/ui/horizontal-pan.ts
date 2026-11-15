@@ -3,6 +3,11 @@ import {
   type GestureDebugHandle,
 } from "../platform/gesture-debug";
 import { claimHorizontalTouchMove } from "../platform/touch-move-lock";
+import {
+  type PointerSample,
+  recentPointerSamples,
+  releaseVelocityX,
+} from "./release-velocity";
 
 export interface PanRelease {
   readonly progressPerMs: number;
@@ -50,17 +55,11 @@ interface PanState {
   lastX: number;
   lastTime: number;
   releaseTouchMove: () => void;
-  samples: readonly PanSample[];
-}
-
-interface PanSample {
-  readonly x: number;
-  readonly time: number;
+  samples: readonly PointerSample[];
 }
 
 const axisLockThreshold = 10;
 const distanceCommitVelocityTolerance = -0.05;
-const releaseVelocityWindow = 100;
 
 export function createHorizontalPan(
   options: HorizontalPanOptions,
@@ -90,17 +89,8 @@ export function createHorizontalPan(
     current.debug?.up(false, result);
     options.onCancel(result);
   };
-  const recentSamples = (current: PanState, x: number, time: number) =>
-    [...current.samples, { time, x }].filter(
-      (sample) => time - sample.time <= releaseVelocityWindow,
-    );
-  const releaseVelocity = (current: PanState, x: number, time: number) => {
-    const samples = recentSamples(current, x, time);
-    const oldest = samples[0];
-    const elapsed = time - (oldest?.time ?? time);
-    if (oldest === undefined || elapsed <= 0) return 0;
-    return (sign * (x - oldest.x)) / elapsed;
-  };
+  const releaseVelocity = (current: PanState, x: number, time: number) =>
+    sign * releaseVelocityX(current.samples, x, time);
   const settle = (current: PanState, x: number, time: number): PanRelease => {
     const releaseSpeed = releaseVelocity(current, x, time);
     return {
@@ -187,7 +177,11 @@ export function createHorizontalPan(
       event.preventDefault();
       current.lastX = event.clientX;
       current.lastTime = event.timeStamp;
-      current.samples = recentSamples(current, event.clientX, event.timeStamp);
+      current.samples = recentPointerSamples(
+        current.samples,
+        event.clientX,
+        event.timeStamp,
+      );
       options.onProgress(
         Math.min(1, distance(event.clientX, current) / current.width),
       );
