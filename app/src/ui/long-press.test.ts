@@ -56,7 +56,11 @@ function pointer(
 }
 
 function click(target: Element): MouseEvent {
-  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+  const event = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    detail: 1,
+  });
   target.dispatchEvent(event);
   return event;
 }
@@ -97,6 +101,12 @@ it("swallows only the click that ends a recognised press", () => {
   pointer(link, "pointerdown");
   vi.advanceTimersByTime(longPressMilliseconds);
   pointer(link, "pointerup");
+  const keyboardClick = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+  });
+  link.dispatchEvent(keyboardClick);
+  expect(keyboardClick.defaultPrevented).toBe(false);
   expect(click(link).defaultPrevented).toBe(true);
   expect(click(link).defaultPrevented).toBe(false);
 

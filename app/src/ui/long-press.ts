@@ -17,10 +17,8 @@ export interface LongPress {
 }
 
 /**
- * Recognises a held touch that neither moves nor lifts, and a context-menu request from a mouse
- * or the platform's own long-press, as one intent. Moving past the slop, lifting, or the browser
- * cancelling the pointer to scroll abandons the press; the click that follows a recognised press
- * is swallowed so a link or chip under the finger does not activate as well.
+ * A held touch, or a context-menu request, recognised as one intent. The click that ends a
+ * recognised press is swallowed so the link or chip under the finger does not activate too.
  */
 export function createLongPress(onLongPress: () => void): LongPress {
   const [pressing, setPressing] = createSignal(false);
@@ -68,7 +66,7 @@ export function createLongPress(onLongPress: () => void): LongPress {
     if (!recognised) recognise();
   };
   const onClick = (event: MouseEvent) => {
-    if (!swallowClick) return;
+    if (!swallowClick || event.detail === 0) return;
     swallowClick = false;
     event.preventDefault();
     event.stopPropagation();
