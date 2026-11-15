@@ -2077,7 +2077,11 @@ impl Runtime {
         let Some(buffer_id) = running.model.buffer_id_for_channel(channel.name()) else {
             return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
-        if running.model.show_topic_card(buffer_id, channel).is_none() {
+        if running
+            .model
+            .show_topic_card(buffer_id, channel, time_millis(papo::time::now()))
+            .is_none()
+        {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         }
         finish_timeline_turn(state, vec![EngineToUi::CommandResult { id: command_id }])
@@ -4751,13 +4755,13 @@ fn process_channel_line(
         }
         papo::Event::Quit(quit) => process_quit(model, &quit),
         papo::Event::TopicChanged(changed) => {
-            _ = model.receive_topic_change(&changed);
+            model.receive_topic_change(&changed);
             output.extend(model.sync_channels(snapshot));
         }
         papo::Event::ChannelSynced(synced) => {
             output.extend(model.sync_channels(snapshot));
             if let Some(channel) = snapshot.channel(&synced.channel) {
-                _ = model.show_pending_topic_card(channel);
+                model.show_pending_topic_card(channel);
             }
         }
         _ => {}
@@ -4917,7 +4921,7 @@ fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
         papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
             _ = model.receive_kick(&kicked, false);
         }
-        papo::Event::TopicChanged(changed) => _ = model.receive_topic_change(&changed),
+        papo::Event::TopicChanged(changed) => model.receive_topic_change(&changed),
         _ => {}
     }
 }

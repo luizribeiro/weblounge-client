@@ -213,7 +213,7 @@ struct BufferState {
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
     system_dedup: HashMap<MessageId, SystemDedupReference>,
-    topic_card: Option<OrderKey>,
+    topic_card: Option<PendingTopicCard>,
     emitted_timeline: Vec<TimelineItem>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
@@ -226,6 +226,12 @@ struct BufferState {
     newest: Option<HistoryCursor>,
     pushed_history_pending: bool,
     pushed_history_retry_available: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingTopicCard {
+    AwaitingJoin,
+    Anchored(OrderKey),
 }
 
 #[derive(Debug)]
@@ -928,6 +934,9 @@ impl NetworkModel {
         state: NetworkConnectionState,
         nickname: Option<String>,
     ) -> EngineToUi {
+        if state != NetworkConnectionState::Online {
+            self.abandon_pending_topic_cards();
+        }
         self.network.state = state;
         if let Some(nickname) = nickname {
             self.network.nickname = nickname;
@@ -971,9 +980,8 @@ impl NetworkModel {
             }
         }
         for id in joined {
-            let order = self.allocate_order(None, time_millis(papo::time::now()));
             if let Some(buffer) = self.buffers.get_mut(&id) {
-                buffer.topic_card = Some(order);
+                buffer.topic_card = Some(PendingTopicCard::AwaitingJoin);
             }
         }
         if !events.is_empty() || changed {
@@ -1923,6 +1931,7 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         if subject_own && update_status {
             buffer.projection.channel_status = Some(ChannelStatus::Kicked);
+            buffer.topic_card = None;
         }
         Some(
             (subject_own && update_status)
@@ -1934,11 +1943,14 @@ impl NetworkModel {
         )
     }
 
-    pub(crate) fn receive_topic_change(
-        &mut self,
-        changed: &papo::event::TopicChanged,
-    ) -> Option<MessageId> {
-        let buffer_id = *self.names.get(&NameKey::Channel(changed.channel.clone()))?;
+    pub(crate) fn receive_topic_change(&mut self, changed: &papo::event::TopicChanged) {
+        let Some(buffer_id) = self
+            .names
+            .get(&NameKey::Channel(changed.channel.clone()))
+            .copied()
+        else {
+            return;
+        };
         let server_time_ms = changed.server_time.map(time_millis);
         let dedup = system_dedup_reference(
             buffer_id,
@@ -1948,8 +1960,11 @@ impl NetworkModel {
             changed.actor.to_string(),
             changed.topic.clone(),
         );
+        let Some(actor) = source_actor(self.casemapping, &changed.actor, changed.authorship) else {
+            return;
+        };
         let line = LineEvent::Topic {
-            actor: source_actor(self.casemapping, &changed.actor, changed.authorship)?,
+            actor,
             topic: changed.topic.clone(),
         };
         self.push_system_record(
@@ -1958,7 +1973,7 @@ impl NetworkModel {
             dedup,
             server_time_ms,
             time_millis(changed.received_at),
-        )
+        );
     }
 
     pub(crate) fn anchor_topic_card(&mut self, joined: &papo::event::Joined) {
@@ -1968,7 +1983,7 @@ impl NetworkModel {
         if self
             .buffers
             .get(&buffer_id)
-            .is_none_or(|buffer| buffer.topic_card.is_none())
+            .is_none_or(|buffer| buffer.topic_card != Some(PendingTopicCard::AwaitingJoin))
         {
             return;
         }
@@ -1977,24 +1992,40 @@ impl NetworkModel {
             time_millis(joined.received_at),
         );
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
-            buffer.topic_card = Some(order);
+            buffer.topic_card = Some(PendingTopicCard::Anchored(order));
         }
     }
 
-    pub(crate) fn show_pending_topic_card(&mut self, channel: &papo::Channel) -> Option<MessageId> {
-        let buffer_id = self.buffer_id_for_channel(channel.name())?;
-        let order = self.buffers.get_mut(&buffer_id)?.topic_card.take()?;
-        channel.topic()?;
-        self.push_record_at(buffer_id, order, topic_card(channel), None, None)
+    pub(crate) fn show_pending_topic_card(&mut self, channel: &papo::Channel) {
+        let Some(buffer_id) = self.buffer_id_for_channel(channel.name()) else {
+            return;
+        };
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        let Some(PendingTopicCard::Anchored(order)) = buffer.topic_card else {
+            return;
+        };
+        buffer.topic_card = None;
+        if channel.topic().is_some() {
+            self.push_record_at(buffer_id, order, topic_card(channel), None, None);
+        }
     }
 
     pub(crate) fn show_topic_card(
         &mut self,
         buffer_id: BufferId,
         channel: &papo::Channel,
+        received_at_ms: i64,
     ) -> Option<MessageId> {
-        let order = self.allocate_order(None, time_millis(papo::time::now()));
+        let order = self.allocate_order(None, received_at_ms);
         self.push_record_at(buffer_id, order, topic_card(channel), None, None)
+    }
+
+    fn abandon_pending_topic_cards(&mut self) {
+        for buffer in self.buffers.values_mut() {
+            buffer.topic_card = None;
+        }
     }
 
     pub(crate) fn confirm_send(
@@ -7632,6 +7663,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_join_abandoned_by_a_disconnect_shows_no_card_on_the_reconnect_join() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined = next_event(&mut events, |event| match event {
+            papo::Event::Joined(joined) => Some(joined),
+            _ => None,
+        })
+        .await;
+        model.sync_channels(&client.state());
+        model.anchor_topic_card(&joined);
+        model.set_connection(
+            NetworkConnectionState::Reconnecting {
+                attempt: 1,
+                next_retry_at_ms: 0,
+            },
+            None,
+        );
+        model.set_connection(NetworkConnectionState::Online, None);
+        wire.server(":weblounge!u@host PART #room").await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Parted(_)).then_some(())
+        })
+        .await;
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
     async fn rejoining_after_an_own_kick_shows_the_topic_card_again() {
         let (client, mut events, mut wire, mut model) = registered().await;
         join_and_sync(&client, &mut events, &mut wire, &mut model, Some("one")).await;
@@ -7654,10 +7722,25 @@ mod tests {
         wire.server("@msgid=topic-1 :mel!u@host TOPIC #room :beta ships Friday")
             .await;
         let set = next_topic(&mut events).await;
-        assert!(model.receive_topic_change(&set).is_some());
-        assert!(model.receive_topic_change(&set).is_none());
+        model.receive_topic_change(&set);
+        model.receive_topic_change(&set);
+        assert_eq!(take_changed_items(&mut model).len(), 1);
+        model.receive_topic_change(&set);
+        let buffer = model
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.kind == BufferKind::Channel)
+            .expect("joined channel");
+        let line = buffer
+            .timeline
+            .iter()
+            .find_map(|record| match &record.body {
+                RecordBody::Line(line) => Some(line.clone()),
+                _ => None,
+            })
+            .expect("one topic line");
         assert!(matches!(
-            only_line_event(&mut model),
+            line,
             LineEvent::Topic {
                 actor: Actor::User(Person { ref nick, me: false, .. }),
                 topic: Some(ref topic),
