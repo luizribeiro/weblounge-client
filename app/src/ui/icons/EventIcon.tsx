@@ -23,6 +23,7 @@ const paths: Readonly<Record<EventIconName, string>> = {
   people:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   quit: "M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04",
+  topic: "M4 9h16M4 15h16M10 3L8 21M16 3l-2 18",
   server:
     "M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM6 6h.01M6 18h.01",
   warning:

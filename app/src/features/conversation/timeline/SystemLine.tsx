@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Switch } from "solid-js";
+import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { SystemProjection } from "../../../engine/generated/SystemProjection";
 import { formatTime } from "../../../ui/format-time";
 import { EventIcon } from "../../../ui/icons/EventIcon";
@@ -13,6 +13,7 @@ import {
 
 export function SystemLine(props: {
   readonly canRejoin: boolean;
+  readonly renderText: (text: string) => JSX.Element;
   readonly expanded: boolean;
   readonly onAction: (action: SystemLineAction) => void;
   readonly presentation: "desktop" | "mobile";
@@ -26,8 +27,11 @@ export function SystemLine(props: {
     }),
   );
   const accessibleName = () =>
-    [words().segments, ...words().details]
-      .map(systemLineText)
+    [
+      systemLineText(words().segments),
+      words().body,
+      ...words().details.map(systemLineText),
+    ]
       .filter(Boolean)
       .join(". ");
 
@@ -56,6 +60,13 @@ export function SystemLine(props: {
       <div class={styles.content}>
         <div data-system-summary="true">
           <Segments onAction={props.onAction} segments={words().segments} />
+          <Show when={words().body}>
+            {(body) => (
+              <div class={styles.body} data-system-body="true">
+                {props.renderText(body())}
+              </div>
+            )}
+          </Show>
         </div>
         <For each={words().details}>
           {(segments) => (

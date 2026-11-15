@@ -26,3 +26,8 @@ export function systemLineWords(
 export function systemLineText(segments: readonly SystemLineSegment[]): string {
   return segments.map((segment) => segment.text).join("");
 }
+
+export function systemLineSummaryText(words: SystemLineWords): string {
+  const summary = systemLineText(words.segments);
+  return words.body === null ? summary : `${summary}: ${words.body}`;
+}

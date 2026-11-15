@@ -49,6 +49,14 @@
 .nick {
   font-weight: 600;
 }
+.body {
+  color: var(--wl-color-fg);
+  margin-top: 2px;
+}
+.line[data-presentation="desktop"] .body {
+  font-size: 14px;
+  margin-top: 3px;
+}
 .mono {
   font-family: var(--wl-font-mono);
   font-size: 11.5px;

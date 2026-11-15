@@ -3,7 +3,11 @@ import type { Actor } from "../../../engine/generated/Actor";
 import type { ModeMeaning } from "../../../engine/generated/ModeMeaning";
 import type { Person } from "../../../engine/generated/Person";
 import type { RunClauses } from "../../../engine/generated/RunClauses";
-import { systemLineText, systemLineWords } from "./system-line-words";
+import {
+  systemLineSummaryText,
+  systemLineText,
+  systemLineWords,
+} from "./system-line-words";
 
 const mel = person("mel", 1);
 const iris = person("iris", 2);
@@ -31,6 +35,52 @@ describe("systemLineWords", () => {
     [{ type: "invited", actor, people: [iris] }, "mel invited iris"],
   ])("renders the %# run clause", (clause, expected) => {
     expect(textFor([clause])).toBe(expected);
+  });
+
+  it("puts a changed topic on its own line and drops it when cleared", () => {
+    const changed = systemLineWords({
+      type: "event",
+      event: { type: "topic", actor, topic: "beta ships Friday" },
+    });
+    const cleared = systemLineWords({
+      type: "event",
+      event: { type: "topic", actor, topic: null },
+    });
+
+    expect(systemLineText(changed.segments)).toBe("mel changed the topic");
+    expect(changed.body).toBe("beta ships Friday");
+    expect(changed.icon).toBe("topic");
+    expect(systemLineSummaryText(changed)).toBe(
+      "mel changed the topic: beta ships Friday",
+    );
+    expect(systemLineText(cleared.segments)).toBe("mel cleared the topic");
+    expect(cleared.body).toBeNull();
+  });
+
+  it("names another user's kick neutrally and yours as a warning", () => {
+    const other = systemLineWords({
+      type: "event",
+      event: {
+        type: "kick",
+        actor: { type: "user", ...mel, me: true },
+        subject: { type: "other", ...iris },
+        reason: "link spam",
+      },
+    });
+    const server = systemLineWords({
+      type: "event",
+      event: {
+        type: "kick",
+        actor: { type: "server", name: "irc.example" },
+        subject: { type: "you" },
+        reason: null,
+      },
+    });
+
+    expect(systemLineText(other.segments)).toBe("You kicked iris: “link spam”");
+    expect([other.icon, other.warning]).toEqual(["kick", false]);
+    expect(systemLineText(server.segments)).toBe("irc.example kicked you");
+    expect([server.icon, server.warning]).toEqual(["warning", true]);
   });
 
   it("uses You for an own nick change", () => {

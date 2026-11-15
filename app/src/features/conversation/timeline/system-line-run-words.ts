@@ -16,6 +16,7 @@ export function runWords(
   if (options.expanded === true && clauses.some(clauseHasOverflow))
     return expandedRunWords(clauses, options, icon);
   return {
+    body: null,
     details: [],
     icon,
     segments: joinSegments(

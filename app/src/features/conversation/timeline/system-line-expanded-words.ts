@@ -29,7 +29,7 @@ export function expandedRunWords(
   const details = clauses.flatMap((clause) =>
     expandedClauseWords(clause, options),
   );
-  return { details, icon, segments, warning: false };
+  return { body: null, details, icon, segments, warning: false };
 }
 
 function clauseCountWords(clause: RunClauses[number]): SystemLineSegment[] {

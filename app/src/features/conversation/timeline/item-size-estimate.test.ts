@@ -91,6 +91,35 @@ describe("estimateSystemLineHeight", () => {
     );
   });
 
+  it("reserves the changed topic's own wrapped lines", () => {
+    const topic = (value: string | null): SystemProjection => ({
+      time_ms: 1,
+      line: {
+        type: "event",
+        event: {
+          type: "topic",
+          actor: { type: "user", nick: "mel", nick_color_index: 1, me: false },
+          topic: value,
+        },
+      },
+    });
+    const estimate = (projection: SystemProjection) =>
+      estimateSystemLineHeight(
+        projection,
+        390,
+        "cozy",
+        "mobile",
+        false,
+        false,
+        "after-message",
+      );
+
+    expect(estimate(topic("short"))).toBe(estimate(topic(null)) + 22);
+    expect(estimate(topic("long topic ".repeat(20)))).toBeGreaterThan(
+      estimate(topic("short")) + 20,
+    );
+  });
+
   it("invalidates on every geometry input", () => {
     expect(systemLineSizeRevision(7, 3, true, false, "message", "mobile")).toBe(
       "7:3:true:false:message:mobile",

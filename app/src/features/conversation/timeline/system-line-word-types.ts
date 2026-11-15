@@ -17,6 +17,7 @@ export type SystemLineIcon =
   | "part"
   | "people"
   | "quit"
+  | "topic"
   | "warning";
 
 export type SystemLineSegment =
@@ -31,6 +32,7 @@ export type SystemLineSegment =
     };
 
 export interface SystemLineWords {
+  readonly body: string | null;
   readonly details: readonly (readonly SystemLineSegment[])[];
   readonly icon: SystemLineIcon;
   readonly segments: readonly SystemLineSegment[];

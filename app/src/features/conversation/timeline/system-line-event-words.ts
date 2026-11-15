@@ -14,6 +14,7 @@ export function eventWords(
   let segments: SystemLineSegment[];
   let icon: SystemLineIcon = "info";
   let warning = false;
+  let body: string | null = null;
   switch (event.type) {
     case "kick": {
       icon = "kick";
@@ -34,15 +35,17 @@ export function eventWords(
       break;
     }
     case "topic":
+      icon = "topic";
+      body = event.topic;
       segments = [
         ...actorWords(event.actor),
         text(
           event.topic === null ? " cleared the topic" : " changed the topic",
         ),
-        ...(event.topic === null ? [] : [text(": "), text(event.topic)]),
       ];
       break;
     case "topic_card":
+      icon = "topic";
       segments = [text("Topic: "), text(event.topic)];
       break;
     case "invited_you":
@@ -90,5 +93,11 @@ export function eventWords(
       return exhaustive;
     }
   }
-  return { details: [], icon: warning ? "warning" : icon, segments, warning };
+  return {
+    body,
+    details: [],
+    icon: warning ? "warning" : icon,
+    segments,
+    warning,
+  };
 }

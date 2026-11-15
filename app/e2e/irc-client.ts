@@ -385,6 +385,14 @@ export class IrcClient {
     );
   }
 
+  async topic(channel: string, topic: string): Promise<void> {
+    this.send(`TOPIC ${channel} :${topic}`);
+    await this.waitFor(
+      `TOPIC confirmation for ${channel}`,
+      (line) => line.includes(` TOPIC ${channel}`) && line.endsWith(topic),
+    );
+  }
+
   async nick(nickname: string): Promise<void> {
     const previous = this.#nickname;
     await claimNickname(

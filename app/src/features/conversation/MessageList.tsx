@@ -75,7 +75,10 @@ import {
 } from "./timeline/notice-message";
 import { type RowFamily, topPadding } from "./timeline/row-spacing";
 import { SystemLine } from "./timeline/SystemLine";
-import { systemLineText, systemLineWords } from "./timeline/system-line-words";
+import {
+  systemLineSummaryText,
+  systemLineWords,
+} from "./timeline/system-line-words";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
@@ -1571,6 +1574,15 @@ function TimelineRowView(props: {
                   else if (action === "rejoin") props.onRejoin?.();
                 }}
                 presentation={props.presentation ?? "desktop"}
+                renderText={(text) => (
+                  <MessageText
+                    authors={props.nickLookup}
+                    onOpenChannel={props.onOpenChannel}
+                    onOpenDirect={props.onOpenDirect}
+                    onOpenExternal={props.onOpenExternal}
+                    text={text}
+                  />
+                )}
                 system={row.system}
               />
             )}
@@ -2403,7 +2415,7 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
     if (row.kind === "system")
       return {
         kind: "system",
-        text: systemLineText(systemLineWords(row.system.line).segments),
+        text: systemLineSummaryText(systemLineWords(row.system.line)),
       };
     if (row.kind === "message" && row.message.kind === "action")
       return {

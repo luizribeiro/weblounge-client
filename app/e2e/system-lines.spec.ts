@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
 import type { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
+import { expectSettled } from "./settled";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -160,7 +161,105 @@ for (const [layout, viewport] of [
         page.getByRole("button", { name: "Rejoin channel" }),
       ).toHaveCount(0);
     });
+
+    test("shows topic changes and kicks of others live and from history", async ({
+      baseURL,
+      browser,
+      page,
+      irc,
+    }) => {
+      const channel = irc.channelNamed("tp");
+      const operator = await irc.peer("tp-op", [channel]);
+      const kicked = await irc.peer("tp-kid", [channel]);
+      const topic = `beta ships Friday · https://weblounge.chat/${irc.id}`;
+      await page.goto(irc.url());
+      await joinChannel(page, irc.channel, channel);
+      const breaker = `topic breaker ${irc.id}`;
+      await operator.privmsgConfirmed(channel, breaker);
+      await expect(page.getByText(breaker, { exact: true })).toBeVisible();
+
+      await operator.topic(channel, topic);
+      const changed = systemLine(page, "changed the topic", [
+        operator.nickname,
+      ]);
+      await expect(changed.locator("[data-system-body]")).toHaveText(topic);
+      await expect(
+        changed.getByRole("link", {
+          name: `https://weblounge.chat/${irc.id}`,
+        }),
+      ).toBeVisible();
+      await expect(changed.locator("[data-system-body]")).toHaveCSS(
+        "font-size",
+        "14px",
+      );
+      await operator.topic(channel, "");
+      const cleared = systemLine(page, "cleared the topic", [
+        operator.nickname,
+      ]);
+      await expect(cleared).toBeVisible();
+      await expect(cleared.locator("[data-system-body]")).toHaveCount(0);
+
+      await operator.kick(channel, kicked.nickname, "link spam");
+      const kick = systemLine(page, "kicked", [
+        operator.nickname,
+        kicked.nickname,
+      ]);
+      await expect(kick).toContainText("“link spam”");
+      await expect(kick).toHaveAttribute("data-warning", "false");
+      await expectSystemGeometry(changed, layout);
+      await expectSettled(page, { conversation: channel });
+      await expectNoRowOverlap(page);
+      await capture(page, layout, "topic-and-kick");
+
+      const history = await browser.newContext({
+        baseURL,
+        viewport,
+        ...(layout === "phone" ? { hasTouch: true, isMobile: true } : {}),
+      });
+      await irc.scope(history);
+      const fresh = await history.newPage();
+      await fresh.goto(irc.url({ autojoin: [channel] }));
+      const freshRow = fresh
+        .locator("[data-buffer-id]")
+        .filter({ hasText: channel })
+        .first();
+      if (layout === "phone") await freshRow.click();
+      else await fresh.getByRole("button", { name: channel }).click();
+      for (const line of [
+        systemLine(fresh, "changed the topic", [operator.nickname]),
+        systemLine(fresh, "cleared the topic", [operator.nickname]),
+        systemLine(fresh, "kicked", [kicked.nickname]).filter({
+          hasText: "“link spam”",
+        }),
+      ])
+        await expect(line).toBeVisible();
+      await history.close();
+    });
   });
+}
+
+async function expectNoRowOverlap(page: Page): Promise<void> {
+  const overlaps = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("li[data-row-key]")]
+      .map((row) => ({
+        key: (row as HTMLElement).dataset.rowKey,
+        top: row.getBoundingClientRect().top,
+        contentBottom: Math.max(
+          row.getBoundingClientRect().bottom,
+          ...[...row.querySelectorAll("*:not(button)")].map(
+            (child) => child.getBoundingClientRect().bottom,
+          ),
+        ),
+      }))
+      .sort((left, right) => left.top - right.top);
+    return rows.flatMap((row, index) => {
+      const next = rows[index + 1];
+      return next !== undefined && row.contentBottom > next.top + 0.5
+        ? [`${row.key} over ${next.key}`]
+        : [];
+    });
+  });
+  expect(overlaps).toEqual([]);
 }
 
 async function joinChannel(
@@ -246,7 +345,13 @@ async function expectDesktopColumnAlignment(
 async function capture(
   page: Page,
   layout: "desktop" | "phone",
-  phase: "collapsed" | "expanded" | "modes-alone" | "modes-mixed" | "own-kick",
+  phase:
+    | "collapsed"
+    | "expanded"
+    | "modes-alone"
+    | "modes-mixed"
+    | "own-kick"
+    | "topic-and-kick",
 ): Promise<void> {
   const directory = process.env.WEBLOUNGE_SYSTEM_LINE_SCREENSHOT_DIR;
   if (directory === undefined) return;

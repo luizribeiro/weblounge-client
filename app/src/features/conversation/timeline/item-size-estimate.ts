@@ -30,16 +30,16 @@ export function estimateSystemLineHeight(
     expanded,
     includeRawModes: presentation === "desktop",
   });
-  const contentLines = [words.segments, ...words.details].reduce(
-    (total, segments) =>
-      total +
-      Math.max(
-        1,
-        Math.ceil(systemLineText(segments).length / charactersPerLine),
-      ),
+  const texts = [words.segments, ...words.details].map((segments) =>
+    systemLineText(segments),
+  );
+  if (words.body !== null) texts.push(words.body);
+  const contentLines = texts.reduce(
+    (total, text) =>
+      total + Math.max(1, Math.ceil(text.length / charactersPerLine)),
     0,
   );
-  const detailGaps = words.details.length * 4;
+  const detailGaps = words.details.length * 4 + (words.body === null ? 0 : 2);
   return (
     contentLines * lineHeight +
     detailGaps +
