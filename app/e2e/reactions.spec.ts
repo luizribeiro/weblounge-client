@@ -88,6 +88,29 @@ test("toggles your reaction from a chip through sending, confirmation and reload
   await nativeFeelAudit(page);
 });
 
+test("shows a refused own reaction as failed and retries it from the chip", async ({
+  page,
+  irc,
+}) => {
+  const text = "retry my reaction";
+  const bot = await irc.peer("refuse");
+  await openOnline(page, irc);
+  const id = messageId(await bot.privmsgConfirmed(irc.channel, text));
+  await bot.reactionConfirmed(irc.channel, id, "👍");
+  const chip = productionMessageRow(page, text).locator('[data-reaction="👍"]');
+  await expect(chip).toContainText("1");
+
+  await bot.mode(irc.channel, "+m");
+  await chip.click();
+  await expect(chip).toHaveAttribute("data-reaction-delivery", "failed");
+  await expect(chip).toContainText("!");
+
+  await bot.mode(irc.channel, "-m");
+  await chip.click();
+  await bot.waitForReaction(irc.channel, id, "👍", irc.account);
+  await expectConfirmedOwn(chip);
+});
+
 async function expectIdle(page: Page) {
   await page.mouse.move(0, 0);
   await expect(
