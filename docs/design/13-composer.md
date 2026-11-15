@@ -38,7 +38,10 @@ IRC names match and deduplicate with papo's active server name rules, never UI l
 Candidate collections stay bounded even in a 2,000-member channel. The UI applies the engine's
 replace range and replacement prefix/suffix locally without deriving punctuation: a picked mention
 loses `@`, becoming `nick: ` at message start and `nick` inside a sentence, while an unpicked `@`
-remains literal. A picked channel retains `#`. Tab may request nick completion at any token for the
+remains literal unless it names a candidate exactly: typing whitespace or `, : ; . ! ? )` right
+after `@nick` asks the engine for that nick alone (papo's name rules), and a sole match is applied
+as if picked, the typed terminator replacing the space of `nick: ` or the suffix itself. Tab and
+IME composition never auto-accept. A picked channel retains `#`. Tab may request nick completion at any token for the
 IRC convention; after a popup opens, Tab cycles its current result without a worker round trip.
 
 ## Boundaries
