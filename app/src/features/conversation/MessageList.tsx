@@ -62,7 +62,14 @@ import {
 import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
-import type { ToggleReaction } from "./reaction-target";
+import { ReactionToolbar } from "./ReactionToolbar";
+import { reactionTarget, type ToggleReaction } from "./reaction-target";
+import {
+  createRowReactions,
+  focusControl,
+  type RowReactions,
+} from "./row-reactions";
+import { createRowToolbarVisibility } from "./row-toolbar-visibility";
 import { Divider } from "./timeline/Divider";
 import {
   estimateSystemLineHeight,
@@ -380,6 +387,11 @@ export function MessageList(props: MessageListProps) {
     return (index: number) => current[index]?.key ?? index;
   });
   const nickLookup = createMemo(() => createNickLookup(orderedMessages()));
+  const reactionActions = createRowReactions((messageId, reaction) =>
+    props.onToggleReaction?.(messageId, reaction),
+  );
+  const rowReactions = () =>
+    props.onToggleReaction === undefined ? undefined : reactionActions;
   const setLiveEdge = (live: boolean) => {
     if (scrollLiveEdgeFrame !== undefined) {
       window.cancelAnimationFrame(scrollLiveEdgeFrame);
@@ -1405,7 +1417,7 @@ export function MessageList(props: MessageListProps) {
                       onRejoin={props.onRejoin}
                       onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
-                      onToggleReaction={props.onToggleReaction}
+                      reactions={rowReactions()}
                       presentation={props.presentation}
                       row={row()}
                     />
@@ -1476,8 +1488,8 @@ function TimelineRowView(props: {
   readonly onRejoin?: (() => void) | undefined;
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
-  readonly onToggleReaction?: ToggleReaction | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
+  readonly reactions?: RowReactions | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   let renderedRow: TimelineRow | undefined;
@@ -1560,7 +1572,7 @@ function TimelineRowView(props: {
                 onOpenDirect={props.onOpenDirect}
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
-                onToggleReaction={props.onToggleReaction}
+                reactions={props.reactions}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
               />
@@ -1620,6 +1632,14 @@ function TimelineRowView(props: {
   );
 }
 
+function ownReactions(message: MessageProjection): ReadonlySet<string> {
+  return new Set(
+    (message.reactions ?? [])
+      .filter((reaction) => reaction.mine)
+      .map((reaction) => reaction.text),
+  );
+}
+
 function MessageRow(props: {
   readonly index: number;
   readonly inlineImage: string | undefined;
@@ -1629,8 +1649,8 @@ function MessageRow(props: {
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
-  readonly onToggleReaction?: ToggleReaction | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
+  readonly reactions?: RowReactions | undefined;
   readonly startsMobileGroup: boolean;
 }) {
   const message = props.message;
@@ -1655,6 +1675,8 @@ function MessageRow(props: {
         presentation={props.presentation ?? "desktop"}
       />
     );
+  const react = reactionTarget(message, props.reactions?.toggle);
+  const toolbar = createRowToolbarVisibility();
   return (
     <div
       class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
@@ -1663,7 +1685,25 @@ function MessageRow(props: {
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}
       data-unverified-sender={message.unverified_sender === true || undefined}
+      onFocusIn={toolbar.onFocusIn}
+      onFocusOut={toolbar.onFocusOut}
+      onPointerEnter={toolbar.onPointerEnter}
+      onPointerLeave={toolbar.onPointerLeave}
+      ref={(row) =>
+        queueMicrotask(() => {
+          const restored = props.reactions?.focusToRestore(message.id);
+          if (restored !== undefined) toolbar.revealForKeyboard();
+          toolbar.mount(row);
+          if (restored !== undefined) focusControl(row, restored);
+        })
+      }
+      tabindex={react === undefined ? undefined : 0}
     >
+      <Show when={toolbar.shown() && react}>
+        {(onReact) => (
+          <ReactionToolbar mine={ownReactions(message)} onReact={onReact()} />
+        )}
+      </Show>
       {message.kind === "action" ? (
         <>
           <div class={styles.actionContent}>
@@ -1699,7 +1739,7 @@ function MessageRow(props: {
             <div class={styles.actionReactions}>
               <MessageReactions
                 message={message}
-                onToggle={props.onToggleReaction}
+                onToggle={props.reactions?.toggle}
                 presentation={props.presentation}
               />
             </div>
@@ -1755,7 +1795,7 @@ function MessageRow(props: {
             />
             <MessageReactions
               message={message}
-              onToggle={props.onToggleReaction}
+              onToggle={props.reactions?.toggle}
               presentation={props.presentation}
             />
           </div>

@@ -38,6 +38,7 @@ export function ReactionChips(props: {
                     {...chipAttributes(reaction, setActive)}
                     aria-label={toggleLabel(reaction())}
                     aria-pressed={reaction().mine}
+                    data-focus-key={`chip:${reaction().text}`}
                     onBlur={() => setActive(undefined)}
                     onClick={() => toggle()(reaction().text)}
                     onFocus={() => setActive(reaction().text)}

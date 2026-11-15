@@ -111,6 +111,67 @@ test("shows a refused own reaction as failed and retries it from the chip", asyn
   await expectConfirmedOwn(chip);
 });
 
+test("reacts from the hover toolbar and its keyboard path without moving the transcript", async ({
+  page,
+  irc,
+}) => {
+  await installNativeFeelInstrumentation(page);
+  const text = "react from the toolbar";
+  const bot = await irc.peer("toolbar");
+  await openOnline(page, irc);
+  const id = messageId(await bot.privmsgConfirmed(irc.channel, text));
+  await bot.privmsgConfirmed(irc.channel, "a later line");
+  const row = productionMessageRow(page, text);
+  await expect(row).toBeVisible();
+  await expectSettled(page);
+  const before = await transcriptGeometry(page);
+
+  await row.hover();
+  const toolbar = row.getByRole("toolbar", { name: "Message actions" });
+  await expect(toolbar).toBeVisible();
+  expect(await transcriptGeometry(page)).toEqual(before);
+  await toolbar.getByRole("button", { name: "React with 😂" }).click();
+  await bot.waitForReaction(irc.channel, id, "😂", irc.account);
+  await expect(row.locator('[data-reaction="😂"]')).toHaveAttribute(
+    "data-reaction-own",
+    "true",
+  );
+  await expect(
+    toolbar.getByRole("button", { name: "React with 😂" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.mouse.move(0, 0);
+  await expect(toolbar).toHaveCount(0);
+  // Chromium shows focus rings for programmatic focus only after keyboard input.
+  await page.keyboard.press("Shift");
+  await row.focus();
+  await expect(toolbar).toBeVisible();
+  await page.keyboard.press("Tab");
+  const thumbs = toolbar.getByRole("button", { name: "React with 👍" });
+  await expect(thumbs).toBeFocused();
+  await page.keyboard.press("Enter");
+  await bot.waitForReaction(irc.channel, id, "👍", irc.account);
+  await expect(
+    toolbar.getByRole("button", { name: "React with 👍" }),
+  ).toBeFocused();
+
+  await page.keyboard.press("Shift+Tab");
+  await page.locator("[data-message-list]").focus();
+  await expect(toolbar).toHaveCount(0);
+  await expectIdle(page);
+  await nativeFeelAudit(page);
+});
+
+async function transcriptGeometry(page: Page) {
+  return page.locator("[data-message-list]").evaluate((list) => ({
+    scrollTop: list.scrollTop,
+    rows: [...list.querySelectorAll("[data-message-row]")].map((row) => {
+      const box = row.getBoundingClientRect();
+      return [box.top, box.height];
+    }),
+  }));
+}
+
 async function expectIdle(page: Page) {
   await page.mouse.move(0, 0);
   await expect(

@@ -118,6 +118,40 @@ it("marks received reactions for mobile touch sizing", () => {
   ).toHaveAttribute("data-presentation", "mobile");
 });
 
+it("shows the reaction toolbar on hover and keyboard focus of a server message", async () => {
+  const toggled: [number, string][] = [];
+  const received: MessageProjection = {
+    ...message,
+    delivery: "received",
+    server_ids: ["msg-1"],
+  };
+  render(() => (
+    <MessageList
+      messages={[received, { ...message, id: 2, text: "still sending" }]}
+      onToggleReaction={(id, reaction) => toggled.push([id, reaction])}
+    />
+  ));
+  const row = screen
+    .getByText("hello weblounge")
+    .closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("message row is missing");
+  const pending = screen
+    .getByText("still sending")
+    .closest<HTMLElement>("[data-message-row]");
+  if (pending === null) throw new Error("pending row is missing");
+
+  expect(row).toHaveAttribute("tabindex", "0");
+  expect(pending).not.toHaveAttribute("tabindex");
+  fireEvent.pointerEnter(row);
+  fireEvent.click(await screen.findByRole("button", { name: "React with 😂" }));
+  fireEvent.pointerLeave(row);
+  expect(screen.queryByRole("toolbar")).toBeNull();
+  fireEvent.pointerEnter(pending);
+
+  expect(toggled).toEqual([[1, "😂"]]);
+  expect(screen.queryByRole("toolbar")).toBeNull();
+});
+
 it("inlines only the network's file host images and follows its origin", () => {
   const [origin, setOrigin] = createSignal<string | undefined>();
   const image = "https://files.example.test/aZ09.png";
