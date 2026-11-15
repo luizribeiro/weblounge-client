@@ -56,7 +56,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F19: keyboard-open animation is off by default until Luiz approves a video; may return once glitch-free. Memory.
 - F20: multi-network generality: uploads, inline images and previews key off per-network capabilities, never weblounge hosts; hosted-web CSP `connect-src`/`img-src` list only weblounge hosts, so other filehosts need a CSP decision. Design 30, design 31.
 - F21: perf harness later: scroll/history, reconnect, navigation, six-pane, idle, hidden-tab and soak scenarios; memory targets (220MiB web, 350MiB desktop RSS); real-device and soju profiles; CI runner class. Design 21 §Later.
-- F22: message redaction (delete your own messages, show others' deletions), paused by Luiz until Monday 2026-11-16 or later. Design 32 is committed with the local Ergo `allow-individual-delete` setting and the engine receive slice (received `REDACT`, live and from history, becomes a `MessageKind::Redacted` tombstone row) on branch `worktree-agent-aaff4d5e54200e2d9`. Left: redaction bars UI and token, stability tests, the Delete request and confirmation with desktop and phone entry points, preview/unread/snapshot tombstones, notifications, Playwright coverage and screenshots. Design 32.
+- F29: message redaction follow-ups. A redaction that arrives while no page is open cannot close
+  its pushed notification, and the push log keeps the deleted body. A message deleted while this
+  device was offline stays in a restored chat-list preview until history reloads, and its unread
+  stub counts until a later mark covers it. A stub already evicted past `MAX_STUBS` stays behind the
+  99+ gap. Operators deleting other people's messages, and a reason field, are out of scope. When
+  replies (F27) land, a reply to a deleted parent shows a "Deleted message" quote. Design 32.
 
 - F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
 - F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
@@ -103,6 +108,14 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - TD7: `dispatchPersistedPageShow` is copied in `connection-resilience`, `direct-peer-return` and `engine` specs; switch them to `app/e2e/page-lifecycle.ts`.
 - TD8: own reactions are confirmed from papo's `react`/`unreact` resolving `Ok`, recorded as a local-time own fact with no msgid (papo 40c6722 consumes the labeled echo). Papo's approved reaction-confirm change makes them resolve to `Confirmed { msgid, server_time }` or `Unconfirmed`; switch to it with the papo bump and delete every `TODO(papo-0.1 reaction-confirm)`. Design 25.
 - TD9: reactions batch 2 follow-ups: every server row of a reactable desktop transcript is a Tab stop (a roving tabindex would make the list one stop); the toolbar buttons are separate Tab stops with no arrow keys; the picker grid has no arrow-key movement; a reaction change re-renders its row, so focus is handed back by key rather than kept; a failed own reaction can only be retried, not dismissed. Design 25.
+- TD10: own deletions are confirmed from papo's `redact` resolving `Ok` once its labeled response
+  arrives, like reactions (TD8). With papo's approved confirmation change, `redact` returns the
+  confirming REDACT; switch to it with the papo bump and delete every
+  `TODO(papo-0.1 reaction-confirm)` on the redaction path. Design 32.
+- TD11: the desktop redaction stability journeys read history away from the live edge, where the
+  list's scroll reconcile and read dwell keep frames and timers busy, so they check the layout-shift
+  budget instead of the idle audit (the peer-deletion journeys run the full audit at rest).
+  `app/e2e/redaction.spec.ts`.
 
 #### Server-side asks
 - SV1: upload-scoped tokens from concierge instead of login tokens; the file host receives login-capable tokens today. Design 31.
@@ -126,6 +139,16 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: message redaction (design 32). A deleted message keeps its time and nick and shows
+  3–8 bars seeded from its msgid, one line high, in a per-theme `redactionBar` colour, with
+  "Message deleted" for screen readers and copy. Received REDACT, live or from history, in
+  channels and DMs, tombstones the row and drops its reactions; the preview falls back to the
+  previous message, the unread stub is tombstoned through snapshot merges, and page and pushed
+  notifications for it are withdrawn. You delete your own messages from the desktop hover
+  toolbar's More menu, a right-click on the row or Delete on the selected message, and from the
+  phone long-press sheet, always after a confirmation; the row shows Deleting… and a failure keeps
+  it with a toast and Retry. Gated on `draft/message-redaction` plus `labeled-response`. The local
+  Ergo fixture allows individual deletes.
 - 2026-11-15: reactions batch 3, phone (F26). Long-pressing a message (500 ms, the chat list's
   timing) highlights the row while held and opens a sheet with the message, 👍 ❤️ 😂 🎉 👀 ✅ and
   add reaction, which swaps the action list for the searchable picker; Copy text copies the message
