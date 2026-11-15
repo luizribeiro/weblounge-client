@@ -36,6 +36,7 @@ import {
 } from "../../platform/viewport-geometry";
 import { t } from "../../strings";
 import { BotIcon } from "../../ui/BotIcon";
+import { contextMenuRegistry } from "../../ui/context-menu";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -51,6 +52,10 @@ import {
 } from "../composer/geometry";
 import { InlineImage } from "./InlineImage";
 import { inlineImageUrl } from "./inline-image-url";
+import {
+  createMessageDeletion,
+  type MessageRowDeletion,
+} from "./MessageDeletion";
 import styles from "./MessageList.module.css";
 import { MessageReactions } from "./MessageReactions";
 import { MessageText, Nickname } from "./MessageText";
@@ -72,6 +77,7 @@ import {
   reactionTarget,
   type ToggleReaction,
 } from "./reaction-target";
+import { canRedact, type RedactMessage } from "./redact-target";
 import {
   createRowReactions,
   focusControl,
@@ -125,6 +131,7 @@ interface MessageListProps {
   /** Phone rows open their action sheet from a long press; the held message stays marked. */
   readonly onMessageActions?: OpenMessageActions | undefined;
   readonly heldMessageId?: number | undefined;
+  readonly onRedactMessage?: RedactMessage | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -405,6 +412,13 @@ export function MessageList(props: MessageListProps) {
   );
   const rowReactions = () =>
     props.onToggleReaction === undefined ? undefined : reactionActions;
+  const deletion = createMessageDeletion(() => props.onRedactMessage);
+  const deleteSelectedMessage = (invoker: HTMLElement) => {
+    const message = orderedMessages().find(
+      (candidate) => candidate.id === selectedMessage(),
+    );
+    if (message !== undefined) deletion.confirm(message, invoker);
+  };
   const setLiveEdge = (live: boolean) => {
     if (scrollLiveEdgeFrame !== undefined) {
       window.cancelAnimationFrame(scrollLiveEdgeFrame);
@@ -1314,6 +1328,11 @@ export function MessageList(props: MessageListProps) {
         }}
         onScrollEnd={() => userScrollIntent.settle()}
         onKeyDown={(event) => {
+          if (event.key === "Delete" && event.target === event.currentTarget) {
+            event.preventDefault();
+            deleteSelectedMessage(event.currentTarget);
+            return;
+          }
           if (event.key !== "End") return;
           event.preventDefault();
           jumpToBottom();
@@ -1436,6 +1455,7 @@ export function MessageList(props: MessageListProps) {
                       onMessageActions={props.onMessageActions}
                       heldMessageId={props.heldMessageId}
                       reactions={rowReactions()}
+                      deletion={deletion.rows()}
                       presentation={props.presentation}
                       row={row()}
                     />
@@ -1446,6 +1466,7 @@ export function MessageList(props: MessageListProps) {
           </ol>
         </div>
       </div>
+      {deletion.view()}
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">
           {t(unseen() === 1 ? "messages.jump.one" : "messages.jump.many", {
@@ -1510,6 +1531,7 @@ function TimelineRowView(props: {
   readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
+  readonly deletion?: MessageRowDeletion | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   let renderedRow: TimelineRow | undefined;
@@ -1595,6 +1617,7 @@ function TimelineRowView(props: {
                 onMessageActions={props.onMessageActions}
                 held={props.heldMessageId === row.message.id}
                 reactions={props.reactions}
+                deletion={props.deletion}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
               />
@@ -1667,6 +1690,7 @@ function MessageRow(props: {
   readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
+  readonly deletion?: MessageRowDeletion | undefined;
   readonly startsMobileGroup: boolean;
 }) {
   const message = props.message;
@@ -1692,7 +1716,42 @@ function MessageRow(props: {
       />
     );
   const react = reactionTarget(message, props.reactions?.toggle);
-  const hoverToolbarReact = props.presentation === "mobile" ? undefined : react;
+  const desktop = props.presentation !== "mobile";
+  const hoverToolbarReact = desktop ? react : undefined;
+  const deletion = createMemo(() => {
+    const current = props.deletion;
+    return desktop &&
+      current !== undefined &&
+      canRedact(message, current.redact)
+      ? current
+      : undefined;
+  });
+  const [rowElement, setRowElement] = createSignal<HTMLElement>();
+  createEffect(() => {
+    const row = rowElement();
+    const current = deletion();
+    if (row === undefined || current === undefined) return;
+    onCleanup(
+      contextMenuRegistry.register(row, {
+        id: `message-${message.id}`,
+        kind: "chrome",
+        openMenu: (request) => current.openMenu(message, request),
+      }),
+    );
+  });
+  const openMoreMenu = () => {
+    const current = deletion();
+    const row = rowElement();
+    if (current === undefined || row === undefined) return undefined;
+    return (anchor: HTMLElement) => {
+      const bounds = anchor.getBoundingClientRect();
+      current.openMenu(message, {
+        invoker: row,
+        x: bounds.left,
+        y: bounds.bottom,
+      });
+    };
+  };
   const toolbar = createRowToolbarVisibility();
   const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
   const openActions = props.onMessageActions;
@@ -1716,6 +1775,7 @@ function MessageRow(props: {
       onPointerLeave={toolbar.onPointerLeave}
       ref={(row) => {
         longPress?.attach(row);
+        setRowElement(row);
         queueMicrotask(() => {
           const restored = props.reactions?.focusToRestore(message.id);
           if (restored !== undefined) toolbar.revealForKeyboard();
@@ -1723,34 +1783,35 @@ function MessageRow(props: {
           if (restored !== undefined) focusControl(row, restored);
         });
       }}
-      tabindex={hoverToolbarReact === undefined ? undefined : 0}
+      tabindex={
+        hoverToolbarReact === undefined && deletion() === undefined
+          ? undefined
+          : 0
+      }
     >
       <Show
         when={
           (toolbar.shown() || pickerInvoker() !== undefined) &&
-          hoverToolbarReact
+          (hoverToolbarReact !== undefined || openMoreMenu() !== undefined)
         }
       >
-        {(onReact) => (
-          <>
-            <ReactionToolbar
+        <ReactionToolbar
+          mine={ownReactions(message)}
+          onOpenMore={openMoreMenu()}
+          onOpenPicker={setPickerInvoker}
+          onReact={hoverToolbarReact}
+        />
+        <Show when={hoverToolbarReact !== undefined && pickerInvoker()}>
+          {(invoker) => (
+            <ReactionPicker
+              invoker={invoker()}
               mine={ownReactions(message)}
-              onOpenPicker={setPickerInvoker}
-              onReact={onReact()}
+              nick={message.author}
+              onClose={() => setPickerInvoker(undefined)}
+              onPick={(reaction) => hoverToolbarReact?.(reaction)}
             />
-            <Show when={pickerInvoker()}>
-              {(invoker) => (
-                <ReactionPicker
-                  invoker={invoker()}
-                  mine={ownReactions(message)}
-                  nick={message.author}
-                  onClose={() => setPickerInvoker(undefined)}
-                  onPick={onReact()}
-                />
-              )}
-            </Show>
-          </>
-        )}
+          )}
+        </Show>
       </Show>
       {message.kind === "action" ? (
         <>
@@ -1792,7 +1853,11 @@ function MessageRow(props: {
               />
             </div>
           </div>
-          <Delivery message={message} onRetry={props.onRetry} />
+          <RowStatus
+            message={message}
+            onRetry={props.onRetry}
+            redact={props.deletion?.redact}
+          />
         </>
       ) : (
         <>
@@ -1859,7 +1924,11 @@ function MessageRow(props: {
               </>
             )}
           </div>
-          <Delivery message={message} onRetry={props.onRetry} />
+          <RowStatus
+            message={message}
+            onRetry={props.onRetry}
+            redact={props.deletion?.redact}
+          />
         </>
       )}
     </div>
@@ -1929,6 +1998,45 @@ function LocalNoticeRow(props: {
         />
       </Selectable>
     </div>
+  );
+}
+
+function RowStatus(props: {
+  readonly message: MessageProjection;
+  readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly redact?: RedactMessage | undefined;
+}) {
+  return (
+    <>
+      <Delivery message={props.message} onRetry={props.onRetry} />
+      <RedactionStatus message={props.message} redact={props.redact} />
+    </>
+  );
+}
+
+/** A deletion you already confirmed; retrying it does not ask again. */
+function RedactionStatus(props: {
+  readonly message: MessageProjection;
+  readonly redact?: RedactMessage | undefined;
+}) {
+  if (props.message.own_redaction === "sending")
+    return (
+      <Line class={styles.pending} role="status">
+        {t("messages.deleting")}
+      </Line>
+    );
+  if (props.message.own_redaction !== "failed") return null;
+  const redact = props.redact;
+  return canRedact(props.message, redact) ? (
+    <button
+      class={`${styles.failed} ${styles.retry}`}
+      onClick={() => redact(props.message.id)}
+      type="button"
+    >
+      {t("messages.delete_failed_retry")}
+    </button>
+  ) : (
+    <Line class={styles.failed}>{t("messages.delete_failed")}</Line>
   );
 }
 

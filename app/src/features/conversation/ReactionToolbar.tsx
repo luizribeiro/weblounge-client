@@ -1,13 +1,15 @@
 import { For, Show } from "solid-js";
 import { t } from "../../strings";
 import { AddReactionIcon } from "../../ui/icons/AddReactionIcon";
+import { MoreIcon } from "../../ui/icons/MoreIcon";
 import { desktopQuickReactions } from "./quick-reactions";
 import styles from "./ReactionToolbar.module.css";
 
 export function ReactionToolbar(props: {
   readonly mine: ReadonlySet<string>;
-  readonly onReact: (reaction: string) => void;
+  readonly onReact?: ((reaction: string) => void) | undefined;
   readonly onOpenPicker?: ((invoker: HTMLElement) => void) | undefined;
+  readonly onOpenMore?: ((invoker: HTMLElement) => void) | undefined;
 }) {
   return (
     <div
@@ -16,21 +18,25 @@ export function ReactionToolbar(props: {
       data-reaction-toolbar="true"
       role="toolbar"
     >
-      <For each={desktopQuickReactions}>
-        {(reaction) => (
-          <button
-            aria-label={t("reaction.react_with", { reaction })}
-            aria-pressed={props.mine.has(reaction)}
-            class={styles.button}
-            data-focus-key={`toolbar:${reaction}`}
-            onClick={() => props.onReact(reaction)}
-            type="button"
-          >
-            {reaction}
-          </button>
+      <Show when={props.onReact}>
+        {(onReact) => (
+          <For each={desktopQuickReactions}>
+            {(reaction) => (
+              <button
+                aria-label={t("reaction.react_with", { reaction })}
+                aria-pressed={props.mine.has(reaction)}
+                class={styles.button}
+                data-focus-key={`toolbar:${reaction}`}
+                onClick={() => onReact()(reaction)}
+                type="button"
+              >
+                {reaction}
+              </button>
+            )}
+          </For>
         )}
-      </For>
-      <Show when={props.onOpenPicker}>
+      </Show>
+      <Show when={props.onReact !== undefined && props.onOpenPicker}>
         {(openPicker) => (
           <>
             <span aria-hidden="true" class={styles.separator} />
@@ -46,6 +52,21 @@ export function ReactionToolbar(props: {
               <AddReactionIcon class={styles.icon} />
             </button>
           </>
+        )}
+      </Show>
+      <Show when={props.onOpenMore}>
+        {(openMore) => (
+          <button
+            aria-haspopup="menu"
+            aria-label={t("message.more_actions")}
+            class={styles.button}
+            data-focus-key="toolbar:more"
+            data-message-more="true"
+            onClick={(event) => openMore()(event.currentTarget)}
+            type="button"
+          >
+            <MoreIcon class={styles.icon} />
+          </button>
         )}
       </Show>
     </div>

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { batch, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { TimelineItem } from "../../engine/generated/TimelineItem";
@@ -209,6 +215,139 @@ it("draws a redacted message as aria-hidden bars with no toolbar or reactions", 
   expect(row).not.toHaveAttribute("tabindex");
   fireEvent.pointerEnter(row);
   expect(screen.queryByRole("toolbar")).toBeNull();
+});
+
+const ownMessage: MessageProjection = {
+  ...message,
+  author: "weblounge",
+  authorship: "own",
+  highlighted: false,
+  text: "take this back",
+  delivery: "confirmed",
+  server_ids: ["mine-1"],
+};
+
+function ownRow(text = ownMessage.text): HTMLElement {
+  const row = screen.getByText(text).closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("own row is missing");
+  return row;
+}
+
+it("deletes an own message from the row's More menu only after confirming", async () => {
+  const deleted: number[] = [];
+  render(() => (
+    <MessageList
+      messages={[ownMessage]}
+      onRedactMessage={(id) => deleted.push(id)}
+    />
+  ));
+  fireEvent.pointerEnter(ownRow());
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Delete message" }),
+  );
+  const dialog = await screen.findByRole("alertdialog", {
+    name: "Delete this message?",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(deleted).toEqual([]);
+
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Delete message" }),
+  );
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Delete",
+    }),
+  );
+  expect(deleted).toEqual([1]);
+});
+
+it("drops the delete action when the capability goes away", async () => {
+  const [redact, setRedact] = createSignal<
+    ((messageId: number) => void) | undefined
+  >(() => undefined);
+  render(() => (
+    <MessageList messages={[ownMessage]} onRedactMessage={redact()} />
+  ));
+  fireEvent.pointerEnter(ownRow());
+  expect(
+    await screen.findByRole("button", { name: "More actions" }),
+  ).toBeInTheDocument();
+
+  setRedact(undefined);
+
+  expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+  expect(ownRow()).not.toHaveAttribute("tabindex");
+});
+
+it("returns focus to the row when the menu or the confirmation closes", async () => {
+  render(() => (
+    <MessageList messages={[ownMessage]} onRedactMessage={() => undefined} />
+  ));
+  fireEvent.pointerEnter(ownRow());
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  const item = await screen.findByRole("menuitem", { name: "Delete message" });
+  await waitFor(() => expect(item).toHaveFocus());
+  fireEvent.keyDown(item, { key: "Escape" });
+  expect(ownRow()).toHaveFocus();
+
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Delete message" }),
+  );
+  fireEvent.keyDown(await screen.findByRole("alertdialog"), { key: "Escape" });
+  await waitFor(() => expect(ownRow()).toHaveFocus());
+});
+
+it("deletes the selected own message with the Delete key after confirming", async () => {
+  const deleted: number[] = [];
+  let controller: MessageListController | undefined;
+  const { container } = render(() => (
+    <MessageList
+      messages={[ownMessage]}
+      onRedactMessage={(id) => deleted.push(id)}
+      registerController={(registered) => {
+        controller = registered;
+      }}
+    />
+  ));
+  controller?.selectLastOwn();
+  const list = container.querySelector<HTMLElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+
+  fireEvent.keyDown(list, { key: "Delete" });
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Delete",
+    }),
+  );
+
+  expect(deleted).toEqual([1]);
+});
+
+it("shows a deletion in flight and retries a failed one without asking again", () => {
+  const deleted: number[] = [];
+  const [own, setOwn] = createSignal<MessageProjection>({
+    ...ownMessage,
+    own_redaction: "sending",
+  });
+  render(() => (
+    <MessageList
+      messages={[own()]}
+      onRedactMessage={(id) => deleted.push(id)}
+    />
+  ));
+  expect(screen.getByText("Deleting…")).toBeInTheDocument();
+
+  setOwn({ ...ownMessage, own_redaction: "failed" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Couldn't delete · Retry" }),
+  );
+
+  expect(deleted).toEqual([1]);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 it("inlines only the network's file host images and follows its origin", () => {
