@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import {
   appBadgeCount,
+  closeMessageNotifications,
   closeReadConversationNotifications,
   conversationNotificationCounts,
 } from "./app-badge";
@@ -142,3 +143,21 @@ function buffer(
     network_id: projection.network_id ?? 1,
   };
 }
+
+it("closes pushed notifications whose message was deleted", async () => {
+  const notification = (data: unknown) => ({ data, close: vi.fn() });
+  const deleted = notification({ messageId: "gone", conversationTag: "L/#a" });
+  const kept = notification({ messageId: "kept", conversationTag: "L/#a" });
+  const untagged = notification(undefined);
+
+  await closeMessageNotifications(["gone"], {
+    getRegistration: async () => ({
+      getNotifications: async () =>
+        [deleted, kept, untagged] as unknown as Notification[],
+    }),
+  });
+
+  expect(deleted.close).toHaveBeenCalledOnce();
+  expect(kept.close).not.toHaveBeenCalled();
+  expect(untagged.close).not.toHaveBeenCalled();
+});

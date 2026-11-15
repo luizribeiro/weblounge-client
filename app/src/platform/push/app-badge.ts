@@ -94,6 +94,26 @@ export async function closeReadConversationNotifications(
   }
 }
 
+/** Withdraws pushed notifications whose message was deleted. */
+export async function closeMessageNotifications(
+  msgids: readonly string[],
+  registrations: RegistrationProvider = navigator.serviceWorker,
+): Promise<void> {
+  const registration = await registrations.getRegistration("/");
+  const notifications = await registration?.getNotifications();
+  for (const notification of notifications ?? []) {
+    const data: unknown = notification.data;
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "messageId" in data &&
+      typeof data.messageId === "string" &&
+      msgids.includes(data.messageId)
+    )
+      notification.close();
+  }
+}
+
 export function conversationReadMarkers(
   buffers: readonly BufferProjection[],
   networkLabels: ReadonlyMap<number, string>,

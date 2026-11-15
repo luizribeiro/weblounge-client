@@ -70,6 +70,10 @@ export class PageNotifications {
     this.#postingTab.claim();
   }
 
+  closeMessages(msgids: readonly string[]): void {
+    this.#notifier?.closeMessages(msgids);
+  }
+
   closeRead(readMarkers: ReadonlyMap<string, number>): void {
     this.#notifier?.closeRead(readMarkers);
   }

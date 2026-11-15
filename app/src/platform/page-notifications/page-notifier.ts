@@ -24,6 +24,7 @@ export type CreatePageNotification = (
 
 interface PostedNotification {
   readonly notification: PageNotification;
+  readonly messageId: string;
   readonly messageTime: string;
 }
 
@@ -70,6 +71,7 @@ export class PageNotifier {
     };
     this.#byConversation.set(tag, {
       notification,
+      messageId: message.msgid,
       messageTime: message.time,
     });
     return true;
@@ -83,6 +85,12 @@ export class PageNotifier {
       };
       if (notificationDataIsRead(identity, readMarkers)) this.#close(tag);
     }
+  }
+
+  /** Withdraws a notification whose message was deleted. */
+  closeMessages(msgids: readonly string[]): void {
+    for (const [tag, posted] of this.#byConversation)
+      if (msgids.includes(posted.messageId)) this.#close(tag);
   }
 
   #show(

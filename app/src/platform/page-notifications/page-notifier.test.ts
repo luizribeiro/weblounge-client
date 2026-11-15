@@ -130,6 +130,19 @@ describe("PageNotifier", () => {
     ]);
   });
 
+  it("withdraws only the notification showing a deleted message", () => {
+    const { notifier, shown } = harness();
+    notifier.post(directMessage, 1);
+    notifier.post(channelMention, 1);
+
+    notifier.closeMessages(["msg-102", "msg-unknown"]);
+
+    expect(shown.map((notification) => notification.closed)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it("skips posting when the platform refuses to construct notifications", () => {
     const notifier = new PageNotifier(
       () => {
