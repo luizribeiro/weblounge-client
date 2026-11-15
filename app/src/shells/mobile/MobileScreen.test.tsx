@@ -51,6 +51,14 @@ it("routes a chat screen to its projected buffer", () => {
   ).not.toBeInTheDocument();
 });
 
+it("gives a resting screen's edge shadow no offset", () => {
+  renderRoute({ kind: "chat", bufferId: 2 }, [buffer]);
+
+  const shadow = document.querySelector<HTMLElement>("[data-edge-shadow]");
+  expect(shadow).toHaveAttribute("aria-hidden", "true");
+  expect(shadow?.style.getPropertyValue("--wl-push-offset")).toBe("");
+});
+
 it("renders no destination for a stale chat buffer id", () => {
   renderRoute({ kind: "chat", bufferId: 99 }, [buffer]);
 
@@ -73,6 +81,11 @@ it("exposes its motion phase and the shared offset", async () => {
 
   expect(element).toHaveAttribute("data-motion", "dragging");
   expect(element?.style.getPropertyValue("--wl-push-offset")).toBe("0.4");
+  expect(
+    element
+      ?.querySelector<HTMLElement>(":scope > [data-edge-shadow]")
+      ?.style.getPropertyValue("--wl-push-offset"),
+  ).toBe("0.4");
   await Promise.resolve();
   expect(settled).not.toHaveBeenCalled();
 });

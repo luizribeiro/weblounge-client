@@ -130,6 +130,8 @@ export function MobileScreen(props: MobileScreenProps) {
       ? props.buffers.find((item) => item.id === screen.bufferId)
       : undefined;
   };
+  const motionOffset = () =>
+    props.motion === undefined ? undefined : pushOffset(props.motion);
   const composerNotice = () =>
     props.messageFailureNotices?.get(buffer()?.id ?? -1) ??
     props.composerNotice;
@@ -144,14 +146,19 @@ export function MobileScreen(props: MobileScreenProps) {
       onTransitionEnd={onOwnTransform(settleUnlessMoving)}
       ref={element}
       style={{
-        "--wl-push-offset":
-          props.motion === undefined ? undefined : pushOffset(props.motion),
+        "--wl-push-offset": motionOffset(),
         "--wl-push-settle-scale":
           props.motion !== undefined && "durationScale" in props.motion
             ? props.motion.durationScale
             : undefined,
       }}
     >
+      <div
+        aria-hidden="true"
+        class={styles.edgeShadow}
+        data-edge-shadow
+        style={{ "--wl-push-offset": motionOffset() }}
+      />
       {props.screen.kind === "chats" ? (
         <MobileChatList
           buffers={props.buffers}

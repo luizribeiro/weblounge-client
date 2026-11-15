@@ -88,6 +88,50 @@ test("reduced motion pushes and pops instantly", { tag: "@serial" }, async ({
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
+test("a dragged chat keeps its offset off the content it moves", async ({
+  page,
+  irc,
+}) => {
+  await openShell(page, irc);
+  await openChat(page, irc);
+  const restingShadow = page.locator(
+    ":has(> [data-mobile-chat]) > [data-edge-shadow]",
+  );
+  await expect(restingShadow).toHaveCSS("visibility", "hidden");
+  await page.evaluate(dispatchPan, {
+    base: null,
+    release: false,
+    steps: [
+      { at: 0, x: 5 },
+      { at: 100, x: 20 },
+      { at: 300, x: 150 },
+    ],
+  });
+
+  const offsets = await page.evaluate(() => {
+    const chat = document.querySelector("[data-mobile-chat]");
+    const screen = chat?.parentElement;
+    const shadow = screen?.querySelector(":scope > [data-edge-shadow]");
+    if (chat === null || screen === null || screen === undefined)
+      throw new Error("the dragged chat is missing");
+    if (shadow === null || shadow === undefined)
+      throw new Error("the dragged chat has no edge shadow");
+    const offset = (style: CSSStyleDeclaration) =>
+      style.getPropertyValue("--wl-push-offset").trim();
+    return {
+      content: offset(getComputedStyle(chat)),
+      motion: screen.dataset.motion,
+      screen: Number(offset(getComputedStyle(screen))),
+      shadowOpacity: Number(getComputedStyle(shadow).opacity),
+    };
+  });
+
+  expect(offsets.motion).toBe("dragging");
+  expect(offsets.screen).toBeGreaterThan(0);
+  expect(offsets.content).toBe("0");
+  expect(offsets.shadowOpacity).toBeCloseTo(1 - offsets.screen, 5);
+});
+
 test("swipe released past halfway continues closed from the finger", {
   tag: "@serial",
 }, async ({ page, irc }) => {
@@ -368,8 +412,11 @@ async function recordMotion(
       const list = document.querySelector<HTMLElement>("[data-mobile-chats]");
       const rect = list?.getBoundingClientRect();
       const motion = chat?.dataset.motion ?? null;
+      const shadowElement = chat?.querySelector(":scope > [data-edge-shadow]");
       const shadow =
-        chat === undefined ? null : getComputedStyle(chat, "::before");
+        shadowElement === null || shadowElement === undefined
+          ? null
+          : getComputedStyle(shadowElement);
       const chatStyle = chat === undefined ? null : getComputedStyle(chat);
       const listStyle = list === null ? null : getComputedStyle(list);
       const rootStyle = getComputedStyle(document.documentElement);
@@ -401,7 +448,7 @@ async function recordMotion(
                 transitionDuration: listStyle.transitionDuration,
               },
         motion,
-        shadow: shadow?.content === "none" ? null : (shadow?.boxShadow ?? null),
+        shadow: shadow?.boxShadow ?? null,
         shadowOpacity: Number(shadow?.opacity ?? 0),
         transformStartProgress:
           transformStartMatch === null

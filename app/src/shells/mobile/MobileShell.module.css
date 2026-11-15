@@ -51,6 +51,14 @@
   z-index: 3;
 }
 
+/* A swipe rewrites the offset every frame; inheriting it would restyle the
+ * whole moving screen each time. */
+@property --wl-push-offset {
+  inherits: false;
+  initial-value: 0;
+  syntax: "<number>";
+}
+
 .screen {
   background: var(--wl-color-surface);
   display: flex;
@@ -92,18 +100,27 @@
     var(--wl-push-settle-scale, 1)
   );
 }
-.screen[data-motion]::before {
+/*
+ * WebKit does not restyle a pseudo-element that inherits a non-inherited
+ * property, so the shadow is an element given the offset itself. It stays
+ * rendered so its opacity has a start state to transition from, and its own
+ * layer keeps the per-frame opacity off the screen's paint.
+ */
+.edgeShadow {
   box-shadow: var(--wl-effect-overlay-shadow);
   clip-path: inset(0 0 0 -100vw);
-  content: "";
   inset: 0;
   opacity: calc(1 - var(--wl-push-offset));
   pointer-events: none;
   position: absolute;
   transition: opacity var(--wl-push-duration) var(--wl-push-curve);
+  will-change: opacity;
+}
+.screen:not([data-motion]) > .edgeShadow {
+  visibility: hidden;
 }
 .screen[data-motion="dragging"],
-.screen[data-motion="dragging"]::before {
+.screen[data-motion="dragging"] > .edgeShadow {
   transition: none;
 }
 
