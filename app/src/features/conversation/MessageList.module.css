@@ -301,6 +301,17 @@
     var(--wl-space-transcript-inline) 0;
   row-gap: var(--wl-density-message-mobile-header-gap);
 }
+.list[data-presentation="mobile"] .row:is([data-pressing], [data-held]) {
+  background: var(--wl-color-chip);
+}
+/* The delay keeps a press that turns into a scroll from flashing the row. */
+.list[data-presentation="mobile"] .row[data-pressing] {
+  transition: background-color 320ms ease-in 120ms;
+}
+.list[data-presentation="mobile"] .row[data-pressing] * {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
 .list[data-presentation="mobile"] .highlighted:not(.action) {
   --wl-message-highlight-inset: var(
     --wl-density-message-mobile-group-highlight-inset

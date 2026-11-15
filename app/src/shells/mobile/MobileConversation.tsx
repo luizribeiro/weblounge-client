@@ -28,6 +28,7 @@ import {
 } from "../../features/conversation/MessageList";
 import {
   bufferReactionToggle,
+  reactionTarget,
   type ToggleBufferReaction,
 } from "../../features/conversation/reaction-target";
 import {
@@ -40,7 +41,9 @@ import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
+import { MobileMessageActionSheet } from "./MobileMessageActionSheet";
 import styles from "./MobileShell.module.css";
+import { messageSheetActions } from "./message-sheet-actions";
 
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
@@ -93,6 +96,22 @@ export function MobileConversation(props: MobileConversationProps) {
     connectionPresentation(props.network === undefined ? [] : [props.network]);
   const sync = () => bufferSyncPresentation(props.buffer, props.network);
   const bufferId = createMemo(() => props.buffer.id);
+  const [heldMessage, setHeldMessage] = createSignal<MessageProjection>();
+  let focusBeforeActions: Element | null = null;
+  const openMessageActions = (message: MessageProjection) => {
+    if (heldMessage() === undefined)
+      focusBeforeActions = document.activeElement;
+    setHeldMessage(message);
+  };
+  const dismissMessageActions = () => {
+    setHeldMessage(undefined);
+    if (
+      focusBeforeActions instanceof HTMLElement &&
+      focusBeforeActions.isConnected
+    )
+      focusBeforeActions.focus({ preventScroll: true });
+    focusBeforeActions = null;
+  };
   const toggleReaction = createMemo(() =>
     bufferReactionToggle(
       props.buffer.id,
@@ -250,6 +269,8 @@ export function MobileConversation(props: MobileConversationProps) {
               props.onRetry?.(props.buffer.id, localSendId)
             }
             onToggleReaction={toggleReaction()}
+            onMessageActions={openMessageActions}
+            heldMessageId={heldMessage()?.id}
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
             syncState={props.buffer.sync_state}
@@ -304,6 +325,20 @@ export function MobileConversation(props: MobileConversationProps) {
           />
         </Show>
       </div>
+      <Show when={heldMessage()} keyed>
+        {(message) => (
+          <MobileMessageActionSheet
+            actions={messageSheetActions(message, { copyText })}
+            message={message}
+            onDismiss={dismissMessageActions}
+            onReact={reactionTarget(message, toggleReaction())}
+          />
+        )}
+      </Show>
     </section>
   );
+}
+
+function copyText(text: string): void {
+  void navigator.clipboard?.writeText(text);
 }

@@ -39,6 +39,7 @@ import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
+import { createLongPress } from "../../ui/long-press";
 import { Selectable } from "../../ui/Selectable";
 import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
@@ -119,6 +120,11 @@ interface MessageListProps {
   readonly onRejoin?: (() => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onToggleReaction?: ToggleReaction | undefined;
+  /** Phone rows open their action sheet from a long press; the held message stays marked. */
+  readonly onMessageActions?:
+    | ((message: MessageProjection) => void)
+    | undefined;
+  readonly heldMessageId?: number | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -1425,6 +1431,8 @@ export function MessageList(props: MessageListProps) {
                       onRejoin={props.onRejoin}
                       onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
+                      onMessageActions={props.onMessageActions}
+                      heldMessageId={props.heldMessageId}
                       reactions={rowReactions()}
                       presentation={props.presentation}
                       row={row()}
@@ -1496,6 +1504,10 @@ function TimelineRowView(props: {
   readonly onRejoin?: (() => void) | undefined;
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly onMessageActions?:
+    | ((message: MessageProjection) => void)
+    | undefined;
+  readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
   readonly row: TimelineRow | undefined;
@@ -1580,6 +1592,8 @@ function TimelineRowView(props: {
                 onOpenDirect={props.onOpenDirect}
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
+                onMessageActions={props.onMessageActions}
+                held={props.heldMessageId === row.message.id}
                 reactions={props.reactions}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
@@ -1649,6 +1663,10 @@ function MessageRow(props: {
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly onMessageActions?:
+    | ((message: MessageProjection) => void)
+    | undefined;
+  readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
   readonly startsMobileGroup: boolean;
@@ -1679,26 +1697,34 @@ function MessageRow(props: {
   const toolbarReact = props.presentation === "mobile" ? undefined : react;
   const toolbar = createRowToolbarVisibility();
   const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
+  const openActions = props.onMessageActions;
+  const longPress =
+    openActions === undefined
+      ? undefined
+      : createLongPress(() => openActions(message));
   return (
     <div
       class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
+      data-held={props.held || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}
+      data-pressing={longPress?.pressing() || undefined}
       data-unverified-sender={message.unverified_sender === true || undefined}
       onFocusIn={toolbar.onFocusIn}
       onFocusOut={toolbar.onFocusOut}
       onPointerEnter={toolbar.onPointerEnter}
       onPointerLeave={toolbar.onPointerLeave}
-      ref={(row) =>
+      ref={(row) => {
+        longPress?.attach(row);
         queueMicrotask(() => {
           const restored = props.reactions?.focusToRestore(message.id);
           if (restored !== undefined) toolbar.revealForKeyboard();
           toolbar.mount(row);
           if (restored !== undefined) focusControl(row, restored);
-        })
-      }
+        });
+      }}
       tabindex={toolbarReact === undefined ? undefined : 0}
     >
       <Show
