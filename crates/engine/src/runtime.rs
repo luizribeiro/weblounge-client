@@ -3139,9 +3139,7 @@ fn completion_context(
     let end = byte_offset(input, cursor);
     let before = input.get(..end)?;
     let replace_end = utf16_len(before);
-    let word_start = before.rfind(char::is_whitespace).map_or(0, |index| {
-        index + before[index..].chars().next().map_or(0, char::len_utf8)
-    });
+    let word_start = word_start(before);
     let word = before.get(word_start..)?;
     if before.starts_with('/') && !before.contains(char::is_whitespace) {
         return Some(CompletionContext {
@@ -3161,7 +3159,7 @@ fn completion_context(
         Some('@') => (
             CompletionTrigger::Person,
             word.get(1..)?.to_owned(),
-            if word_start == 0 { ": " } else { "" },
+            mention_suffix(word_start),
         ),
         Some(first) if chantypes.contains(first) => {
             (CompletionTrigger::Channel, word.to_owned(), "")
@@ -3169,7 +3167,7 @@ fn completion_context(
         _ if explicit => (
             CompletionTrigger::Person,
             word.to_owned(),
-            if word_start == 0 { ": " } else { "" },
+            mention_suffix(word_start),
         ),
         _ => return None,
     };
@@ -3182,6 +3180,16 @@ fn completion_context(
         replacement_prefix: String::new(),
         replacement_suffix: replacement_suffix.into(),
     })
+}
+
+fn word_start(before: &str) -> usize {
+    before.rfind(char::is_whitespace).map_or(0, |index| {
+        index + before[index..].chars().next().map_or(0, char::len_utf8)
+    })
+}
+
+fn mention_suffix(word_start: usize) -> &'static str {
+    if word_start == 0 { ": " } else { "" }
 }
 
 fn command_argument_context(
