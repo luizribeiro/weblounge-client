@@ -25,4 +25,8 @@ state: NetworkConnectionState,
 /**
  * Origin of the file host the network advertises, whose images display inline.
  */
-filehost_origin?: string, };
+filehost_origin?: string,
+/**
+ * Whether this connection can send and confirm the current account's reactions.
+ */
+can_react?: boolean, };

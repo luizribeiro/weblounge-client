@@ -4207,6 +4207,11 @@ fn process_papo_event(
             let _ = running.model.receive_reaction(&reaction);
             Vec::new()
         }
+        papo::Event::FeaturesChanged(_) => {
+            running.model.set_can_react(can_react(snapshot));
+            output.push(running.model.network_event());
+            Vec::new()
+        }
         papo::Event::TypingChanged(changed) => {
             if changed.authorship != papo::Authorship::Own
                 && let Some(event) =
@@ -4390,6 +4395,7 @@ fn process_disconnected_event(
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.typing = crate::typing::OutgoingTyping::default();
+    running.model.set_can_react(false);
     output.extend(running.model.conversation_buffers().map(|(buffer_id, _)| {
         EngineToUi::TypingChanged {
             buffer_id,
@@ -4459,6 +4465,7 @@ fn process_connected(
     running
         .model
         .set_filehost_origin(filehost::origin(snapshot));
+    running.model.set_can_react(can_react(snapshot));
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
         snapshot.supports(papo::Feature::History),
@@ -14667,6 +14674,46 @@ async fn delay(duration: Duration) {
         assert!(projected_reaction(&again, "unreact here").is_some());
         let resent = next_sent_containing(&mut harness.wire, "TAGMSG #room").await;
         assert!(resent.contains("+draft/react=👍"), "{resent}");
+        harness.drain.abort();
+    }
+
+    async fn next_can_react(harness: &mut ReplayHarness) -> bool {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let EngineToUi::NetworkStateChanged { network } = harness
+                    .receiver
+                    .recv()
+                    .await
+                    .expect("runtime remains active")
+                    && network.state == crate::NetworkConnectionState::Online
+                {
+                    return network.can_react;
+                }
+            }
+        })
+        .await
+        .expect("the network projection arrives")
+    }
+
+    #[tokio::test]
+    async fn network_projects_reaction_sending_from_current_features() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        assert!(next_can_react(&mut harness).await);
+
+        harness
+            .wire
+            .server(":offline.test 005 weblounge CLIENTTAGDENY=draft/react :supported")
+            .await;
+
+        assert!(!next_can_react(&mut harness).await);
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn network_without_labeled_echoes_cannot_send_reactions() {
+        let mut harness = ReplayHarness::joined("message-tags echo-message server-time").await;
+
+        assert!(!next_can_react(&mut harness).await);
         harness.drain.abort();
     }
 

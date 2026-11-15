@@ -587,6 +587,7 @@ impl NetworkModel {
                 nickname,
                 state: NetworkConnectionState::Connecting,
                 filehost_origin: None,
+                can_react: false,
             },
             server_buffer_id: server_id,
             casemapping,
@@ -655,6 +656,10 @@ impl NetworkModel {
 
     pub(crate) fn set_filehost_origin(&mut self, origin: Option<String>) {
         self.network.filehost_origin = origin;
+    }
+
+    pub(crate) fn set_can_react(&mut self, can_react: bool) {
+        self.network.can_react = can_react;
     }
 
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {

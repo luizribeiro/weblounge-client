@@ -414,6 +414,10 @@ pub struct NetworkProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub filehost_origin: Option<String>,
+    /// Whether this connection can send and confirm the current account's reactions.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub can_react: bool,
 }
 
 /// Conversation represented by a buffer.

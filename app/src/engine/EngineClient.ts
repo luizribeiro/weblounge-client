@@ -998,6 +998,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
       value.filehost_origin === undefined ||
       typeof value.filehost_origin === "string"
     ) ||
+    !(value.can_react === undefined || typeof value.can_react === "boolean") ||
     state === undefined
   ) {
     return undefined;
@@ -1010,6 +1011,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     ...(typeof value.filehost_origin === "string"
       ? { filehost_origin: value.filehost_origin }
       : {}),
+    ...(value.can_react === true ? { can_react: true } : {}),
   };
 }
 

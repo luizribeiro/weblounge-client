@@ -410,6 +410,32 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("decodes whether a network can send reactions", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const network = {
+      id: 1,
+      label: "Local Ergo",
+      nickname: "weblounge",
+      state: "online",
+      can_react: true,
+    };
+
+    port.emit({ type: "network_state_changed", network });
+    expect(() =>
+      port.emit({
+        type: "network_state_changed",
+        network: { ...network, can_react: "yes" },
+      }),
+    ).toThrow("invalid engine message");
+    frames[0]?.(0);
+
+    expect(listener.mock.calls.map(([message]) => message)).toEqual([
+      { type: "network_state_changed", network },
+    ]);
+  });
+
   it("decodes the engine runtime command registry", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
