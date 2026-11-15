@@ -38,7 +38,10 @@ test("captures the transcript spacing review fixture", async ({
   await composer.press("Enter");
   await composer.fill("/topic");
   await composer.press("Enter");
-  await expect(page.locator("[data-notice-row]")).toHaveCount(2);
+  await expect(page.locator("[data-notice-row]")).toHaveCount(1);
+  await expect(
+    page.locator("[data-system-line]").filter({ hasText: "Topic:" }),
+  ).toBeVisible();
   const list = page.locator("[data-message-list]");
   if (phone) await scrollToTranscriptTop(list);
   else {

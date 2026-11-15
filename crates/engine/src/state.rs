@@ -1988,6 +1988,15 @@ impl NetworkModel {
         self.push_record_at(buffer_id, order, topic_card(channel), None, None)
     }
 
+    pub(crate) fn show_topic_card(
+        &mut self,
+        buffer_id: BufferId,
+        channel: &papo::Channel,
+    ) -> Option<MessageId> {
+        let order = self.allocate_order(None, time_millis(papo::time::now()));
+        self.push_record_at(buffer_id, order, topic_card(channel), None, None)
+    }
+
     pub(crate) fn confirm_send(
         &mut self,
         pending: &PendingSend,

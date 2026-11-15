@@ -526,11 +526,11 @@ test.describe("local Ergo user flow", () => {
 
     await composer.fill("/topic");
     await composer.press("Enter");
-    const notice = page.locator("[data-notice-row]").filter({
+    const card = page.locator("[data-system-line]").filter({
       hasText: `Topic: ${topic}`,
     });
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText(`set by ${irc.account}`);
+    await expect(card).toBeVisible();
+    await expect(page.locator("[data-notice-row]")).toHaveCount(1);
   });
 
   test("shows existing channel history in a fresh browser", async ({

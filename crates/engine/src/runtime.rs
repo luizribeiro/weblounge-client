@@ -2077,18 +2077,7 @@ impl Runtime {
         let Some(buffer_id) = running.model.buffer_id_for_channel(channel.name()) else {
             return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
-        if running
-            .model
-            .append_notice(
-                buffer_id,
-                channel.topic().unwrap_or_default().to_owned(),
-                NoticeKind::Topic {
-                    setter: channel.topic_set_by().map(ToString::to_string),
-                    set_at: channel.topic_set_at().map(time_millis),
-                },
-            )
-            .is_none()
-        {
+        if running.model.show_topic_card(buffer_id, channel).is_none() {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         }
         finish_timeline_turn(state, vec![EngineToUi::CommandResult { id: command_id }])
@@ -9696,16 +9685,20 @@ async fn delay(duration: Duration) {
                 input: "/topic".into(),
             },
         });
-        assert!(changed_messages(&shown).iter().any(|(_, message)| {
-            matches!(
-                &message.kind,
-                crate::MessageKind::Notice(crate::NoticeKind::Topic {
-                    setter: Some(setter),
-                    set_at: None,
-                }) if setter == "weblounge"
-            ) && message.text == "new topic"
-                && message.author.is_empty()
-        }));
+        assert!(shown.iter().any(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { upserted, .. } if upserted.iter().any(|item| matches!(
+                &item.body,
+                crate::timeline::ItemBody::System(system) if system.line
+                    == crate::timeline::SystemLine::Event {
+                        event: crate::timeline::LineEvent::TopicCard {
+                            topic: "new topic".into(),
+                            setter: Some("weblounge".into()),
+                            set_at_ms: None,
+                        },
+                    }
+            ))
+        )));
     }
 
     fn process_runtime_event(runtime: &Runtime, event: papo::Event) {
