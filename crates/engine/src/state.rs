@@ -213,6 +213,7 @@ struct BufferState {
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
     system_dedup: HashMap<MessageId, SystemDedupReference>,
+    topic_card: Option<OrderKey>,
     emitted_timeline: Vec<TimelineItem>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
@@ -543,6 +544,7 @@ impl NetworkModel {
             timeline: Vec::new(),
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
+            topic_card: None,
             system_dedup: HashMap::new(),
             emitted_timeline: Vec::new(),
             direct: None,
@@ -941,10 +943,14 @@ impl NetworkModel {
         channels.sort_by_key(|(channel, _)| channel.to_string());
         let mut events = Vec::new();
         let mut changed = false;
+        let mut joined = Vec::new();
         for (channel, topic) in channels {
             let key = NameKey::Channel(channel);
             if let Some(id) = self.names.get(&key).copied() {
                 if let Some(buffer) = self.buffers.get_mut(&id) {
+                    if buffer.projection.channel_status == Some(ChannelStatus::Kicked) {
+                        joined.push(id);
+                    }
                     let title = key.title();
                     if buffer.projection.topic != topic
                         || buffer.projection.channel_status != Some(ChannelStatus::Joined)
@@ -960,7 +966,14 @@ impl NetworkModel {
                 }
             } else {
                 let buffer = self.add_buffer(key, BufferKind::Channel, None, None, topic);
+                joined.push(buffer.id);
                 events.push(EngineToUi::BufferAdded { buffer });
+            }
+        }
+        for id in joined {
+            let order = self.allocate_order(None, time_millis(papo::time::now()));
+            if let Some(buffer) = self.buffers.get_mut(&id) {
+                buffer.topic_card = Some(order);
             }
         }
         if !events.is_empty() || changed {
@@ -1845,8 +1858,19 @@ impl NetworkModel {
         {
             return None;
         }
-        let id = self.allocate_message_id();
         let order = self.allocate_order(server_time_ms, received_at_ms);
+        self.push_record_at(buffer_id, order, body, server_time_ms, dedup)
+    }
+
+    fn push_record_at(
+        &mut self,
+        buffer_id: BufferId,
+        order: OrderKey,
+        body: RecordBody,
+        server_time_ms: Option<i64>,
+        dedup: Option<SystemDedupReference>,
+    ) -> Option<MessageId> {
+        let id = self.allocate_message_id();
         let day = self.calendar.day(order.primary_ms());
         let buffer = self.buffers.get_mut(&buffer_id)?;
         buffer.timeline.push(TimelineRecord {
@@ -1935,6 +1959,33 @@ impl NetworkModel {
             server_time_ms,
             time_millis(changed.received_at),
         )
+    }
+
+    pub(crate) fn anchor_topic_card(&mut self, joined: &papo::event::Joined) {
+        let Some(buffer_id) = self.buffer_id_for_channel(&joined.channel) else {
+            return;
+        };
+        if self
+            .buffers
+            .get(&buffer_id)
+            .is_none_or(|buffer| buffer.topic_card.is_none())
+        {
+            return;
+        }
+        let order = self.allocate_order(
+            joined.server_time.map(time_millis),
+            time_millis(joined.received_at),
+        );
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.topic_card = Some(order);
+        }
+    }
+
+    pub(crate) fn show_pending_topic_card(&mut self, channel: &papo::Channel) -> Option<MessageId> {
+        let buffer_id = self.buffer_id_for_channel(channel.name())?;
+        let order = self.buffers.get_mut(&buffer_id)?.topic_card.take()?;
+        channel.topic()?;
+        self.push_record_at(buffer_id, order, topic_card(channel), None, None)
     }
 
     pub(crate) fn confirm_send(
@@ -3718,6 +3769,7 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
+                topic_card: None,
                 system_dedup: HashMap::new(),
                 emitted_timeline: Vec::new(),
                 direct: (kind == BufferKind::Direct)
@@ -4219,6 +4271,14 @@ fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
         nick,
         me,
     }
+}
+
+fn topic_card(channel: &papo::Channel) -> RecordBody {
+    RecordBody::Line(LineEvent::TopicCard {
+        topic: channel.topic().unwrap_or_default().to_owned(),
+        setter: channel.topic_set_by().map(ToString::to_string),
+        set_at_ms: channel.topic_set_at().map(time_millis),
+    })
 }
 
 fn source_actor(
@@ -7438,6 +7498,145 @@ mod tests {
             buffer.and_then(|buffer| buffer.projection.channel_status),
             Some(crate::ChannelStatus::Joined),
         );
+    }
+
+    async fn join_and_sync(
+        client: &papo::Client,
+        events: &mut papo::Events,
+        wire: &mut papo_testing::Wire,
+        model: &mut NetworkModel,
+        topic: Option<&str>,
+    ) -> Vec<LineEvent> {
+        wire.server("@time=2026-11-03T10:00:00.000Z :weblounge!u@host JOIN #room")
+            .await;
+        if let Some(topic) = topic {
+            wire.server(format!(":irc.example 332 weblounge #room :{topic}"))
+                .await;
+            wire.server(":irc.example 333 weblounge #room mel!u@host 1762160000")
+                .await;
+        }
+        wire.server(":irc.example 353 weblounge = #room :weblounge mel")
+            .await;
+        wire.server(":irc.example 366 weblounge #room :End of /NAMES list.")
+            .await;
+        let joined = next_event(events, |event| match event {
+            papo::Event::Joined(joined) => Some(joined),
+            _ => None,
+        })
+        .await;
+        model.sync_channels(&client.state());
+        model.anchor_topic_card(&joined);
+        let synced = next_event(events, |event| match event {
+            papo::Event::ChannelSynced(synced) => Some(synced),
+            _ => None,
+        })
+        .await;
+        let state = client.state();
+        let channel = state.channel(&synced.channel).expect("synced channel");
+        model.show_pending_topic_card(channel);
+        take_changed_items(model)
+            .into_iter()
+            .filter_map(|item| match item.body {
+                ItemBody::System(system) => match system.line {
+                    crate::timeline::SystemLine::Event { event } => Some(event),
+                    crate::timeline::SystemLine::Run { .. } => None,
+                },
+                _ => None,
+            })
+            .collect()
+    }
+
+    async fn registered() -> (papo::Client, papo::Events, papo_testing::Wire, NetworkModel) {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_)).then_some(())
+        })
+        .await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.rebuild_name_keys(&client.state());
+        (client, events, wire, model)
+    }
+
+    #[tokio::test]
+    async fn a_first_join_shows_the_topic_card_once_after_sync() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert_eq!(
+            lines,
+            [LineEvent::TopicCard {
+                topic: "beta ships Friday".into(),
+                setter: Some("mel".into()),
+                set_at_ms: Some(1_762_160_000_000),
+            }]
+        );
+        let card = model
+            .buffers
+            .values()
+            .flat_map(|buffer| &buffer.timeline)
+            .find(|record| matches!(record.body, RecordBody::Line(_)))
+            .expect("card record");
+        assert_eq!(card.order.primary_ms(), 1_793_700_000_000);
+        model.sync_channels(&client.state());
+        assert!(take_changed_items(&mut model).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_join_into_an_existing_buffer_shows_no_topic_card() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+        let room = client
+            .state()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .channel("#room");
+        model.ensure_buffer(NameKey::Channel(room), None, None);
+        take_changed_items(&mut model);
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_empty_topic_shows_no_card_on_join() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+
+        let lines = join_and_sync(&client, &mut events, &mut wire, &mut model, None).await;
+
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejoining_after_an_own_kick_shows_the_topic_card_again() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+        join_and_sync(&client, &mut events, &mut wire, &mut model, Some("one")).await;
+        wire.server(":mel!u@host KICK #room weblounge :break").await;
+        let kicked = next_kick(&mut events).await;
+        model.receive_kick(&kicked, true);
+        take_changed_items(&mut model);
+
+        let lines = join_and_sync(&client, &mut events, &mut wire, &mut model, Some("two")).await;
+
+        assert!(matches!(
+            lines.as_slice(),
+            [LineEvent::TopicCard { topic, .. }] if topic == "two"
+        ));
     }
 
     #[tokio::test]

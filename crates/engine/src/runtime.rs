@@ -4765,7 +4765,12 @@ fn process_channel_line(
             _ = model.receive_topic_change(&changed);
             output.extend(model.sync_channels(snapshot));
         }
-        papo::Event::ChannelSynced(_) => output.extend(model.sync_channels(snapshot)),
+        papo::Event::ChannelSynced(synced) => {
+            output.extend(model.sync_channels(snapshot));
+            if let Some(channel) = snapshot.channel(&synced.channel) {
+                _ = model.show_pending_topic_card(channel);
+            }
+        }
         _ => {}
     }
 }
@@ -4792,6 +4797,7 @@ fn process_join(
 ) -> Vec<HistoryTarget> {
     output.extend(running.model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
+        running.model.anchor_topic_card(joined);
         if let Some(papo::ReadMarker::ReadUntil(read_until)) = snapshot.read_marker(&joined.channel)
         {
             let (events, advance) = running.model.apply_server_read_marker_with_advance(
