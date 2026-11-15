@@ -591,6 +591,95 @@ it("requests as input changes, accepts Tab, and ignores IME composition", async 
   expect(request).not.toHaveBeenCalled();
 });
 
+function typedMention(
+  input: string,
+  candidates: readonly CompletionCandidate[],
+  replacementSuffix: string,
+): CompletionResult {
+  return {
+    ...completion(input, candidates, input.lastIndexOf("@")),
+    replacement_suffix: replacementSuffix,
+    auto_accept: true,
+  };
+}
+
+function renderTypedMentions(
+  respond: (input: string) => CompletionResult | undefined,
+) {
+  const [result, setResult] = createSignal<CompletionResult>();
+  const request = vi.fn((value: string) => {
+    const next = respond(value);
+    if (next !== undefined) setResult({ ...next, buffer_id: 6 });
+  });
+  render(() => (
+    <Composer
+      bufferId={6}
+      bufferTitle="#rust"
+      completion={result()}
+      draftKey="test:typed-mention"
+      onRequestCandidates={request}
+      onSend={() => {}}
+    />
+  ));
+  return {
+    input: screen.getByRole<HTMLTextAreaElement>("textbox"),
+    request,
+    setResult,
+  };
+}
+
+it("applies a sole typed-mention result and keeps typing after it", async () => {
+  const { input, request } = renderTypedMentions((value) => {
+    if (value === "@Ana ") return typedMention(value, [person("ana")], ": ");
+    if (value === "thanks @ANA,")
+      return typedMention(value, [person("ana")], ",");
+    if (value === "@An")
+      return completion(value, [person("ana"), person("anita")], 0);
+    return undefined;
+  });
+
+  fireEvent.input(input, { target: { value: "@An" } });
+  expect(screen.getByRole("listbox")).toBeVisible();
+  fireEvent.input(input, { target: { value: "@Ana " } });
+  await waitFor(() => expect(input).toHaveValue("ana: "));
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(input.selectionEnd).toBe(5);
+  expect(request).toHaveBeenLastCalledWith("ana: ", 5, false);
+
+  fireEvent.input(input, { target: { value: "thanks @ANA," } });
+  await waitFor(() => expect(input).toHaveValue("thanks ana,"));
+  expect(input.selectionEnd).toBe(11);
+});
+
+it("ignores typed-mention results for another caret or conversation", () => {
+  const { input, setResult } = renderTypedMentions(() => undefined);
+  const mention = {
+    ...typedMention("@ana hi", [person("ana")], ": "),
+    replace_end: 5,
+  };
+
+  fireEvent.input(input, { target: { value: "@ana hi" } });
+  setResult({ ...mention, buffer_id: 6 });
+  expect(input).toHaveValue("@ana hi");
+  input.setSelectionRange(5, 5);
+  setResult({ ...mention, buffer_id: 7 });
+  expect(input).toHaveValue("@ana hi");
+  setResult({ ...mention, buffer_id: 6 });
+  expect(input).toHaveValue("ana: hi");
+});
+
+it("ignores typed-mention results during IME composition or after edits", () => {
+  const { input, setResult } = renderTypedMentions(() => undefined);
+
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, { target: { value: "@ana " } });
+  setResult({ ...typedMention("@ana ", [person("ana")], ": "), buffer_id: 6 });
+  expect(input).toHaveValue("@ana ");
+  fireEvent.compositionEnd(input, { target: { value: "@ana h" } });
+  setResult({ ...typedMention("@ana ", [person("ana")], ": "), buffer_id: 6 });
+  expect(input).toHaveValue("@ana h");
+});
+
 it("cycles explicit Tab candidates with their engine-owned suffix", async () => {
   const [result, setResult] = createSignal<CompletionResult>();
   const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {

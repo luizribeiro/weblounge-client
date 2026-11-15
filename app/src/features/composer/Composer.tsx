@@ -7,6 +7,7 @@ import {
   on,
   onCleanup,
   Show,
+  untrack,
 } from "solid-js";
 import type {
   CommandSpec,
@@ -132,6 +133,7 @@ export function Composer(props: ComposerProps) {
     const result = props.completion;
     if (
       result?.buffer_id !== props.bufferId ||
+      result.auto_accept ||
       text() === dismissedInput() ||
       result.candidates.length === 0
     )
@@ -335,13 +337,11 @@ export function Composer(props: ComposerProps) {
     });
     return true;
   };
-  const accept = (
-    index = selected() >= 0 ? selected() : 0,
-    acceptSeparatorOnly = true,
+  const applyCandidate = (
+    result: CompletionResult,
+    candidate: CompletionCandidate,
+    acceptSeparatorOnly: boolean,
   ) => {
-    const result = suggestions();
-    const candidate = result?.candidates[index];
-    if (result === undefined || candidate === undefined) return false;
     const currentText = text();
     const replacement = replacementFor(candidate, result);
     const replaceEnd =
@@ -358,6 +358,29 @@ export function Composer(props: ComposerProps) {
     });
     return true;
   };
+  const accept = (
+    index = selected() >= 0 ? selected() : 0,
+    acceptSeparatorOnly = true,
+  ) => {
+    const result = suggestions();
+    const candidate = result?.candidates[index];
+    if (result === undefined || candidate === undefined) return false;
+    return applyCandidate(result, candidate, acceptSeparatorOnly);
+  };
+  createEffect(() => {
+    const result = props.completion;
+    const candidate = result?.candidates[0];
+    if (
+      result?.auto_accept !== true ||
+      candidate === undefined ||
+      result.buffer_id !== props.bufferId ||
+      result.input !== untrack(text) ||
+      textarea?.selectionEnd !== result.replace_end ||
+      composing
+    )
+      return;
+    applyCandidate(result, candidate, true);
+  });
   createEffect(() => {
     const result = suggestions();
     if (result === undefined || result.input !== pendingTabInput) return;
