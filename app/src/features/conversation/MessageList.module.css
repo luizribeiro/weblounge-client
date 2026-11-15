@@ -301,7 +301,8 @@
     var(--wl-space-transcript-inline) 0;
   row-gap: var(--wl-density-message-mobile-header-gap);
 }
-.list[data-presentation="mobile"] .row:is([data-pressing], [data-held]) {
+.list[data-presentation="mobile"] .row[data-pressing],
+.list[data-presentation="mobile"] .row[data-held] {
   background: var(--wl-color-chip);
 }
 /* The delay keeps a press that turns into a scroll from flashing the row. */
