@@ -19,6 +19,7 @@ use crate::{
     read_model::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
+    redaction::{EarlyRedactions, redact_projection, redactor_name},
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
         LocalCalendar, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person, RecordBody,
@@ -493,6 +494,7 @@ pub(crate) struct NetworkModel {
     msgids: HashMap<String, MsgidReference>,
     system_dedup: HashSet<SystemDedupReference>,
     reactions: ReactionIndex,
+    early_redactions: EarlyRedactions,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     dirty_timelines: HashSet<BufferId>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
@@ -603,6 +605,7 @@ impl NetworkModel {
             msgids: HashMap::new(),
             system_dedup: HashSet::new(),
             reactions: ReactionIndex::with_preload_limit(window_limit),
+            early_redactions: EarlyRedactions::default(),
             fallbacks: HashMap::new(),
             dirty_timelines: HashSet::new(),
             reconcilable_failed_sends: HashSet::new(),
@@ -1315,6 +1318,9 @@ impl NetworkModel {
             .msgids
             .get(&target)
             .and_then(|reference| reference.location);
+        if loaded.is_some_and(|location| self.is_redacted(location)) {
+            return None;
+        }
         let buffer_id = loaded
             .map(|(buffer_id, _)| buffer_id)
             .or_else(|| self.buffer_id_for_conversation(reaction.conversation()))?;
@@ -1436,6 +1442,76 @@ impl NetworkModel {
         message.reactions.clone_from(&reactions);
         self.dirty_timelines.insert(buffer_id);
         Some(())
+    }
+
+    pub(crate) fn receive_redaction(
+        &mut self,
+        redacted: &papo::event::Redacted,
+    ) -> Option<EngineToUi> {
+        let target = redacted.redacts.to_string();
+        let redactor = Some(redactor_name(&redacted.actor));
+        let Some((buffer_id, message_id)) = self
+            .msgids
+            .get(&target)
+            .and_then(|reference| reference.location)
+        else {
+            self.early_redactions.remember(target, redactor);
+            return None;
+        };
+        self.redact_message(buffer_id, message_id, redactor)
+    }
+
+    fn apply_early_redaction(&mut self, message: &mut MessageProjection) {
+        if let Some(early) = self.early_redactions.take(&message.server_ids) {
+            redact_projection(message, early.redactor, self.casemapping);
+            self.release_redacted_reactions(&message.server_ids);
+        }
+    }
+
+    fn release_redacted_reactions(&mut self, msgids: &[String]) {
+        for msgid in msgids {
+            self.reactions.remove_target(msgid);
+        }
+    }
+
+    fn is_redacted(&self, (buffer_id, message_id): (BufferId, MessageId)) -> bool {
+        self.buffers
+            .get(&buffer_id)
+            .and_then(|buffer| {
+                buffer
+                    .timeline
+                    .iter()
+                    .find(|record| record.id == message_id)
+            })
+            .and_then(chat_projection)
+            .is_some_and(|message| matches!(message.kind, MessageKind::Redacted(_)))
+    }
+
+    fn redact_message(
+        &mut self,
+        buffer_id: BufferId,
+        message_id: MessageId,
+        redactor: Option<String>,
+    ) -> Option<EngineToUi> {
+        let casemapping = self.casemapping;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let message = buffer
+            .timeline
+            .iter_mut()
+            .find(|record| record.id == message_id)
+            .and_then(chat_projection_mut)?;
+        if !redact_projection(message, redactor, casemapping) {
+            return None;
+        }
+        let msgids = message.server_ids.clone();
+        if let Some(metadata) = buffer.chat_metadata.get_mut(&message_id) {
+            metadata.counts_as_mention = false;
+            metadata.send_text = None;
+        }
+        derive_read_projection(buffer);
+        self.release_redacted_reactions(&msgids);
+        self.dirty_timelines.insert(buffer_id);
+        self.buffer_updated(buffer_id)
     }
 
     pub(crate) fn restore_pushed_messages(
@@ -3996,17 +4072,23 @@ impl NetworkModel {
     fn insert(
         &mut self,
         buffer_id: BufferId,
-        projection: MessageProjection,
+        mut projection: MessageProjection,
         send_text: Option<String>,
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
-        let Some(buffer) = self.buffers.get(&buffer_id) else {
+        if !self.buffers.contains_key(&buffer_id) {
             self.release_dedup(dedup);
             return Err(StateError::MissingBuffer(buffer_id));
+        }
+        self.apply_early_redaction(&mut projection);
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(StateError::MissingBuffer(buffer_id));
         };
+        let redacted = matches!(projection.kind, MessageKind::Redacted(_));
         let counts_as_mention = projection.authorship != MessageAuthorship::Own
+            && !redacted
             && (buffer.projection.kind == BufferKind::Direct || projection.highlighted);
-        let stub = (buffer.projection.kind != BufferKind::Server)
+        let stub = (buffer.projection.kind != BufferKind::Server && !redacted)
             .then(|| message_stub(&projection, counts_as_mention))
             .flatten();
         let id = projection.id;

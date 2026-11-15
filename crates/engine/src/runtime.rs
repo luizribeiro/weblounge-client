@@ -4209,6 +4209,7 @@ fn process_papo_event(
             let _ = running.model.receive_reaction(&reaction);
             Vec::new()
         }
+        papo::Event::Redacted(redacted) => receive_redaction(&mut running.model, &redacted, output),
         papo::Event::FeaturesChanged(_) => {
             running.model.set_can_react(can_react(snapshot));
             output.push(running.model.network_event());
@@ -4245,6 +4246,15 @@ fn process_papo_event(
     };
     running.model.observe_live_server_time(live_server_time);
     effects
+}
+
+fn receive_redaction(
+    model: &mut NetworkModel,
+    redacted: &papo::event::Redacted,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<HistoryFetch> {
+    output.extend(model.receive_redaction(redacted));
+    Vec::new()
 }
 
 fn process_disconnected(
@@ -4966,8 +4976,9 @@ fn process_history(
                 read_advances.extend(advances);
                 output.extend(received);
             }
-            papo::Event::Reacted(reaction) => {
-                let _ = running.model.receive_reaction(&reaction);
+            papo::Event::Reacted(reaction) => _ = running.model.receive_reaction(&reaction),
+            papo::Event::Redacted(redacted) => {
+                output.extend(running.model.receive_redaction(&redacted));
             }
             other => receive_history_system_event(&mut running.model, other),
         }
@@ -5745,6 +5756,8 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
 
 #[cfg(test)]
 mod tests {
+    mod redaction;
+
     use std::{
         collections::VecDeque,
         sync::{Arc, Mutex},

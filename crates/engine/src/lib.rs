@@ -14,6 +14,7 @@ mod push_device;
 mod pushed_messages;
 mod reactions;
 pub mod read_model;
+mod redaction;
 mod request_error;
 mod runtime;
 mod settings;
