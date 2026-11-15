@@ -53,6 +53,57 @@ describe("ContextMenu", () => {
 
     expect(await screen.findByRole("separator")).toBeInTheDocument();
   });
+
+  it("separates nothing when the destructive group is the whole menu", async () => {
+    const invoker = document.createElement("button");
+    document.body.append(invoker);
+    render(() => (
+      <ContextMenu
+        destructiveItems={[
+          { id: "delete", label: "Delete", onSelect: vi.fn() },
+        ]}
+        items={[]}
+        label="Message actions"
+        onDismiss={() => {}}
+        request={{ invoker, x: 0, y: 0 }}
+      />
+    ));
+
+    expect(
+      await screen.findByRole("menuitem", { name: "Delete" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+  });
+
+  it("keeps a menu opened near the right edge inside the viewport", async () => {
+    const invoker = document.createElement("button");
+    document.body.append(invoker);
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const sized = this.isConnected && this.childElementCount > 0;
+        return new DOMRect(0, 0, sized ? 210 : 0, sized ? 40 : 0);
+      });
+    try {
+      render(() => (
+        <ContextMenu
+          items={[{ id: "read", label: "Mark as read", onSelect: vi.fn() }]}
+          label="Actions"
+          onDismiss={() => {}}
+          request={{ invoker, x: window.innerWidth - 10, y: 10 }}
+        />
+      ));
+
+      const menu = await screen.findByRole("menu");
+      await waitFor(() =>
+        expect(menu.style.getPropertyValue("--wl-context-menu-left")).toBe(
+          `${window.innerWidth - 214}px`,
+        ),
+      );
+    } finally {
+      rect.mockRestore();
+    }
+  });
 });
 
 it("keeps the menu inside the viewport", () => {

@@ -11,7 +11,7 @@ export interface ContextMenuItem {
 interface ContextMenuProps {
   readonly label: string;
   readonly request: ContextMenuRequest | undefined;
-  readonly items: readonly ContextMenuItem[];
+  readonly items?: readonly ContextMenuItem[] | undefined;
   readonly destructiveItems?: readonly ContextMenuItem[] | undefined;
   readonly onDismiss: () => void;
 }
@@ -49,7 +49,10 @@ export function ContextMenu(props: ContextMenuProps) {
     dismiss(true);
     item.onSelect();
   };
-  const items = () => [...props.items, ...(props.destructiveItems ?? [])];
+  const items = () => [
+    ...(props.items ?? []),
+    ...(props.destructiveItems ?? []),
+  ];
   const move = (offset: -1 | 1) => {
     const items = menuItems(menu);
     if (items.length === 0) return;
@@ -79,20 +82,23 @@ export function ContextMenu(props: ContextMenuProps) {
           }}
           ref={(element) => {
             menu = element;
-            const position = contextMenuPosition(
-              request,
-              element.getBoundingClientRect(),
-              window,
-            );
-            element.style.setProperty(
-              "--wl-context-menu-left",
-              `${position.left}px`,
-            );
-            element.style.setProperty(
-              "--wl-context-menu-top",
-              `${position.top}px`,
-            );
-            queueMicrotask(() => menuItems(element)[0]?.focus());
+            // The menu has no size until its items mount, so it is placed once they have.
+            queueMicrotask(() => {
+              const position = contextMenuPosition(
+                request,
+                element.getBoundingClientRect(),
+                window,
+              );
+              element.style.setProperty(
+                "--wl-context-menu-left",
+                `${position.left}px`,
+              );
+              element.style.setProperty(
+                "--wl-context-menu-top",
+                `${position.top}px`,
+              );
+              menuItems(element)[0]?.focus();
+            });
           }}
           role="menu"
         >
@@ -100,7 +106,9 @@ export function ContextMenu(props: ContextMenuProps) {
             {(item) => menuItem(item, false, select)}
           </For>
           <Show when={(props.destructiveItems?.length ?? 0) > 0}>
-            <hr class={styles.separator} />
+            <Show when={(props.items?.length ?? 0) > 0}>
+              <hr class={styles.separator} />
+            </Show>
             <For each={props.destructiveItems}>
               {(item) => menuItem(item, true, select)}
             </For>
