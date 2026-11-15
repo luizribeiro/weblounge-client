@@ -60,6 +60,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
 - F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
 - F24: arrow keys between Settings sections (design 29 lists them; one section today). Design 29.
+- F28: a phone push still blocks one frame on mounting the conversation (~65-80ms at 1x, ~100ms at
+  4x on Pixel 7 Chromium): row components plus a TanStack store update per measured row, for the
+  20 visible rows and the 24-row mobile overscan the keyboard motion needs. Candidates: mount with a
+  small overscan and widen it once the slide settles; batch the virtualizer's per-row notifies.
+  The two-frame start-state wait (design 15) adds ~33ms more per push; dropping it for a style flush
+  is a design change for Luiz. `app/e2e/mobile-push-budget.spec.ts` guards the tap frame.
 - F26: reactions batch 3, phone: the long-press sheet with 👍 ❤️ 😂 🎉 👀 ✅, add reaction, Reply and Copy text. Design 25.
 - F27: replies: the one-line parent quote above the reply (activating it scrolls to and highlights the parent; a missing parent is fetched around its msgid; a deleted parent says so); the composer "Replying to <nick> <text>" bar, cancelled with × or Escape; the channel wire prefix "<nick>: ", hidden in our view; no swipe-to-reply. papo's reply API changes in the pending papo bump (`client.reply(&line, …)`). Design 25.
 #### Bugs
@@ -107,12 +113,28 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 #### Device checks
 - V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
 - V5: compare the mention rule with the server's push matching (soju source not available locally). Design 17.
+- V6: phone transitions on Luiz's iPhone 16 Pro (Playwright WebKit on Linux is only indicative).
+  Safari on the Mac, Develop > iPhone > the Home Screen app, Timelines, enable Rendering Frames,
+  JavaScript & Events, Layout & Rendering; record while opening a busy channel from Chats, tapping
+  Back, and swiping back slowly. Check: tap to first moved frame under ~50ms, no frame over 16.7ms in
+  the first 100ms, no Paint/Composite records per frame on the moving screen during the slide or
+  drag, and in the Layers tab that the screen and its `[data-edge-shadow]` are composited with no
+  per-frame repaints. Also confirm the leading-edge shadow still fades on push, pop and swipe.
 
 #### Docs and housekeeping
 - DC1: remove stray worktrees and branches (`~/weblounge-client-*`, old `bump-previous-*` pins, `.claude/worktrees/agent-*`); keep `~/weblounge-client-tap-recovery` for reference.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: smoother phone transitions. Measured push, pop, back-swipe and Settings against local
+  Ergo (260-message channel, 29 chats) in WebKit iPhone and Pixel 7 Chromium at 1x/4x/6x CPU with
+  traces: the slides themselves were compositor-only, but a push spent most of its tap frame
+  remeasuring every row after `document.fonts.ready` even with fonts loaded, and every drag frame
+  restyled the whole moving screen through the inherited `--wl-push-offset`. Now the ready remeasure
+  is skipped when fonts are loaded (tap to motion at 4x 312 to 146ms, 1x 131 to 81ms; WebKit
+  ~115 to ~80ms), and the offset is a non-inherited `@property` with the edge shadow as its own
+  layered element (drag restyle 356 to 5 elements; WebKit long drag frames 13 to 1-3). New @serial
+  Pixel 7 budget spec. F28, V6.
 - 2026-11-15: reactions batch 2, sending on desktop (F25). Chips toggle your reaction; an own
   change shows dashed while papo sends it and turns the error colour with "!" if it fails, and
   activating it retries. Desktop rows show a floating toolbar (👍 ❤️ 😂, add reaction; Reply waits
