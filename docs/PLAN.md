@@ -147,6 +147,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: typing an exact member nick after `@` and then a space or `, : ; . ! ? )` accepts the mention as if picked (`nick: ` at message start, the terminator kept), on desktop and phone; Tab and IME composition are unaffected. Local-Ergo journey `app/e2e/mention-terminator.spec.ts`.
 - 2026-11-15: the phone transcript keeps its latest message above a composer that wraps to
   several lines. Each keystroke's textarea measurement had briefly collapsed the composer, which
   clamped the list's scroll offset one line short of the end. Covered on iPhone and Android, with
