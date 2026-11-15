@@ -50,6 +50,7 @@ import {
 import { InlineImage } from "./InlineImage";
 import { inlineImageUrl } from "./inline-image-url";
 import styles from "./MessageList.module.css";
+import { MessageReactions } from "./MessageReactions";
 import { MessageText, Nickname } from "./MessageText";
 import {
   currentMessageDensity,
@@ -61,7 +62,7 @@ import {
 import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
-import { ReactionChips } from "./ReactionChips";
+import type { ToggleReaction } from "./reaction-target";
 import { Divider } from "./timeline/Divider";
 import {
   estimateSystemLineHeight,
@@ -105,6 +106,7 @@ interface MessageListProps {
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRejoin?: (() => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly onToggleReaction?: ToggleReaction | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -1403,6 +1405,7 @@ export function MessageList(props: MessageListProps) {
                       onRejoin={props.onRejoin}
                       onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
+                      onToggleReaction={props.onToggleReaction}
                       presentation={props.presentation}
                       row={row()}
                     />
@@ -1473,6 +1476,7 @@ function TimelineRowView(props: {
   readonly onRejoin?: (() => void) | undefined;
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly onToggleReaction?: ToggleReaction | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly row: TimelineRow | undefined;
 }) {
@@ -1556,6 +1560,7 @@ function TimelineRowView(props: {
                 onOpenDirect={props.onOpenDirect}
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
+                onToggleReaction={props.onToggleReaction}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
               />
@@ -1624,6 +1629,7 @@ function MessageRow(props: {
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly onToggleReaction?: ToggleReaction | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly startsMobileGroup: boolean;
 }) {
@@ -1691,9 +1697,10 @@ function MessageRow(props: {
               url={props.inlineImage}
             />
             <div class={styles.actionReactions}>
-              <ReactionChips
+              <MessageReactions
+                message={message}
+                onToggle={props.onToggleReaction}
                 presentation={props.presentation}
-                reactions={message.reactions}
               />
             </div>
           </div>
@@ -1746,9 +1753,10 @@ function MessageRow(props: {
               presentation={props.presentation}
               url={props.inlineImage}
             />
-            <ReactionChips
+            <MessageReactions
+              message={message}
+              onToggle={props.onToggleReaction}
               presentation={props.presentation}
-              reactions={message.reactions}
             />
           </div>
           <Delivery message={message} onRetry={props.onRetry} />

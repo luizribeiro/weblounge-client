@@ -339,6 +339,25 @@ export class IrcClient {
     );
   }
 
+  async waitForReaction(
+    target: string,
+    messageId: string,
+    reaction: string,
+    nickname: string,
+    change: "react" | "unreact" = "react",
+  ): Promise<string> {
+    return this.waitFor(
+      `${change} ${reaction} from ${nickname} to ${target}`,
+      (line) =>
+        line.includes(`:${nickname}!`) &&
+        line.includes(`+draft/${change}=${reaction}`) &&
+        new RegExp(`[@;]\\+(?:draft/)?reply=${messageId}[; ]`, "u").test(
+          line,
+        ) &&
+        line.includes(` TAGMSG ${target}`),
+    );
+  }
+
   async typingConfirmed(
     target: string,
     state: "active" | "paused" | "done",

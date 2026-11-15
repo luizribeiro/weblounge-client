@@ -144,6 +144,9 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
+  readonly onToggleReaction?:
+    | ((bufferId: number, messageId: number, reaction: string) => void)
+    | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
 }
@@ -205,6 +208,18 @@ export function DesktopShell(props: DesktopShellProps) {
   const activeNetwork = createMemo(() => {
     const networkId = activeBuffer()?.network_id;
     return props.networks.find((network) => network.id === networkId);
+  });
+  const toggleReaction = createMemo(() => {
+    const buffer = activeBuffer();
+    const toggle = props.onToggleReaction;
+    if (
+      buffer === undefined ||
+      toggle === undefined ||
+      activeNetwork()?.can_react !== true
+    )
+      return undefined;
+    return (messageId: number, reaction: string) =>
+      toggle(buffer.id, messageId, reaction);
   });
   const activeBufferSync = createMemo(() => {
     const buffer = activeBuffer();
@@ -638,6 +653,7 @@ export function DesktopShell(props: DesktopShellProps) {
                   if (buffer !== undefined)
                     props.onRetry?.(buffer.id, localSendId);
                 }}
+                onToggleReaction={toggleReaction()}
                 readAtMs={activeBuffer()?.read_at_ms}
                 unread={activeBuffer()?.unread}
                 syncState={activeBuffer()?.sync_state}
