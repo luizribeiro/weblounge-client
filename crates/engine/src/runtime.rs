@@ -967,7 +967,7 @@ impl Runtime {
             _ = running.typing.done(buffer_id);
             return;
         }
-        let target = running.model.typing_target(buffer_id);
+        let target = running.model.send_target(buffer_id);
         let (typing, pause) = running.typing.changed(buffer_id, input);
         let client = running.client.clone();
         let instance = running.instance;
@@ -1619,7 +1619,7 @@ impl Runtime {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
         };
         let typing_done = running.typing.done(buffer_id);
-        let typing_target = running.model.typing_target(buffer_id);
+        let typing_target = running.model.send_target(buffer_id);
         let direct_resolution = await_live_target
             .then(|| running.model.begin_buffer_direct_resolution(buffer_id))
             .flatten();
@@ -2631,7 +2631,7 @@ fn spawn_typing_pause(state: Arc<Mutex<RuntimeState>>, instance: u64, pause: cra
             typing.map(|typing| {
                 (
                     running.client.clone(),
-                    running.model.typing_target(pause.buffer_id),
+                    running.model.send_target(pause.buffer_id),
                     typing,
                 )
             })

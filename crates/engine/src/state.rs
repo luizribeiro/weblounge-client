@@ -2609,7 +2609,7 @@ impl NetworkModel {
         })
     }
 
-    pub(crate) fn typing_target(&self, buffer_id: BufferId) -> Option<SendTarget> {
+    pub(crate) fn send_target(&self, buffer_id: BufferId) -> Option<SendTarget> {
         let buffer = self.buffers.get(&buffer_id)?;
         SendTarget::from_buffer(
             buffer.key.clone()?,
