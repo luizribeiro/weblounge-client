@@ -1433,11 +1433,13 @@ const scrollKeys = new Set([
   "PageUp",
 ]);
 
-function topicCard(row: TimelineRow): TopicCardEvent | undefined {
+function topicCard(
+  row: TimelineRow,
+): { readonly card: TopicCardEvent; readonly timeMs: number } | undefined {
   return row.kind === "system" &&
     row.system.line.type === "event" &&
     row.system.line.event.type === "topic_card"
-    ? row.system.line.event
+    ? { card: row.system.line.event, timeMs: row.system.time_ms }
     : undefined;
 }
 
@@ -1580,12 +1582,12 @@ function TimelineRowView(props: {
             )}
           </Match>
           <Match when={topicCard(row)}>
-            {(card) => (
+            {(shown) => (
               <SystemCard
-                card={card()}
+                card={shown().card}
                 presentation={props.presentation ?? "desktop"}
                 renderText={renderText}
-                timeMs={row.kind === "system" ? row.system.time_ms : 0}
+                timeMs={shown().timeMs}
               />
             )}
           </Match>

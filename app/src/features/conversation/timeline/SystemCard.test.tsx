@@ -16,7 +16,7 @@ it("shows the topic under a Topic title with who set it and when", () => {
       card={card}
       presentation="desktop"
       renderText={(text) => <span data-rendered-text>{text}</span>}
-      timeMs={setAt}
+      timeMs={setAt + 86_400_000}
     />
   ));
 
@@ -27,7 +27,9 @@ it("shows the topic under a Topic title with who set it and when", () => {
   expect(region.querySelector("[data-rendered-text]")).toHaveTextContent(
     card.topic,
   );
-  expect(topicCardMeta(card)).toMatch(/^set by mel · .*3/u);
+  expect(topicCardMeta(card)).toBe(
+    `set by mel · ${new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(setAt)}`,
+  );
 });
 
 it("says no topic is set and omits unknown setter facts", () => {
