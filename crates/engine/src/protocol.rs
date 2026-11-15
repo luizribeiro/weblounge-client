@@ -1276,6 +1276,9 @@ pub enum EngineToUi {
         replacement_prefix: String,
         /// Engine-owned text placed after the selected candidate label.
         replacement_suffix: String,
+        /// The input ends with a typed `@nick` and a terminator that name exactly one candidate,
+        /// the only one listed, which the UI applies without offering suggestions.
+        auto_accept: bool,
         /// Ordered, bounded rich candidates.
         candidates: Vec<CompletionCandidate>,
     },

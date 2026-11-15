@@ -1171,6 +1171,7 @@ impl Runtime {
                 argument_hint: context.argument_hint,
                 replacement_prefix: context.replacement_prefix,
                 replacement_suffix: context.replacement_suffix,
+                auto_accept: false,
                 candidates,
             },
             EngineToUi::CommandResult { id: command_id },

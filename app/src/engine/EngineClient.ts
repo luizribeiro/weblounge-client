@@ -581,6 +581,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           typeof value.argument_hint === "string") &&
         typeof value.replacement_prefix === "string" &&
         typeof value.replacement_suffix === "string" &&
+        typeof value.auto_accept === "boolean" &&
         candidates !== undefined
       ) {
         return {
@@ -594,6 +595,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           argument_hint: value.argument_hint,
           replacement_prefix: value.replacement_prefix,
           replacement_suffix: value.replacement_suffix,
+          auto_accept: value.auto_accept,
           candidates,
         };
       }

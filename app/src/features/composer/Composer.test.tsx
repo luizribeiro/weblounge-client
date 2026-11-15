@@ -74,6 +74,7 @@ function completion(
     argument_hint: argumentHint,
     replacement_prefix: replacementPrefix,
     replacement_suffix: replacementSuffix,
+    auto_accept: false,
     candidates: [...candidates],
   };
 }

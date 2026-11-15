@@ -243,8 +243,7 @@ describe("WorkerEngineClient", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
-
-    port.emit({
+    const command = {
       type: "completion_result",
       command_id: "complete-1",
       buffer_id: 4,
@@ -255,6 +254,7 @@ describe("WorkerEngineClient", () => {
       argument_hint: null,
       replacement_prefix: "/",
       replacement_suffix: " ",
+      auto_accept: false,
       candidates: [
         {
           type: "command",
@@ -263,29 +263,36 @@ describe("WorkerEngineClient", () => {
           description: "cmd.join.description",
         },
       ],
-    });
+    };
+    const typedMention = {
+      ...command,
+      command_id: "complete-2",
+      input: "@Ana ",
+      replace_end: 5,
+      trigger: "person",
+      replacement_prefix: "",
+      replacement_suffix: ": ",
+      auto_accept: true,
+      candidates: [
+        {
+          type: "person",
+          nick: "ana",
+          nick_color_index: 3,
+          away: false,
+          bot: null,
+        },
+      ],
+    };
+    const { auto_accept: _, ...withoutAcceptance } = typedMention;
+
+    port.emit(command);
+    port.emit(typedMention);
+    expect(() => port.emit(withoutAcceptance)).toThrow(
+      "invalid engine message",
+    );
     frames[0]?.(0);
 
-    expect(listener).toHaveBeenCalledWith({
-      type: "completion_result",
-      command_id: "complete-1",
-      buffer_id: 4,
-      input: "/j",
-      replace_start: 0,
-      replace_end: 2,
-      trigger: "command",
-      argument_hint: null,
-      replacement_prefix: "/",
-      replacement_suffix: " ",
-      candidates: [
-        {
-          type: "command",
-          name: "join",
-          usage: "cmd.join.usage",
-          description: "cmd.join.description",
-        },
-      ],
-    });
+    expect(listener.mock.calls).toEqual([[command], [typedMention]]);
   });
 
   it("decodes typed local notice messages", () => {

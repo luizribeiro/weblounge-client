@@ -430,6 +430,7 @@ export class ActionRegistry {
       argument_hint: null,
       replacement_prefix: "/",
       replacement_suffix: " ",
+      auto_accept: false,
       candidates: [
         {
           type: "command",

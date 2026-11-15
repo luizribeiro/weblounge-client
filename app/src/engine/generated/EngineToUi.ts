@@ -173,6 +173,11 @@ replacement_prefix: string,
  */
 replacement_suffix: string,
 /**
+ * The input ends with a typed `@nick` and a terminator that name exactly one candidate,
+ * the only one listed, which the UI applies without offering suggestions.
+ */
+auto_accept: boolean,
+/**
  * Ordered, bounded rich candidates.
  */
 candidates: Array<CompletionCandidate>, } | { "type": "typing_changed",
