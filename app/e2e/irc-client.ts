@@ -1,5 +1,10 @@
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
+import {
+  advertisedCaps,
+  capabilityRequest,
+  isFinalCapList,
+} from "./irc-caps.mjs";
 import { claimNickname } from "./irc-nick-claim";
 
 const host = process.env.WEBLOUNGE_E2E_IRC_HOST ?? "127.0.0.1";
@@ -11,6 +16,7 @@ export class IrcClient {
   readonly #lines: string[] = [];
   #buffer = "";
   #nickname: string;
+  #caps: readonly string[] = [];
 
   private constructor(socket: Socket, nickname: string) {
     this.#socket = socket;
@@ -63,26 +69,22 @@ export class IrcClient {
     this.send("CAP LS 302");
     this.send(`NICK ${this.#nickname}`);
     this.send(`USER ${this.#nickname} 0 * :${this.#nickname}`);
-    await this.waitFor("capability list", (line) =>
-      line.includes(" CAP * LS "),
-    );
-    this.send(
-      "CAP REQ :account-tag batch draft/message-redaction draft/multiline draft/read-marker echo-message message-tags sasl server-time",
-    );
+    const advertised: string[] = [];
+    for (;;) {
+      const line = await this.waitFor("capability list", (candidate) =>
+        candidate.includes(" CAP * LS "),
+      );
+      advertised.push(...advertisedCaps(line));
+      if (isFinalCapList(line)) break;
+    }
+    const caps = capabilityRequest(advertised);
+    this.send(`CAP REQ :${caps.join(" ")}`);
     await this.waitFor(
       "requested capability acknowledgement",
       (line) =>
-        line.includes(" CAP * ACK ") &&
-        line.includes("account-tag") &&
-        line.includes("batch") &&
-        line.includes("draft/message-redaction") &&
-        line.includes("draft/multiline") &&
-        line.includes("draft/read-marker") &&
-        line.includes("message-tags") &&
-        line.includes("sasl") &&
-        line.includes("echo-message") &&
-        line.includes("server-time"),
+        line.includes(" CAP * ACK ") && caps.every((cap) => line.includes(cap)),
     );
+    this.#caps = caps;
     this.send("AUTHENTICATE PLAIN");
     await this.waitFor("SASL PLAIN authentication prompt", (line) =>
       line.endsWith("AUTHENTICATE +"),
@@ -324,6 +326,8 @@ export class IrcClient {
   }
 
   async redactConfirmed(target: string, messageId: string): Promise<void> {
+    if (!this.#caps.includes("draft/message-redaction"))
+      throw new Error("this IRC server does not offer draft/message-redaction");
     this.send(`REDACT ${target} ${messageId}`);
     await this.waitFor(`echoed REDACT of ${messageId}`, (line) =>
       line.includes(` REDACT ${target} ${messageId}`),
