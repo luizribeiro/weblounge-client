@@ -1120,24 +1120,13 @@ impl NetworkModel {
         }
         let msgid = event.msgid.as_ref().map(ToString::to_string);
         let server_time_ms = event.server_time.map(time_millis);
-        let actor_name = event.actor.to_string();
-        let actor = match &event.actor {
-            papo::Source::User(_) => Actor::User(person(
-                self.casemapping,
-                actor_name.clone(),
-                event.authorship == papo::Authorship::Own,
-            )),
-            papo::Source::Server(server) => Actor::Server {
-                name: server.to_string(),
-            },
-            _ => return None,
-        };
+        let actor = source_actor(self.casemapping, &event.actor, event.authorship)?;
         let dedup = system_dedup_reference(
             buffer_id,
             msgid,
             server_time_ms,
             "mode",
-            actor_name.clone(),
+            event.actor.to_string(),
             Some(projected.iter().map(|change| change.raw.as_str()).collect()),
         );
         let body = RecordBody::Fold(FoldEvent::Modes {
@@ -1875,43 +1864,37 @@ impl NetworkModel {
         Some(id)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn receive_kick(
         &mut self,
-        channel: &papo::ChannelName,
-        actor: String,
-        subject: String,
-        subject_own: bool,
-        reason: Option<String>,
-        msgid: Option<String>,
-        server_time_ms: Option<i64>,
-        received_at_ms: i64,
+        kicked: &papo::event::Kicked,
         update_status: bool,
     ) -> Option<Vec<EngineToUi>> {
-        let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let buffer_id = *self.names.get(&NameKey::Channel(kicked.channel.clone()))?;
+        let subject_own = kicked.subject_authorship == papo::Authorship::Own;
+        let server_time_ms = kicked.server_time.map(time_millis);
         let dedup = system_dedup_reference(
             buffer_id,
-            msgid,
+            kicked.msgid.as_ref().map(ToString::to_string),
             server_time_ms,
             "kick",
-            actor.clone(),
-            Some(subject.clone()),
+            kicked.actor.to_string(),
+            Some(kicked.subject.to_string()),
         );
         let line = LineEvent::Kick {
-            actor: Actor::User(person(self.casemapping, actor, false)),
+            actor: source_actor(self.casemapping, &kicked.actor, kicked.authorship)?,
             subject: if subject_own {
                 Subject::You
             } else {
-                Subject::Other(person(self.casemapping, subject, false))
+                Subject::Other(person(self.casemapping, kicked.subject.to_string(), false))
             },
-            reason,
+            reason: kicked.reason.clone(),
         };
         self.push_system_record(
             buffer_id,
             RecordBody::Line(line),
             dedup,
             server_time_ms,
-            received_at_ms,
+            time_millis(kicked.received_at),
         )?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         if subject_own && update_status {
@@ -4211,6 +4194,24 @@ fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
     }
 }
 
+fn source_actor(
+    casemapping: papo::Casemapping,
+    source: &papo::Source,
+    authorship: papo::Authorship,
+) -> Option<Actor> {
+    match source {
+        papo::Source::User(_) => Some(Actor::User(person(
+            casemapping,
+            source.to_string(),
+            authorship == papo::Authorship::Own,
+        ))),
+        papo::Source::Server(server) => Some(Actor::Server {
+            name: server.to_string(),
+        }),
+        _ => None,
+    }
+}
+
 fn project_mode(
     change: &papo::ModeChange,
     event: &papo::event::ModeChanged,
@@ -4757,8 +4758,8 @@ mod tests {
             app_badge_count, conversation_badge,
         },
         timeline::{
-            FixedOffsetCalendar, ItemBody, LocalDay, ModeMeaning, ModeProjection, RecordBody,
-            RunClause, TimelineItem, apply_timeline_change,
+            Actor, FixedOffsetCalendar, ItemBody, LineEvent, LocalDay, ModeMeaning, ModeProjection,
+            Person, RecordBody, RunClause, Subject, TimelineItem, apply_timeline_change,
         },
     };
 
@@ -4769,11 +4770,59 @@ mod tests {
     }
 
     async fn next_mode(events: &mut papo::Events) -> papo::event::ModeChanged {
+        next_event(events, |event| match event {
+            papo::Event::ModeChanged(changed) => Some(changed),
+            _ => None,
+        })
+        .await
+    }
+
+    async fn next_event<T>(
+        events: &mut papo::Events,
+        pick: impl Fn(papo::Event) -> Option<T>,
+    ) -> T {
         loop {
-            if let Some(papo::Event::ModeChanged(changed)) = events.next().await {
-                return changed;
+            if let Some(picked) = events.next().await.and_then(&pick) {
+                return picked;
             }
         }
+    }
+
+    async fn joined_room() -> (papo::Client, papo::Events, papo_testing::Wire, NetworkModel) {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_)).then_some(())
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Joined(_)).then_some(())
+        })
+        .await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        model.take_timeline_changes(false);
+        (client, events, wire, model)
+    }
+
+    async fn next_kick(events: &mut papo::Events) -> papo::event::Kicked {
+        next_event(events, |event| match event {
+            papo::Event::Kicked(kicked) => Some(kicked),
+            _ => None,
+        })
+        .await
+    }
+
+    fn only_line_event(model: &mut NetworkModel) -> LineEvent {
+        let item = take_changed_items(model).pop().expect("one system row");
+        let ItemBody::System(system) = item.body else {
+            panic!("system row expected")
+        };
+        let crate::timeline::SystemLine::Event { event } = system.line else {
+            panic!("standalone line expected")
+        };
+        event
     }
 
     fn assert_mode_meanings(changes: &[ModeProjection]) {
@@ -7323,38 +7372,64 @@ mod tests {
         assert_eq!(model.buffers[&buffer_id].timeline.len(), 3);
     }
 
-    #[test]
-    fn history_kick_of_another_user_keeps_its_reason_without_changing_status() {
-        let (mut model, state) = model(10);
-        let room = channel_name(&state, "#room");
-        model.ensure_buffer(NameKey::Channel(room.clone()), None, None);
-        let buffer_id = model.names[&NameKey::Channel(room.clone())];
-        model.receive_kick(
-            &room,
-            "operator".into(),
-            "mel".into(),
-            false,
-            Some("too loud".into()),
-            Some("kick-1".into()),
-            Some(10),
-            10,
-            false,
-        );
+    #[tokio::test]
+    async fn history_kick_of_another_user_keeps_its_reason_without_changing_status() {
+        let (_client, mut events, mut wire, mut model) = joined_room().await;
+        wire.server("@msgid=kick-1 :operator!u@host KICK #room mel :too loud")
+            .await;
+        let kicked = next_kick(&mut events).await;
 
-        let item = take_changed_items(&mut model).pop().expect("kick row");
-        assert!(matches!(
-            item.body,
-            ItemBody::System(system) if matches!(
-                system.line,
-                crate::timeline::SystemLine::Event {
-                    event: crate::timeline::LineEvent::Kick { ref reason, .. }
-                } if reason.as_deref() == Some("too loud")
-            )
-        ));
-        assert_ne!(
-            model.buffers[&buffer_id].projection.channel_status,
-            Some(crate::ChannelStatus::Kicked),
+        assert!(model.receive_kick(&kicked, false).is_some());
+        assert!(model.receive_kick(&kicked, false).is_none());
+
+        let LineEvent::Kick {
+            actor: Actor::User(actor),
+            subject: Subject::Other(subject),
+            reason,
+        } = only_line_event(&mut model)
+        else {
+            panic!("kick of another user expected")
+        };
+        assert_eq!(
+            (actor.nick.as_str(), actor.me, subject.nick.as_str()),
+            ("operator", false, "mel")
         );
+        assert_eq!(reason.as_deref(), Some("too loud"));
+        let buffer = model
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.kind == BufferKind::Channel);
+        assert_eq!(
+            buffer.and_then(|buffer| buffer.projection.channel_status),
+            Some(crate::ChannelStatus::Joined),
+        );
+    }
+
+    #[tokio::test]
+    async fn kick_actors_are_you_or_the_server() {
+        let (_client, mut events, mut wire, mut model) = joined_room().await;
+        wire.server(":weblounge!u@host KICK #room mel").await;
+        let own = next_kick(&mut events).await;
+        model.receive_kick(&own, true);
+        assert!(matches!(
+            only_line_event(&mut model),
+            LineEvent::Kick {
+                actor: Actor::User(Person { me: true, .. }),
+                subject: Subject::Other(_),
+                reason: None,
+            }
+        ));
+
+        wire.server(":irc.example KICK #room bob :services").await;
+        let server = next_kick(&mut events).await;
+        model.receive_kick(&server, true);
+        assert!(matches!(
+            only_line_event(&mut model),
+            LineEvent::Kick {
+                actor: Actor::Server { ref name },
+                ..
+            } if name == "irc.example"
+        ));
     }
 
     #[test]
