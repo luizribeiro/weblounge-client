@@ -142,6 +142,8 @@ export type OpenMessageActions = (message: MessageProjection) => void;
 export interface MessageListController {
   readonly jumpBottom: () => void;
   readonly selectLastOwn: () => void;
+  /** Asks to delete one of your messages, as the row menu does. */
+  readonly confirmDelete: (messageId: number) => void;
 }
 
 type TimelineRow =
@@ -413,9 +415,12 @@ export function MessageList(props: MessageListProps) {
   const rowReactions = () =>
     props.onToggleReaction === undefined ? undefined : reactionActions;
   const deletion = createMessageDeletion(() => props.onRedactMessage);
-  const deleteSelectedMessage = (invoker: HTMLElement) => {
+  const confirmDelete = (
+    messageId: number | undefined,
+    invoker: HTMLElement,
+  ) => {
     const message = orderedMessages().find(
-      (candidate) => candidate.id === selectedMessage(),
+      (candidate) => candidate.id === messageId,
     );
     if (message !== undefined) deletion.confirm(message, invoker);
   };
@@ -897,7 +902,13 @@ export function MessageList(props: MessageListProps) {
     virtualizer.scrollToIndex(index, { align: "auto" });
     queueMicrotask(() => list?.focus());
   };
-  props.registerController?.({ jumpBottom: jumpToBottom, selectLastOwn });
+  props.registerController?.({
+    jumpBottom: jumpToBottom,
+    selectLastOwn,
+    confirmDelete: (messageId) => {
+      if (list !== undefined) confirmDelete(messageId, list);
+    },
+  });
 
   createEffect(() => {
     if (props.bufferId !== currentBuffer) {
@@ -1330,7 +1341,7 @@ export function MessageList(props: MessageListProps) {
         onKeyDown={(event) => {
           if (event.key === "Delete" && event.target === event.currentTarget) {
             event.preventDefault();
-            deleteSelectedMessage(event.currentTarget);
+            confirmDelete(selectedMessage(), event.currentTarget);
             return;
           }
           if (event.key !== "End") return;

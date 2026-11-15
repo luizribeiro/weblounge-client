@@ -327,6 +327,35 @@ it("deletes the selected own message with the Delete key after confirming", asyn
   expect(deleted).toEqual([1]);
 });
 
+it("asks before a phone sheet's delete and ignores messages you cannot delete", async () => {
+  const deleted: number[] = [];
+  let controller: MessageListController | undefined;
+  render(() => (
+    <MessageList
+      messages={[
+        ownMessage,
+        { ...ownMessage, id: 2, authorship: "other", text: "theirs" },
+      ]}
+      onRedactMessage={(id) => deleted.push(id)}
+      presentation="mobile"
+      registerController={(registered) => {
+        controller = registered;
+      }}
+    />
+  ));
+
+  controller?.confirmDelete(2);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  controller?.confirmDelete(1);
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Delete",
+    }),
+  );
+
+  expect(deleted).toEqual([1]);
+});
+
 it("shows a deletion in flight and retries a failed one without asking again", () => {
   const deleted: number[] = [];
   const [own, setOwn] = createSignal<MessageProjection>({
