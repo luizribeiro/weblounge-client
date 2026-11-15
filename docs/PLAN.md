@@ -126,6 +126,18 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: reactions batch 3, phone (F26). Long-pressing a message (500 ms, the chat list's
+  timing) highlights the row while held and opens a sheet with the message, 👍 ❤️ 😂 🎉 👀 ✅ and
+  add reaction, which swaps the action list for the searchable picker; Copy text copies the message
+  text. Reply waits for F27; the action list is one entry per item so Delete can join it. Moving
+  past 10 px, lifting, a scroll or the back swipe abandons the press; while held, native selection
+  and the callout are off for that row, so long-press now opens the sheet instead of selecting text
+  on the phone. The lift that opened the sheet never activates what is under it, and Escape or the
+  scrim closes it. Phone chips toggle your reaction (32 px, dashed/confirmed/failed); without the
+  capability the sheet keeps only Copy text. Local-Ergo journeys on WebKit iPhone and Android
+  Chromium (real CDP touch) cover the chip toggle and reload, sheet react with sending, confirmation
+  and reload, the picker, Copy text, scrolling and the back swipe; screenshots in Lounge, Lounge
+  Night and Black come from `reactions-phone-screenshots.spec.ts`.
 - 2026-11-15: smoother phone transitions. Measured push, pop, back-swipe and Settings against local
   Ergo (260-message channel, 29 chats) in WebKit iPhone and Pixel 7 Chromium at 1x/4x/6x CPU with
   traces: the slides themselves were compositor-only, but a push spent most of its tap frame
