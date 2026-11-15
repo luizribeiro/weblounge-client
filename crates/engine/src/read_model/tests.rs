@@ -294,3 +294,59 @@ fn notification_close_is_conversation_scoped_and_inclusive() {
         Some(ServerTimeMs::new(10))
     ));
 }
+
+#[test]
+fn a_redacted_stub_stops_counting_and_stale_merges_cannot_restore_it() {
+    let mut facts = ReadFacts::default();
+    facts.merge_stub(stub("kept", 100, false));
+    facts.merge_stub(stub("deleted", 110, true));
+    let stale = facts.clone();
+
+    assert!(facts.redact_stub("deleted"));
+
+    assert_eq!((unread_count(&facts), mention_count(&facts, false)), (1, 0));
+    let mut later = facts.clone();
+    later.merge(stale.clone());
+    let mut earlier = stale;
+    earlier.merge(facts.clone());
+    for merged in [later, earlier] {
+        assert_eq!(merged.stubs(), facts.stubs());
+        assert_eq!(merged.redacted(), facts.redacted());
+    }
+    let mut replayed = facts.clone();
+    replayed.merge_stub(stub("deleted", 110, true));
+    assert_eq!(unread_count(&replayed), 1);
+}
+
+#[test]
+fn redacting_an_unknown_stub_changes_nothing() {
+    let mut facts = ReadFacts::default();
+    facts.merge_stub(stub("kept", 100, false));
+
+    assert!(!facts.redact_stub("never-seen"));
+
+    assert!(facts.redacted().is_empty());
+    assert_eq!(unread_count(&facts), 1);
+}
+
+#[test]
+fn reading_past_a_tombstone_prunes_it_and_the_list_stays_bounded() {
+    let mut facts = ReadFacts::default();
+    for index in 0..=MAX_STUBS {
+        let msgid = format!("deleted-{index}");
+        let time = 1_000 + i64::try_from(index).expect("small index");
+        facts.merge_stub(stub(&msgid, time, false));
+        facts.redact_stub(&msgid);
+    }
+    assert_eq!(facts.redacted().len(), MAX_STUBS);
+    assert_eq!(facts.redacted()[0].msgid, "deleted-1");
+
+    facts.merge_mark(ServerTimeMs::new(1_050));
+
+    assert!(
+        facts
+            .redacted()
+            .iter()
+            .all(|tombstone| tombstone.time > ServerTimeMs::new(1_050))
+    );
+}

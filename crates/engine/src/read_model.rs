@@ -44,6 +44,15 @@ pub struct MessageStub {
     pub mention: bool,
 }
 
+/// A peer message deleted while unread, so that no merge can count it again.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StubTombstone {
+    /// The deleted message's server identifier.
+    pub msgid: String,
+    /// The deleted message's time, which prunes the tombstone once read past.
+    pub time: ServerTimeMs,
+}
+
 /// Persistable, order-independent facts for one conversation.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReadFacts {
@@ -52,6 +61,8 @@ pub struct ReadFacts {
     pending: Option<ServerTimeMs>,
     stubs: Vec<MessageStub>,
     gap_until: Option<ServerTimeMs>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    redacted: Vec<StubTombstone>,
 }
 
 impl ReadFacts {
@@ -77,6 +88,33 @@ impl ReadFacts {
     #[must_use]
     pub fn stubs(&self) -> &[MessageStub] {
         &self.stubs
+    }
+
+    /// Returns the deleted peer messages that must not count again.
+    #[must_use]
+    pub fn redacted(&self) -> &[StubTombstone] {
+        &self.redacted
+    }
+
+    /// Stops counting a deleted peer message, now and after any later merge.
+    ///
+    /// Returns whether a known unread fact was removed.
+    pub fn redact_stub(&mut self, msgid: &str) -> bool {
+        let Some(stub) = self.stubs.iter().find(|stub| stub.msgid == msgid) else {
+            return false;
+        };
+        let tombstone = StubTombstone {
+            msgid: stub.msgid.clone(),
+            time: stub.time,
+        };
+        self.merge_redacted([tombstone]);
+        true
+    }
+
+    /// Unions tombstones of deleted peer messages into this conversation.
+    pub fn merge_redacted(&mut self, tombstones: impl IntoIterator<Item = StubTombstone>) {
+        self.redacted = union_tombstones(self.redacted.drain(..).chain(tombstones));
+        self.normalize_stubs();
     }
 
     /// Returns the upper edge of a known incomplete unread region.
@@ -155,6 +193,7 @@ impl ReadFacts {
         merge_max(&mut self.pending, other.pending);
         merge_max(&mut self.gap_until, other.gap_until);
         self.stubs = union_stubs(self.stubs.drain(..).chain(other.stubs));
+        self.redacted = union_tombstones(self.redacted.drain(..).chain(other.redacted));
         self.normalize_stubs();
     }
 
@@ -162,7 +201,16 @@ impl ReadFacts {
         self.merge_reconciled_mark();
         if let Some(mark) = self.mark {
             self.stubs.retain(|stub| stub.time > mark);
+            self.redacted.retain(|tombstone| tombstone.time > mark);
         }
+        let redacted = &self.redacted;
+        self.stubs.retain(|stub| {
+            !redacted
+                .iter()
+                .any(|tombstone| tombstone.msgid == stub.msgid)
+        });
+        let excess = self.redacted.len().saturating_sub(MAX_STUBS);
+        self.redacted.drain(..excess);
         self.normalize_gap();
         if self.stubs.len() <= MAX_STUBS {
             return;
@@ -253,6 +301,24 @@ fn union_stubs(stubs: impl IntoIterator<Item = MessageStub>) -> Vec<MessageStub>
             .then_with(|| left.msgid.cmp(&right.msgid))
     });
     stubs
+}
+
+fn union_tombstones(tombstones: impl IntoIterator<Item = StubTombstone>) -> Vec<StubTombstone> {
+    let mut by_msgid = BTreeMap::<String, ServerTimeMs>::new();
+    for tombstone in tombstones {
+        let time = by_msgid.entry(tombstone.msgid).or_insert(tombstone.time);
+        *time = (*time).max(tombstone.time);
+    }
+    let mut tombstones: Vec<_> = by_msgid
+        .into_iter()
+        .map(|(msgid, time)| StubTombstone { msgid, time })
+        .collect();
+    tombstones.sort_unstable_by(|left, right| {
+        left.time
+            .cmp(&right.time)
+            .then_with(|| left.msgid.cmp(&right.msgid))
+    });
+    tombstones
 }
 
 /// The projected severity of an in-app conversation badge.
