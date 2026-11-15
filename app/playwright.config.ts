@@ -25,6 +25,7 @@ export default defineConfig({
         "**/connection-resilience.spec.ts",
         "**/close-phone.spec.ts",
         "**/settings-phone.spec.ts",
+        "**/mobile-push-budget.spec.ts",
       ],
       use: { browserName: "chromium" },
     },
@@ -287,6 +288,11 @@ export default defineConfig({
       name: "webkit-mobile-new-divider",
       testMatch: "**/new-divider-focused.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-mobile-motion",
+      testMatch: "**/mobile-push-budget.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
       name: "android-mobile-history",

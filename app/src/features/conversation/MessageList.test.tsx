@@ -1071,8 +1071,57 @@ it("uses fractional painted row measurements without transcript reserve", async 
   );
 });
 
-it("remeasures rows after fonts finish loading", async () => {
-  const fonts = Object.assign(new EventTarget(), { ready: Promise.resolve() });
+async function secondRowAfterFontsReady(
+  status: FontFaceSet["status"],
+): Promise<{ readonly initial: number; readonly settled: number }> {
+  const fonts = Object.assign(new EventTarget(), {
+    ready: Promise.resolve(),
+    status,
+  });
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: fonts as unknown as FontFaceSet,
+  });
+  let messageHeight = 28;
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.querySelector("[data-message-row]") === null
+        ? 34
+        : messageHeight;
+    },
+  );
+  const { container } = render(() => (
+    <MessageList messages={[message, { ...message, id: 2 }]} />
+  ));
+  const secondRow = () =>
+    translateY(
+      container.querySelector<HTMLLIElement>('[data-row-key="message-2"]')
+        ?.style.transform ?? "",
+    );
+  const initial = secondRow();
+  messageHeight = 90;
+  await fonts.ready;
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  return { initial, settled: secondRow() };
+}
+
+it("remeasures mounted rows once pending fonts are ready", async () => {
+  const { initial, settled } = await secondRowAfterFontsReady("loading");
+
+  expect(settled).not.toBe(initial);
+});
+
+it("keeps mount measurements when every font had already loaded", async () => {
+  const { initial, settled } = await secondRowAfterFontsReady("loaded");
+
+  expect(settled).toBe(initial);
+});
+
+it("remeasures rows when a font loads after mount", async () => {
+  const fonts = Object.assign(new EventTarget(), {
+    ready: Promise.resolve(),
+    status: "loaded",
+  });
   Object.defineProperty(document, "fonts", {
     configurable: true,
     value: fonts as unknown as FontFaceSet,

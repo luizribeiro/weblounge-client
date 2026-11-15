@@ -1195,7 +1195,10 @@ export function MessageList(props: MessageListProps) {
       liveEdgeObserver?.observe(liveEdgeSentinel);
     if (motionLayer !== undefined)
       rowMountObserver.observe(motionLayer, { childList: true });
-    void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
+    // Rows mounted with every font loaded already measured final geometry;
+    // remeasuring them again blocks the frame that starts a mobile push.
+    if (fonts?.status !== "loaded")
+      void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
     composerOwner?.addEventListener(
       composerGeometryChangeEvent,
       anchorComposerGeometry,
