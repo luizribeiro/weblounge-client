@@ -1,4 +1,5 @@
 import { type JSX, onMount } from "solid-js";
+import { trapTab } from "../../ui/focus-trap";
 import styles from "./MobileSheet.module.css";
 
 interface MobileSheetProps {
@@ -18,9 +19,6 @@ export function MobileSheet(props: MobileSheetProps) {
       initial?.focus({ preventScroll: true });
     }),
   );
-  const focusable = () => [
-    ...(panel?.querySelectorAll<HTMLButtonElement>("button") ?? []),
-  ];
   return (
     <div class={styles.overlay} data-mobile-sheet="true">
       <button
@@ -40,18 +38,7 @@ export function MobileSheet(props: MobileSheetProps) {
             props.onDismiss();
             return;
           }
-          if (event.key !== "Tab") return;
-          const elements = focusable();
-          const first = elements[0];
-          const last = elements.at(-1);
-          if (first === undefined || last === undefined) return;
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-          }
+          trapTab(event, panel);
         }}
         ref={panel}
         role="dialog"
