@@ -37,6 +37,7 @@
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.28);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #1d2825;
   --wl-color-unread: #9a3b2e;
   --wl-color-input-bg: #faf9f4;
   --wl-color-chip: #e3e6dc;
@@ -93,6 +94,7 @@
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.48);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #a9b3a8;
   --wl-color-unread: #eba293;
   --wl-color-input-bg: #202c24;
   --wl-color-chip: #253227;
@@ -149,6 +151,7 @@
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #a9b3a8;
   --wl-color-unread: #eba293;
   --wl-color-input-bg: #0a0a0a;
   --wl-color-chip: #111111;
@@ -205,6 +208,7 @@
   --wl-color-overlay-scrim: rgba(20, 20, 28, 0.32);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #1c1c1e;
   --wl-color-unread: #c2410c;
   --wl-color-input-bg: #ffffff;
   --wl-color-chip: #f0f0f3;
@@ -265,6 +269,7 @@
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #8a867d;
   --wl-color-unread: #e6b450;
   --wl-color-input-bg: #0e0f10;
   --wl-color-chip: #1a1c1e;
@@ -328,6 +333,7 @@
   --wl-color-overlay-scrim: rgba(46, 33, 25, 0.45);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #2b1f17;
   --wl-color-unread: #b5471d;
   --wl-color-input-bg: #fffaf0;
   --wl-color-chip: #efe3cc;
@@ -386,6 +392,7 @@
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.6);
   --wl-color-viewer-scrim: rgba(0, 0, 0, 0.92);
   --wl-color-viewer-fg: #edefe5;
+  --wl-color-redaction-bar: #8e8e8e;
   --wl-color-unread: #d4607d;
   --wl-color-input-bg: #262621;
   --wl-color-chip: #2e2d28;

@@ -52,6 +52,7 @@ const colorTokens = [
   "overlayScrim",
   "viewerScrim",
   "viewerFg",
+  "redactionBar",
   "unread",
   "inputBg",
   "chip",

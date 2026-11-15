@@ -25,6 +25,7 @@
     "overlayScrim": "rgba(0,0,0,.6)",
     "viewerScrim": "rgba(0,0,0,.92)",
     "viewerFg": "#edefe5",
+    "redactionBar": "#8e8e8e",
     "unread": "#d4607d",
     "inputBg": "#262621",
     "chip": "#2e2d28",
