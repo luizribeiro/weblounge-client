@@ -25,6 +25,7 @@ export default defineConfig({
         "**/connection-resilience.spec.ts",
         "**/close-phone.spec.ts",
         "**/reactions-phone.spec.ts",
+        "**/reactions-phone-screenshots.spec.ts",
         "**/settings-phone.spec.ts",
         "**/mobile-push-budget.spec.ts",
       ],
@@ -48,7 +49,10 @@ export default defineConfig({
     },
     {
       name: "webkit-reactions-phone",
-      testMatch: "**/reactions-phone.spec.ts",
+      testMatch: [
+        "**/reactions-phone.spec.ts",
+        "**/reactions-phone-screenshots.spec.ts",
+      ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {

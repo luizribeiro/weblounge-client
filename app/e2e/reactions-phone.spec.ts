@@ -1,6 +1,7 @@
 import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { messageId } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import { longPressMessage } from "./message-sheet";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -58,7 +59,7 @@ test("long-pressing a message opens the sheet and its reaction reaches the peer"
   const row = productionMessageRow(page, text);
   await expect(row).toBeVisible();
 
-  const sheet = await longPress(page, row, bot.nickname);
+  const sheet = await longPressMessage(page, row, bot.nickname);
   await expect(row).toHaveAttribute("data-held", "true");
   await expect(sheet).toContainText(text);
   expect(await page.evaluate(() => getSelection()?.isCollapsed ?? true)).toBe(
@@ -104,7 +105,7 @@ test("picks any emoji from the phone sheet's searchable picker", async ({
   const id = messageId(await bot.privmsgConfirmed(irc.channel, text));
   const row = productionMessageRow(page, text);
 
-  const sheet = await longPress(page, row, bot.nickname);
+  const sheet = await longPressMessage(page, row, bot.nickname);
   await tap(page, sheet.getByRole("button", { name: "Add reaction" }));
   const search = sheet.getByPlaceholder("Search emoji");
   await expect(search).toBeVisible();
@@ -116,7 +117,7 @@ test("picks any emoji from the phone sheet's searchable picker", async ({
   await bot.waitForReaction(irc.channel, id, "🚀", irc.account);
   await expectConfirmedOwn(row.locator('[data-reaction="🚀"]'), "1");
 
-  await longPress(page, row, bot.nickname);
+  await longPressMessage(page, row, bot.nickname);
   await page.keyboard.press("Escape");
   await expect(sheet).toHaveCount(0);
   await expectSettled(page, { conversation: irc.channel });
@@ -135,12 +136,12 @@ test("copies a message's text from the phone sheet and closes from the scrim", a
   await bot.privmsgConfirmed(irc.channel, text);
   const row = productionMessageRow(page, text);
 
-  const sheet = await longPress(page, row, bot.nickname);
+  const sheet = await longPressMessage(page, row, bot.nickname);
   await tap(page, sheet.getByRole("button", { name: "Copy text" }));
   await expect(sheet).toHaveCount(0);
   await expect.poll(() => copiedText(page)).toBe(text);
 
-  await longPress(page, row, bot.nickname);
+  await longPressMessage(page, row, bot.nickname);
   await tap(page, page.locator("[data-mobile-sheet] > button").first());
   await expect(sheet).toHaveCount(0);
   await expect(row).not.toHaveAttribute("data-held");
@@ -189,22 +190,6 @@ test("the back swipe starting on a message never opens the sheet", async ({
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expect(page.locator("[data-mobile-sheet]")).toHaveCount(0);
 });
-
-async function longPress(
-  page: Page,
-  row: Locator,
-  author: string,
-): Promise<Locator> {
-  const sheet = page.getByRole("dialog", {
-    name: `Actions for ${author}’s message`,
-  });
-  const finger = await touchDown(page, row.locator("[data-selectable]"));
-  await expect(row).toHaveAttribute("data-pressing", "true");
-  await expect(sheet).toBeVisible();
-  await finger.lift();
-  await expect(sheet).toBeVisible();
-  return sheet;
-}
 
 /**
  * Playwright can grant reading Chromium's clipboard; WebKit's stays write-only to tests, so there
