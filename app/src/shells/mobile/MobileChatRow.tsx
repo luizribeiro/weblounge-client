@@ -5,6 +5,11 @@ import { unreadBadge } from "../../features/unread/unread-badge";
 import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
+import {
+  type PointerSample,
+  recentPointerSamples,
+  releaseVelocityX,
+} from "../../ui/release-velocity";
 import styles from "./MobileChatRow.module.css";
 import {
   beginMobileRowSwipe,
@@ -41,8 +46,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
   let pointerId: number | undefined;
   let swipe: MobileRowSwipeState = { phase: "idle", revealed: false };
   let longPressTimer: number | undefined;
-  let lastX = 0;
-  let lastTime = 0;
+  let samples: readonly PointerSample[] = [];
   let suppressClick = false;
   const [offset, setOffset] = createSignal(0);
   const [dragging, setDragging] = createSignal(false);
@@ -107,8 +111,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
         if (event.isPrimary === false || event.button !== 0) return;
         props.onPressStart?.(event);
         pointerId = event.pointerId;
-        lastX = event.clientX;
-        lastTime = event.timeStamp;
+        samples = [{ time: event.timeStamp, x: event.clientX }];
         swipe = beginMobileRowSwipe(
           props.buffer.kind === "channel" ? "channel" : "direct",
           event.currentTarget.getBoundingClientRect().width,
@@ -142,16 +145,16 @@ export function MobileChatRow(props: MobileChatRowProps) {
         event.preventDefault();
         setDragging(true);
         setOffset(next.offset);
-        lastX = event.clientX;
-        lastTime = event.timeStamp;
+        samples = recentPointerSamples(samples, event.clientX, event.timeStamp);
       }}
       onPointerUp={(event) => {
         if (event.pointerId !== pointerId) return;
         clearLongPress();
         pointerId = undefined;
-        const elapsed = event.timeStamp - lastTime;
-        const velocity = elapsed > 0 ? (event.clientX - lastX) / elapsed : 0;
-        const result = releaseMobileRowSwipe(swipe, velocity);
+        const result = releaseMobileRowSwipe(
+          swipe,
+          releaseVelocityX(samples, event.clientX, event.timeStamp),
+        );
         if (result === "tap") {
           if (revealed() && !isRowAction(event.target)) {
             suppressClick = true;

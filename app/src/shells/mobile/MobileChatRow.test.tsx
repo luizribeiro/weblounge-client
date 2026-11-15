@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import {
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+} from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import type {
@@ -226,6 +231,21 @@ it("reveals row actions and runs Mark as read", () => {
   expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
 });
 
+it("reveals actions after a short flick that lifts where it last moved", () => {
+  const { container } = render(() => (
+    <MobileChatRow buffer={buffer()} onOpen={vi.fn()} previews={true} />
+  ));
+  const wrapper = mobileRowWrapper(container);
+
+  timedPointer(wrapper, "pointerDown", pointer(300, 100, 0));
+  timedPointer(wrapper, "pointerMove", pointer(288, 102, 16));
+  timedPointer(wrapper, "pointerMove", pointer(272, 104, 32));
+  timedPointer(wrapper, "pointerMove", pointer(255, 106, 48));
+  timedPointer(wrapper, "pointerUp", pointer(255, 106, 56));
+
+  expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+});
+
 it("lets a tap on a revealed action reach that action", () => {
   const close = vi.fn();
   const Harness = () => {
@@ -345,4 +365,14 @@ function pointer(clientX: number, clientY: number, timeStamp: number) {
     pointerId: 1,
     timeStamp,
   };
+}
+
+function timedPointer(
+  target: HTMLElement,
+  type: "pointerDown" | "pointerMove" | "pointerUp",
+  init: ReturnType<typeof pointer>,
+) {
+  const event = createEvent[type](target, init);
+  Object.defineProperty(event, "timeStamp", { value: init.timeStamp });
+  fireEvent(target, event);
 }

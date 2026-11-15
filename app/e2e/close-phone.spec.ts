@@ -186,6 +186,28 @@ test.describe("phone conversation closing against local Ergo", () => {
     await expect(channelRow).toHaveCount(0);
     await nativeFeelAudit(page);
   });
+
+  test("reveals actions for realistic diagonal drags and short flicks", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    const wrapper = wrapperFor(rowFor(page, irc.channel));
+    await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+
+    for (const gesture of realisticRevealGestures) {
+      await touchGesture(wrapper, gesture.samples);
+      await expect(wrapper, gesture.name).toHaveAttribute(
+        "data-swipe-state",
+        "revealed",
+      );
+      await rowFor(page, irc.channel).click();
+      await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+    }
+
+    await touchGesture(wrapper, verticalScrollSamples);
+    await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+  });
 });
 
 interface TouchSample {
@@ -206,6 +228,14 @@ function samples(
     at: Math.round((durationMs * frame) / frames),
   }));
 }
+
+const realisticRevealGestures = [
+  { name: "slow 30-degree drag", samples: samples(80, 46, 400) },
+  { name: "fast 45px flick", samples: samples(45, 10, 70) },
+  { name: "fast 30px flick", samples: samples(30, 8, 50) },
+] as const;
+
+const verticalScrollSamples = samples(12, 60, 200);
 
 const gestureStartTimeStamp = 10_000;
 
