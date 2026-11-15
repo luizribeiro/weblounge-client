@@ -62,6 +62,7 @@ import {
 import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
+import { ReactionPicker } from "./ReactionPicker";
 import { ReactionToolbar } from "./ReactionToolbar";
 import { reactionTarget, type ToggleReaction } from "./reaction-target";
 import {
@@ -1677,6 +1678,7 @@ function MessageRow(props: {
     );
   const react = reactionTarget(message, props.reactions?.toggle);
   const toolbar = createRowToolbarVisibility();
+  const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
   return (
     <div
       class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
@@ -1699,9 +1701,26 @@ function MessageRow(props: {
       }
       tabindex={react === undefined ? undefined : 0}
     >
-      <Show when={toolbar.shown() && react}>
+      <Show when={(toolbar.shown() || pickerInvoker() !== undefined) && react}>
         {(onReact) => (
-          <ReactionToolbar mine={ownReactions(message)} onReact={onReact()} />
+          <>
+            <ReactionToolbar
+              mine={ownReactions(message)}
+              onOpenPicker={setPickerInvoker}
+              onReact={onReact()}
+            />
+            <Show when={pickerInvoker()}>
+              {(invoker) => (
+                <ReactionPicker
+                  invoker={invoker()}
+                  mine={ownReactions(message)}
+                  nick={message.author}
+                  onClose={() => setPickerInvoker(undefined)}
+                  onPick={onReact()}
+                />
+              )}
+            </Show>
+          </>
         )}
       </Show>
       {message.kind === "action" ? (

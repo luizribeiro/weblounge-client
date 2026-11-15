@@ -162,6 +162,41 @@ test("reacts from the hover toolbar and its keyboard path without moving the tra
   await nativeFeelAudit(page);
 });
 
+test("picks any emoji from the searchable picker", async ({ page, irc }) => {
+  await installNativeFeelInstrumentation(page);
+  const text = "pick something special";
+  const bot = await irc.peer("picker");
+  await openOnline(page, irc);
+  const id = messageId(await bot.privmsgConfirmed(irc.channel, text));
+  const row = productionMessageRow(page, text);
+  await row.hover();
+  const add = row.getByRole("button", { name: "Add reaction" });
+  await add.click();
+  const picker = page.getByRole("dialog", { name: "Add reaction" });
+  await expect(picker).toContainText(`React to ${bot.nickname}`);
+  const search = picker.getByPlaceholder("Search emoji");
+  await expect(search).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(add).toBeFocused();
+
+  await add.click();
+  await search.fill("rocket");
+  await expect(picker.getByRole("region")).toHaveCount(1);
+  await picker.getByRole("button", { name: "rocket ship" }).click();
+  await expect(picker).toHaveCount(0);
+  await bot.waitForReaction(irc.channel, id, "🚀", irc.account);
+  await expect(row.locator('[data-reaction="🚀"]')).toHaveAttribute(
+    "data-reaction-own",
+    "true",
+  );
+
+  await page.mouse.move(0, 0);
+  await expectIdle(page);
+  await nativeFeelAudit(page);
+});
+
 async function transcriptGeometry(page: Page) {
   return page.locator("[data-message-list]").evaluate((list) => ({
     scrollTop: list.scrollTop,
