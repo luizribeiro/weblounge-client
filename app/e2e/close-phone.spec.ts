@@ -208,6 +208,19 @@ test.describe("phone conversation closing against local Ergo", () => {
     await touchGesture(wrapper, verticalScrollSamples);
     await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
   });
+
+  test("keeps a horizontal row drag from turning into a list scroll", async ({
+    page,
+    irc,
+  }) => {
+    await page.goto(irc.url());
+    const wrapper = wrapperFor(rowFor(page, irc.channel));
+    await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+
+    expect(await touchMoveCancelled(wrapper, 40, 6)).toBe(true);
+    await expect(wrapper).toHaveAttribute("data-swipe-state", "closed");
+    expect(await touchMoveCancelled(wrapper, 6, 40)).toBe(false);
+  });
 });
 
 interface TouchSample {
@@ -264,6 +277,37 @@ async function touchGesture(
       sample.down,
     );
   await pointer(wrapper, "pointerup", last.left, base + last.at + 8, last.down);
+}
+
+async function touchMoveCancelled(
+  wrapper: Locator,
+  left: number,
+  down: number,
+): Promise<boolean> {
+  const touch = (type: "touchstart" | "touchmove", sample: TouchSample) =>
+    wrapper.evaluate(
+      (element, init) => {
+        const rect = element.getBoundingClientRect();
+        const clientX = rect.right - 12 - init.left;
+        const clientY = rect.top + rect.height / 2 + init.down;
+        const target = element.querySelector("[data-buffer-id]") ?? element;
+        const event = new Event(init.type, { bubbles: true, cancelable: true });
+        Object.defineProperty(event, "touches", {
+          value: [{ clientX, clientY, identifier: 7, target }],
+        });
+        target.dispatchEvent(event);
+        return event.defaultPrevented;
+      },
+      { ...sample, type },
+    );
+  const start = { at: 0, down: 0, left: 0 };
+  const moved = { at: 32, down, left };
+  await touch("touchstart", start);
+  await pointer(wrapper, "pointerdown", 0, gestureStartTimeStamp);
+  await pointer(wrapper, "pointermove", left, gestureStartTimeStamp + 32, down);
+  const cancelled = await touch("touchmove", moved);
+  await pointer(wrapper, "pointerup", left, gestureStartTimeStamp + 400, down);
+  return cancelled;
 }
 
 async function revealActions(wrapper: Locator): Promise<void> {

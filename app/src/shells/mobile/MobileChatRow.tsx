@@ -2,6 +2,7 @@ import { createEffect, createSignal, type JSX, onCleanup } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { nickColor } from "../../features/conversation/nick-color";
 import { unreadBadge } from "../../features/unread/unread-badge";
+import { claimHorizontalTouchMove } from "../../platform/touch-move-lock";
 import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
@@ -47,6 +48,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
   let swipe: MobileRowSwipeState = { phase: "idle", revealed: false };
   let longPressTimer: number | undefined;
   let samples: readonly PointerSample[] = [];
+  let releaseTouchMove: (() => void) | undefined;
   let suppressClick = false;
   const [offset, setOffset] = createSignal(0);
   const [dragging, setDragging] = createSignal(false);
@@ -54,6 +56,12 @@ export function MobileChatRow(props: MobileChatRowProps) {
   const clearLongPress = () => {
     if (longPressTimer !== undefined) window.clearTimeout(longPressTimer);
     longPressTimer = undefined;
+  };
+  const endPointer = () => {
+    clearLongPress();
+    pointerId = undefined;
+    releaseTouchMove?.();
+    releaseTouchMove = undefined;
   };
   const settle = (endpoint: "reveal" | "reset") => {
     setDragging(false);
@@ -65,8 +73,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
   };
   const cancelGesture = () => {
     if (pointerId === undefined) return;
-    clearLongPress();
-    pointerId = undefined;
+    endPointer();
     settle(cancelledMobileRowSwipe(swipe));
   };
   const requestActions = () => {
@@ -87,7 +94,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
   };
   document.addEventListener("visibilitychange", onVisibility);
   onCleanup(() => {
-    clearLongPress();
+    endPointer();
     document.removeEventListener("visibilitychange", onVisibility);
   });
 
@@ -126,7 +133,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
             longPressTimer = undefined;
             if (pointerId === undefined || swipe.phase !== "tracking") return;
             suppressClick = true;
-            pointerId = undefined;
+            endPointer();
             settle("reset");
             requestActions();
           }, 500);
@@ -143,14 +150,14 @@ export function MobileChatRow(props: MobileChatRowProps) {
         if (next.phase !== "dragging") return;
         clearLongPress();
         event.preventDefault();
+        releaseTouchMove ??= claimHorizontalTouchMove(event.currentTarget);
         setDragging(true);
         setOffset(next.offset);
         samples = recentPointerSamples(samples, event.clientX, event.timeStamp);
       }}
       onPointerUp={(event) => {
         if (event.pointerId !== pointerId) return;
-        clearLongPress();
-        pointerId = undefined;
+        endPointer();
         const result = releaseMobileRowSwipe(
           swipe,
           releaseVelocityX(samples, event.clientX, event.timeStamp),

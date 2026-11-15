@@ -11,6 +11,7 @@ import type {
   MessageProjection,
 } from "../../engine/protocol";
 import { MessageList } from "../../features/conversation/MessageList";
+import { observeTouchMoveLock } from "../../platform/touch-move-lock";
 import { MobileChatRow } from "./MobileChatRow";
 
 afterEach(() => vi.useRealTimers());
@@ -246,6 +247,51 @@ it("reveals actions after a short flick that lifts where it last moved", () => {
   expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
 });
 
+const gestureEnds = {
+  pointerup: (wrapper: HTMLElement) =>
+    fireEvent.pointerUp(wrapper, pointer(286, 106, 24)),
+  pointercancel: (wrapper: HTMLElement) =>
+    fireEvent.pointerCancel(wrapper, pointer(286, 106, 24)),
+  "lost capture": (wrapper: HTMLElement) =>
+    fireEvent.lostPointerCapture(wrapper, pointer(286, 106, 24)),
+  "hidden page": () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Reflect.deleteProperty(document, "visibilityState");
+  },
+} as const;
+
+it.each(Object.entries(gestureEnds))(
+  "claims a drag's touchmove until its %s",
+  (_, end) => {
+    const { container } = render(() => (
+      <MobileChatRow buffer={buffer()} onOpen={vi.fn()} previews={true} />
+    ));
+    const wrapper = mobileRowWrapper(container);
+    const row = screen.getByRole("button", { name: /^#garden,/u });
+    const stop = observeTouchMoveLock(document.documentElement, window);
+    try {
+      row.dispatchEvent(touch("touchstart", row, 300, 100));
+      fireEvent.pointerDown(wrapper, pointer(300, 100, 0));
+      fireEvent.pointerMove(wrapper, pointer(286, 106, 16));
+      const claimed = touch("touchmove", row, 286, 106);
+      row.dispatchEvent(claimed);
+      end(wrapper);
+      row.dispatchEvent(touch("touchstart", row, 300, 100));
+      const released = touch("touchmove", row, 296, 140);
+      row.dispatchEvent(released);
+
+      expect(claimed.defaultPrevented).toBe(true);
+      expect(released.defaultPrevented).toBe(false);
+    } finally {
+      stop();
+    }
+  },
+);
+
 it("lets a tap on a revealed action reach that action", () => {
   const close = vi.fn();
   const Harness = () => {
@@ -375,4 +421,17 @@ function timedPointer(
   const event = createEvent[type](target, init);
   Object.defineProperty(event, "timeStamp", { value: init.timeStamp });
   fireEvent(target, event);
+}
+
+function touch(
+  type: "touchstart" | "touchmove",
+  target: Element,
+  clientX: number,
+  clientY: number,
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "touches", {
+    value: [{ clientX, clientY, identifier: 1, target }],
+  });
+  return event;
 }
