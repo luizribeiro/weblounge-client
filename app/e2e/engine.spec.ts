@@ -526,10 +526,8 @@ test.describe("local Ergo user flow", () => {
 
     await composer.fill("/topic");
     await composer.press("Enter");
-    const card = page.locator("[data-system-line]").filter({
-      hasText: `Topic: ${topic}`,
-    });
-    await expect(card).toBeVisible();
+    const card = page.locator('[data-system-card="topic"]');
+    await expect(card.locator("[data-system-card-text]")).toHaveText(topic);
     await expect(page.locator("[data-notice-row]")).toHaveCount(1);
   });
 

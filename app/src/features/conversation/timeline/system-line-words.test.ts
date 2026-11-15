@@ -57,6 +57,19 @@ describe("systemLineWords", () => {
     expect(cleared.body).toBeNull();
   });
 
+  it("summarises a topic card for copying, including an empty topic", () => {
+    const words = (topic: string) =>
+      systemLineSummaryText(
+        systemLineWords({
+          type: "event",
+          event: { type: "topic_card", topic, setter: null, set_at_ms: null },
+        }),
+      );
+
+    expect(words("beta ships Friday")).toBe("Topic: beta ships Friday");
+    expect(words("")).toBe("Topic: No topic is set.");
+  });
+
   it("names another user's kick neutrally and yours as a warning", () => {
     const other = systemLineWords({
       type: "event",

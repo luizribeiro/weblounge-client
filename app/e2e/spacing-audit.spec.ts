@@ -41,9 +41,7 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
   await composer.fill("/topic");
   await composer.press("Enter");
   await expect(page.locator("[data-notice-row]")).toHaveCount(1);
-  await expect(
-    page.locator("[data-system-line]").filter({ hasText: "Topic:" }),
-  ).toBeVisible();
+  await expect(page.locator('[data-system-card="topic"]')).toBeVisible();
   await expectSettled(page, { conversation: scenario.channel });
 
   const list = page.locator("[data-message-list]");

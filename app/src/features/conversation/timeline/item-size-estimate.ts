@@ -16,6 +16,12 @@ export function estimateSystemLineHeight(
   spacing: RowSpacing,
 ): number {
   const preset = densityPresets[density];
+  const top = padding(preset, presentation, spacing);
+  if (system.line.type === "event" && system.line.event.type === "topic_card")
+    return (
+      top +
+      estimateCardHeight(system.line.event.topic, viewportWidth, presentation)
+    );
   const textWidth = Math.max(
     presentation === "mobile" ? viewportWidth - 58 : viewportWidth - 248,
     80,
@@ -40,11 +46,29 @@ export function estimateSystemLineHeight(
     0,
   );
   const detailGaps = words.details.length * 4 + (words.body === null ? 0 : 2);
-  return (
-    contentLines * lineHeight +
-    detailGaps +
-    padding(preset, presentation, spacing)
+  return contentLines * lineHeight + detailGaps + top;
+}
+
+const cardHeaderHeight = 18;
+const cardLineHeight = 21;
+
+function estimateCardHeight(
+  topic: string,
+  viewportWidth: number,
+  presentation: "desktop" | "mobile",
+): number {
+  const mobile = presentation === "mobile";
+  const innerWidth = Math.max(
+    mobile ? viewportWidth - 58 : Math.min(viewportWidth - 248, 620) - 26,
+    80,
   );
+  const charactersPerLine = Math.max(
+    1,
+    Math.floor(innerWidth / (14 * characterWidthFactor)),
+  );
+  const lines = Math.max(1, Math.ceil(topic.length / charactersPerLine));
+  const [chrome, gap] = mobile ? [22, 6] : [18, 4];
+  return chrome + cardHeaderHeight + gap + lines * cardLineHeight;
 }
 
 export function systemLineSizeRevision(

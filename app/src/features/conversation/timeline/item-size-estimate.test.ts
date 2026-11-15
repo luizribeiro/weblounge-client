@@ -120,6 +120,32 @@ describe("estimateSystemLineHeight", () => {
     );
   });
 
+  it("sizes a topic card from its wrapped topic and card chrome", () => {
+    const card = (topic: string): SystemProjection => ({
+      time_ms: 1,
+      line: {
+        type: "event",
+        event: { type: "topic_card", topic, setter: "mel", set_at_ms: 1 },
+      },
+    });
+    const estimate = (topic: string, presentation: "desktop" | "mobile") =>
+      estimateSystemLineHeight(
+        card(topic),
+        presentation === "mobile" ? 390 : 1280,
+        "cozy",
+        presentation,
+        false,
+        false,
+        "after-divider",
+      );
+
+    expect(estimate("short", "desktop")).toBe(3 + 18 + 18 + 4 + 21);
+    expect(estimate("short", "mobile")).toBe(22 + 18 + 6 + 21);
+    expect(estimate("long topic ".repeat(20), "mobile")).toBeGreaterThan(
+      estimate("short", "mobile") + 21,
+    );
+  });
+
   it("invalidates on every geometry input", () => {
     expect(systemLineSizeRevision(7, 3, true, false, "message", "mobile")).toBe(
       "7:3:true:false:message:mobile",

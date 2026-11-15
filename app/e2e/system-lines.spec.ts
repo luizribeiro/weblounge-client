@@ -1,9 +1,10 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
 import type { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
+import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 test.skip(
@@ -235,7 +236,78 @@ for (const [layout, viewport] of [
         await expect(line).toBeVisible();
       await history.close();
     });
+
+    test("shows the topic card once on join and on /topic, never on reconnect", async ({
+      context,
+      page,
+      irc,
+    }) => {
+      const channel = irc.channelNamed("tc");
+      const operator = await irc.peer("tc-op", [channel]);
+      const topic = `weblounge 0.9 beta · https://weblounge.chat/${irc.id}`;
+      await operator.topic(channel, topic);
+      await page.goto(irc.url());
+      await joinChannel(page, irc.channel, channel);
+
+      const cards = page.locator('[data-system-card="topic"]');
+      await expect(cards).toHaveCount(1);
+      await expect(cards).toContainText("Topic");
+      await expect(cards).toContainText(`set by ${operator.nickname}`);
+      await expect(cards.locator("[data-system-card-text]")).toHaveText(topic);
+      await expect(
+        cards.getByRole("link", { name: `https://weblounge.chat/${irc.id}` }),
+      ).toBeVisible();
+      await expectCardGeometry(cards, layout);
+      const breaker = `card breaker ${irc.id}`;
+      await operator.privmsgConfirmed(channel, breaker);
+      await expect(page.getByText(breaker, { exact: true })).toBeVisible();
+      await expectSettled(page, { conversation: channel });
+      await expectNoRowOverlap(page);
+      await capture(page, layout, "topic-card");
+
+      const online = page
+        .locator(
+          layout === "phone"
+            ? "[data-mobile-chat][data-network-state]"
+            : "[data-network-state]",
+        )
+        .first();
+      await context.setOffline(true);
+      await expect(online).not.toHaveAttribute("data-network-state", "online");
+      await context.setOffline(false);
+      await dispatchPersistedPageShow(page);
+      await expect(online).toHaveAttribute("data-network-state", "online");
+      const afterReconnect = `after reconnect ${irc.id}`;
+      await operator.privmsgConfirmed(channel, afterReconnect);
+      await expect(
+        page.getByText(afterReconnect, { exact: true }),
+      ).toBeVisible();
+      await expect(cards).toHaveCount(1);
+
+      const composer = page.getByRole("textbox", { name: "Message" });
+      await composer.fill("/topic");
+      await composer.press("Enter");
+      await expect(cards).toHaveCount(2);
+    });
   });
+}
+
+async function expectCardGeometry(
+  cards: Locator,
+  layout: "desktop" | "phone",
+): Promise<void> {
+  const card = cards.locator("[data-system-card-text]").locator("..");
+  await expect(card).toHaveCSS("border-top-width", "1px");
+  await expect(card).toHaveCSS(
+    "padding",
+    layout === "phone" ? "10px 12px" : "8px 12px",
+  );
+  if (layout === "desktop") {
+    await expect(cards.locator("time")).toBeVisible();
+    await expect(card).toHaveCSS("max-width", "620px");
+  } else {
+    await expect(cards.locator("time")).toBeHidden();
+  }
 }
 
 async function expectNoRowOverlap(page: Page): Promise<void> {
@@ -351,7 +423,8 @@ async function capture(
     | "modes-alone"
     | "modes-mixed"
     | "own-kick"
-    | "topic-and-kick",
+    | "topic-and-kick"
+    | "topic-card",
 ): Promise<void> {
   const directory = process.env.WEBLOUNGE_SYSTEM_LINE_SCREENSHOT_DIR;
   if (directory === undefined) return;

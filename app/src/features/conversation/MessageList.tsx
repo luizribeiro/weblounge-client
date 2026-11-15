@@ -74,6 +74,7 @@ import {
   type LocalNoticeMessage,
 } from "./timeline/notice-message";
 import { type RowFamily, topPadding } from "./timeline/row-spacing";
+import { SystemCard, type TopicCardEvent } from "./timeline/SystemCard";
 import { SystemLine } from "./timeline/SystemLine";
 import {
   systemLineSummaryText,
@@ -1432,6 +1433,14 @@ const scrollKeys = new Set([
   "PageUp",
 ]);
 
+function topicCard(row: TimelineRow): TopicCardEvent | undefined {
+  return row.kind === "system" &&
+    row.system.line.type === "event" &&
+    row.system.line.event.type === "topic_card"
+    ? row.system.line.event
+    : undefined;
+}
+
 function renderedRowStart(
   rendered: {
     readonly index: number;
@@ -1478,6 +1487,15 @@ function TimelineRowView(props: {
       renderedRow = current;
     return renderedRow;
   });
+  const renderText = (text: string) => (
+    <MessageText
+      authors={props.nickLookup}
+      onOpenChannel={props.onOpenChannel}
+      onOpenDirect={props.onOpenDirect}
+      onOpenExternal={props.onOpenExternal}
+      text={text}
+    />
+  );
   return (
     <Show when={stableRow()} keyed>
       {(row) => (
@@ -1561,6 +1579,16 @@ function TimelineRowView(props: {
               </div>
             )}
           </Match>
+          <Match when={topicCard(row)}>
+            {(card) => (
+              <SystemCard
+                card={card()}
+                presentation={props.presentation ?? "desktop"}
+                renderText={renderText}
+                timeMs={row.kind === "system" ? row.system.time_ms : 0}
+              />
+            )}
+          </Match>
           <Match when={row.kind === "system"}>
             {row.kind === "system" && (
               <SystemLine
@@ -1574,15 +1602,7 @@ function TimelineRowView(props: {
                   else if (action === "rejoin") props.onRejoin?.();
                 }}
                 presentation={props.presentation ?? "desktop"}
-                renderText={(text) => (
-                  <MessageText
-                    authors={props.nickLookup}
-                    onOpenChannel={props.onOpenChannel}
-                    onOpenDirect={props.onOpenDirect}
-                    onOpenExternal={props.onOpenExternal}
-                    text={text}
-                  />
-                )}
+                renderText={renderText}
                 system={row.system}
               />
             )}

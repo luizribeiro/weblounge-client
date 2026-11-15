@@ -1,4 +1,5 @@
 import type { LineEvent } from "../../../engine/generated/LineEvent";
+import { t } from "../../../strings";
 import { actorWords, button, mono, nick, text } from "./system-line-segments";
 import type {
   SystemLineIcon,
@@ -46,7 +47,8 @@ export function eventWords(
       break;
     case "topic_card":
       icon = "topic";
-      segments = [text("Topic: "), text(event.topic)];
+      body = event.topic === "" ? t("messages.topic.empty") : event.topic;
+      segments = [text(t("messages.topic.title"))];
       break;
     case "invited_you":
       icon = "invite";
