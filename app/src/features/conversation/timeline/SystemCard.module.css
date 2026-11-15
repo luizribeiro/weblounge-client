@@ -1,0 +1,52 @@
+.card {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-palette);
+  color: var(--wl-color-fg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 620px;
+  min-width: 0;
+  padding: 8px 12px;
+}
+.header {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  line-height: 18px;
+  min-width: 0;
+}
+.title {
+  font-weight: 650;
+}
+.meta {
+  color: var(--wl-color-muted);
+  min-width: 0;
+}
+.text {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.phoneIcon {
+  color: var(--wl-color-muted);
+  display: none;
+  flex: 0 0 16px;
+  height: 16px;
+  width: 16px;
+}
+
+:global([data-presentation="mobile"]) > .card {
+  gap: 6px;
+  grid-column: 1 / -1;
+  max-width: none;
+  padding: 10px 12px;
+}
+:global([data-presentation="mobile"]) > .desktopIcon {
+  display: none;
+}
+:global([data-presentation="mobile"]) .phoneIcon {
+  display: block;
+}

@@ -278,6 +278,8 @@ export const messages = {
   "messages.new": "New",
   "messages.rejoin": "Rejoin",
   "messages.topic.empty": "No topic is set.",
+  "messages.topic.set_by": "set by {setter}",
+  "messages.topic.title": "Topic",
   "messages.unverified_sender": "Unverified sender",
   "members.filter": "Filter members",
   "members.group.away": "Away",
