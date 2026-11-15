@@ -49,7 +49,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F12: animate phone chat-list reorders (row slides to top); parked as finicky. If revisited: moved row, new row, off-screen row, bursts, reduced motion. Memory.
 - F13: keyboard follow-ups: rebinding and conflict UI, context-menu projections, native mobile shortcut bridges, optional Vim preset; palette commands with typed arguments stay hidden. Design 14 §Later, Known limits.
 - F14: split view on desktop: page notifications count only the focused pane as on-screen. `docs/reference/split-view.md`, design 23 addendum.
-- F15: reactions and replies later: swipe to reply, custom emoji text, Activity indexing, redaction interactions, moderation. Design 25.
+- F15: reactions and replies beyond F25 to F27: custom emoji text, Activity indexing, redaction interactions, moderation. Design 25.
 - F16: platform later bucket: search, around-message jumps, persistent timelines and history tails, offline read-marker queue, durable send queue, native TCP/TLS and Tauri iOS/Android, soju import, bouncer and Web Push after the `unstable` decision, remote engines. Designs 02, 03, 05, 17, 22, chat-list-snapshot.md.
 - F17: desktop release: in-app updater (signed Tauri feed), Intel/universal build, Windows and Linux, release builds in GitHub Actions (needs signing secrets). Design 28 §Later.
 - F18: push later: urgency filtering, app rate limits, stable network identity, an unmocked Ergo to relay to push-service delivery test, APNs/FCM/UnifiedPush for Tauri, a hosted members-only soju bouncer. Design 23 §Later.
@@ -60,6 +60,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
 - F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
 - F24: arrow keys between Settings sections (design 29 lists them; one section today). Design 29.
+- F25: reactions batch 2, sending on desktop: the hover toolbar with 👍 ❤️ 😂, add reaction and a Reply slot; the searchable category picker drawer; chip toggling; an optimistic dashed chip that the echo confirms, with an error colour and tap to retry on failure; controls absent without the capability. Design 25.
+- F26: reactions batch 3, phone: the long-press sheet with 👍 ❤️ 😂 🎉 👀 ✅, add reaction, Reply and Copy text. Design 25.
+- F27: replies: the one-line parent quote above the reply (activating it scrolls to and highlights the parent; a missing parent is fetched around its msgid; a deleted parent says so); the composer "Replying to <nick> <text>" bar, cancelled with × or Escape; the channel wire prefix "<nick>: ", hidden in our view; no swipe-to-reply. papo's reply API changes in the pending papo bump (`client.reply(&line, …)`). Design 25.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
