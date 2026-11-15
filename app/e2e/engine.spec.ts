@@ -517,7 +517,12 @@ test.describe("local Ergo user flow", () => {
 
     await composer.fill(`/topic ${topic}`);
     await composer.press("Enter");
-    await expect(page.getByText(topic, { exact: true })).toBeVisible();
+    await expect(
+      page
+        .locator("[data-system-line]")
+        .filter({ hasText: "You changed the topic" })
+        .filter({ hasText: topic }),
+    ).toBeVisible();
 
     await composer.fill("/topic");
     await composer.press("Enter");

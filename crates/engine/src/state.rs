@@ -1910,6 +1910,33 @@ impl NetworkModel {
         )
     }
 
+    pub(crate) fn receive_topic_change(
+        &mut self,
+        changed: &papo::event::TopicChanged,
+    ) -> Option<MessageId> {
+        let buffer_id = *self.names.get(&NameKey::Channel(changed.channel.clone()))?;
+        let server_time_ms = changed.server_time.map(time_millis);
+        let dedup = system_dedup_reference(
+            buffer_id,
+            changed.msgid.as_ref().map(ToString::to_string),
+            server_time_ms,
+            "topic",
+            changed.actor.to_string(),
+            changed.topic.clone(),
+        );
+        let line = LineEvent::Topic {
+            actor: source_actor(self.casemapping, &changed.actor, changed.authorship)?,
+            topic: changed.topic.clone(),
+        };
+        self.push_system_record(
+            buffer_id,
+            RecordBody::Line(line),
+            dedup,
+            server_time_ms,
+            time_millis(changed.received_at),
+        )
+    }
+
     pub(crate) fn confirm_send(
         &mut self,
         pending: &PendingSend,
@@ -4814,6 +4841,14 @@ mod tests {
         .await
     }
 
+    async fn next_topic(events: &mut papo::Events) -> papo::event::TopicChanged {
+        next_event(events, |event| match event {
+            papo::Event::TopicChanged(changed) => Some(changed),
+            _ => None,
+        })
+        .await
+    }
+
     fn only_line_event(model: &mut NetworkModel) -> LineEvent {
         let item = take_changed_items(model).pop().expect("one system row");
         let ItemBody::System(system) = item.body else {
@@ -7403,6 +7438,34 @@ mod tests {
             buffer.and_then(|buffer| buffer.projection.channel_status),
             Some(crate::ChannelStatus::Joined),
         );
+    }
+
+    #[tokio::test]
+    async fn topic_changes_become_standalone_lines_once_per_msgid() {
+        let (_client, mut events, mut wire, mut model) = joined_room().await;
+        wire.server("@msgid=topic-1 :mel!u@host TOPIC #room :beta ships Friday")
+            .await;
+        let set = next_topic(&mut events).await;
+        assert!(model.receive_topic_change(&set).is_some());
+        assert!(model.receive_topic_change(&set).is_none());
+        assert!(matches!(
+            only_line_event(&mut model),
+            LineEvent::Topic {
+                actor: Actor::User(Person { ref nick, me: false, .. }),
+                topic: Some(ref topic),
+            } if nick == "mel" && topic == "beta ships Friday"
+        ));
+
+        wire.server(":weblounge!u@host TOPIC #room :").await;
+        let cleared = next_topic(&mut events).await;
+        model.receive_topic_change(&cleared);
+        assert!(matches!(
+            only_line_event(&mut model),
+            LineEvent::Topic {
+                actor: Actor::User(Person { me: true, .. }),
+                topic: None,
+            }
+        ));
     }
 
     #[tokio::test]

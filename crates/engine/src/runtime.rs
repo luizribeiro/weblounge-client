@@ -4761,9 +4761,11 @@ fn process_channel_line(
             output.extend(model.receive_kick(&kicked, true).into_iter().flatten());
         }
         papo::Event::Quit(quit) => process_quit(model, &quit),
-        papo::Event::TopicChanged(_) | papo::Event::ChannelSynced(_) => {
+        papo::Event::TopicChanged(changed) => {
+            _ = model.receive_topic_change(&changed);
             output.extend(model.sync_channels(snapshot));
         }
+        papo::Event::ChannelSynced(_) => output.extend(model.sync_channels(snapshot)),
         _ => {}
     }
 }
@@ -4920,6 +4922,7 @@ fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
         papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
             _ = model.receive_kick(&kicked, false);
         }
+        papo::Event::TopicChanged(changed) => _ = model.receive_topic_change(&changed),
         _ => {}
     }
 }
