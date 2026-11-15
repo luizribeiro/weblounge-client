@@ -1,6 +1,6 @@
 # 25 — Reactions and replies
 
-Status: approved product decisions; batch 1 implements received reactions only.
+Status: approved product decisions; batch 1 implements received reactions, batch 2 desktop sending.
 
 ## Problem
 
@@ -58,6 +58,11 @@ There is no swipe-to-reply in the first version.
 An optimistic own reaction appears immediately with a dashed border. Echo confirms it; failure
 uses the error colour and activation retries. Without reaction/reply capability, the corresponding
 control is absent rather than disabled.
+
+Papo at our pin consumes the labeled echo and resolves `react`/`unreact` to `()`, so until the papo
+bump (PLAN TD8) the engine treats `Ok` as the echo and records a local-time own fact without a
+msgid, which history replaces on reload. Sending is offered only when reactions, echo-message and
+labeled-response are all negotiated, because only then does `Ok` mean the server echoed it.
 
 ## Testing
 
