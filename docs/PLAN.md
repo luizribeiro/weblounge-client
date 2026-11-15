@@ -79,8 +79,8 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F33: favicon badge for notifications using the same rules as notifications (DMs and mentions), with a Settings opt-out. Variant pending Luiz's pick from previews. Luiz on IRC, 2026-11-15.
 - F34: show who reacted: desktop tooltip on a reaction chip ("alice, bob and 3 others"); phone placement undecided (Luiz doesn't want it always shown; candidate: long-press a chip). Design 25. Luiz on IRC, 2026-11-15.
 - F35: animate the phone message action sheet (slide up and down like a native iOS sheet). Design 25. Luiz on IRC, 2026-11-15.
-- F36: Tauri iOS app distributed through TestFlight (120Hz scrolling): needs an Apple Developer account, a Mac build/signing host, and APNs push (Web Push doesn't work inside the app's web view). Needs a design. Related F16, F18. Luiz on IRC, 2026-11-15.
-- F37: IRC bot (the "bender" IRC account, GitHub account "bender-rodz") that files GitHub issues on weblounge-client from IRC bug reports and feature requests; lives in weblounge-server; later connect implementation agents to it. Luiz on IRC, 2026-11-15.
+- F36: Tauri iOS app distributed through TestFlight (120Hz scrolling). Apple Developer account exists; push (APNs) required for the first TestFlight build; builds on the weblounge-desktop Mac; design 33. Related F16, F18. Luiz on IRC, 2026-11-15.
+- F37: IRC bot that is an LLM agent with tool calling and read access to our repos, filing GitHub issues (GitHub account bender-rodz, IRC account bender); lives in weblounge-server; design before any work. Luiz on IRC, 2026-11-15.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
