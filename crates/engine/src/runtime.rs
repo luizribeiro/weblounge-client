@@ -4140,16 +4140,11 @@ fn process_papo_event(
             process_join_event(running, snapshot, &joined, output, &mut effects)
         }
         papo::Event::Parted(parted) => process_part_event(running, snapshot, &parted, output),
-        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output)
-            .into_iter()
-            .map(HistoryFetch::Latest)
-            .collect(),
-        papo::Event::Quit(quit) => {
-            process_quit(&mut running.model, &quit);
-            Vec::new()
-        }
-        papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
-            output.extend(running.model.sync_channels(snapshot));
+        event @ (papo::Event::Kicked(_)
+        | papo::Event::Quit(_)
+        | papo::Event::TopicChanged(_)
+        | papo::Event::ChannelSynced(_)) => {
+            process_channel_line(&mut running.model, snapshot, event, output);
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
@@ -4755,15 +4750,22 @@ fn process_join_event(
     targets.into_iter().map(HistoryFetch::Latest).collect()
 }
 
-fn process_kick(
+fn process_channel_line(
     model: &mut NetworkModel,
-    kicked: &papo::event::Kicked,
+    snapshot: &papo::State,
+    event: papo::Event,
     output: &mut Vec<EngineToUi>,
-) -> Vec<HistoryTarget> {
-    if let Some(events) = model.receive_kick(kicked, true) {
-        output.extend(events);
+) {
+    match event {
+        papo::Event::Kicked(kicked) => {
+            output.extend(model.receive_kick(&kicked, true).into_iter().flatten());
+        }
+        papo::Event::Quit(quit) => process_quit(model, &quit),
+        papo::Event::TopicChanged(_) | papo::Event::ChannelSynced(_) => {
+            output.extend(model.sync_channels(snapshot));
+        }
+        _ => {}
     }
-    Vec::new()
 }
 
 fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit) {
@@ -4866,47 +4868,7 @@ fn process_history(
             papo::Event::Reacted(reaction) => {
                 let _ = running.model.receive_reaction(&reaction);
             }
-            papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
-                let _ = running.model.receive_membership_event(
-                    &joined.channel,
-                    MembershipKind::Joined,
-                    joined.actor.nick().to_string(),
-                    None,
-                    joined.msgid.as_ref().map(ToString::to_string),
-                    joined.server_time.map(time_millis),
-                    time_millis(joined.received_at),
-                );
-            }
-            papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
-                let _ = running.model.receive_membership_event(
-                    &parted.channel,
-                    MembershipKind::Parted,
-                    parted.actor.nick().to_string(),
-                    parted.reason.clone(),
-                    parted.msgid.as_ref().map(ToString::to_string),
-                    parted.server_time.map(time_millis),
-                    time_millis(parted.received_at),
-                );
-            }
-            papo::Event::Quit(quit) => {
-                for channel in &quit.channels {
-                    let _ = running.model.receive_membership_event(
-                        channel,
-                        MembershipKind::Quit,
-                        quit.actor.nick().to_string(),
-                        quit.reason.clone(),
-                        quit.msgid.as_ref().map(ToString::to_string),
-                        quit.server_time.map(time_millis),
-                        time_millis(quit.received_at),
-                    );
-                }
-            }
-            papo::Event::NickChanged(changed) => history_nick(&mut running.model, &changed),
-            papo::Event::ModeChanged(changed) => _ = running.model.receive_mode_change(&changed),
-            papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
-                _ = running.model.receive_kick(&kicked, false);
-            }
-            _ => {}
+            other => receive_history_system_event(&mut running.model, other),
         }
     }
     output.extend(record_read_advances(running, read_advances));
@@ -4925,6 +4887,40 @@ fn process_history(
     update_chat_list(&shared_state, outbound, instance);
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
+    }
+}
+
+fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
+    match event {
+        papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
+            let _ = model.receive_membership_event(
+                &joined.channel,
+                MembershipKind::Joined,
+                joined.actor.nick().to_string(),
+                None,
+                joined.msgid.as_ref().map(ToString::to_string),
+                joined.server_time.map(time_millis),
+                time_millis(joined.received_at),
+            );
+        }
+        papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
+            let _ = model.receive_membership_event(
+                &parted.channel,
+                MembershipKind::Parted,
+                parted.actor.nick().to_string(),
+                parted.reason.clone(),
+                parted.msgid.as_ref().map(ToString::to_string),
+                parted.server_time.map(time_millis),
+                time_millis(parted.received_at),
+            );
+        }
+        papo::Event::Quit(quit) => process_quit(model, &quit),
+        papo::Event::NickChanged(changed) => history_nick(model, &changed),
+        papo::Event::ModeChanged(changed) => _ = model.receive_mode_change(&changed),
+        papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
+            _ = model.receive_kick(&kicked, false);
+        }
+        _ => {}
     }
 }
 
