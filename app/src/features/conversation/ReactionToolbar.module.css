@@ -1,0 +1,48 @@
+.toolbar {
+  align-items: center;
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-control);
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  display: flex;
+  gap: 2px;
+  inset-block-start: -16px;
+  inset-inline-end: var(--wl-space-transcript-desktop-inline);
+  padding: 3px;
+  position: absolute;
+  z-index: 4;
+}
+.button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-fg);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-size: 15px;
+  height: 28px;
+  justify-items: center;
+  line-height: 1;
+  padding: 0;
+  width: 30px;
+}
+.button:hover {
+  background: var(--wl-color-chip);
+}
+.button[aria-pressed="true"] {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
+}
+.separator {
+  background: var(--wl-color-border);
+  height: 18px;
+  margin-inline: 3px;
+  width: 1px;
+}
+.icon {
+  height: 16px;
+  width: 16px;
+}
