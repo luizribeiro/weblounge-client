@@ -1,6 +1,7 @@
 # 25 — Reactions and replies
 
-Status: approved product decisions; batch 1 implements received reactions, batch 2 desktop sending.
+Status: approved product decisions; batch 1 implements received reactions, batch 2 desktop sending,
+batch 3 phone sending.
 
 ## Problem
 
@@ -47,7 +48,9 @@ message; it is not a thread object.
 Own reactions use the selection background and accent border. Chips wrap and keep first-seen order.
 Desktop's floating row toolbar contains 👍 ❤️ 😂, add reaction, and Reply. Phone long-press opens a
 sheet with 👍 ❤️ 😂 🎉 👀 ✅, add reaction, Reply, and Copy text. The full picker is searchable and
-scrollable by category. We send emoji only, but render received text reactions as described above.
+scrollable by category; on the phone it replaces the sheet's action list. A held message row turns
+off native selection and the callout, so a phone long press always opens the sheet and Copy text
+takes the place of selecting. We send emoji only, but render received text reactions as described above.
 
 Replies show a one-line parent quote above the reply in the text column. Activating it scrolls to
 and briefly highlights the parent; a missing parent is fetched around its msgid, and a deleted
