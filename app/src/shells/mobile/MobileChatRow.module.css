@@ -54,7 +54,7 @@
   height: var(--wl-density-mobile-row-height);
   padding: 8px 14px;
   text-align: start;
-  transform: translate3d(calc(-1 * var(--wl-mobile-row-offset)), 0, 0);
+  transform: translateX(calc(-1 * var(--wl-mobile-row-offset)));
   transition: transform var(--wl-motion-pop) var(--wl-motion-pop-curve);
   width: 100%;
 }

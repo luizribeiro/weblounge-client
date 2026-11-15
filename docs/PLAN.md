@@ -112,6 +112,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: the phone chat list's scroll indicator shows over the rows again (in Black it only
+  showed through the 1px dividers). Each resting row's 3D `translate3d` gave it its own compositing
+  layer, which iOS stacks above the list's indicator; rows now rest on a 2D `translateX`, and only
+  a dragged row gets a layer.
 - 2026-11-15: phone chat-row actions. A touch tap on a revealed Close or Leave now runs the
   action: the tap's pointerup used to bubble to the row, snap it shut and make the actions inert
   before the click, so no DM closed and no Leave confirmation appeared. Row swipes are easier to

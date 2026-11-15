@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { compositedLayerOwners } from "./composited-layers";
 import { IrcClient, messageId, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
@@ -135,6 +136,25 @@ test.describe("mobile chat list against local Ergo", () => {
     await expect(channelRow).toHaveCount(0);
     await expect(directRow(page, bot.nickname)).toBeVisible();
     await nativeFeelAudit(page);
+  });
+
+  test("keeps resting rows off compositing layers above the scroll indicator", async ({
+    browserName,
+    page,
+    irc,
+  }) => {
+    test.skip(browserName !== "chromium", "reads the Chromium layer tree");
+    const bot = await irc.peer("layers");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+    bot.privmsg(irc.account, "rows paint into the list");
+    await expect(directRow(page, bot.nickname)).toBeVisible();
+
+    await nativeFeelAudit(page);
+
+    // iOS stacks a composited row above the list's overlay scroll indicator.
+    expect(await compositedLayerOwners(page, "[data-buffer-id]")).toEqual([]);
   });
 
   test("moves the most recently active chat to the top", async ({
