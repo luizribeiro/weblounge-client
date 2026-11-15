@@ -36,7 +36,7 @@ redaction inside a history page, which other servers may send.
   "redaction before message" memory is its own small set, because the reaction index keys reaction
   facts per actor and has no slot for a redactor. The push-log body rule is unchanged and stays in
   the Backlog with the other notification work (R10).
-- Design 17: `NetworkProjection.message_redaction` is the network input that the per-message
+- Design 17: `NetworkProjection.can_redact` is the network input that the per-message
   `MessageActions.redact` will be built from once message actions exist; until then the UI combines
   it with the message's own facts in one predicate, so there is still one source of truth.
 
@@ -54,30 +54,30 @@ redaction inside a history page, which other servers may send.
 - **R4, accessibility and copy.** The row's accessible text is "Message deleted", or "Message
   deleted by `<nick>`" when the redactor is not the sender. The bars are `aria-hidden`. Copying the
   row copies that same text.
-- **R5, stability.** A redaction above the viewport keeps what the reader sees still, through the
-  list's existing visual anchor for in-place row changes. A redaction inside the viewport shrinks
-  that row in place; the rows below follow without animation, because the list positions rows by
-  measurement and a height transition would make every later row drift for its duration. The bars
-  fade in over `--wl-motion-fade`, and not at all under reduced motion.
+- **R5, stability.** While you read history, a redaction above the viewport keeps what you see
+  still, through the list's visual anchor for in-place row changes, and one inside the viewport
+  shrinks that row in place with the rows below following. At the live edge the transcript stays
+  pinned to its end as for any row change. Nothing animates: the list positions rows by
+  measurement, so a height transition would make every later row drift, and a fade would replay
+  each time a virtualized row remounts.
 - **R6, your own messages.** "Delete message" appears only on your own committed messages that
-  have a server msgid, while the network is online and negotiated the cap. It always asks first
-  ("Delete this message? It will be deleted for everyone.") through `ConfirmationDialog`. We send no
-  reason. Nothing is applied optimistically. Success means `Client::redact` returned Ok for every
-  one of the row's msgids; the engine then redacts the row itself, and the server's echo that
-  follows is a no-op. On failure (`FAIL REDACT`, timeout, disconnect) an error toast says "Couldn't
-  delete the message" and the row stays as it is, unless the server already echoed the redaction of
-  an earlier line of a multi-line message, which redacts the whole row.
-- **R7, entry points.** No message action surface existed, so this adds the smallest consistent
-  ones:
-  - Desktop: right-clicking an own message's chrome (time, nick, the row's padding) opens the
-    shared `ContextMenu` with the destructive "Delete message". Right-clicking the text keeps the
-    browser's menu (design 15). With the message selected by Up in an empty composer, Delete opens
-    the confirmation (design 14's `message.redact`), and the Menu key or Shift+F10 opens the menu.
-  - Phone: a long press (500ms, inside the movement threshold, as on chat rows) on an own message
-    opens an action sheet with "Delete message" and Cancel; the sheet names the message's text. Long
-    press on other people's messages keeps the native text selection; on your own messages the
-    sheet wins and the press does not start a text selection. Design 25's full phone sheet
-    (reactions, Reply, Copy text) later adds its items to this sheet.
+  have a server msgid, while the network is online and papo can confirm the request (the cap and
+  `labeled-response`). It always asks first ("Delete this message? It will be deleted for everyone
+  in this conversation.") through `ConfirmationDialog`. We send no reason. While papo sends it the
+  row says "Deleting…". Papo resolves `redact` with `()` once its labeled response arrives, so that
+  stands in for confirmation (`TODO(papo-0.1 reaction-confirm)`, as for reactions): once any line
+  is gone the engine redacts the row itself, and the server's echo that follows is a no-op. On
+  failure (`FAIL REDACT`, timeout, disconnect) an error toast says "Couldn't delete the message",
+  the row stays, and it says "Couldn't delete · Retry"; Retry resends without asking again, since
+  you already confirmed.
+- **R7, entry points.**
+  - Desktop: the row's hover toolbar (reactions batch 2) gains a "More actions" button on your own
+    messages, opening the shared `ContextMenu` with the destructive "Delete message".
+    Right-clicking an own message's chrome (time, nick, the row's padding) opens the same menu;
+    right-clicking the text keeps the browser's menu (design 15). With the message selected by Up
+    in an empty composer, Delete opens the confirmation (design 14's `message.redact`).
+  - Phone: the long-press message sheet (reactions batch 3) lists "Delete message" in the danger
+    tone after Copy text, on your own messages only, and opens the same confirmation.
 - **R8, the chat-list preview.** When the latest message is redacted, the preview shows the
   previous loaded message, or "Message deleted" when there is none. The redacted row still counts
   for activity time and the history cursor, so the row's time and position do not change. A
@@ -85,8 +85,9 @@ redaction inside a history page, which other servers may send.
 - **R9, unread and mentions.** A redacted unread message stops counting, toward the unread count,
   the mention count and the app badge. This supersedes design 26 §5's "read facts unchanged".
 - **R10, notifications.** When a shown page or push notification is for the redacted message, the
-  page closes it. A redaction that arrives while no page is open cannot close a notification
-  (Backlog).
+  page closes it: the engine emits `MessageRedacted { msgids }`, the page notifier closes its own
+  notification, and the page closes service-worker notifications whose data names the msgid. A
+  redaction that arrives while no page is open cannot close a notification (Backlog).
 - **R11, replies.** Reply quotes are not built yet (design 25 batch 2). When they are, a reply
   whose parent is redacted shows a "Deleted message" quote; the parent's projection already says
   so. Reactions on a redacted message are dropped and later ones are ignored.
@@ -113,13 +114,14 @@ The widths are a pure function of the msgid; the row never reads the original te
   highlight; the original text and retry text are dropped from the engine, so nothing downstream
   can show it. The text can still sit in a snapshot preview or a restored provisional preview
   until the next derivation (R8 and Edge cases) and in the push log (Backlog).
-- `NetworkProjection.message_redaction: bool`: true while the network is online and papo supports
-  `Feature::Redaction`. With the message's own authorship, committed delivery and server msgid it
+- `NetworkProjection.can_redact: bool`: true while the network is online and papo supports
+  `Feature::Redaction` and `Feature::LabeledResponse`. With the message's own authorship, committed delivery and server msgid it
   decides whether "Delete message" exists (design 17's `MessageActions.redact`).
 - Request: `EngineRequest::RedactMessage { buffer_id, message_id }`. The engine re-checks the row
   (own, committed, has msgids, not yet redacted), resolves the channel or DM target as sends do,
-  and calls `Client::redact` for each of the row's server msgids in order. It replies with
-  `CommandResult`, or `CommandRejected` with `engine.redact_failed` plus an error `Notice` toast.
+  and calls `Client::redact` for each of the row's server msgids in order. The row carries
+  `own_redaction: sending | failed` meanwhile; a failure adds an error `Notice` toast
+  (`engine.redact_failed`).
 - Receive: `NetworkModel::receive_redaction` finds the row through the msgid map, live or from a
   history page, in channels and DMs. A redaction whose message is not loaded is remembered in a
   bounded set (256 msgids), so that message arrives already redacted if a later page or push
@@ -160,7 +162,7 @@ The widths are a pure function of the msgid; the row never reads the original te
 - Engine (papo-testing wire): live channel and DM `REDACT`, redaction in a history page, early
   redaction, another user's redaction, own redaction request (wire line, validation failures,
   `FAIL REDACT` toast), preview fallback, unread and mention drop, tombstones surviving snapshot
-  merges, and the `message_redaction` flag across connect and disconnect.
+  merges, and the `can_redact` flag across connect and disconnect.
 - Playwright against local Ergo, desktop and phone: a peer redacts in a channel and a DM and the
   row shows bars; a redaction above the viewport does not move the visible rows and one inside the
   viewport shrinks in place (geometry assertions plus `nativeFeelAudit`); you delete your own
