@@ -16,7 +16,6 @@ import {
   type UiActionId,
 } from "../../actions/action-registry";
 import { listenForShellActions } from "../../actions/shell-actions";
-import { bufferSyncPresentation } from "../../engine/buffer-sync";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import type { Settings } from "../../engine/generated/Settings";
 import type {
@@ -31,24 +30,9 @@ import type {
   TypingProjection,
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
-import { Composer } from "../../features/composer/Composer";
-import { ConversationHeader } from "../../features/conversation/ConversationHeader";
-import {
-  DirectIdentityBanner,
-  directIdentityBlocked,
-} from "../../features/conversation/DirectIdentityBanner";
-import {
-  MessageList,
-  type MessageListController,
-} from "../../features/conversation/MessageList";
-import {
-  bufferReactionToggle,
-  type ToggleBufferReaction,
-} from "../../features/conversation/reaction-target";
-import {
-  bufferRedaction,
-  type RedactBufferMessage,
-} from "../../features/conversation/redact-target";
+import type { MessageListController } from "../../features/conversation/MessageList";
+import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
+import type { RedactBufferMessage } from "../../features/conversation/redact-target";
 import {
   MemberPanel,
   type MemberWindow,
@@ -77,9 +61,10 @@ import {
 } from "../../features/unread/createReadDwell";
 import type { NetworkUploads } from "../../features/uploads/types";
 import { platformEnvironment } from "../../platform/environment";
-import { t, translate } from "../../strings";
+import { translate } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
+import { DesktopPane } from "./DesktopPane";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
@@ -207,30 +192,9 @@ export function DesktopShell(props: DesktopShellProps) {
         : [bufferId, ...current.filter((id) => id !== bufferId)],
     );
   });
-  const activeComposerNotice = createMemo(
-    () =>
-      props.messageFailureNotices?.get(activeBufferId() ?? -1) ??
-      props.composerNotice,
-  );
   const activeNetwork = createMemo(() => {
     const networkId = activeBuffer()?.network_id;
     return props.networks.find((network) => network.id === networkId);
-  });
-  const toggleReaction = createMemo(() =>
-    bufferReactionToggle(
-      activeBuffer()?.id,
-      activeNetwork(),
-      props.onToggleReaction,
-    ),
-  );
-  const redactMessage = createMemo(() =>
-    bufferRedaction(activeBuffer()?.id, activeNetwork(), props.onRedactMessage),
-  );
-  const activeBufferSync = createMemo(() => {
-    const buffer = activeBuffer();
-    return buffer === undefined
-      ? { interrupted: false, progressing: false }
-      : bufferSyncPresentation(buffer, activeNetwork());
   });
   const newestMessageIds = createMemo(() => {
     const messages = props.messages;
@@ -582,163 +546,45 @@ export function DesktopShell(props: DesktopShellProps) {
             : "false"
         }
       >
-        {activeBuffer() !== undefined ? (
-          <section
-            class={styles.conversation}
-            data-buffer-title={activeBuffer()?.title}
-          >
-            <ConversationHeader
-              memberCount={
-                activeBuffer()?.kind === "channel"
-                  ? (activeBuffer()?.member_count ?? 0)
-                  : undefined
-              }
-              membersPressed={membersVisible()}
-              membersTooltip={tooltip(registry, "members.toggle")}
-              onToggleMembers={() => run("members.toggle")}
-              onToggleSidebar={() => run("sidebar.toggle")}
-              sidebarTooltip={tooltip(registry, "sidebar.toggle")}
-              sync={activeBufferSync}
-              title={activeBuffer()?.title ?? ""}
-              topic={activeBuffer()?.topic ?? undefined}
-            />
-            <div class={styles.conversationBody}>
-              {activeBuffer()?.available === false && (
-                <p role="status">{t("shell.conversation_unavailable")}</p>
-              )}
-              {activeBuffer() !== undefined && (
-                <DirectIdentityBanner
-                  buffer={activeBuffer() as BufferProjection}
-                  onDefer={(bufferId) =>
-                    props.onDeferDirectIdentity?.(bufferId)
-                  }
-                  onTrust={(bufferId) =>
-                    props.onTrustDirectIdentity?.(bufferId)
-                  }
-                />
-              )}
-              <MessageList
-                bufferId={activeBuffer()?.id}
-                bufferKind={activeBuffer()?.kind}
-                bufferTitle={activeBuffer()?.title}
-                channelStatus={activeBuffer()?.channel_status}
-                filehostOrigin={activeNetwork()?.filehost_origin}
-                foregroundExitEpoch={props.foregroundExitEpoch}
-                messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
-                timeline={props.timelines?.get(activeBuffer()?.id ?? -1)}
-                timelineEnabled={props.timelines !== undefined}
-                foreground={props.foreground !== false}
-                memberships={
-                  props.memberships.get(activeBuffer()?.id ?? -1) ?? []
-                }
-                historyState={props.historyStates?.get(
-                  activeBuffer()?.id ?? -1,
-                )}
-                onLiveEdgeChange={setAtLiveEdge}
-                onLoadOlder={() => {
-                  const buffer = activeBuffer();
-                  if (buffer !== undefined)
-                    props.onLoadHistory(buffer.id, "older");
-                }}
-                onOpenChannel={(channel) => {
-                  const buffer = activeBuffer();
-                  if (buffer !== undefined)
-                    void props.onSend(buffer.id, `/join ${channel}`);
-                }}
-                onOpenDirect={
-                  activeBuffer()?.kind === "server" ? undefined : openDirect
-                }
-                onRejoin={() => {
-                  const buffer = activeBuffer();
-                  if (buffer !== undefined)
-                    void props.onSend(buffer.id, `/join ${buffer.title}`);
-                }}
-                onRetry={(localSendId) => {
-                  const buffer = activeBuffer();
-                  if (buffer !== undefined)
-                    props.onRetry?.(buffer.id, localSendId);
-                }}
-                onToggleReaction={toggleReaction()}
-                onRedactMessage={redactMessage()}
-                readAtMs={activeBuffer()?.read_at_ms}
-                unread={activeBuffer()?.unread}
-                syncState={activeBuffer()?.sync_state}
-                registerController={(controller) => {
-                  messageListController = controller;
-                }}
-              />
-              {activeComposerNotice() !== undefined && (
-                <p class={styles.notice} role="status">
-                  {activeComposerNotice()}
-                </p>
-              )}
-              {activeBuffer()?.channel_status === "kicked" && (
-                <p class={styles.notice} role="status">
-                  {t("engine.channel_rejoin_required", {
-                    target: activeBuffer()?.title ?? "this channel",
-                  })}
-                </p>
-              )}
-              <Show when={activeBuffer()?.id} keyed>
-                {(bufferId) => {
-                  const buffer = () =>
-                    props.buffers.find((item) => item.id === bufferId);
-                  return (
-                    <Composer
-                      bufferId={bufferId}
-                      bufferKind={buffer()?.kind}
-                      bufferTitle={buffer()?.title ?? ""}
-                      commandSpecs={props.commandSpecs}
-                      draftKey={buffer()?.draft_key ?? ""}
-                      completion={
-                        props.completion?.buffer_id === bufferId
-                          ? props.completion
-                          : undefined
-                      }
-                      disabled={
-                        buffer()?.kind === "server" ||
-                        buffer()?.channel_status === "kicked" ||
-                        buffer()?.available === false ||
-                        (buffer() !== undefined &&
-                          directIdentityBlocked(buffer() as BufferProjection))
-                      }
-                      focusOnMount={!retainSidebarFocus()}
-                      typers={props.typers?.get(bufferId)}
-                      uploads={(() => {
-                        const network = activeNetwork();
-                        return network === undefined
-                          ? undefined
-                          : props.uploadsFor?.(network);
-                      })()}
-                      onRequestCandidates={(input, cursor, explicit) =>
-                        props.onRequestCompletion(
-                          bufferId,
-                          input,
-                          cursor,
-                          explicit,
-                        )
-                      }
-                      onSelectLast={() =>
-                        messageListController?.selectLastOwn()
-                      }
-                      onSend={(text) => {
-                        const current = buffer();
-                        return current?.kind === "direct" &&
-                          /^\/(?:close|wc)\s*$/iu.test(text)
-                          ? closeDirect(current)
-                          : props.onSend(bufferId, text);
-                      }}
-                    />
-                  );
-                }}
-              </Show>
-            </div>
-          </section>
-        ) : (
-          <section class={styles.empty}>
-            <p>{t("shell.connect_to_begin")}</p>
-          </section>
-        )}
+        <DesktopPane
+          buffer={activeBuffer()}
+          commandSpecs={props.commandSpecs}
+          completion={props.completion}
+          composerNotice={props.composerNotice}
+          focusComposerOnMount={!retainSidebarFocus()}
+          foreground={props.foreground}
+          foregroundExitEpoch={props.foregroundExitEpoch}
+          historyStates={props.historyStates}
+          memberships={props.memberships}
+          membersPressed={membersVisible()}
+          membersTooltip={tooltip(registry, "members.toggle")}
+          messageFailureNotices={props.messageFailureNotices}
+          messages={props.messages}
+          network={activeNetwork()}
+          onDeferDirectIdentity={props.onDeferDirectIdentity}
+          onLiveEdgeChange={setAtLiveEdge}
+          onLoadHistory={props.onLoadHistory}
+          onOpenDirect={openDirect}
+          onRedactMessage={props.onRedactMessage}
+          onRequestCompletion={props.onRequestCompletion}
+          onRetry={props.onRetry}
+          onSendText={(buffer, text) =>
+            buffer.kind === "direct" && /^\/(?:close|wc)\s*$/iu.test(text)
+              ? closeDirect(buffer)
+              : props.onSend(buffer.id, text)
+          }
+          onToggleMembers={() => run("members.toggle")}
+          onToggleReaction={props.onToggleReaction}
+          onToggleSidebar={() => run("sidebar.toggle")}
+          onTrustDirectIdentity={props.onTrustDirectIdentity}
+          registerMessageList={(controller) => {
+            messageListController = controller;
+          }}
+          sidebarTooltip={tooltip(registry, "sidebar.toggle")}
+          timelines={props.timelines}
+          typers={props.typers}
+          uploadsFor={props.uploadsFor}
+        />
       </main>
       <Show
         when={
