@@ -6,15 +6,6 @@
   position: relative;
 }
 
-.drawerContent {
-  height: 100%;
-}
-
-.drawerContent > aside {
-  height: 100%;
-  width: 100%;
-}
-
 .main {
   background: var(--wl-color-bg);
   flex: 1;

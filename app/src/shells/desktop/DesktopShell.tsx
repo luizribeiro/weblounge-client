@@ -33,10 +33,7 @@ import type { TimelineView } from "../../engine/timeline-store";
 import type { MessageListController } from "../../features/conversation/MessageList";
 import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
 import type { RedactBufferMessage } from "../../features/conversation/redact-target";
-import {
-  MemberPanel,
-  type MemberWindow,
-} from "../../features/members/MemberPanel";
+import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import { SettingsModal } from "../../features/settings/SettingsModal";
 import {
@@ -49,10 +46,7 @@ import {
   sidebarRowIds,
   wrappedNeighbourId,
 } from "../../features/sidebar/sidebar-order";
-import {
-  sidebarWidth,
-  sidebarWidthToken,
-} from "../../features/sidebar/sidebar-width";
+import { sidebarWidthToken } from "../../features/sidebar/sidebar-width";
 import { BufferSwitcher } from "../../features/switcher/BufferSwitcher";
 import {
   createReadDwell,
@@ -66,7 +60,9 @@ import { returnFocus } from "../../ui/focus-return";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import { DesktopPane } from "./DesktopPane";
 import styles from "./DesktopShell.module.css";
+import { focusComposerIn } from "./focus-composer";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
+import type { PaneMembersController } from "./pane-members";
 
 export interface DesktopShellProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
@@ -166,13 +162,12 @@ export function DesktopShell(props: DesktopShellProps) {
     readonly title: string;
   }>();
   const [retainSidebarFocus, setRetainSidebarFocus] = createSignal(false);
-  const [drawer, setDrawer] = createSignal<"sidebar" | "members" | null>(null);
-  const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
+  const [drawer, setDrawer] = createSignal<"sidebar" | null>(null);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
   let shellElement: HTMLDivElement | undefined;
-  let shellObserver: ResizeObserver | undefined;
+  let paneMembers: PaneMembersController | undefined;
   let closeUndoTimer: number | undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
@@ -218,25 +213,9 @@ export function DesktopShell(props: DesktopShellProps) {
     return new Set(buffer === undefined ? [] : [buffer.id]);
   });
   const memberViewId = () => `${memberViewScope}:desktop:${layout().root.id}`;
-  const memberWindow = createMemo(() => {
-    const current = props.memberWindows?.get(memberViewId());
-    return current?.buffer_id === activeBuffer()?.id ? current : undefined;
-  });
+  const memberWindow = () => props.memberWindows?.get(memberViewId());
   const sidebarInline = () => platform.environment().desktopPanels === "inline";
-  const paneWidth = () =>
-    shellWidth() - (sidebarShown() && sidebarInline() ? sidebarWidth : 0);
-  const membersInline = () => paneWidth() >= 232 + 320;
-  const membersAvailable = () => activeBuffer()?.kind === "channel";
-  const membersVisible = () =>
-    memberPanelOpen() &&
-    membersAvailable() &&
-    (membersInline() || drawer() === "members");
-  const focusComposer = () =>
-    queueMicrotask(() =>
-      shellElement
-        ?.querySelector<HTMLTextAreaElement>("[data-composer] textarea")
-        ?.focus({ preventScroll: true }),
-    );
+  const focusComposer = () => focusComposerIn(() => shellElement);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   let settingsInvoker: Element | null = null;
   const openSettings = () => {
@@ -348,20 +327,7 @@ export function DesktopShell(props: DesktopShellProps) {
       "list.next": () => listController?.next(),
       "list.open": () => listController?.open(),
       "list.previous": () => listController?.previous(),
-      "members.toggle": () => {
-        if (!membersAvailable()) return;
-        if (membersInline()) {
-          setMemberPanelOpen((open) => {
-            if (open) focusComposer();
-            return !open;
-          });
-          setDrawer(null);
-          return;
-        }
-        setMemberPanelOpen(true);
-        if (drawer() === "members") closeDrawer();
-        else setDrawer("members");
-      },
+      "members.toggle": () => paneMembers?.toggle(),
       "message.jump-bottom": () => messageListController?.jumpBottom(),
       "network.open-server": (command) => showBuffer(command.targetBufferId),
       "pane.show-buffer": (command) => showBuffer(command.targetBufferId),
@@ -373,7 +339,10 @@ export function DesktopShell(props: DesktopShellProps) {
         }
         setSidebarShown(true);
         if (drawer() === "sidebar") closeDrawer();
-        else setDrawer("sidebar");
+        else {
+          paneMembers?.dismissDrawer();
+          setDrawer("sidebar");
+        }
       },
       "palette.open": () => setOmnibarMode("commands"),
       "settings.open": () => openSettings(),
@@ -446,12 +415,7 @@ export function DesktopShell(props: DesktopShellProps) {
 
   createEffect(() => {
     const current = drawer();
-    if (
-      (current === "sidebar" && sidebarInline()) ||
-      (current === "members" && membersInline())
-    ) {
-      closeDrawer();
-    }
+    if (current === "sidebar" && sidebarInline()) closeDrawer();
   });
 
   createReadDwell({
@@ -516,35 +480,17 @@ export function DesktopShell(props: DesktopShellProps) {
       ),
     );
     onCleanup(() => {
-      shellObserver?.disconnect();
       if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
       document.removeEventListener("keydown", handleKeydown);
     });
   });
 
   return (
-    <div
-      class={styles.shell}
-      data-desktop-shell="true"
-      ref={(element) => {
-        shellElement = element;
-        const width = element.getBoundingClientRect().width;
-        setShellWidth(width > 0 ? width : window.innerWidth);
-        shellObserver = new ResizeObserver(([entry]) => {
-          if (entry !== undefined) setShellWidth(entry.contentRect.width);
-        });
-        shellObserver.observe(element);
-      }}
-    >
+    <div class={styles.shell} data-desktop-shell="true" ref={shellElement}>
       {sidebarShown() && sidebarInline() && sidebarView()}
       <main
         class={styles.main}
-        data-chromeless={
-          !(sidebarShown() && sidebarInline()) &&
-          !(membersVisible() && membersInline())
-            ? "true"
-            : "false"
-        }
+        data-chromeless={sidebarShown() && sidebarInline() ? "false" : "true"}
       >
         <DesktopPane
           buffer={activeBuffer()}
@@ -556,13 +502,17 @@ export function DesktopShell(props: DesktopShellProps) {
           foregroundExitEpoch={props.foregroundExitEpoch}
           historyStates={props.historyStates}
           memberships={props.memberships}
-          membersPressed={membersVisible()}
+          memberWindow={memberWindow()}
+          membersShown={memberPanelOpen()}
           membersTooltip={tooltip(registry, "members.toggle")}
           messageFailureNotices={props.messageFailureNotices}
           messages={props.messages}
           network={activeNetwork()}
           onDeferDirectIdentity={props.onDeferDirectIdentity}
           onLiveEdgeChange={setAtLiveEdge}
+          onMembersDrawerOpen={() => {
+            if (drawer() === "sidebar") setDrawer(null);
+          }}
           onLoadHistory={props.onLoadHistory}
           onOpenDirect={openDirect}
           onRedactMessage={props.onRedactMessage}
@@ -573,47 +523,27 @@ export function DesktopShell(props: DesktopShellProps) {
               ? closeDirect(buffer)
               : props.onSend(buffer.id, text)
           }
+          onRequestMemberRange={(bufferId, offset) =>
+            props.onRequestMembers?.(memberViewId(), bufferId, offset)
+          }
           onToggleMembers={() => run("members.toggle")}
+          onToggleMembersShown={() => setMemberPanelOpen((open) => !open)}
           onToggleReaction={props.onToggleReaction}
           onToggleSidebar={() => run("sidebar.toggle")}
           onTrustDirectIdentity={props.onTrustDirectIdentity}
+          registerMembers={(controller) => {
+            paneMembers = controller;
+          }}
           registerMessageList={(controller) => {
             messageListController = controller;
           }}
+          showMemberModeSymbols={props.showMemberModeSymbols}
           sidebarTooltip={tooltip(registry, "sidebar.toggle")}
           timelines={props.timelines}
           typers={props.typers}
           uploadsFor={props.uploadsFor}
         />
       </main>
-      <Show
-        when={
-          membersVisible() && membersInline() ? activeBuffer()?.id : undefined
-        }
-        keyed
-      >
-        {(bufferId) => {
-          const buffer = () =>
-            props.buffers.find((candidate) => candidate.id === bufferId);
-          return (
-            <MemberPanel
-              bufferTitle={buffer()?.title ?? ""}
-              onClose={() => {
-                setMemberPanelOpen(false);
-                focusComposer();
-              }}
-              onOpenDirect={(nick) => {
-                openDirect(nick);
-              }}
-              onRequestRange={(offset) =>
-                props.onRequestMembers?.(memberViewId(), bufferId, offset)
-              }
-              showModeSymbols={props.showMemberModeSymbols}
-              window={memberWindow()}
-            />
-          );
-        }}
-      </Show>
       <Show when={settingsOpen()}>
         <SettingsModal
           onChange={(change) => props.onChangeSetting?.(change)}
@@ -649,40 +579,6 @@ export function DesktopShell(props: DesktopShellProps) {
           width={sidebarWidthToken}
         >
           {sidebarView()}
-        </OverlayDrawer>
-      )}
-      {drawer() === "members" && !membersInline() && membersAvailable() && (
-        <OverlayDrawer
-          closeLabel="Close member list"
-          edge="right"
-          label="Members"
-          onClose={() => {
-            setMemberPanelOpen(false);
-            closeDrawer();
-          }}
-          width="232px"
-        >
-          {(requestClose) => (
-            <div class={styles.drawerContent}>
-              <MemberPanel
-                bufferTitle={activeBuffer()?.title ?? ""}
-                onClose={requestClose}
-                onOpenDirect={(nick) => {
-                  openDirect(nick);
-                  closeDrawer();
-                }}
-                onRequestRange={(offset) =>
-                  props.onRequestMembers?.(
-                    memberViewId(),
-                    activeBuffer()?.id ?? 0,
-                    offset,
-                  )
-                }
-                showModeSymbols={props.showMemberModeSymbols}
-                window={memberWindow()}
-              />
-            </div>
-          )}
         </OverlayDrawer>
       )}
     </div>

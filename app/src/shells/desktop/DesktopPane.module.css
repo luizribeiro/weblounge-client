@@ -1,8 +1,30 @@
 .conversation {
   display: flex;
+  position: relative;
   flex-direction: column;
   height: 100%;
   min-width: 0;
+}
+
+.paneBody {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.paneBody[data-members-inline] {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.drawerContent {
+  height: 100%;
+}
+
+.drawerContent > aside {
+  height: 100%;
+  width: 100%;
 }
 
 .conversationBody {
@@ -10,10 +32,9 @@
   --wl-transcript-gutter: var(--wl-space-transcript-desktop-inline);
 
   display: grid;
-  flex: 1;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
-  width: 100%;
+  min-width: 0;
 }
 
 .conversationBody:has(> [data-direct-identity-banner]) {

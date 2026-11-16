@@ -385,7 +385,14 @@ async function expectDesktopGeometry(
       box("[data-composer]"),
     ];
   });
-  for (const box of boxes) {
+  const [header, ...transcript] = boxes;
+  expect(Math.abs((header?.left ?? -1) - leftPanelWidth)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(Math.abs((header?.right ?? -1) - viewportWidth)).toBeLessThanOrEqual(
+    1,
+  );
+  for (const box of transcript) {
     expect(Math.abs(box.left - leftPanelWidth)).toBeLessThanOrEqual(1);
     expect(
       Math.abs(box.right - (viewportWidth - rightPanelWidth)),

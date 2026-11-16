@@ -305,6 +305,7 @@ export const messages = {
   "messages.topic.set_by": "set by {setter}",
   "messages.topic.title": "Topic",
   "messages.unverified_sender": "Unverified sender",
+  "members.close_drawer": "Close member list",
   "members.filter": "Filter members",
   "members.group.away": "Away",
   "members.group.bots": "Bots",

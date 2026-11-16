@@ -424,11 +424,20 @@ it("keeps the desktop shell and opens narrow panels as one drawer", async () => 
   fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
   const membersDialog = screen.getByRole("dialog", { name: "Members" });
   expect(membersDialog).toBeVisible();
+  expect(membersDialog.closest("[data-desktop-pane]")).not.toBeNull();
   fireEvent.keyDown(membersDialog, { key: "Escape" });
   await Promise.resolve();
   await Promise.resolve();
   expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   expect(composer).toHaveFocus();
+
+  fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle channel list" }));
+  expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Channels" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
+  expect(screen.queryByRole("dialog", { name: "Channels" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Members" })).toBeVisible();
   platform.dispose();
   innerWidth.mockRestore();
 });
