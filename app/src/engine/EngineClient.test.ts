@@ -1285,6 +1285,46 @@ describe("WorkerEngineClient", () => {
     ).toEqual([0, 1]);
   });
 
+  it("publishes queued buffer-list events at hide and keeps timeline patches queued", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit(timelineChange(4, "arrived just before hiding"));
+    port.emit(directBufferUpdate({ unread: 1, mentions: 1 }));
+    port.emit({
+      type: "draft_key_changed",
+      previous: "4:alice",
+      current: "4:alicia",
+    });
+    client.setVisibility("hidden");
+
+    expect(publishedTypes(listener)).toEqual([
+      "buffer_updated",
+      "draft_key_changed",
+    ]);
+
+    client.setVisibility("visible");
+    expect(publishedTypes(listener)).toEqual([
+      "buffer_updated",
+      "draft_key_changed",
+      "timeline_changed",
+    ]);
+  });
+
+  it("drops a removed buffer's queued patches when the page hides", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit(timelineChange(4, "arrived just before hiding"));
+    port.emit({ type: "buffer_removed", buffer_id: 4 });
+    client.setVisibility("hidden");
+    client.setVisibility("visible");
+
+    expect(publishedTypes(listener)).toEqual(["buffer_removed"]);
+  });
+
   it("flushes prior events before an optimistic row in the same frame", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

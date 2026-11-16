@@ -177,7 +177,7 @@ export class WorkerEngineClient implements EngineClient {
     const resumed = this.#visibility === "hidden" && state === "visible";
     // Buffer-list events bypass the queue while hidden; an older one still queued would undo them.
     if (this.#visibility === "visible" && state === "hidden")
-      this.#drainRenderQueue();
+      this.#publishQueuedBufferListEvents();
     this.#visibility = state;
     if (resumed) {
       this.#drainRenderQueue();
@@ -335,9 +335,7 @@ export class WorkerEngineClient implements EngineClient {
 
   #enqueueForFrame(message: EngineToUi): void {
     if (this.#visibility === "hidden" && isBufferListEvent(message)) {
-      if (message.type === "buffer_removed")
-        this.#dropQueuedPatches(message.buffer_id);
-      this.#publish(message);
+      this.#publishBufferListEvent(message);
       return;
     }
     this.#renderQueue.push(message);
@@ -347,6 +345,24 @@ export class WorkerEngineClient implements EngineClient {
       return;
     }
     this.#scheduleRenderFrame();
+  }
+
+  #publishBufferListEvent(message: EngineToUi): void {
+    if (message.type === "buffer_removed")
+      this.#dropQueuedPatches(message.buffer_id);
+    this.#publish(message);
+  }
+
+  /**
+   * Render patches stay queued: MessageList spends its one-shot foreground remeasure on rows
+   * mounted as the page hides, so catch-up rows would paint with estimated heights.
+   */
+  #publishQueuedBufferListEvents(): void {
+    const queued = this.#renderQueue.splice(0);
+    const bufferListEvents = queued.filter(isBufferListEvent);
+    this.#renderQueue.push(...queued.filter((m) => !isBufferListEvent(m)));
+    for (const message of bufferListEvents)
+      this.#publishBufferListEvent(message);
   }
 
   #dropQueuedPatches(bufferId: number): void {
