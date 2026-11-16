@@ -12,7 +12,10 @@
       "capabilities": [
         {
           "identifier": "remote-page",
-          "description": "Lets the hosted app set the Dock badge, use the system notification center, drag and zoom the window from its chrome, read whether it is full screen, and match the window's theme and background to the page, and nothing else.",
+          "description": "Lets the hosted app set the Dock badge, use the system notification center, drag and zoom the window from its chrome, read whether it is full screen, and match the window's theme and background to the page on macOS, and nothing else.",
+          "platforms": [
+            "macOS"
+          ],
           "windows": [
             "main"
           ],

@@ -42,8 +42,21 @@ mod tests {
         );
     }
 
+    fn permissions_on(platform: &str) -> Vec<Value> {
+        capabilities()
+            .iter()
+            .filter(|capability| {
+                capability["platforms"]
+                    .as_array()
+                    .is_none_or(|platforms| platforms.contains(&json!(platform)))
+            })
+            .filter_map(|capability| capability["permissions"].as_array().cloned())
+            .flatten()
+            .collect()
+    }
+
     #[test]
-    fn remote_page_has_exactly_the_shared_and_the_ios_capability() {
+    fn remote_page_has_exactly_the_macos_and_the_ios_capability() {
         let identifiers: Vec<_> = capabilities()
             .iter()
             .map(|capability| capability["identifier"].clone())
@@ -55,10 +68,10 @@ mod tests {
     }
 
     #[test]
-    fn remote_page_may_only_use_the_badge_notifications_and_window_chrome() {
+    fn remote_page_may_only_use_the_badge_notifications_and_window_chrome_on_macos() {
         let capability = &capabilities()[0];
         assert_scoped_to_the_hosted_page(capability);
-        assert!(capability.get("platforms").is_none());
+        assert_eq!(capability["platforms"], json!(["macOS"]));
         assert_eq!(
             capability["permissions"],
             json!([
@@ -83,6 +96,11 @@ mod tests {
         assert_scoped_to_the_hosted_page(capability);
         assert_eq!(capability["platforms"], json!(["iOS"]));
         assert_eq!(capability["permissions"], json!(IOS_PERMISSIONS));
+    }
+
+    #[test]
+    fn remote_page_may_use_only_the_native_bridge_commands_on_ios() {
+        assert_eq!(json!(permissions_on("iOS")), json!(IOS_PERMISSIONS));
     }
 
     /// The match stops compiling when the bridge gains a command, so its grant is decided here.

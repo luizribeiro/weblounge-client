@@ -9,14 +9,7 @@ mod menu;
 #[cfg(any(target_os = "ios", test))]
 mod native;
 mod navigation;
-#[cfg_attr(
-    target_os = "ios",
-    expect(
-        dead_code,
-        unused_imports,
-        reason = "the notification commands have no iOS backend yet and the page shim is desktop-only"
-    )
-)]
+#[cfg(desktop)]
 mod notifications;
 #[cfg(desktop)]
 mod page_action;
@@ -41,11 +34,14 @@ const BADGE_SCRIPT: &str = include_str!("badge.js");
 pub fn run() -> tauri::Result<()> {
     let builder = tauri::Builder::default()
         .plugin(rust_side_opener())
-        .manage(notifications::service())
         .invoke_handler(tauri::generate_handler![
+            #[cfg(desktop)]
             notifications::notification_permission,
+            #[cfg(desktop)]
             notifications::request_notification_permission,
+            #[cfg(desktop)]
             notifications::post_notification,
+            #[cfg(desktop)]
             notifications::close_notification,
             #[cfg(target_os = "ios")]
             native::commands::push_permission,
@@ -76,6 +72,7 @@ pub fn run() -> tauri::Result<()> {
         .on_page_load(native::track_page_load);
     #[cfg(desktop)]
     let builder = builder
+        .manage(notifications::service())
         .plugin(window::desktop::state_plugin())
         .plugin(login_item::plugin())
         .on_menu_event(|app, event| menu::handle_event(app, &event));
@@ -120,6 +117,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 fn install(app: &App) -> Result<(), SetupError> {
     #[cfg(desktop)]
     install_menu(app)?;
+    #[cfg(desktop)]
     notifications::install_click_delegate(app.handle());
     window::create(app.handle(), &page_scripts()?)?;
     #[cfg(target_os = "ios")]
