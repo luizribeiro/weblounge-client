@@ -30,6 +30,11 @@ pub(super) async fn call<T: DeserializeOwned>(
 }
 
 #[tauri::command]
+pub async fn request_push_permission(app: AppHandle) -> Result<PushPermission, NativeBridgeError> {
+    call(&app, "requestPushPermission", (), notification_center).await
+}
+
+#[tauri::command]
 pub async fn push_permission(app: AppHandle) -> Result<PushPermission, NativeBridgeError> {
     call(&app, "pushPermission", (), notification_center).await
 }

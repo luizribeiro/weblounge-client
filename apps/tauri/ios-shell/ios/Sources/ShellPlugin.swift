@@ -7,11 +7,13 @@ struct WatchEventsArgs: Decodable { let handler: Channel }
 /// side validates every answer into the bridge's types before the page sees it.
 final class ShellPlugin: Plugin {
   private let events = ShellEvents()
+  private let registration = RemoteNotificationRegistration()
   private lazy var routing = NotificationRouting(events: events)
   private var center: UNUserNotificationCenter { .current() }
 
   override init() {
     super.init()
+    registration.install()
     center.delegate = routing
   }
 
@@ -19,6 +21,17 @@ final class ShellPlugin: Plugin {
     invoke.settle(.notificationCenter) {
       events.attach(try invoke.parseArgs(WatchEventsArgs.self).handler)
       return nil
+    }
+  }
+
+  @objc func requestPushPermission(_ invoke: Invoke) {
+    center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+      if let error {
+        invoke.reject(BridgeFailure(.notificationCenter, error.localizedDescription))
+        return
+      }
+      if granted { self.registration.register() }
+      invoke.resolve(granted ? "granted" : "denied")
     }
   }
 

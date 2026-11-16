@@ -46,6 +46,8 @@ pub fn run() -> tauri::Result<()> {
             notifications::close_notification,
             #[cfg(target_os = "ios")]
             native::commands::push_permission,
+            #[cfg(target_os = "ios")]
+            native::commands::request_push_permission,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]
