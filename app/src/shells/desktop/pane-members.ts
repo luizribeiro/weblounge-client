@@ -21,6 +21,8 @@ export function memberWindowFor(
   return window?.buffer_id === bufferId ? window : undefined;
 }
 
+type DrawerState = "closed" | "open" | "closing";
+
 export interface PaneMembersController {
   readonly toggle: () => void;
   readonly dismissDrawer: () => void;
@@ -36,39 +38,41 @@ interface PaneMembersOptions {
 
 export function createPaneMembers(options: PaneMembersOptions) {
   const [width, setWidth] = createSignal(window.innerWidth);
-  const [drawerOpen, setDrawerOpen] = createSignal(false);
+  const [drawer, setDrawer] = createSignal<DrawerState>("closed");
   const presentation = () => membersPresentation(width());
   const available = () => options.bufferKind() === "channel";
   const inlineShown = () =>
     available() && presentation() === "inline" && options.shown();
   const drawerShown = () =>
-    available() && presentation() === "drawer" && drawerOpen();
-  const dismissDrawer = () => setDrawerOpen(false);
+    available() && presentation() === "drawer" && drawer() !== "closed";
+  const drawerClosing = () => drawerShown() && drawer() === "closing";
+  const dismissDrawer = () => setDrawer("closed");
   const closeDrawer = () => {
     dismissDrawer();
     options.focusComposer();
   };
   createEffect(() => {
-    if (drawerOpen() && !drawerShown()) dismissDrawer();
+    if (drawer() !== "closed" && !drawerShown()) dismissDrawer();
   });
   const toggle = () => {
     if (!available()) return;
     if (presentation() === "inline") {
       if (options.shown()) options.focusComposer();
       options.onToggleShown();
-    } else if (drawerOpen()) {
-      closeDrawer();
-    } else {
+    } else if (drawer() === "closed") {
       options.onDrawerOpen();
-      setDrawerOpen(true);
+      setDrawer("open");
+    } else {
+      setDrawer("closing");
     }
   };
   return {
     closeDrawer,
     controller: { dismissDrawer, toggle } satisfies PaneMembersController,
+    drawerClosing,
     drawerShown,
     inlineShown,
-    pressed: () => inlineShown() || drawerShown(),
+    pressed: () => inlineShown() || (drawerShown() && !drawerClosing()),
     setWidth,
   };
 }

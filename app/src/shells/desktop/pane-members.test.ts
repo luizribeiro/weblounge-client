@@ -82,9 +82,27 @@ it("opens a transient drawer in a narrow pane without changing visibility", () =
   expect(members.inlineShown()).toBe(false);
   expect(options.onDrawerOpen).toHaveBeenCalledOnce();
   expect(options.onToggleShown).not.toHaveBeenCalled();
+  dispose();
+});
+
+it("lets the drawer slide closed from the toggle before it unmounts", () => {
+  const { dispose, members, options } = paneMembers(500);
   members.controller.toggle();
+  members.controller.toggle();
+  expect(members.drawerShown()).toBe(true);
+  expect(members.drawerClosing()).toBe(true);
+  expect(members.pressed()).toBe(false);
+  members.controller.toggle();
+  expect(members.drawerClosing()).toBe(true);
+  expect(options.onDrawerOpen).toHaveBeenCalledOnce();
+  expect(options.focusComposer).not.toHaveBeenCalled();
+  members.closeDrawer();
   expect(members.drawerShown()).toBe(false);
+  expect(members.drawerClosing()).toBe(false);
   expect(options.focusComposer).toHaveBeenCalledOnce();
+  members.controller.toggle();
+  expect(members.drawerShown()).toBe(true);
+  expect(members.pressed()).toBe(true);
   dispose();
 });
 

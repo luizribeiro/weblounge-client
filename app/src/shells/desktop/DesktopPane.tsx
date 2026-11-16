@@ -242,6 +242,7 @@ function PaneConversation(props: DesktopPaneProps) {
       <Show when={members.drawerShown()}>
         <OverlayDrawer
           closeLabel={t("members.close_drawer")}
+          closing={members.drawerClosing()}
           edge="right"
           label={t("members.label")}
           onClose={() => members.closeDrawer()}
