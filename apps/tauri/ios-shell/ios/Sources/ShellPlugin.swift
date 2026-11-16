@@ -8,6 +8,7 @@ struct CreateRouteKeysArgs: Decodable {
   let route: RouteMeta
 }
 struct RouteIdArgs: Decodable { let routeId: String }
+struct SetBadgeArgs: Decodable { let count: Int }
 
 /// The iOS shell's Apple API calls. Each command answers in the bridge's JSON shapes; the Rust
 /// side validates every answer into the bridge's types before the page sees it.
@@ -74,6 +75,21 @@ final class ShellPlugin: Plugin {
       let args = try invoke.parseArgs(RouteIdArgs.self)
       try RouteKeyMaker(storage: try storage()).drop(routeId: args.routeId)
       return nil
+    }
+  }
+
+  @objc func setBadge(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SetBadgeArgs.self)
+      center.setBadgeCount(args.count) { error in
+        if let error {
+          invoke.reject(BridgeFailure(.notificationCenter, error.localizedDescription))
+        } else {
+          invoke.resolve()
+        }
+      }
+    } catch {
+      invoke.reject(BridgeFailure(.notificationCenter, error))
     }
   }
 

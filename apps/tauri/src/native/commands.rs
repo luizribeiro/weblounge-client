@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
 use weblounge_native_bridge::{
     CreateRouteKeysRequest, DropRouteKeysRequest, NativeBridgeError, PushPermission, PushTarget,
-    RouteKeys,
+    RouteKeys, SetBadgeRequest,
 };
 
 use super::{
@@ -66,4 +66,9 @@ pub async fn drop_route_keys(
     request: DropRouteKeysRequest,
 ) -> Result<(), NativeBridgeError> {
     call(&app, "dropRouteKeys", request, keychain).await
+}
+
+#[tauri::command]
+pub async fn set_badge(app: AppHandle, request: SetBadgeRequest) -> Result<(), NativeBridgeError> {
+    call(&app, "setBadge", request, notification_center).await
 }

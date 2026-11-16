@@ -54,6 +54,8 @@ pub fn run() -> tauri::Result<()> {
             native::commands::create_route_keys,
             #[cfg(target_os = "ios")]
             native::commands::drop_route_keys,
+            #[cfg(target_os = "ios")]
+            native::commands::set_badge,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]
