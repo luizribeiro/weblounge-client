@@ -5,6 +5,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod jwt;
 mod outbound;
 mod target;
 #[cfg(test)]

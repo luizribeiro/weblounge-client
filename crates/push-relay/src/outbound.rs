@@ -13,11 +13,8 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
 use p256::{
-    PublicKey, SecretKey,
-    ecdh::EphemeralSecret,
-    ecdsa::{Signature, SigningKey, signature::Signer as _},
-    elliptic_curve::sec1::ToEncodedPoint as _,
-    pkcs8::DecodePrivateKey as _,
+    PublicKey, SecretKey, ecdh::EphemeralSecret, ecdsa::SigningKey,
+    elliptic_curve::sec1::ToEncodedPoint as _, pkcs8::DecodePrivateKey as _,
 };
 use rand_core::{OsRng, RngCore as _};
 use reqwest::{Certificate, StatusCode, redirect::Policy};
@@ -27,6 +24,7 @@ use url::Url;
 
 use crate::{
     Error, Result,
+    jwt::{sign_es256, unix_seconds},
     target::{PushTarget, WebPushTarget},
 };
 
@@ -670,6 +668,12 @@ fn encrypt_payload(content: &[u8], p256dh: &str, auth: &str) -> Result<Vec<u8>> 
 }
 
 #[derive(Serialize)]
+struct VapidHeader {
+    typ: &'static str,
+    alg: &'static str,
+}
+
+#[derive(Serialize)]
 struct VapidClaims<'a> {
     aud: &'a str,
     exp: u64,
@@ -677,22 +681,18 @@ struct VapidClaims<'a> {
 }
 
 fn vapid_authorization(key: &SigningKey, public: &[u8], audience: &str) -> Result<String> {
-    let now = u64::try_from(time::OffsetDateTime::now_utc().unix_timestamp())
-        .map_err(|_| Error::Crypto("system clock precedes the Unix epoch".to_owned()))?;
-    let header = URL_SAFE_NO_PAD.encode(br#"{"typ":"JWT","alg":"ES256"}"#);
-    let claims = serde_json::to_vec(&VapidClaims {
-        aud: audience,
-        exp: now + 12 * 60 * 60,
-        sub: "mailto:push@weblounge.org",
-    })
-    .map_err(|error| Error::Crypto(error.to_string()))?;
-    let claims = URL_SAFE_NO_PAD.encode(claims);
-    let signing_input = format!("{header}.{claims}");
-    let signature: Signature = key.sign(signing_input.as_bytes());
-    let token = format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    );
+    let token = sign_es256(
+        key,
+        &VapidHeader {
+            typ: "JWT",
+            alg: "ES256",
+        },
+        &VapidClaims {
+            aud: audience,
+            exp: unix_seconds()? + 12 * 60 * 60,
+            sub: "mailto:push@weblounge.org",
+        },
+    )?;
     Ok(format!(
         "vapid t={token},k={}",
         URL_SAFE_NO_PAD.encode(public)
@@ -778,7 +778,7 @@ mod tests {
 
     use super::{
         DnsResolver, EndpointValidator, HttpTransport as _, OutboundRequest, ReqwestTransport,
-        Urgency, is_public,
+        Urgency, is_public, vapid_authorization,
     };
     use crate::{Result, test_tls::TlsServer};
 
@@ -856,6 +856,31 @@ mod tests {
         assert_eq!(status, StatusCode::FOUND);
         assert_eq!(source.requests(), 1);
         assert_eq!(destination.requests(), 0);
+    }
+
+    #[test]
+    fn vapid_header_keeps_its_exact_bytes_and_a_twelve_hour_expiry() {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+        let key = p256::ecdsa::SigningKey::from(p256::SecretKey::random(&mut rand_core::OsRng));
+        let header = vapid_authorization(&key, b"public", "https://web.push.apple.com")
+            .expect("VAPID header");
+        let token = header
+            .strip_prefix("vapid t=")
+            .and_then(|rest| rest.split(',').next())
+            .expect("VAPID token");
+        let parts = token.split('.').collect::<Vec<_>>();
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(parts[0]).expect("header"),
+            br#"{"typ":"JWT","alg":"ES256"}"#
+        );
+        let claims: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).expect("claims"))
+                .expect("claims JSON");
+        let expiry = claims["exp"].as_u64().expect("expiry");
+        let now = crate::jwt::unix_seconds().expect("clock");
+        assert!((now + 12 * 60 * 60 - 5..=now + 12 * 60 * 60).contains(&expiry));
+        assert_eq!(claims["aud"], "https://web.push.apple.com");
     }
 
     #[test]
