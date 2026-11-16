@@ -55,6 +55,8 @@ pub fn run() -> tauri::Result<()> {
             #[cfg(target_os = "ios")]
             native::commands::drop_route_keys,
             #[cfg(target_os = "ios")]
+            native::commands::take_pushed_messages,
+            #[cfg(target_os = "ios")]
             native::commands::set_badge,
             #[cfg(target_os = "ios")]
             native::commands::write_notification_counts,

@@ -2,7 +2,9 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use weblounge_native_bridge::{ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget};
+use weblounge_native_bridge::{
+    ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget, PushedMessage,
+};
 
 /// The device token and what decides its APNs host.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -55,10 +57,29 @@ impl Delivered {
     }
 }
 
+#[derive(Deserialize)]
+pub struct Drained {
+    messages: Vec<Value>,
+}
+
+impl Drained {
+    /// The queue is already emptied, so a record that fails validation is dropped.
+    pub fn into_messages(self) -> Vec<PushedMessage> {
+        self.messages
+            .into_iter()
+            .filter_map(|record| {
+                serde_json::from_value(record)
+                    .inspect_err(|error| eprintln!("dropped a pushed message: {error}"))
+                    .ok()
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use weblounge_native_bridge::NotificationData;
+    use weblounge_native_bridge::{NotificationData, PushedMessageKind};
 
     use super::*;
 
@@ -127,5 +148,31 @@ mod tests {
         assert_eq!(notifications[1].identifier, "placeholder");
         assert_eq!(notifications[1].data, None);
         assert_eq!(notifications[2].data, None);
+    }
+
+    #[test]
+    fn invalid_pushed_records_are_dropped_and_the_rest_kept_in_order() {
+        let record = |msgid: &str| {
+            json!({
+                "schema": 1, "network_label": "Libera", "nickname": "weblounge",
+                "route": "/Libera/@mel", "sender": "mel", "account": null,
+                "target": "weblounge", "msgid": msgid, "time": "2026-11-16T12:34:56.789Z",
+                "text": "are you around?", "kind": "message",
+            })
+        };
+        let mut future_schema = record("future");
+        future_schema["schema"] = json!(2);
+        let drained: Drained = serde_json::from_value(json!({
+            "messages": [record("first"), future_schema, { "text": "partial" }, record("second")],
+        }))
+        .expect("parses");
+        let messages = drained.into_messages();
+
+        let ids: Vec<_> = messages
+            .iter()
+            .map(|message| message.msgid.as_str())
+            .collect();
+        assert_eq!(ids, ["first", "second"]);
+        assert_eq!(messages[0].kind, PushedMessageKind::Message);
     }
 }

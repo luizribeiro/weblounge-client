@@ -80,6 +80,13 @@ final class ShellPlugin: Plugin {
     }
   }
 
+  @objc func takePushedMessages(_ invoke: Invoke) {
+    invoke.settle(.appGroup) {
+      let records = try storage().drainPushedMessages()
+      return ["messages": records.compactMap { try? JSONSerialization.jsonObject(with: $0) }]
+    }
+  }
+
   @objc func writeNotificationCounts(_ invoke: Invoke) {
     invoke.settle(.appGroup) {
       let args = try invoke.parseArgs(WriteNotificationCountsArgs.self)
