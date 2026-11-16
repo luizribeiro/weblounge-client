@@ -77,7 +77,6 @@ export function createPaneMembers(options: PaneMembersOptions) {
     inlineShown,
     pressed: () => inlineShown() || (drawerShown() && !drawerClosing()),
     setWidth,
-    slideDrawerClosed,
   };
 }
 

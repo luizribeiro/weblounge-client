@@ -106,25 +106,6 @@ it("lets the drawer slide closed from the toggle before it unmounts", () => {
   dispose();
 });
 
-it("slides an open drawer closed for typing, once", () => {
-  const { dispose, members, options } = paneMembers(500);
-  members.controller.toggle();
-  members.slideDrawerClosed();
-  expect(members.drawerClosing()).toBe(true);
-  expect(members.pressed()).toBe(false);
-  members.slideDrawerClosed();
-  expect(members.drawerClosing()).toBe(true);
-  expect(options.focusComposer).not.toHaveBeenCalled();
-  dispose();
-});
-
-it("leaves a closed drawer closed when typing", () => {
-  const { dispose, members } = paneMembers(500);
-  members.slideDrawerClosed();
-  expect(members.drawerShown()).toBe(false);
-  dispose();
-});
-
 it("dismisses the drawer silently for another drawer, a wider pane or a DM", () => {
   const { dispose, members, options, setBufferKind } = paneMembers(500);
   members.controller.toggle();
