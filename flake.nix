@@ -43,14 +43,23 @@
         buildSha = self.shortRev or "dirty";
         buildTimestamp = toString (self.lastModified or 0);
         pkgs = import nixpkgs { inherit overlays system; };
-        rustToolchain = pkgs.rust-bin.stable."1.98.1".minimal.override {
-          extensions = [
-            "clippy"
-            "rust-analyzer"
-            "rustfmt"
-          ];
-          targets = [ "wasm32-unknown-unknown" ];
-        };
+        rustToolchainWith =
+          extraTargets:
+          pkgs.rust-bin.stable."1.98.1".minimal.override {
+            extensions = [
+              "clippy"
+              "rust-analyzer"
+              "rustfmt"
+            ];
+            targets = [ "wasm32-unknown-unknown" ] ++ extraTargets;
+          };
+        rustToolchain = rustToolchainWith [ ];
+        devShellRustToolchain = rustToolchainWith (
+          pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
+            "aarch64-apple-ios"
+            "aarch64-apple-ios-sim"
+          ]
+        );
         wasmBindgenCliVersion = "0.2.129";
         wasmBindgenCliSource = pkgs.fetchCrate {
           pname = "wasm-bindgen-cli";
@@ -773,7 +782,7 @@
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           packages = [
-            rustToolchain
+            devShellRustToolchain
             wasmBindgenCli
             pkgs.binaryen
             pkgs.biome
