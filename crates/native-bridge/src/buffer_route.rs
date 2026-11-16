@@ -2,7 +2,8 @@ use crate::validated::validated_string;
 
 validated_string!(
     /// A same-origin buffer path such as `/Libera/%23weblounge` or `/Libera/@mel`, in the form
-    /// the page's `bufferPath` builds. The shell appends it to the hosted origin for a cold
+    /// the page's `bufferPath` builds, or `/` for the chat list, where the service worker's
+    /// generic notifications open. The shell appends it to the hosted origin for a cold
     /// launch, so anything that could leave the path (a query, a fragment, a dot segment or
     /// another origin) is rejected.
     BufferRoutePath,
@@ -10,6 +11,10 @@ validated_string!(
 );
 
 fn is_buffer_route(value: &str) -> bool {
+    value == "/" || is_conversation_route(value)
+}
+
+fn is_conversation_route(value: &str) -> bool {
     let Some(path) = value.strip_prefix('/') else {
         return false;
     };
@@ -63,8 +68,9 @@ mod tests {
     use crate::InvalidValue;
 
     #[test]
-    fn server_channel_and_direct_routes_are_accepted() {
+    fn root_server_channel_and_direct_routes_are_accepted() {
         for route in [
+            "/",
             "/Libera",
             "/Libera/weblounge",
             "/Libera/%26local",
@@ -81,7 +87,7 @@ mod tests {
     fn paths_that_could_leave_the_buffer_route_are_rejected() {
         for route in [
             "",
-            "/",
+            "//",
             "Libera/weblounge",
             "//evil.example/x",
             "https://evil.example/Libera",

@@ -2,7 +2,8 @@
 
 /**
  * A same-origin buffer path such as `/Libera/%23weblounge` or `/Libera/@mel`, in the form
- * the page's `bufferPath` builds. The shell appends it to the hosted origin for a cold
+ * the page's `bufferPath` builds, or `/` for the chat list, where the service worker's
+ * generic notifications open. The shell appends it to the hosted origin for a cold
  * launch, so anything that could leave the path (a query, a fragment, a dot segment or
  * another origin) is rejected.
  */
