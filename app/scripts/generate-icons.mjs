@@ -6,11 +6,6 @@ const appDirectory = resolve(import.meta.dirname, "..");
 const faviconPath = resolve(appDirectory, "assets/favicon.svg");
 const favicon = await readFile(faviconPath, "utf8");
 const iconDirectory = resolve(appDirectory, "public/icons");
-const desktopIconDirectory = resolve(appDirectory, "../apps/tauri/icons");
-const desktopDevIconDirectory = resolve(
-  appDirectory,
-  "../apps/tauri/icons-dev",
-);
 const mark = favicon.slice(
   favicon.indexOf('<g id="mark">'),
   favicon.lastIndexOf("</g>") + "</g>".length,
@@ -28,17 +23,26 @@ const faviconTiles = {
   unread: loungeTheme.colors.mentionBadge,
   disconnected: "#8C8F87",
 };
-// Local desktop builds wear a yellow tile so they are never mistaken for the installed release.
+// Local builds wear a yellow tile so they are never mistaken for the installed release.
 const devColors = { tile: "#E8B530", mark: brandColors.felt };
+const appIdentities = [
+  { directory: resolve(appDirectory, "../apps/tauri/icons") },
+  {
+    directory: resolve(appDirectory, "../apps/tauri/icons-dev"),
+    colors: devColors,
+  },
+];
 
 // iOS and Android apply their own corner masks, so the platform icons are
 // full-bleed and opaque; maskable icons keep the mark inside the 80% safe zone.
 // macOS applies no mask, so its icon draws Apple's rounded tile on transparency.
+const phoneGrid = { markScale: 0.78 };
+const maskableGrid = { markScale: 0.6 };
 const macosGrid = { tile: 824, radius: 185, markScale: 0.78 };
-const macosCanvas = 1024;
+const appStoreCanvas = 1024;
 
 await Promise.all(
-  [iconDirectory, desktopIconDirectory, desktopDevIconDirectory].map(
+  [iconDirectory, ...appIdentities.map(({ directory }) => directory)].map(
     (directory) => mkdir(directory, { recursive: true }),
   ),
 );
@@ -50,24 +54,25 @@ await Promise.all([
       renderPng(files.png, 32, svg),
     ];
   }),
-  renderPng("apple-touch-icon.png", 180, appIconSvg(180, { markScale: 0.78 })),
-  renderPng("icon-192.png", 192, appIconSvg(192, { markScale: 0.78 })),
-  renderPng("icon-512.png", 512, appIconSvg(512, { markScale: 0.78 })),
-  renderPng("icon-maskable-192.png", 192, appIconSvg(192, { markScale: 0.6 })),
-  renderPng("icon-maskable-512.png", 512, appIconSvg(512, { markScale: 0.6 })),
-  renderPng(
-    "macos-source.png",
-    macosCanvas,
-    appIconSvg(macosCanvas, macosGrid),
-    desktopIconDirectory,
-  ),
-  renderPng(
-    "macos-source.png",
-    macosCanvas,
-    appIconSvg(macosCanvas, { ...macosGrid, colors: devColors }),
-    desktopDevIconDirectory,
-  ),
+  renderPng("apple-touch-icon.png", 180, appIconSvg(180, phoneGrid)),
+  renderPng("icon-192.png", 192, appIconSvg(192, phoneGrid)),
+  renderPng("icon-512.png", 512, appIconSvg(512, phoneGrid)),
+  renderPng("icon-maskable-192.png", 192, appIconSvg(192, maskableGrid)),
+  renderPng("icon-maskable-512.png", 512, appIconSvg(512, maskableGrid)),
+  ...appIdentities.flatMap(({ directory, colors }) => [
+    renderAppSource("macos-source.png", { ...macosGrid, colors }, directory),
+    renderAppSource("ios-source.png", { ...phoneGrid, colors }, directory),
+  ]),
 ]);
+
+function renderAppSource(filename, grid, directory) {
+  return renderPng(
+    filename,
+    appStoreCanvas,
+    appIconSvg(appStoreCanvas, grid),
+    directory,
+  );
+}
 
 function retiledFavicon(tile) {
   const brandTile = `fill="${brandColors.felt}"`;
