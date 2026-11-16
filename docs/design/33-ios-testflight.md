@@ -140,16 +140,25 @@ the two platforms can't drift (DRY). The NSE then:
 - sets the title, body and `threadIdentifier` (the conversation tag, which groups notifications
   the way Safari couldn't) and `userInfo`;
 - bumps that conversation's count and the badge in the App Group, mirroring the worker's ledger,
-  and sets `content.badge` and the `· N new messages` suffix from it;
+  and sets `content.badge` and the `· N new messages` suffix from it. The App Group keeps one count
+  per conversation, so the ledger differs from the worker's in three known ways: invites (no
+  conversation) aren't counted and leave the badge alone, a `MARKREAD` zeroes the whole
+  conversation, and the NSE and the page update the counts without a lock;
 - appends the pushed message to an App Group queue (for tap before history);
-- on a decrypt or parse failure, keeps the placeholder and flags the route for re-registration
-  (design 23 step 7);
+- on a decrypt or parse failure, keeps the placeholder; a decrypt failure also flags the route for
+  re-registration (design 23 step 7) in the App Group key `route-needs-reregistration.<routeId>`;
 - on a control that still arrives (a third-party home that sends `MARKREAD` at high urgency), it
   removes covered delivered notifications and zeroes that conversation's count, but it must still
   show something. Hiding it needs Apple's discretionary `usernotifications.filtering` entitlement.
   This is a known limit; production Ergo never sends one.
 
 The NSE has about 24 MB and 30 s; a Rust staticlib of decrypt plus parse fits easily.
+
+The NSE is `<app id>.notifications` and names the app's App Group and keychain group, so its
+build settings carry the app's identifier. Tauri's `--config tauri.ios.release.conf.json` rewrites
+only the app target and passes only `TAURI_*` variables to Xcode, so a release build also sets
+`TAURI_WEBLOUNGE_APP_IDENTIFIER=org.weblounge.ios`; without it a device build fails Xcode's
+embedded-binary identifier check.
 
 ### Read state, badge and cleanup
 
@@ -161,9 +170,10 @@ The page code stays the same. The platform seams it already injects get iOS impl
 - `app-badge.ts`'s `RegistrationProvider`: `getNotifications()` lists delivered notifications
   (`getDeliveredNotifications`, mapping `userInfo` to `data`) and `close()` calls
   `removeDeliveredNotifications(withIdentifiers:)`. `closeReadConversationNotifications` and
-  `closeMessageNotifications` (redaction, design 32) then work unchanged. "One notification per
-  msgid" holds because the NSE uses the msgid as the request identifier, so a re-delivery replaces
-  rather than duplicates.
+  `closeMessageNotifications` (redaction, design 32) then work unchanged. An NSE can't choose the
+  request identifier (APNs sets it, and the relay never sees the msgid), so "one notification per
+  msgid" holds another way: a re-delivery withdraws the delivered notification with the same
+  `messageId` and isn't counted again.
 
 ### Notification taps and deep links
 
@@ -266,8 +276,9 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
   **[unverified]**). Tag `ios-v<version>+<build>`.
 - **Release script**: `apps/tauri/release/release-ios.mjs` on the Mac, outside Nix like design
   28. It reuses `plan.mjs`'s preconditions (clean worktree, `HEAD` on `origin/main`, tag free,
-  versions agree), runs `cargo tauri ios build --export-method app-store-connect`, uploads the IPA
-  with `xcrun altool --upload-app` and the API key, then tags. The first build may simply go through
+  versions agree), runs `cargo tauri ios build --export-method app-store-connect` with
+  `TAURI_WEBLOUNGE_APP_IDENTIFIER` set (see the NSE), uploads the IPA with
+  `xcrun altool --upload-app` and the API key, then tags. The first build may simply go through
   Xcode's Organizer.
 
 ## Building on the Mac
@@ -348,6 +359,10 @@ Universal Links and a custom URL scheme; share extension, Live Activities and wi
   opens the buffer, a drained pushed message shows before the connection, and reading removes the
   delivered notification. `nativeFeelAudit` and the idle/hidden checks stay green.
 - **Shell**: unit tests for route validation and the iOS identity, run by the darwin build.
+- **NSE**: `xcrun simctl push` never runs a Notification Service Extension, so a real APNs
+  delivery through it is a device check. The `weblounge-notifications-tests` scheme instead drives
+  the NSE's own classes inside the dev app (built first with `cargo tauri ios build --debug`), with
+  its keychain and App Group, on pushes sealed with RFC 8291 as a home would.
 - **Device checklist** (iPhone 16 Pro, recorded in PLAN.md): install from TestFlight; sign in
   through the concierge; allow notifications; DM and mention while locked, then detailed text,
   grouping and badge; cold and warm tap; read elsewhere removes the notification and lowers the
