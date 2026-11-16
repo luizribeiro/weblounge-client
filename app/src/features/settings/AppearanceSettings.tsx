@@ -7,6 +7,7 @@ import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import styles from "./AppearanceSettings.module.css";
 import { SegmentedChoice } from "./SegmentedChoice";
+import { SettingRow } from "./SettingRow";
 import { ThemeCards } from "./ThemeCards";
 
 interface AppearanceSettingsProps {
@@ -16,8 +17,6 @@ interface AppearanceSettingsProps {
 
 export function AppearanceSettings(props: AppearanceSettingsProps) {
   const themeId = createUniqueId();
-  const densityId = createUniqueId();
-  const densityDescriptionId = createUniqueId();
   const change = (setting: AppSetting) =>
     props.onChange({ scope: "app", setting });
   return (
@@ -31,24 +30,20 @@ export function AppearanceSettings(props: AppearanceSettingsProps) {
         value={props.settings?.theme}
       />
       <h3 class={styles.section}>{t("settings.conversation")}</h3>
-      <div class={styles.row}>
-        <div class={styles.text}>
-          <span class={styles.label} id={densityId}>
-            {t("settings.message_density")}
-          </span>
-          <span class={styles.description} id={densityDescriptionId}>
-            {t("settings.message_density.description")}
-          </span>
-        </div>
-        <SegmentedChoice
-          describedBy={densityDescriptionId}
-          label={densityLabel}
-          labelledBy={densityId}
-          onChange={(value) => change({ key: "message_density", value })}
-          value={props.settings?.message_density}
-          values={densities}
-        />
-      </div>
+      <SettingRow
+        description={t("settings.message_density.description")}
+        label={t("settings.message_density")}
+      >
+        {(ids) => (
+          <SegmentedChoice
+            {...ids}
+            label={densityLabel}
+            onChange={(value) => change({ key: "message_density", value })}
+            value={props.settings?.message_density}
+            values={densities}
+          />
+        )}
+      </SettingRow>
     </>
   );
 }
