@@ -58,6 +58,12 @@ targets:
         CFBundleVersion: "0.1.3"
     entitlements:
       path: weblounge-desktop_iOS/weblounge-desktop_iOS.entitlements
+      properties:
+        aps-environment: development
+        com.apple.security.application-groups:
+          - group.$(PRODUCT_BUNDLE_IDENTIFIER)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
