@@ -2,6 +2,7 @@ import { densityFor, installDensity } from "../density/density";
 import type { Appearance } from "../engine/decodeSettings";
 import { readAppearanceHint, writeAppearanceHint } from "./appearance-hint";
 import { installTheme } from "./theme-controller";
+import type { ThemeDefinition } from "./theme-registry";
 
 export interface AppearanceController {
   apply(appearance: Appearance): void;
@@ -13,9 +14,10 @@ export function installAppearance(
   document: Document,
   systemDark: boolean,
   storage: () => Storage,
+  onApply?: (theme: ThemeDefinition) => void,
 ): AppearanceController {
   const remembered = readAppearanceHint(storage);
-  const theme = installTheme(document, systemDark, remembered?.theme);
+  const theme = installTheme(document, systemDark, remembered?.theme, onApply);
   const removeDensity = installDensity(
     document,
     densityFor(remembered?.message_density),

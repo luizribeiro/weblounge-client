@@ -43,4 +43,15 @@ describe("installAppearance", () => {
     appearance.apply({ theme: "system", message_density: "cozy" });
     expect(root.dataset.theme).toBe("lounge-night");
   });
+
+  it("hands each applied theme to the window", () => {
+    const appearances: string[] = [];
+    const appearance = installAppearance(document, false, storage, (theme) =>
+      appearances.push(theme.appearance),
+    );
+
+    appearance.apply({ theme: "lounge-night", message_density: "cozy" });
+
+    expect(appearances).toEqual(["light", "dark"]);
+  });
 });

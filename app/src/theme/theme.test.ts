@@ -173,6 +173,22 @@ describe("theme controller", () => {
     expect(document.documentElement.dataset.theme).toBe("lounge-night");
   });
 
+  it("reports every applied theme's definition", () => {
+    const applied: string[] = [];
+    const controller = installTheme(document, false, "system", (theme) =>
+      applied.push(`${theme.id} ${theme.appearance}`),
+    );
+
+    controller.setSystemDark(true);
+    controller.setPreference("lounge");
+
+    expect(applied).toEqual([
+      "lounge light",
+      "lounge-night dark",
+      "lounge light",
+    ]);
+  });
+
   it("registers every theme the engine can store", () => {
     for (const preference of themePreferences) {
       for (const systemDark of [false, true]) {

@@ -1,5 +1,5 @@
 import { resolveTheme, type ThemePreference } from "./resolve-theme";
-import { type ThemeId, themes } from "./theme-registry";
+import { type ThemeDefinition, type ThemeId, themes } from "./theme-registry";
 
 export type { ThemePreference };
 
@@ -14,6 +14,7 @@ export function installTheme(
   document: Document,
   initialSystemDark: boolean,
   initialPreference: ThemePreference = "system",
+  onApply: (theme: ThemeDefinition) => void = () => {},
 ): ThemeController {
   let preference = initialPreference;
   let systemDark = initialSystemDark;
@@ -23,11 +24,12 @@ export function installTheme(
 
   const apply = () => {
     active = resolveActive();
-    document.documentElement.dataset.theme = active;
+    document.documentElement.dataset.theme = active.id;
+    onApply(active);
   };
   apply();
   return {
-    activeTheme: () => active,
+    activeTheme: () => active.id,
     setPreference(nextPreference) {
       preference = nextPreference;
       apply();
@@ -40,8 +42,8 @@ export function installTheme(
   };
 }
 
-function registeredTheme(id: string): ThemeId {
+function registeredTheme(id: string): ThemeDefinition {
   const theme = themes.find((candidate) => candidate.id === id);
   if (theme === undefined) throw new Error(`unknown theme: ${id}`);
-  return theme.id;
+  return theme;
 }
