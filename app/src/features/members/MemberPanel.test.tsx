@@ -75,6 +75,26 @@ it("leaves out its titled header when the host owns the close control", () => {
   expect(screen.queryByRole("button", { name: "Hide members" })).toBeNull();
 });
 
+it("hands Escape to its host only when the host asks for it", () => {
+  const onEscape = vi.fn();
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      header="none"
+      window={window}
+      onEscape={onEscape}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+    />
+  ));
+  const member = screen.getByRole("button", {
+    name: "Open direct message with weblounge",
+  });
+  expect(fireEvent.keyDown(member, { key: "Escape" })).toBe(false);
+  expect(fireEvent.keyDown(member, { key: "Enter" })).toBe(true);
+  expect(onEscape).toHaveBeenCalledOnce();
+});
+
 it("passes the mode-symbol setting to member rows", () => {
   render(() => (
     <MemberPanel

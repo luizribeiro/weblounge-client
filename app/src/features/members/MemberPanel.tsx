@@ -31,6 +31,7 @@ interface MemberPanelProps {
   readonly header?: "titled" | "none" | undefined;
   readonly window: MemberWindow | undefined;
   readonly onClose?: (() => void) | undefined;
+  readonly onEscape?: (() => void) | undefined;
   readonly onFilter?: ((filter: string) => void) | undefined;
   readonly onOpenDirect: (nick: string) => void;
   readonly onRequestRange: (offset: number) => void;
@@ -110,6 +111,11 @@ export function MemberPanel(props: MemberPanelProps) {
       aria-label={t("members.label_for", { channel: props.bufferTitle })}
       class={styles.panel}
       data-presentation={props.presentation ?? "desktop"}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || props.onEscape === undefined) return;
+        event.preventDefault();
+        props.onEscape();
+      }}
       style={{
         "--wl-member-group-row-height": `${metrics.group}px`,
         "--wl-density-sidebar-member-row-height": `${metrics.member}px`,

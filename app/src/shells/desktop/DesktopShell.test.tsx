@@ -198,7 +198,7 @@ it("resolves a cached channel through normal history", () => {
   expect(loadHistory).toHaveBeenCalledWith(2, "latest");
 });
 
-it("toggles the channel member panel and routes direct messages", () => {
+it("toggles the channel member panel and routes direct messages", async () => {
   const openDirect = vi.fn();
   const requestMembers = vi.fn();
   render(() => (
@@ -233,6 +233,16 @@ it("toggles the channel member panel and routes direct messages", () => {
     screen.getByRole("button", { name: "Open direct message with mel" }),
   );
   expect(openDirect).toHaveBeenCalledWith(1, "mel");
+  const member = screen.getByRole("button", {
+    name: "Open direct message with mel",
+  });
+  member.focus();
+  fireEvent.keyDown(member, { key: "Escape" });
+  await Promise.resolve();
+  expect(screen.getByRole("textbox", { name: "Message #room" })).toHaveFocus();
+  expect(
+    screen.getByRole("complementary", { name: "Members of #room" }),
+  ).toBeVisible();
   expect(screen.queryByRole("button", { name: "Hide members" })).toBeNull();
   fireEvent.click(toggle);
   expect(

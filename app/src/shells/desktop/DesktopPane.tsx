@@ -128,12 +128,14 @@ function PaneConversation(props: DesktopPaneProps) {
   const MembersOf = (list: {
     readonly bufferId: number;
     readonly onClose?: () => void;
+    readonly onEscape?: () => void;
     readonly onOpenDirect: (nick: string) => void;
   }) => (
     <MemberPanel
       bufferTitle={buffer().title}
       header={list.onClose === undefined ? "none" : "titled"}
       onClose={list.onClose}
+      onEscape={list.onEscape}
       onOpenDirect={list.onOpenDirect}
       onRequestRange={(offset) =>
         props.onRequestMemberRange(list.bufferId, offset)
@@ -231,7 +233,11 @@ function PaneConversation(props: DesktopPaneProps) {
         </div>
         <Show when={members.inlineShown() ? buffer().id : undefined} keyed>
           {(bufferId) => (
-            <MembersOf bufferId={bufferId} onOpenDirect={props.onOpenDirect} />
+            <MembersOf
+              bufferId={bufferId}
+              onEscape={focusComposer}
+              onOpenDirect={props.onOpenDirect}
+            />
           )}
         </Show>
       </div>
