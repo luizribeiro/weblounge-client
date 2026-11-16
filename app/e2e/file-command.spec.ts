@@ -7,6 +7,7 @@ import { nativeFeelAudit } from "./native-feel-audit";
 import {
   approveUpload,
   captureThemes,
+  expectSentInline,
   expectThumbnailLoaded,
   uploads,
   withDirectPeer,
@@ -189,18 +190,6 @@ test.describe("/file against local Ergo", () => {
     });
   });
 });
-
-// The image must finish loading before the native-feel audit's idle window.
-async function expectSentInline(page: Page, received: string): Promise<void> {
-  const url = /(https:\/\/\S+)/u.exec(received)?.[1];
-  if (url === undefined) throw new Error(`no URL in ${received}`);
-  await expect(
-    page
-      .locator("[data-message-row]")
-      .filter({ hasText: url })
-      .locator("[data-inline-image]"),
-  ).toHaveAttribute("data-inline-image", "loaded");
-}
 
 // The picker opens synchronously inside the key press, so the count is final once the note shows.
 async function countFilePickerClicks(page: Page): Promise<void> {

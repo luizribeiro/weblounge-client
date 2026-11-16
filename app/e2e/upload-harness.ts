@@ -124,6 +124,21 @@ async function recordShiftsOutsideComposer(page: Page): Promise<void> {
   });
 }
 
+// The image must finish loading before a native-feel audit's idle window.
+export async function expectSentInline(
+  page: Page,
+  received: string,
+): Promise<void> {
+  const url = /(https:\/\/\S+)/u.exec(received)?.[1];
+  if (url === undefined) throw new Error(`no URL in ${received}`);
+  await expect(
+    page
+      .locator("[data-message-row]")
+      .filter({ hasText: url })
+      .locator("[data-inline-image]"),
+  ).toHaveAttribute("data-inline-image", "loaded");
+}
+
 // The fake file host is on the IRC endpoint's host but another port, so the password asks first.
 export async function approveUpload(page: Page): Promise<void> {
   const dialog = page.getByRole("alertdialog", {

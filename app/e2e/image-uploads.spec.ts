@@ -9,6 +9,7 @@ import {
   approveUpload,
   captureThemes,
   control,
+  expectSentInline,
   expectThumbnailLoaded,
   uploads,
   withDirectPeer,
@@ -76,15 +77,10 @@ test.describe("image uploads against local Ergo", () => {
         `look at this ${E2E_FILEHOST_ORIGIN}/`,
         irc.account,
       );
-      const url = /(https:\/\/\S+)/u.exec(received)?.[1] ?? "";
       await expect(chip).toHaveCount(0);
       await expect(composer).toHaveValue("");
       await expect(composer).toBeFocused();
-      const slot = page
-        .locator("[data-message-row]")
-        .filter({ hasText: url })
-        .locator("[data-inline-image]");
-      await expect(slot).toHaveAttribute("data-inline-image", "loaded");
+      await expectSentInline(page, received);
 
       const [upload] = await uploads(page.request, irc);
       expect(upload?.authorization).toBe(
@@ -345,10 +341,13 @@ test.describe("image uploads against local Ergo", () => {
         `${E2E_FILEHOST_ORIGIN}/release/${key}`,
       );
       expect(release.ok()).toBe(true);
-      await peer.waitForPrivmsg(
-        peer.nickname,
-        `from my phone ${E2E_FILEHOST_ORIGIN}/`,
-        irc.account,
+      await expectSentInline(
+        page,
+        await peer.waitForPrivmsg(
+          peer.nickname,
+          `from my phone ${E2E_FILEHOST_ORIGIN}/`,
+          irc.account,
+        ),
       );
       await expect(chip).toHaveCount(0);
       await expectOnlyComposerShifts(page, sendStarted);
