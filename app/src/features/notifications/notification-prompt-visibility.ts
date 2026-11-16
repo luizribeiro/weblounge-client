@@ -1,5 +1,4 @@
 import type { DisplayMode } from "../../platform/environment";
-import { supportsPageNotifications } from "../../platform/page-notifications/page-notification-capability";
 
 export interface NotificationPromptVisibility {
   readonly configured: boolean;
@@ -36,17 +35,6 @@ export function formatNotificationPromptVisibility(
     `display=${conditions.display}`,
     `page=${conditions.pageNotifications}`,
   ].join(" / ");
-}
-
-export function supportsWebPush(
-  browserWindow: Window,
-  browserNavigator: Navigator,
-): boolean {
-  return (
-    supportsPageNotifications(browserWindow) &&
-    "PushManager" in browserWindow &&
-    "serviceWorker" in browserNavigator
-  );
 }
 
 export function isIos(

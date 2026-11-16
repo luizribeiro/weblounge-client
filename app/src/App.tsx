@@ -44,7 +44,6 @@ import {
   isIos,
   type NotificationPromptVisibility,
   shouldShowNotificationPrompt,
-  supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
 import { createTabIndicator } from "./features/unread/createTabIndicator";
@@ -102,6 +101,7 @@ import {
 } from "./platform/push/open-route-message";
 import { consumePendingOpenRoute } from "./platform/push/pending-open-route";
 import { buildPushDebugSnapshot } from "./platform/push/push-debug";
+import { webPushRegistrar } from "./platform/push/push-registrar";
 import type { PushSynchronizerOptions } from "./platform/push/push-sync";
 import {
   type PushRouteDiagnostic,
@@ -110,8 +110,6 @@ import {
 import { decodePushSyncMessage } from "./platform/push/push-sync-channel";
 import { PushSyncOwner } from "./platform/push/push-sync-owner";
 import { RelayClient } from "./platform/push/relay-client";
-import { IndexedDbPushRouteStore } from "./platform/push/route-store";
-import { ensurePushSubscription } from "./platform/push/subscription";
 import { XhrUploader } from "./platform/upload/uploader";
 import {
   onServiceWorkerUpdateReady,
@@ -138,15 +136,6 @@ const notificationPromptReadDeadlineMs = 2_000;
 
 function pushConfigKey(config: PushDeploymentConfig): string {
   return `${config.relay}\0${config.relay_vapid}`;
-}
-
-function isPushSubscriptionChange(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === "push_subscription_change"
-  );
 }
 
 type PushSyncEvent = Extract<
@@ -232,9 +221,7 @@ export function App(props: AppProps) {
   const [notificationPromptDismissed, setNotificationPromptDismissed] =
     createSignal<boolean>();
   const [notificationPermission, setNotificationPermission] =
-    createSignal<NotificationPermission>(
-      "Notification" in window ? Notification.permission : "default",
-    );
+    createSignal<NotificationPermission>("default");
   const [enginePushStates, setEnginePushStates] = createSignal<
     ReadonlyMap<number, PushState>
   >(new Map());
@@ -300,6 +287,7 @@ export function App(props: AppProps) {
   );
   const pushPendingClock = new PushPendingClock();
   const notificationCenter = hostNotificationCenter();
+  const pushRegistrar = webPushRegistrar();
   const knownPushRequirements = new Map<number, PushSyncEvent>();
   const knownPushStates = new Map<number, PushSyncEvent>();
   const rememberPushSyncEvent = (event: PushSyncEvent) => {
@@ -339,7 +327,7 @@ export function App(props: AppProps) {
   const storedNavigationPath = readLastViewedPath();
   const notificationPromptConditions = (): NotificationPromptVisibility => ({
     configured: props.pushConfig !== undefined,
-    supported: supportsWebPush(window, navigator),
+    supported: pushRegistrar.supported(),
     pageNotifications: supportsPageNotifications(window),
     permission: notificationPermission(),
     dismissed: notificationPromptDismissed(),
@@ -395,7 +383,7 @@ export function App(props: AppProps) {
   });
   const pushDelivery = (networkId: number): PushDelivery =>
     pushDeliveryFor({
-      webPushSupported: supportsWebPush(window, navigator),
+      webPushSupported: pushRegistrar.supported(),
       pushConfigured:
         props.pushConfig !== undefined && props.hostedSession !== undefined,
       permission: notificationPermission(),
@@ -434,9 +422,10 @@ export function App(props: AppProps) {
         notificationPromptReadDeadline = undefined;
         setNotificationPromptDismissed(false);
       });
-    if ("Notification" in window && Notification.permission === "granted") {
-      void startConfiguredPush(mountedClient);
-    }
+    void pushRegistrar.permission().then((permission) => {
+      setNotificationPermission(permission);
+      if (permission === "granted") void startConfiguredPush(mountedClient);
+    });
   });
   const noticeActions = new ActionRegistry(
     {
@@ -597,10 +586,10 @@ export function App(props: AppProps) {
             if (!consumed) applyOpenRoute(message);
           });
       }
-      if (isPushSubscriptionChange(event.data)) {
-        void refreshConfiguredPush(mountedClient);
-      }
     };
+    const stopTargetChange = pushRegistrar.onTargetChange(
+      () => void refreshConfiguredPush(mountedClient),
+    );
     navigator.serviceWorker?.addEventListener(
       "message",
       handleServiceWorkerMessage,
@@ -943,8 +932,7 @@ export function App(props: AppProps) {
       }
     };
     const updateVisibility = () => {
-      if ("Notification" in window)
-        setNotificationPermission(Notification.permission);
+      void pushRegistrar.permission().then(setNotificationPermission);
       reportEngineVisibility();
       setAppForeground(pageIsForeground(document, navigator));
     };
@@ -1044,6 +1032,7 @@ export function App(props: AppProps) {
       removeContextMenuHandler();
       stopForegroundRecorder();
       stopHostIntegration();
+      stopTargetChange();
       document.removeEventListener("visibilitychange", updateVisibility);
       window.removeEventListener("focus", updateVisibility);
       window.removeEventListener("blur", updateVisibility);
@@ -1071,10 +1060,10 @@ export function App(props: AppProps) {
     });
   });
 
-  function webPushPermitted(): boolean {
+  async function pushPermitted(): Promise<boolean> {
     return (
-      supportsWebPush(window, navigator) &&
-      Notification.permission === "granted"
+      pushRegistrar.supported() &&
+      (await pushRegistrar.permission()) === "granted"
     );
   }
 
@@ -1134,19 +1123,15 @@ export function App(props: AppProps) {
     session: HostedSession,
     generation: number,
   ): Promise<void> {
-    if (!webPushPermitted()) {
+    if (!(await pushPermitted())) {
       setPushSubscription("unavailable");
       return;
     }
     setPushSubscription("pending");
     pushPendingClock.restartSetup();
     await waitForProductionServiceWorkerUpdate();
-    const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
-    const subscription = await ensurePushSubscription(
-      registration,
-      config.relay_vapid,
-    );
+    const subscription = await pushRegistrar.target(config.relay_vapid);
     if (disposed || generation !== pushSetupGeneration) return;
     setPushSubscription(
       subscription.status === "ready" ? "ready" : "unavailable",
@@ -1187,7 +1172,8 @@ export function App(props: AppProps) {
       relayOrigin: config.relay,
       target: subscription.target,
       devices,
-      routes: new IndexedDbPushRouteStore(),
+      routes: pushRegistrar.routes(),
+      generateRouteKeys: pushRegistrar.generateRouteKeys,
       routeContext: (networkId) => {
         const network = networks().find(
           (candidate) => candidate.id === networkId,
@@ -1292,12 +1278,8 @@ export function App(props: AppProps) {
       await startConfiguredPush(mountedClient);
       return;
     }
-    if (!webPushPermitted()) return;
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await ensurePushSubscription(
-      registration,
-      config.relay_vapid,
-    );
+    if (!(await pushPermitted())) return;
+    const subscription = await pushRegistrar.target(config.relay_vapid);
     if (subscription.status === "ready" && pushStartupKey === key) {
       pushTarget = subscription.target;
       pushChannel?.postMessage({
@@ -1322,7 +1304,7 @@ export function App(props: AppProps) {
   }
 
   function turnOnNotifications(): void {
-    const permission = Notification.requestPermission();
+    const permission = pushRegistrar.requestPermission();
     void permission
       .then(async (result) => {
         setNotificationPermission(result);
