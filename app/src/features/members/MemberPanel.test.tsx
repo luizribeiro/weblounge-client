@@ -59,6 +59,22 @@ it("renders counted groups with a bounded DOM and panel actions", async () => {
   expect(close).toHaveBeenCalledOnce();
 });
 
+it("leaves out its titled header when the host owns the close control", () => {
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      header="none"
+      window={window}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+    />
+  ));
+
+  const panel = screen.getByRole("complementary", { name: "Members of #room" });
+  expect(panel.querySelector("header")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Hide members" })).toBeNull();
+});
+
 it("passes the mode-symbol setting to member rows", () => {
   render(() => (
     <MemberPanel

@@ -233,7 +233,8 @@ it("toggles the channel member panel and routes direct messages", () => {
     screen.getByRole("button", { name: "Open direct message with mel" }),
   );
   expect(openDirect).toHaveBeenCalledWith(1, "mel");
-  fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
+  expect(screen.queryByRole("button", { name: "Hide members" })).toBeNull();
+  fireEvent.click(toggle);
   expect(
     screen.queryByRole("complementary", { name: "Members of #room" }),
   ).toBeNull();

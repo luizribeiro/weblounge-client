@@ -75,14 +75,20 @@ test.describe("desktop members against local Ergo", () => {
         expect(desktopBoxes[index - 1]?.bottom).toBeLessThanOrEqual(
           desktopBoxes[index]?.top ?? 0,
         );
-      const desktopStack = await panel.evaluate((element) => ({
+      await expect(panel.locator("header")).toHaveCount(0);
+      const desktopStack = await page.evaluate(() => ({
         headerBottom:
-          element.querySelector("header")?.getBoundingClientRect().bottom ?? 0,
-        listTop: element.querySelector("ul")?.getBoundingClientRect().top ?? 0,
+          document.querySelector("[data-main-header]")?.getBoundingClientRect()
+            .bottom ?? Number.NaN,
+        panelTop:
+          document
+            .querySelector("[data-member-buffer]")
+            ?.closest("aside")
+            ?.getBoundingClientRect().top ?? Number.NaN,
       }));
-      expect(desktopStack.headerBottom).toBeLessThanOrEqual(
-        desktopStack.listTop,
-      );
+      expect(
+        Math.abs(desktopStack.headerBottom - desktopStack.panelTop),
+      ).toBeLessThanOrEqual(1);
 
       await bot.mode(memberChannel, "+o", "weblounge");
       await expect(panel.getByText("Operators — 1")).toBeVisible();
@@ -200,7 +206,11 @@ test.describe("desktop members against local Ergo", () => {
         name: `Open direct message with ${roomNick}`,
       }),
     ).toBeVisible();
-    await expect(panel.getByText("2", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("button", { name: "Toggle member list" })
+        .getByText("2", { exact: true }),
+    ).toBeVisible();
     await gardenButton.click();
     await expect(panel).toHaveAccessibleName(`Members of ${garden}`);
     await expect(
@@ -208,7 +218,11 @@ test.describe("desktop members against local Ergo", () => {
         name: `Open direct message with ${gardenNick}`,
       }),
     ).toBeVisible();
-    await expect(panel.getByText("3", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("button", { name: "Toggle member list" })
+        .getByText("3", { exact: true }),
+    ).toBeVisible();
     await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: room }).click();
@@ -218,7 +232,7 @@ test.describe("desktop members against local Ergo", () => {
         name: `Open direct message with ${roomNick}`,
       }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Hide members" }).click();
+    await page.getByRole("button", { name: "Toggle member list" }).click();
     await gardenButton.click();
     await page.getByRole("button", { name: "Toggle member list" }).click();
     await expect(

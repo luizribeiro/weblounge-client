@@ -28,8 +28,9 @@ interface MemberPanelProps {
   readonly bufferTitle: string;
   readonly closeLabel?: string | undefined;
   readonly filter?: string | undefined;
+  readonly header?: "titled" | "none" | undefined;
   readonly window: MemberWindow | undefined;
-  readonly onClose: () => void;
+  readonly onClose?: (() => void) | undefined;
   readonly onFilter?: ((filter: string) => void) | undefined;
   readonly onOpenDirect: (nick: string) => void;
   readonly onRequestRange: (offset: number) => void;
@@ -113,18 +114,20 @@ export function MemberPanel(props: MemberPanelProps) {
         "--wl-density-sidebar-member-row-height": `${metrics.member}px`,
       }}
     >
-      <header class={styles.header}>
-        <span class={styles.title}>{t("members.label")}</span>
-        <span class={styles.total}>{formatCount(window()?.total ?? 0)}</span>
-        <button
-          aria-label={props.closeLabel ?? t("members.hide")}
-          class={styles.close}
-          onClick={props.onClose}
-          type="button"
-        >
-          ×
-        </button>
-      </header>
+      {props.header !== "none" && (
+        <header class={styles.header}>
+          <span class={styles.title}>{t("members.label")}</span>
+          <span class={styles.total}>{formatCount(window()?.total ?? 0)}</span>
+          <button
+            aria-label={props.closeLabel ?? t("members.hide")}
+            class={styles.close}
+            onClick={() => props.onClose?.()}
+            type="button"
+          >
+            ×
+          </button>
+        </header>
+      )}
       <div class={styles.content} data-member-buffer={props.bufferTitle}>
         {props.onFilter !== undefined && (
           <label class={styles.filter}>
