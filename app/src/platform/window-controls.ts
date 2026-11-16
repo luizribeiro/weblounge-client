@@ -25,12 +25,6 @@ type Invoke = (
 ) => Promise<unknown>;
 type WindowColor = string | readonly [number, number, number, number];
 
-declare global {
-  interface Window {
-    readonly __TAURI_INTERNALS__?: unknown;
-  }
-}
-
 const inlineProperty = "--wl-window-controls-inline";
 const blockProperty = "--wl-window-controls-block";
 

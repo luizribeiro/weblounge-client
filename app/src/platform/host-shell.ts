@@ -15,6 +15,7 @@ export interface HostShellIdentity {
 declare global {
   interface Window {
     readonly __WEBLOUNGE_SHELL__?: unknown;
+    readonly __TAURI_INTERNALS__?: unknown;
   }
 }
 
