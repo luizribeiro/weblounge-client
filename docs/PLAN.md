@@ -63,9 +63,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   99+ gap. Operators deleting other people's messages, and a reason field, are out of scope. When
   replies (F27) land, a reply to a deleted parent shows a "Deleted message" quote. Design 32. Ergo removes a deleted message from history and keeps no tombstone, so a client that missed the live REDACT just never sees the message again; a message already on screen during a disconnect stays until reload.
 
-- F22: when Settings gains a second section, show its page from the rail and check one-click switching in the browser (unit-tested only today). Design 29 D13.
-- F23: decide whether a pointer leaving the Settings rail should keep it open while keyboard focus is inside it (it collapses today). Design 29 D13.
-- F24: arrow keys between Settings sections (design 29 lists them; one section today). Design 29.
 - F28: a phone push still blocks one frame on mounting the conversation (~65-80ms at 1x, ~100ms at
   4x on Pixel 7 Chromium): row components plus a TanStack store update per measured row, for the
   20 visible rows and the 24-row mobile overscan the keyboard motion needs. Candidates: mount with a
@@ -142,6 +139,14 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: Settings → Notifications, the second Settings section (bell icon from the
+  prototype). The "Browser tab" group ("Show unread in the tab") moved there from Appearance; the
+  section shows only where a row applies, so the PWA and the Tauri apps list Appearance alone. One
+  section registry feeds the desktop nav and the phone root (whose Notifications row reads "Unread
+  in the tab" or "Unread hidden from the tab"). Done with it: F22 (a section's page from the folded
+  rail, one-click switching checked in the browser), F24 (Up/Down wrap, Home/End, roving tabindex;
+  selection follows focus) and F23 (a pointer leaving keeps the rail open while keyboard focus is
+  inside). Design 29.
 - 2026-11-15: a dismissed "Get notified about DMs and mentions" prompt stays dismissed. The
   dismissal was saved, but the engine worker dropped the async read's reply, so the 2-second read
   deadline showed the prompt again on every launch. The worker now routes every reply carrying
