@@ -781,7 +781,8 @@ The desktop sidebar and mobile chat list show one compact notification prompt on
 configured, Web Push is available, browser permission remains `default`, and the device has not
 dismissed it. iOS additionally requires the installed `display-mode: standalone`; Android and
 desktop browsers do not. The UI waits for the engine-owned preference read before painting, so a
-remembered dismissal never flashes during startup.
+remembered dismissal never flashes during startup. Dismissal is permanent on that browser profile
+or device, across reloads, relaunches and upgrades; there is no snooze.
 
 If the Settings-space read fails or remains pending past a bounded deadline, the page treats the
 prompt as not dismissed. Losing access to optional preference storage must not permanently hide
