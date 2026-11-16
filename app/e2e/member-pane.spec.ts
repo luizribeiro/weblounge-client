@@ -5,6 +5,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { expectSettled } from "./settled";
+import { tokenColor } from "./token-color";
 
 const membersButton = (page: Page) =>
   page.getByRole("button", { name: "Toggle member list" });
@@ -150,7 +151,7 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await expect(membersOf(page, irc.channel)).toBeVisible();
   });
 
-  test("keeps a narrow pane's list in an undimmed drawer inside the pane", async ({
+  test("docks a narrow pane's list below its header like the inline list", async ({
     page,
     irc,
   }) => {
@@ -172,19 +173,16 @@ test.describe("per-pane desktop members against local Ergo", () => {
       "data-phase",
       "open",
     );
-    await expect(membersOf(page, irc.channel)).toBeVisible();
-    await expect(scrim).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    const pane = await paneBox(page, "[data-desktop-pane]");
-    const overlay = await paneBox(page, "[data-overlay-drawer]");
-    for (const edge of ["left", "right", "top", "bottom"] as const)
-      expect(Math.abs(overlay[edge] - pane[edge])).toBeLessThanOrEqual(1);
-    expect(pane.left).toBeGreaterThan(0);
-    const drawerBox = await drawer.boundingBox();
-    if (drawerBox === null) throw new Error("the members drawer has no box");
-    expect(
-      Math.abs(drawerBox.x + drawerBox.width - pane.right),
-    ).toBeLessThanOrEqual(1);
+    await expect(membersButton(page)).toHaveAttribute("aria-pressed", "true");
+    await expectDrawerLooksInline(page, drawer, membersOf(page, irc.channel));
 
+    await membersButton(page).click();
+    await expect(drawer).toHaveCount(0);
+    await expect(composer).toBeFocused();
+    await expect(membersButton(page)).toHaveAttribute("aria-pressed", "false");
+
+    await membersButton(page).click();
+    await expect(drawer).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
     await expect(composer).toBeFocused();
@@ -215,6 +213,41 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 });
+
+async function expectDrawerLooksInline(
+  page: Page,
+  drawer: Locator,
+  panel: Locator,
+): Promise<void> {
+  await expect(panel).toBeVisible();
+  await expect(drawer).toHaveAttribute("aria-modal", "false");
+  await expect(drawer.locator("header")).toHaveCount(0);
+  await expect(
+    drawer.getByRole("button", { name: "Hide members" }),
+  ).toHaveCount(0);
+  await expect(drawer).toHaveCSS("box-shadow", "none");
+  await expect(page.locator("[data-overlay-scrim]")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  await expect(panel).toHaveCSS("border-left-width", "1px");
+  await expect(panel).toHaveCSS(
+    "background-color",
+    await tokenColor(page, "--wl-color-panel-alt"),
+  );
+  const pane = await paneBox(page, "[data-desktop-pane]");
+  const header = await paneBox(page, "[data-main-header]");
+  const overlay = await paneBox(page, "[data-overlay-drawer]");
+  expect(Math.abs(overlay.top - header.bottom)).toBeLessThanOrEqual(1);
+  for (const edge of ["left", "right", "bottom"] as const)
+    expect(Math.abs(overlay[edge] - pane[edge])).toBeLessThanOrEqual(1);
+  expect(pane.left).toBeGreaterThan(0);
+  const drawerBox = await drawer.boundingBox();
+  if (drawerBox === null) throw new Error("the members drawer has no box");
+  expect(
+    Math.abs(drawerBox.x + drawerBox.width - pane.right),
+  ).toBeLessThanOrEqual(1);
+}
 
 async function expectFullWidthWithoutMembers(page: Page): Promise<void> {
   await expect(membersButton(page)).toHaveCount(0);

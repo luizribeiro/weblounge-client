@@ -238,31 +238,29 @@ function PaneConversation(props: DesktopPaneProps) {
             />
           )}
         </Show>
-      </div>
-      <Show when={members.drawerShown()}>
-        <OverlayDrawer
-          appearance="docked"
-          closeLabel={t("members.close_drawer")}
-          closing={members.drawerClosing()}
-          edge="right"
-          label={t("members.label")}
-          onClose={() => members.closeDrawer()}
-          width={memberColumnWidthToken}
-        >
-          {(requestClose) => (
+        <Show when={members.drawerShown()}>
+          <OverlayDrawer
+            appearance="docked"
+            closeLabel={t("members.close_drawer")}
+            closing={members.drawerClosing()}
+            edge="right"
+            label={t("members.label")}
+            onClose={() => members.closeDrawer()}
+            width={memberColumnWidthToken}
+          >
             <div class={styles.drawerContent}>
               <MembersOf
                 bufferId={buffer().id}
-                chrome={{ onClose: requestClose }}
+                chrome={{ header: "none" }}
                 onOpenDirect={(nick) => {
                   props.onOpenDirect(nick);
                   members.closeDrawer();
                 }}
               />
             </div>
-          )}
-        </OverlayDrawer>
-      </Show>
+          </OverlayDrawer>
+        </Show>
+      </div>
     </section>
   );
 }

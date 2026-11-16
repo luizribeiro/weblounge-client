@@ -238,7 +238,7 @@ test.describe("desktop members against local Ergo", () => {
     ).toBeVisible();
   });
 
-  test("slides the narrow member drawer closed from its panel control", {
+  test("slides the narrow member drawer closed from the header button", {
     tag: "@serial",
   }, async ({ page, irc }) => {
     await page.setViewportSize({ width: 500, height: 900 });
@@ -314,7 +314,7 @@ async function recordPanelClose(
         const startedAt = performance.now();
         document
           .querySelector<HTMLElement>(
-            '[role="dialog"] button[aria-label="Hide members"]',
+            '[data-main-header] button[aria-label="Toggle member list"]',
           )
           ?.click();
         const sample = () => {
