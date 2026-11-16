@@ -100,7 +100,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - T5: `connection-resilience.spec.ts:359` `[resilience-mobile-webkit]` fails locally, passes in CI; the dev-server harness has two wire/history failures; the spec's own wire scan is not on the `sentWireLines` helper.
 - T6: `mobile-push-motion` "released swipe did not transition" failed once in CI; `webkit-close-phone` times out locally at the default timeout.
 - T7: `stale-snapshot.spec.ts` around line 420 sends `bot.privmsgConfirmed(...)` right after closing the app, without waiting for detach (the close-before-detach race fixed elsewhere in that spec).
-- T8: committed screenshots (composer-completion, member-panel) are stale for the 224px sidebar and need regenerating on a quiet host; parallel agents clash on Ergo/forwarder/preview ports (6667, 8067, 8066, 8091, 4173) and orphaned vite preview processes block runs.
+- T8: committed screenshots (composer-completion) are stale for the 224px sidebar and need regenerating on a quiet host; parallel agents clash on Ergo/forwarder/preview ports (6667, 8067, 8066, 8091, 4173) and orphaned vite preview processes block runs.
 - T9: e2e stability under load: native-feel idle, transcript-gaps, composer-anchor:38 and desktop-shell:87 still fail in heavy local runs; fix causes, never ease rules. `docs/design/e2e-isolation.md`, memory.
 - T10: `push-full-chain.spec.ts` "keeps portable control messages silent" `[chromium-push-full]`: in one local VM run, no relay device appeared within 5s of the service worker activating (normally 0.2–2.1s). The cause is not identified. A candidate is that `PushSynchronizer.#ensureDevice` lets a thrown `acquireSessionToken` failure escape into `#enqueue`'s catch with no retry, so Turn on could stall until the next reconnect. This is unconfirmed; the next failure needs page console and network diagnostics.
 - T11: `push-full-chain.spec.ts` can't run under `--repeat-each`: fixed receiver device ids (`controls-${browserName}`) let a repetition decrypt an earlier repetition's record (`OperationError`), and later repetitions hit `page.goto: net::ERR_ABORTED` locally.
@@ -142,6 +142,13 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: per-pane members (design 34). The desktop member list lives inside the
+  conversation pane: the pane header spans it, the inline list has no header or fade, and it is a
+  fixed 232px (`--wl-size-members`) column. Visibility is per channel (never-toggled channels follow
+  the last choice) and persists across launches in device storage. Below 232 + 480px of pane the
+  list is a drawer inside the pane with an invisible scrim (Escape or a click elsewhere in the pane
+  closes it); Escape in the inline list focuses the composer. Local-Ergo journeys in
+  `app/e2e/member-pane.spec.ts` and `member-panel.spec.ts`.
 - 2026-11-15: browser-tab indicator (F33, design 23 Badging). In a browser tab the favicon's
   tile turns brand red and the title gains "(n) " (capped "(99+)") while `appBadgeCount` is above
   zero, and turns grey while the connection indicator shows connecting or an error; unread wins over
