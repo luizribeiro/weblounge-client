@@ -191,6 +191,7 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
           <For each={actionResults()}>
             {(action, index) => (
               <button
+                aria-keyshortcuts={action.shortcut?.ariaKeyShortcuts}
                 aria-selected={index() === selected()}
                 class={styles.option}
                 id={actionOptionId(action)}
@@ -198,6 +199,7 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
                 onPointerDown={(event) => event.preventDefault()}
                 role="option"
                 tabIndex={-1}
+                title={action.shortcut?.labels.join(" / ")}
                 type="button"
               >
                 <span aria-hidden="true" class={styles.glyph}>
@@ -207,8 +209,10 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
                 <Show when={action.group} keyed>
                   {(group) => <Line class={styles.network}>{group}</Line>}
                 </Show>
-                <Show when={action.chord} keyed>
-                  {(chord) => <kbd class={styles.chord}>{chord}</kbd>}
+                <Show when={action.shortcut} keyed>
+                  {(shortcut) => (
+                    <kbd class={styles.chord}>{shortcut.labels[0]}</kbd>
+                  )}
                 </Show>
               </button>
             )}

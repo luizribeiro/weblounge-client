@@ -78,7 +78,7 @@ describe("ActionRegistry", () => {
       id: "settings.open",
       title: "Settings",
       group: "View",
-      chord: "⇧⌘,",
+      shortcut: { labels: ["⇧⌘,"], ariaKeyShortcuts: "Meta+Shift+Comma" },
     });
     expect(linux.bindingLabel("settings.open")).toBe("Ctrl+Shift+,");
     expect(native.bindingLabel("settings.open")).toBe("⌘,");
@@ -773,21 +773,23 @@ describe("ActionRegistry", () => {
     });
 
     it.each([
-      ["macos", "tauri", "⌥↓ / ⌃Tab / ⇧⌘]", "⌥↑ / ⌃⇧Tab / ⇧⌘["],
-      ["linux", "tauri", "Alt+↓ / Ctrl+Tab", "Alt+↑ / Ctrl+Shift+Tab"],
-      ["macos", "web", "⌥↓", "⌥↑"],
-      ["other", "web", "Alt+↓", "Alt+↑"],
+      [
+        "macos",
+        "tauri",
+        ["⌥↓", "⌃Tab", "⇧⌘]"],
+        "Alt+ArrowDown Control+Tab Meta+Shift+BracketRight",
+      ],
+      ["linux", "tauri", ["Alt+↓", "Ctrl+Tab"], "Alt+ArrowDown Control+Tab"],
+      ["macos", "web", ["⌥↓"], "Alt+ArrowDown"],
+      ["other", "web", ["Alt+↓"], "Alt+ArrowDown"],
     ] as const)(
-      "lists every %s %s chord in the palette",
-      (platform, shell, nextChord, previousChord) => {
-        const chords = new Map(
-          cyclingRegistry(platform, shell)
-            .registry.palette(context)
-            .map((entry) => [entry.id, entry.chord]),
-        );
+      "lists every %s %s chord in the palette, primary first",
+      (platform, shell, labels, ariaKeyShortcuts) => {
+        const next = cyclingRegistry(platform, shell)
+          .registry.palette(context)
+          .find((entry) => entry.id === "buffer.next");
 
-        expect(chords.get("buffer.next")).toBe(nextChord);
-        expect(chords.get("buffer.previous")).toBe(previousChord);
+        expect(next?.shortcut).toEqual({ labels, ariaKeyShortcuts });
       },
     );
   });

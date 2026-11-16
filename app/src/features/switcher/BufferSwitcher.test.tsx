@@ -68,7 +68,7 @@ it("switches to commands with a leading greater-than and back on deletion", () =
           id: "members.toggle",
           title: "Toggle member list",
           group: "View",
-          chord: "Ctrl+.",
+          shortcut: { labels: ["Ctrl+."], ariaKeyShortcuts: "Control+." },
         },
       ]}
       buffers={buffers}
@@ -91,6 +91,42 @@ it("switches to commands with a leading greater-than and back on deletion", () =
 
   fireEvent.input(input, { target: { value: "member" } });
   expect(screen.getByRole("combobox", { name: "Jump to" })).toBeInTheDocument();
+});
+
+it("shows only an action's primary chord and keeps the rest in its tooltip", () => {
+  render(() => (
+    <BufferSwitcher
+      actions={[
+        {
+          id: "buffer.previous",
+          title: "Previous buffer",
+          group: "Navigation",
+          shortcut: {
+            labels: ["⌥↑", "⌃⇧Tab", "⇧⌘["],
+            ariaKeyShortcuts:
+              "Alt+ArrowUp Control+Shift+Tab Meta+Shift+BracketLeft",
+          },
+        },
+      ]}
+      buffers={buffers}
+      initialMode="commands"
+      networks={networks}
+      onDismiss={() => {}}
+      onOpen={() => {}}
+      onRunAction={() => true}
+      recentActionIds={[]}
+      recentBufferIds={[]}
+    />
+  ));
+  const option = screen.getByRole("option", { name: /Previous buffer/u });
+
+  expect(option.querySelectorAll("kbd")).toHaveLength(1);
+  expect(option.querySelector("kbd")).toHaveTextContent(/^⌥↑$/u);
+  expect(option).toHaveAttribute("title", "⌥↑ / ⌃⇧Tab / ⇧⌘[");
+  expect(option).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Alt+ArrowUp Control+Shift+Tab Meta+Shift+BracketLeft",
+  );
 });
 
 function buffer(

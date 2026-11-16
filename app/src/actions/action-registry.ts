@@ -74,11 +74,16 @@ export type EngineActionHandler = (
   context: ActionContext,
 ) => void;
 
+export interface ActionShortcut {
+  readonly labels: readonly [string, ...string[]];
+  readonly ariaKeyShortcuts: string;
+}
+
 export interface ActionEntry {
   readonly id: ActionId;
   readonly title: string;
   readonly group?: ActionGroup;
-  readonly chord?: string;
+  readonly shortcut?: ActionShortcut;
   readonly command?: CommandSpec;
 }
 
@@ -349,13 +354,7 @@ export class ActionRegistry {
 
   ariaKeyShortcuts(id: UiActionId): string | undefined {
     const binding = this.#binding(findSpec(id));
-    if (binding === undefined) return undefined;
-    return [
-      ...(binding.mod ? [this.#platform === "macos" ? "Meta" : "Control"] : []),
-      ...(binding.alt ? ["Alt"] : []),
-      ...(binding.shift ? ["Shift"] : []),
-      binding.code ?? binding.key,
-    ].join("+");
+    return binding === undefined ? undefined : this.#ariaShortcut(binding);
   }
 
   handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
@@ -455,10 +454,7 @@ export class ActionRegistry {
           spec.availability(context).state === "available",
       )
       .map((spec) => {
-        const labels = this.#bindings(spec).map((binding) =>
-          this.#label(binding),
-        );
-        const chord = labels.length === 0 ? undefined : labels.join(" / ");
+        const shortcut = this.#shortcut(spec);
         return {
           id: spec.id,
           title:
@@ -466,7 +462,7 @@ export class ActionRegistry {
               ? spec.menuLabel
               : spec.title,
           group: spec.group,
-          ...(chord === undefined ? {} : { chord }),
+          ...(shortcut === undefined ? {} : { shortcut }),
         };
       });
     const commands = this.#commands
@@ -519,6 +515,31 @@ export class ActionRegistry {
 
   #label(binding: Binding): string {
     return binding.label[this.#platform === "macos" ? "macos" : "other"];
+  }
+
+  #shortcut(spec: ActionSpec): ActionShortcut | undefined {
+    const bindings = this.#bindings(spec);
+    const [primary, ...rest] = bindings.map((binding) => this.#label(binding));
+    if (primary === undefined) return undefined;
+    return {
+      labels: [primary, ...rest],
+      ariaKeyShortcuts: bindings
+        .map((binding) => this.#ariaShortcut(binding))
+        .join(" "),
+    };
+  }
+
+  #ariaShortcut(binding: Binding): string {
+    const mac = this.#platform === "macos";
+    const mod = binding.mod === true;
+    const control = binding.ctrl === true || (mod && !mac);
+    return [
+      ...(control ? ["Control"] : []),
+      ...(mod && mac ? ["Meta"] : []),
+      ...(binding.alt ? ["Alt"] : []),
+      ...(binding.shift ? ["Shift"] : []),
+      binding.code ?? binding.key,
+    ].join("+");
   }
 }
 

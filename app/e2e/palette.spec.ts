@@ -65,6 +65,7 @@ test.describe("command palette against local Ergo", () => {
     });
     const toggle = page.getByRole("option", { name: /Toggle member list/u });
     await expect(toggle).toContainText("Ctrl+.");
+    await expect(toggle).toHaveAttribute("aria-keyshortcuts", "Control+.");
     await prefixedCommandQuery.press("Enter");
     await expect(
       page.getByRole("complementary", { name: `Members of ${irc.channel}` }),
