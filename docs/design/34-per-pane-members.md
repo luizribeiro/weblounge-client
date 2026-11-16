@@ -98,7 +98,12 @@ switching buffers.
   narrow "before" capture). The sidebar breakpoint (760px) is unchanged.
 - Below that, the same button and shortcut open the list as an `OverlayDrawer` anchored to **this
   pane's** right edge, below the pane header, with an invisible scrim covering only this pane's
-  body (decisions 2 and 7).
+  transcript (decisions 2, 7 and 13).
+- The drawer covers the transcript only: its bottom is the composer's top, so the composer and
+  Send stay whole and usable. It lives in the conversation grid's transcript row (named grid lines,
+  no measuring), so a growing or shrinking multi-line draft moves its bottom with the composer.
+  Composer notices sit between the two, outside the drawer. The transcript is its own stacking
+  context, so the drawer sits above the transcript's layers and below the composer's suggestions.
 - The drawer is transient: it never changes the channel's persisted visibility, except that closing
   an inline list (button, shortcut) does. Growing past the threshold closes the drawer and shows the
   inline list if the channel's visibility is on; shrinking hides the inline list without changing
@@ -119,12 +124,14 @@ switching buffers.
   returns focus to the composer (design 15 table, unchanged).
 - Activating a member opens the DM **in the same pane** and focuses its composer; a drawer closes
   first.
-- **Typing closes the drawer.** The drawer is not modal (`aria-modal="false"`), so the shell's
-  type-to-composer forwarding still applies: a printable key typed in the drawer goes to the
-  composer, and any input in the composer slides the drawer closed (it covers the composer's right
-  edge and Send). Arrows, Home/End, Tab, Enter and Escape behave as before; the desktop list
-  has no filter field or type-ahead, so letters have no list meaning to lose. Forwarding is blocked
-  by any `aria-modal="true"` dialog (settings, switcher, image viewer, confirmations).
+- **Typing keeps the drawer open.** The drawer is not modal (`aria-modal="false"`), so the shell's
+  type-to-composer forwarding still applies: a printable key typed in the drawer moves focus to the
+  composer and lands there, and the drawer stays open beside it. Clicking, typing in or sending from
+  the composer leaves it open too; Escape in the composer keeps its own meaning (dismiss suggestions,
+  drop an attachment) and otherwise does nothing to the drawer. Arrows, Home/End, Tab, Enter and
+  Escape in the drawer behave as before; the desktop list has no filter field or type-ahead, so
+  letters have no list meaning to lose. Forwarding is blocked by any `aria-modal="true"` dialog
+  (settings, switcher, image viewer, confirmations).
 - Pointer-down in the panel focuses its pane (split view rule).
 
 ## Motion
@@ -188,8 +195,12 @@ Matches design 15's rules:
   - toggle by button and Ctrl+.; the choice survives reload; `#a` shown and `#b` hidden stay so
     when switching between them; a never-toggled channel follows the last choice;
   - DM and server buffer: no button, no column, full-width transcript;
-  - narrow window: the drawer opens from the pane's edge below its header; the header button,
-    Escape and scrim close it, focus returns to the composer, resizing across the threshold keeps the composer draft and element identity;
+  - narrow window: the drawer opens from the pane's edge below its header and ends at the
+    composer's top, also after a three-line draft grows the composer and after it shrinks back; the
+    header button, Escape and a transcript click close it, focus returns to the composer, resizing
+    across the threshold keeps the composer draft and element identity;
+  - with the drawer open, Send is clickable, typing from the drawer lands in the composer, sending
+    works and the drawer stays open; a confirmation dialog still swallows typing;
   - committed light/dark screenshots of the open panel (also fixes stale T8 member-panel captures).
 - Every touched journey keeps `nativeFeelAudit` and its idle/hidden checks green; screenshots are
   compared with the mockups above before merge.
@@ -201,8 +212,8 @@ Matches design 15's rules:
    narrow-pane drawer drops it too and looks like the inline list: no title or ×, no shadow, the
    same background and 1px left divider. It starts below the pane header (its top is the header's
    bottom, as the inline column's is), so the header's Members button stays visible, shows its
-   pressed state and closes the drawer with the same slide as Escape. Escape and a click elsewhere
-   in the pane body still close it; the header stays live, so the drawer is not modal. It keeps the
+   pressed state and closes the drawer with the same slide as Escape. Escape and a click on the
+   transcript still close it; the header stays live, so the drawer is not modal. It keeps the
    accessible name "Members". The phone drawers keep their header and shadow.
 3. Visibility is per channel; a never-toggled channel follows the last choice. Yes.
 4. Visibility persists across reloads and launches. Yes.
@@ -218,3 +229,6 @@ Matches design 15's rules:
 10. Activating a member opens the DM in the same pane. Yes.
 11. The same channel in two panes shares its open/closed state. Accepted.
 12. Ship now as a single-pane refactor ahead of split view. Yes.
+13. **Added 2026-11-15:** the narrow-pane drawer covers only the transcript, not the composer: its
+    bottom follows the composer's top as drafts grow, and typing, clicking or sending in the
+    composer no longer closes it.
