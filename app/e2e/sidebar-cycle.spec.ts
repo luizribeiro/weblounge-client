@@ -45,12 +45,20 @@ test.describe("next and previous buffer chords against local Ergo", () => {
 
     await page.keyboard.press("Meta+Shift+P");
     await page.getByRole("combobox", { name: "Run a command" }).fill(">buffer");
-    await expect(
-      page.getByRole("option", { name: /^Next buffer/u }).locator("kbd"),
-    ).toHaveText("⌥↓ / ⌃Tab / ⇧⌘]");
-    await expect(
-      page.getByRole("option", { name: /^Previous buffer/u }).locator("kbd"),
-    ).toHaveText("⌥↑ / ⌃⇧Tab / ⇧⌘[");
+    const next = page.getByRole("option", { name: /^Next buffer/u });
+    await expect(next.locator("kbd")).toHaveText("⌥↓");
+    await expect(next).toHaveAttribute("title", "⌥↓ / ⌃Tab / ⇧⌘]");
+    await expect(next).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Alt+ArrowDown Control+Tab Meta+Shift+BracketRight",
+    );
+    const previous = page.getByRole("option", { name: /^Previous buffer/u });
+    await expect(previous.locator("kbd")).toHaveText("⌥↑");
+    await expect(previous).toHaveAttribute("title", "⌥↑ / ⌃⇧Tab / ⇧⌘[");
+    await expect(previous).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Alt+ArrowUp Control+Shift+Tab Meta+Shift+BracketLeft",
+    );
   });
 
   test("the web keeps Option-arrows and leaves Control-Tab to the browser", async ({
