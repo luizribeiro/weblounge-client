@@ -1,16 +1,28 @@
-//! Temporary macOS shell around the hosted weblounge web app.
+//! Temporary shell around the hosted weblounge web app, for macOS and iOS.
 
+#[cfg(desktop)]
 mod launch;
+#[cfg(desktop)]
 mod login_item;
+#[cfg(desktop)]
 mod menu;
 mod navigation;
+#[cfg_attr(
+    target_os = "ios",
+    expect(
+        dead_code,
+        unused_imports,
+        reason = "the shared notification model has no iOS backend yet"
+    )
+)]
 mod notifications;
+#[cfg(desktop)]
 mod page_action;
 mod security;
 mod shell;
 mod window;
 
-use tauri::{App, AppHandle, RunEvent, Wry, plugin::Plugin};
+use tauri::{App, Wry, plugin::Plugin};
 
 const BADGE_SCRIPT: &str = include_str!("badge.js");
 
@@ -20,10 +32,8 @@ const BADGE_SCRIPT: &str = include_str!("badge.js");
 ///
 /// Fails when Tauri cannot build the app from its context.
 pub fn run() -> tauri::Result<()> {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(rust_side_opener())
-        .plugin(window::desktop::state_plugin())
-        .plugin(login_item::plugin())
         .manage(notifications::service())
         .invoke_handler(tauri::generate_handler![
             notifications::notification_permission,
@@ -31,15 +41,30 @@ pub fn run() -> tauri::Result<()> {
             notifications::post_notification,
             notifications::close_notification,
         ])
-        .setup(setup)
-        .on_menu_event(|app, event| menu::handle_event(app, &event))
-        .build(tauri::generate_context!())?;
+        .setup(setup);
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(window::desktop::state_plugin())
+        .plugin(login_item::plugin())
+        .on_menu_event(|app, event| menu::handle_event(app, &event));
+    let app = builder.build(tauri::generate_context!())?;
     app.run(|app, event| handle_run_event(app, &event));
     Ok(())
 }
 
+#[cfg(mobile)]
+mod mobile {
+    #[tauri::mobile_entry_point]
+    fn start() {
+        if let Err(error) = super::run() {
+            eprintln!("could not run the app: {error}");
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 enum SetupError {
+    #[cfg(desktop)]
     #[error("could not build the menu: {0}")]
     Menu(#[from] tauri::Error),
     #[error(transparent)]
@@ -61,8 +86,8 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn install(app: &App) -> Result<(), SetupError> {
-    menu::hide_system_full_screen_item();
-    app.set_menu(menu::build(app.handle())?)?;
+    #[cfg(desktop)]
+    install_menu(app)?;
     notifications::install_click_delegate(app.handle());
     let identity_script = shell::identity_script()?;
     let notification_script = notifications::init_script(notifications::initial_permission())?;
@@ -70,14 +95,26 @@ fn install(app: &App) -> Result<(), SetupError> {
         app.handle(),
         &[&identity_script, BADGE_SCRIPT, &notification_script],
     )?;
+    #[cfg(desktop)]
     if !launch::starts_hidden(std::env::args()) {
         window::desktop::show(app.handle());
     }
     Ok(())
 }
 
-fn handle_run_event(app: &AppHandle, event: &RunEvent) {
-    if let RunEvent::Reopen { .. } = *event {
+#[cfg(desktop)]
+fn install_menu(app: &App) -> Result<(), SetupError> {
+    menu::hide_system_full_screen_item();
+    app.set_menu(menu::build(app.handle())?)?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn handle_run_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
+    if let tauri::RunEvent::Reopen { .. } = *event {
         window::desktop::show(app);
     }
 }
+
+#[cfg(not(target_os = "macos"))]
+fn handle_run_event(_: &tauri::AppHandle, _: &tauri::RunEvent) {}
