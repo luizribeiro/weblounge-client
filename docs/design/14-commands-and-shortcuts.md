@@ -258,6 +258,32 @@ optional group, and rank fuzzy matches with recently run actions. Running an act
 overlay. Runtime engine commands with required arguments stay absent until the registry can prompt
 for their typed arguments.
 
+### Omnibar rows
+
+Switcher and palette rows share one grid (option C of the omnibar column audit, agreed by Luiz
+2026-11-16): an 18px leading column, the name with an optional muted suffix (`1fr`), and one
+fixed-width trailing slot holding at most one item. Nothing sits between the name and the slot,
+so no column can go ragged.
+
+| Row | Leading | Suffix | Slot |
+|---|---|---|---|
+| Channel, DM, bot | the sidebar's prefix: `#` (or the channel's own sign), presence dot, bot icon | network label, only when more than one network is configured | unread or mention badge |
+| Palette action | `>` | group, hidden for the default “Commands” group | the first active binding's label |
+
+- The leading column renders with the sidebar row's prefix component, so a DM reads the same in
+  both places; a DM with no known presence has an empty leading cell. Names with unread messages
+  are bold, as in the sidebar.
+- The suffix sits right after the name and gives way first: it shrinks to its ellipsis before the
+  name starts to truncate. The network count includes disconnected networks, so the suffix never
+  flickers while one reconnects.
+- The slot shows one binding only. All of an action's bindings stay in help, the row's tooltip
+  and the option's `aria-keyshortcuts` (space-separated, WAI-ARIA tokens).
+- The slot has a fixed width (`--wl-omnibar-slot-width`) sized for the longest primary label,
+  `Ctrl+Shift+,` on Linux. A subgrid on the listbox would size the slot to the widest cell of the
+  current results, so the name's ellipsis would move as the user types; a fixed width keeps every
+  edge still. The palette e2e test fails if a label ever outgrows the slot.
+- Matched characters are not highlighted yet (PLAN F38).
+
 ## Pane mode
 
 `pane.mode` is `Mod+Alt+P` in every desktop shell and has `input: "always"`, so it works while a
@@ -342,7 +368,8 @@ ARIA has no sequence syntax.
 
 Action rows in the switcher, button tooltips, help, and menus ask the same resolver for the first
 active binding. No component contains shortcut prose. Tooltips append the visual label; controls
-set `aria-keyshortcuts` only for a single chord that is active in that context.
+set `aria-keyshortcuts` only for a single chord that is active in that context; palette options
+list every active binding of their action.
 
 ## Tauri menus and mobile hardware keyboards
 
