@@ -652,7 +652,7 @@ function forwardPrintableKey(
     event.ctrlKey ||
     event.metaKey ||
     Array.from(event.key).length !== 1 ||
-    document.querySelector('[role="dialog"], dialog[open]') !== null
+    modalDialogOpen()
   ) {
     return;
   }
@@ -685,6 +685,10 @@ function forwardPrintableKey(
       inputType: "insertText",
     }),
   );
+}
+
+function modalDialogOpen(): boolean {
+  return document.querySelector('[aria-modal="true"], dialog[open]') !== null;
 }
 
 function isEditable(target: Element): boolean {

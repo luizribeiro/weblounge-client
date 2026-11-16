@@ -212,7 +212,48 @@ test.describe("per-pane desktop members against local Ergo", () => {
     ).toBe(true);
     await nativeFeelAudit(page);
   });
+
+  test("a confirmation over the docked list still swallows typing", async ({
+    page,
+    irc,
+  }) => {
+    const second = irc.channelNamed("second");
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 900, height: 700 });
+    await launch(page, irc, [irc.channel, second]);
+    await openBuffer(page, irc.channel);
+
+    await openDockedDrawer(page);
+    await page
+      .getByRole("navigation", { name: "Networks and buffers" })
+      .getByRole("button", { name: second, exact: true })
+      .click({ button: "right" });
+    await page
+      .getByRole("menu", { name: `Actions for ${second}` })
+      .getByRole("menuitem", { name: "Leave channel" })
+      .click();
+    const confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${second}?`,
+    });
+    await expect(
+      confirmation.getByRole("button", { name: "Cancel" }),
+    ).toBeFocused();
+    await page.keyboard.type("x");
+    await expect(
+      confirmation.getByRole("button", { name: "Cancel" }),
+    ).toBeFocused();
+    await expect(composerOf(page, irc.channel)).toHaveValue("");
+    await nativeFeelAudit(page);
+  });
 });
+
+async function openDockedDrawer(page: Page): Promise<void> {
+  await membersButton(page).click();
+  await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+    "data-phase",
+    "open",
+  );
+}
 
 async function expectDrawerLooksInline(
   page: Page,
