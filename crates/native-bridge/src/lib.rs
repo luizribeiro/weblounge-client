@@ -1,7 +1,7 @@
 //! The contract between the hosted page and the iOS shell (design 33).
 //!
 //! The page calls the shell through Tauri `invoke` with a [`NativeCommand`] name, and the shell
-//! answers with the command's result or a serialized error. The shell talks back through page
+//! answers with the command's result or a [`NativeBridgeError`]. The shell talks back through page
 //! events. Every shape crosses the boundary as JSON and is defined here once; the page's
 //! TypeScript is generated from these types.
 //!
@@ -29,6 +29,7 @@
 mod buffer_route;
 mod command;
 mod delivered;
+mod error;
 mod page_event;
 mod push;
 mod pushed_message;
@@ -42,6 +43,7 @@ pub use delivered::{
     ChatNotificationData, DeliveredNotification, NotificationData,
     RemoveDeliveredNotificationsRequest, RouteNotificationData,
 };
+pub use error::NativeBridgeError;
 pub use page_event::{AppLifecycle, PageEvent};
 pub use push::{ApnsEnvironment, ApnsToken, PushPermission, PushTarget};
 pub use pushed_message::{PushedMessage, PushedMessageKind, PushedMessageSchema};
