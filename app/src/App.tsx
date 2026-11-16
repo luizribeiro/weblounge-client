@@ -73,6 +73,7 @@ import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
 import { startHostIntegration } from "./platform/native-bridge/native-host";
 import { hostNotificationCenter } from "./platform/native-bridge/native-notification-center";
+import { hostPushRegistrar } from "./platform/native-bridge/native-push-registrar";
 import { supportsPageNotifications } from "./platform/page-notifications/page-notification-capability";
 import {
   type PushDelivery,
@@ -101,7 +102,6 @@ import {
 } from "./platform/push/open-route-message";
 import { consumePendingOpenRoute } from "./platform/push/pending-open-route";
 import { buildPushDebugSnapshot } from "./platform/push/push-debug";
-import { webPushRegistrar } from "./platform/push/push-registrar";
 import type { PushSynchronizerOptions } from "./platform/push/push-sync";
 import {
   type PushRouteDiagnostic,
@@ -287,7 +287,7 @@ export function App(props: AppProps) {
   );
   const pushPendingClock = new PushPendingClock();
   const notificationCenter = hostNotificationCenter();
-  const pushRegistrar = webPushRegistrar();
+  const pushRegistrar = hostPushRegistrar();
   const knownPushRequirements = new Map<number, PushSyncEvent>();
   const knownPushStates = new Map<number, PushSyncEvent>();
   const rememberPushSyncEvent = (event: PushSyncEvent) => {
