@@ -48,11 +48,14 @@
 }
 
 .content {
-  animation: member-fade var(--wl-motion-fade) var(--wl-motion-standard-curve);
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
+
+.panel[data-presentation="mobile"] .content {
+  animation: member-fade var(--wl-motion-fade) var(--wl-motion-standard-curve);
 }
 
 @keyframes member-fade {

@@ -133,15 +133,11 @@ test.describe("desktop members against local Ergo", () => {
       await expect(panel).toHaveCount(0);
       await page.keyboard.press("Control+Period");
       await expect(panel).toBeVisible();
-      await expect
-        .poll(() =>
-          panel.evaluate((element) =>
-            element
-              .getAnimations({ subtree: true })
-              .every((animation) => animation.playState === "finished"),
-          ),
-        )
-        .toBe(true);
+      expect(
+        await panel.evaluate(
+          (element) => element.getAnimations({ subtree: true }).length,
+        ),
+      ).toBe(0);
       await nativeFeelAudit(page);
 
       await mkdir(screenshots, { recursive: true });

@@ -109,6 +109,7 @@ export function MemberPanel(props: MemberPanelProps) {
     <aside
       aria-label={t("members.label_for", { channel: props.bufferTitle })}
       class={styles.panel}
+      data-presentation={props.presentation ?? "desktop"}
       style={{
         "--wl-member-group-row-height": `${metrics.group}px`,
         "--wl-density-sidebar-member-row-height": `${metrics.member}px`,
