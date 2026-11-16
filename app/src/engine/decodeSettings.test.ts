@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeSettings } from "./decodeSettings";
+import { decodeAppearance, decodeSettings } from "./decodeSettings";
 
 describe("decodeSettings", () => {
   it("accepts every theme preference and density the engine sends", () => {
@@ -30,5 +30,21 @@ describe("decodeSettings", () => {
         networks: {},
       }),
     ).toEqual({ app: { theme: "lounge", message_density: "cozy" } });
+  });
+});
+
+describe("decodeAppearance", () => {
+  it("keeps only the theme and density", () => {
+    expect(
+      decodeAppearance({
+        theme: "lounge",
+        message_density: "cozy",
+        avatars: false,
+      }),
+    ).toEqual({ theme: "lounge", message_density: "cozy" });
+  });
+
+  it("rejects a value that is not a record", () => {
+    expect(decodeAppearance("lounge")).toBeUndefined();
   });
 });

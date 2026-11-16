@@ -23,6 +23,20 @@ describe("appearance hint", () => {
     });
   });
 
+  it("remembers only the appearance, not every app setting", () => {
+    writeAppearanceHint(storage, {
+      theme: "lounge",
+      message_density: "cozy",
+      ...{ unrelated: true },
+    });
+
+    expect(JSON.parse(localStorage.getItem(appearanceHintKey) ?? "")).toEqual({
+      version: 1,
+      theme: "lounge",
+      message_density: "cozy",
+    });
+  });
+
   it.each(themePreferences)(
     "paints a remembered %s copy before the engine answers",
     (theme) => {

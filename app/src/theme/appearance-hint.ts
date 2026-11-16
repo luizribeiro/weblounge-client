@@ -1,6 +1,5 @@
 import { isRecord } from "../engine/decode-primitives";
-import { decodeSettings } from "../engine/decodeSettings";
-import type { AppSettings } from "../engine/generated/AppSettings";
+import { type Appearance, decodeAppearance } from "../engine/decodeSettings";
 import { resolveTheme } from "./resolve-theme";
 
 export const appearanceHintKey = "weblounge:appearance";
@@ -8,13 +7,13 @@ const hintVersion = 1;
 
 export function readAppearanceHint(
   storage: () => Pick<Storage, "getItem">,
-): AppSettings | undefined {
+): Appearance | undefined {
   try {
     const value: unknown = JSON.parse(
       storage().getItem(appearanceHintKey) ?? "null",
     );
     if (!isRecord(value) || value.version !== hintVersion) return undefined;
-    return decodeSettings({ app: value })?.app;
+    return decodeAppearance(value);
   } catch {
     return undefined;
   }
@@ -22,12 +21,12 @@ export function readAppearanceHint(
 
 export function writeAppearanceHint(
   storage: () => Pick<Storage, "setItem">,
-  settings: AppSettings,
+  { theme, message_density }: Appearance,
 ): void {
   try {
     storage().setItem(
       appearanceHintKey,
-      JSON.stringify({ version: hintVersion, ...settings }),
+      JSON.stringify({ version: hintVersion, theme, message_density }),
     );
   } catch {
     // Storage can be full or blocked; the engine still owns the setting.
@@ -36,7 +35,7 @@ export function writeAppearanceHint(
 
 export function applyAppearanceHint(
   root: HTMLElement,
-  hint: AppSettings | undefined,
+  hint: Appearance | undefined,
   systemDark: boolean,
 ): void {
   if (hint === undefined) return;

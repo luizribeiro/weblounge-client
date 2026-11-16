@@ -1,10 +1,10 @@
 import { densityFor, installDensity } from "../density/density";
-import type { AppSettings } from "../engine/generated/AppSettings";
+import type { Appearance } from "../engine/decodeSettings";
 import { readAppearanceHint, writeAppearanceHint } from "./appearance-hint";
 import { installTheme } from "./theme-controller";
 
 export interface AppearanceController {
-  apply(appearance: AppSettings): void;
+  apply(appearance: Appearance): void;
   setSystemDark(dark: boolean): void;
   dispose(): void;
 }

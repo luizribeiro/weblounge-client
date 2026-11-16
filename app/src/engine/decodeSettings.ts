@@ -1,4 +1,5 @@
 import { isOneOf, isRecord } from "./decode-primitives";
+import type { AppSettings } from "./generated/AppSettings";
 import type { Density } from "./generated/Density";
 import type { Settings } from "./generated/Settings";
 import type { ThemePreference } from "./generated/ThemePreference";
@@ -19,12 +20,21 @@ export const densities = everyValueOf<Density>()([
   "comfortable",
 ]);
 
-export function decodeSettings(value: unknown): Settings | undefined {
-  if (!isRecord(value) || !isRecord(value.app)) return undefined;
-  const { theme, message_density } = value.app;
+export type Appearance = Pick<AppSettings, "theme" | "message_density">;
+
+export function decodeAppearance(value: unknown): Appearance | undefined {
+  if (!isRecord(value)) return undefined;
+  const { theme, message_density } = value;
   if (!isOneOf(theme, themePreferences) || !isOneOf(message_density, densities))
     return undefined;
-  return { app: { theme, message_density } };
+  return { theme, message_density };
+}
+
+export function decodeSettings(value: unknown): Settings | undefined {
+  if (!isRecord(value)) return undefined;
+  const appearance = decodeAppearance(value.app);
+  if (appearance === undefined) return undefined;
+  return { app: appearance };
 }
 
 function everyValueOf<T extends string>() {
