@@ -20,6 +20,7 @@ import {
   omnibarMode,
   paletteActions,
 } from "./command-palette-model";
+import { OmnibarRow } from "./OmnibarRow";
 
 interface BufferSwitcherProps {
   readonly buffers: readonly BufferProjection[];
@@ -153,36 +154,30 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
             {(item, index) => {
               const badge = () => unreadBadge(item.buffer);
               return (
-                <button
+                <OmnibarRow
                   aria-label={optionLabel(item, badge()?.label)}
                   aria-selected={index() === selected()}
-                  class={styles.option}
                   data-buffer-id={item.buffer.id}
                   id={optionId(item.buffer.id)}
+                  label={displayTitle(item.buffer)}
+                  leading={item.buffer.kind === "channel" ? "#" : "@"}
                   onClick={() => open(item)}
-                  onPointerDown={(event) => event.preventDefault()}
-                  role="option"
-                  tabIndex={-1}
-                  type="button"
-                >
-                  <span aria-hidden="true" class={styles.glyph}>
-                    {item.buffer.kind === "channel" ? "#" : "@"}
-                  </span>
-                  <Line class={styles.title}>{displayTitle(item.buffer)}</Line>
-                  <Line class={styles.network}>{item.network}</Line>
-                  <Show when={badge()} keyed>
-                    {(current) => (
-                      <Line
-                        aria-label={current.label}
-                        class={`${styles.badge} ${
-                          current.kind === "mention" ? styles.mention : ""
-                        }`}
-                      >
-                        {current.count}
-                      </Line>
-                    )}
-                  </Show>
-                </button>
+                  trailing={
+                    <Show when={badge()} keyed>
+                      {(current) => (
+                        <Line
+                          aria-label={current.label}
+                          class={`${styles.badge} ${
+                            current.kind === "mention" ? styles.mention : ""
+                          }`}
+                        >
+                          {current.count}
+                        </Line>
+                      )}
+                    </Show>
+                  }
+                  suffix={item.network}
+                />
               );
             }}
           </For>
@@ -190,31 +185,23 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
         <Show when={mode() === "commands"}>
           <For each={actionResults()}>
             {(action, index) => (
-              <button
+              <OmnibarRow
                 aria-keyshortcuts={action.shortcut?.ariaKeyShortcuts}
                 aria-selected={index() === selected()}
-                class={styles.option}
                 id={actionOptionId(action)}
+                label={action.title}
+                leading=">"
                 onClick={() => run(action)}
-                onPointerDown={(event) => event.preventDefault()}
-                role="option"
-                tabIndex={-1}
+                trailing={
+                  <Show when={action.shortcut} keyed>
+                    {(shortcut) => (
+                      <kbd class={styles.chord}>{shortcut.labels[0]}</kbd>
+                    )}
+                  </Show>
+                }
+                suffix={action.group}
                 title={action.shortcut?.labels.join(" / ")}
-                type="button"
-              >
-                <span aria-hidden="true" class={styles.glyph}>
-                  &gt;
-                </span>
-                <Line class={styles.title}>{action.title}</Line>
-                <Show when={action.group} keyed>
-                  {(group) => <Line class={styles.network}>{group}</Line>}
-                </Show>
-                <Show when={action.shortcut} keyed>
-                  {(shortcut) => (
-                    <kbd class={styles.chord}>{shortcut.labels[0]}</kbd>
-                  )}
-                </Show>
-              </button>
+              />
             )}
           </For>
         </Show>
