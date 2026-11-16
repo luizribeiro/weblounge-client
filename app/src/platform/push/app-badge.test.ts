@@ -5,6 +5,7 @@ import {
   closeMessageNotifications,
   closeReadConversationNotifications,
   conversationNotificationCounts,
+  syncAppPushState,
 } from "./app-badge";
 
 it("counts unread direct messages once plus channel mentions", () => {
@@ -152,12 +153,50 @@ it("closes pushed notifications whose message was deleted", async () => {
 
   await closeMessageNotifications(["gone"], {
     getRegistration: async () => ({
-      getNotifications: async () =>
-        [deleted, kept, untagged] as unknown as Notification[],
+      getNotifications: async () => [deleted, kept, untagged],
     }),
   });
 
   expect(deleted.close).toHaveBeenCalledOnce();
   expect(kept.close).not.toHaveBeenCalled();
   expect(untagged.close).not.toHaveBeenCalled();
+});
+
+it("writes the counts, then sets the badge through the host's notification center", async () => {
+  const calls: unknown[] = [];
+  const center = {
+    badge: {
+      setAppBadge: async (count?: number) => {
+        calls.push(["set", count]);
+      },
+      clearAppBadge: async () => {
+        calls.push(["clear"]);
+      },
+    },
+    registrations: { getRegistration: async () => undefined },
+    writeCounts: async (counts: readonly unknown[]) => {
+      calls.push(["counts", counts]);
+    },
+  };
+  const unread = buffer({
+    kind: "direct",
+    title: "Mel",
+    unread: 2,
+    mentions: 2,
+  });
+  const labels = new Map([[1, "Lounge"]]);
+
+  await syncAppPushState([unread], labels, center);
+  await syncAppPushState(
+    [{ ...unread, unread: 0, mentions: 0 }],
+    labels,
+    center,
+  );
+
+  expect(calls).toEqual([
+    ["counts", [{ tag: "Lounge/mel", count: 2 }]],
+    ["set", 2],
+    ["counts", [{ tag: "Lounge/mel", count: 0 }]],
+    ["clear"],
+  ]);
 });

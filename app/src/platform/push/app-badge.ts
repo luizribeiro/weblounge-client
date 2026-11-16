@@ -6,19 +6,36 @@ import {
 } from "./push-database";
 import { notificationDataIsRead } from "./push-notification-state";
 
-interface BadgeNavigator {
+export interface BadgeNavigator {
   setAppBadge?(contents?: number): Promise<void>;
   clearAppBadge?(): Promise<void>;
 }
 
+export type DeliveredNotification = Pick<Notification, "data" | "close">;
+
 interface NotificationRegistration {
-  getNotifications(filter?: GetNotificationOptions): Promise<Notification[]>;
+  getNotifications(): Promise<readonly DeliveredNotification[]>;
 }
 
-interface RegistrationProvider {
+export interface RegistrationProvider {
   getRegistration(
     scope?: string,
   ): Promise<NotificationRegistration | undefined>;
+}
+
+/** Where the host keeps the badge, the delivered notifications and the counts pushes start from. */
+export interface NotificationCenter {
+  readonly badge: BadgeNavigator;
+  readonly registrations: RegistrationProvider;
+  writeCounts(counts: readonly ConversationNotificationCount[]): Promise<void>;
+}
+
+export function webNotificationCenter(): NotificationCenter {
+  return {
+    badge: navigator,
+    registrations: navigator.serviceWorker,
+    writeCounts: writeNotificationCounts,
+  };
 }
 
 export function appBadgeCount(buffers: readonly BufferProjection[]): number {
@@ -55,35 +72,38 @@ function knownNotificationCount(buffer: BufferProjection): number {
 export async function syncAppBadge(
   buffers: readonly BufferProjection[],
   networkLabels: ReadonlyMap<number, string>,
-  badgeNavigator: BadgeNavigator = navigator,
+  center: Pick<NotificationCenter, "badge" | "writeCounts">,
 ): Promise<void> {
   const count = appBadgeCount(buffers);
-  await writeNotificationCounts(
+  await center.writeCounts(
     conversationNotificationCounts(buffers, networkLabels),
   );
   if (count === 0) {
-    await badgeNavigator.clearAppBadge?.();
+    await center.badge.clearAppBadge?.();
     return;
   }
-  await badgeNavigator.setAppBadge?.(count);
+  await center.badge.setAppBadge?.(count);
 }
 
 export async function syncAppPushState(
   buffers: readonly BufferProjection[],
   networkLabels: ReadonlyMap<number, string>,
-  badgeNavigator: BadgeNavigator = navigator,
-  registrations: RegistrationProvider = navigator.serviceWorker,
+  center: NotificationCenter,
 ): Promise<void> {
   await Promise.all([
-    syncAppBadge(buffers, networkLabels, badgeNavigator),
-    closeReadConversationNotifications(buffers, networkLabels, registrations),
+    syncAppBadge(buffers, networkLabels, center),
+    closeReadConversationNotifications(
+      buffers,
+      networkLabels,
+      center.registrations,
+    ),
   ]);
 }
 
 export async function closeReadConversationNotifications(
   buffers: readonly BufferProjection[],
   networkLabels: ReadonlyMap<number, string>,
-  registrations: RegistrationProvider = navigator.serviceWorker,
+  registrations: RegistrationProvider,
 ): Promise<void> {
   const readMarkers = conversationReadMarkers(buffers, networkLabels);
   const registration = await registrations.getRegistration("/");
@@ -97,7 +117,7 @@ export async function closeReadConversationNotifications(
 /** Withdraws pushed notifications whose message was deleted. */
 export async function closeMessageNotifications(
   msgids: readonly string[],
-  registrations: RegistrationProvider = navigator.serviceWorker,
+  registrations: RegistrationProvider,
 ): Promise<void> {
   const registration = await registrations.getRegistration("/");
   const notifications = await registration?.getNotifications();

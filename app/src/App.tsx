@@ -84,6 +84,7 @@ import {
   closeMessageNotifications,
   conversationReadMarkers,
   syncAppPushState,
+  webNotificationCenter,
 } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
@@ -299,6 +300,7 @@ export function App(props: AppProps) {
     readForegroundSnapshot(document, navigator, window),
   );
   const pushPendingClock = new PushPendingClock();
+  const notificationCenter = webNotificationCenter();
   const knownPushRequirements = new Map<number, PushSyncEvent>();
   const knownPushStates = new Map<number, PushSyncEvent>();
   const rememberPushSyncEvent = (event: PushSyncEvent) => {
@@ -375,7 +377,7 @@ export function App(props: AppProps) {
     );
     appPushStateSync = appPushStateSync
       .then(() => waitForProductionServiceWorkerUpdate())
-      .then(() => syncAppPushState(current, networkLabels))
+      .then(() => syncAppPushState(current, networkLabels, notificationCenter))
       .catch(() => undefined);
   };
   createEffect(syncEnginePushState);
@@ -614,7 +616,10 @@ export function App(props: AppProps) {
       }
       if (message.type === "message_redacted") {
         notifications.closeMessages(message.msgids);
-        void closeMessageNotifications(message.msgids).catch(() => undefined);
+        void closeMessageNotifications(
+          message.msgids,
+          notificationCenter.registrations,
+        ).catch(() => undefined);
         return;
       }
       if (message.type === "push_route_required") {
