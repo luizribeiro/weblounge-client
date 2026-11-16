@@ -19,10 +19,15 @@ export function SystemLine(props: {
   readonly presentation: "desktop" | "mobile";
   readonly system: SystemProjection;
 }) {
+  // Callers derive these from a buffer projection that is replaced on every count change; memos
+  // stop an unchanged value from rebuilding the line's DOM.
+  const line = createMemo(() => props.system.line);
+  const canRejoin = createMemo(() => props.canRejoin);
+  const expanded = createMemo(() => props.expanded);
   const words = createMemo(() =>
-    systemLineWords(props.system.line, {
-      canRejoin: props.canRejoin,
-      expanded: props.expanded,
+    systemLineWords(line(), {
+      canRejoin: canRejoin(),
+      expanded: expanded(),
       includeRawModes: props.presentation === "desktop",
     }),
   );

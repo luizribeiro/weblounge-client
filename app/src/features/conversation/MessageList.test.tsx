@@ -1877,6 +1877,46 @@ it("offers Rejoin only on the newest own kick while kicked", () => {
   expect(screen.getByLabelText("iris kicked you · Rejoin")).toBeVisible();
 });
 
+it("keeps system lines untouched when an unrelated buffer field changes", () => {
+  const join = membershipItem({
+    type: "change",
+    id: 20,
+    kind: "joined",
+    nicks: ["mel"],
+    server_time_ms: 2,
+    received_at_ms: 2,
+  });
+  const channel = {
+    kind: "channel" as const,
+    title: "#room",
+    channel_status: "joined" as const,
+  };
+  const [buffer, setBuffer] = createSignal({ ...channel, unread: 0 });
+  const { container } = render(() => (
+    <MessageList
+      bufferKind={buffer().kind}
+      bufferTitle={buffer().title}
+      channelStatus={buffer().channel_status}
+      messages={[]}
+      timeline={timelineView([join])}
+      unread={buffer().unread}
+    />
+  ));
+  const summary = container.querySelector("[data-system-summary]");
+  if (summary === null) throw new Error("the join line is missing");
+  const mutations: MutationRecord[] = [];
+  const observer = new MutationObserver((records) =>
+    mutations.push(...records),
+  );
+  observer.observe(summary, { childList: true, subtree: true });
+
+  setBuffer({ ...channel, unread: 1 });
+  mutations.push(...observer.takeRecords());
+  observer.disconnect();
+
+  expect(mutations).toEqual([]);
+});
+
 it("remeasures revised system-line content on its first revised frame", async () => {
   vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
