@@ -37,5 +37,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>WebloungeAppGroup</key>
+	<string>group.$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>WebloungeKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 </dict>
 </plist>

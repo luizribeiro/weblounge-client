@@ -54,6 +54,8 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        WebloungeAppGroup: group.$(PRODUCT_BUNDLE_IDENTIFIER)
+        WebloungeKeychainGroup: $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleShortVersionString: 0.1.3
         CFBundleVersion: "0.1.3"
     entitlements:

@@ -27,8 +27,10 @@
 		0C47CD5B3006ABAD6772C1EC /* notification.test.mjs */ = {isa = PBXFileReference; path = notification.test.mjs; sourceTree = "<group>"; };
 		0D360BA0F25D8E58479BD5D4 /* notification.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = notification.js; sourceTree = "<group>"; };
 		0D78E03714F8489CAC4B6B1E /* title_bar.rs */ = {isa = PBXFileReference; path = title_bar.rs; sourceTree = "<group>"; };
+		1BA2D91AC253ADF4051E323C /* failure.rs */ = {isa = PBXFileReference; path = failure.rs; sourceTree = "<group>"; };
 		2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		30F26D139D1475DE27D32600 /* service.rs */ = {isa = PBXFileReference; path = service.rs; sourceTree = "<group>"; };
+		38A0CE34C4BB5112FC275B55 /* answers.rs */ = {isa = PBXFileReference; path = answers.rs; sourceTree = "<group>"; };
 		3DFE5B4B563A5AFFDA366377 /* launch.rs */ = {isa = PBXFileReference; path = launch.rs; sourceTree = "<group>"; };
 		440C7C437D1B2E95A8247798 /* badge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = badge.js; sourceTree = "<group>"; };
 		46A2A8073499D13EB1325888 /* security.rs */ = {isa = PBXFileReference; path = security.rs; sourceTree = "<group>"; };
@@ -40,6 +42,7 @@
 		67934DDE50D2FFB92F416321 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 		6F8A25D6864443CF2E6E1D18 /* badge.test.mjs */ = {isa = PBXFileReference; path = badge.test.mjs; sourceTree = "<group>"; };
 		7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		7DE182ACA943D2C2748DA9C0 /* page_event.rs */ = {isa = PBXFileReference; path = page_event.rs; sourceTree = "<group>"; };
 		7FDA4D6732F335F1E01616CE /* menu.rs */ = {isa = PBXFileReference; path = menu.rs; sourceTree = "<group>"; };
 		80885CB4C4912DF2F902B153 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		81B5FBACE96E687CBEA41126 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
@@ -51,15 +54,19 @@
 		A9659339765BE29D9C4EB503 /* weblounge-desktop_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "weblounge-desktop_iOS.entitlements"; sourceTree = "<group>"; };
 		AF7D101E062C9511E265F2D7 /* center.rs */ = {isa = PBXFileReference; path = center.rs; sourceTree = "<group>"; };
 		B0C1133853D411030DED36E5 /* login_item.rs */ = {isa = PBXFileReference; path = login_item.rs; sourceTree = "<group>"; };
+		B50FF378CC28A8F869A4944F /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		B7FB1B2C497A82C37FE4766D /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		C530C63D1CC9557790FE43AD /* events.rs */ = {isa = PBXFileReference; path = events.rs; sourceTree = "<group>"; };
 		C90ABEE746BF9B949B45394B /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		D179A914815A8FC4D090F766 /* model.rs */ = {isa = PBXFileReference; path = model.rs; sourceTree = "<group>"; };
 		EA050F391D3DFFB7D4CCA743 /* shell.rs */ = {isa = PBXFileReference; path = shell.rs; sourceTree = "<group>"; };
 		EB718DCE48602B3344F5103B /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		EDD9D4EC3ED24AA420595F93 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		F4CD55CA239DA5276157B25D /* commands.rs */ = {isa = PBXFileReference; path = commands.rs; sourceTree = "<group>"; };
 		F763267F2366FE5B836AB489 /* navigation.rs */ = {isa = PBXFileReference; path = navigation.rs; sourceTree = "<group>"; };
 		F9084A4E509617E31B9C7526 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		FD6724102A0B8653E046566D /* page_action.rs */ = {isa = PBXFileReference; path = page_action.rs; sourceTree = "<group>"; };
+		FE06853C349B0A422FFEFD7D /* shell_event.rs */ = {isa = PBXFileReference; path = shell_event.rs; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,6 +114,19 @@
 			path = window;
 			sourceTree = "<group>";
 		};
+		6902324D605BA33141DCA947 /* native */ = {
+			isa = PBXGroup;
+			children = (
+				38A0CE34C4BB5112FC275B55 /* answers.rs */,
+				F4CD55CA239DA5276157B25D /* commands.rs */,
+				C530C63D1CC9557790FE43AD /* events.rs */,
+				1BA2D91AC253ADF4051E323C /* failure.rs */,
+				B50FF378CC28A8F869A4944F /* mod.rs */,
+				FE06853C349B0A422FFEFD7D /* shell_event.rs */,
+			);
+			path = native;
+			sourceTree = "<group>";
+		};
 		76895B04EE3FB70B3C46CF8D /* src */ = {
 			isa = PBXGroup;
 			children = (
@@ -121,9 +141,11 @@
 				0D360BA0F25D8E58479BD5D4 /* notification.js */,
 				0C47CD5B3006ABAD6772C1EC /* notification.test.mjs */,
 				FD6724102A0B8653E046566D /* page_action.rs */,
+				7DE182ACA943D2C2748DA9C0 /* page_event.rs */,
 				46A2A8073499D13EB1325888 /* security.rs */,
 				EA050F391D3DFFB7D4CCA743 /* shell.rs */,
 				9EAC8242C1F4DC30062DA06E /* window.rs */,
+				6902324D605BA33141DCA947 /* native */,
 				B69912B1B4623BD9F9A056BA /* notifications */,
 				53E189743713489F3214B637 /* window */,
 			);
@@ -384,7 +406,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "$(PRODUCT_BUNDLE_IDENTIFIER)";
 				CODE_SIGN_ENTITLEMENTS = "weblounge-desktop_iOS/weblounge-desktop_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "JR4C2QJKWJ";
+				DEVELOPMENT_TEAM = JR4C2QJKWJ;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -472,7 +494,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "$(PRODUCT_BUNDLE_IDENTIFIER)";
 				CODE_SIGN_ENTITLEMENTS = "weblounge-desktop_iOS/weblounge-desktop_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "JR4C2QJKWJ";
+				DEVELOPMENT_TEAM = JR4C2QJKWJ;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
