@@ -11,6 +11,10 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/luizribeiro/weblounge-client"
 publish = false
 
+[lib]
+name = "weblounge_desktop_lib"
+crate-type = ["staticlib", "rlib"]
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "deny"
