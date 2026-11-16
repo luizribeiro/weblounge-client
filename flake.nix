@@ -557,10 +557,18 @@
           files = "(^|/)(Cargo\\.(toml|lock)|.*\\.rs)$";
           pass_filenames = false;
         };
+        # `tauri ios init` writes this project; keeping its output verbatim lets a re-init diff cleanly.
+        generatedXcodeProject = "^apps/tauri/gen/apple/";
         offlineHooks = {
           check-merge-conflicts.enable = true;
-          end-of-file-fixer.enable = true;
-          trim-trailing-whitespace.enable = true;
+          end-of-file-fixer = {
+            enable = true;
+            excludes = [ generatedXcodeProject ];
+          };
+          trim-trailing-whitespace = {
+            enable = true;
+            excludes = [ generatedXcodeProject ];
+          };
           nixfmt.enable = true;
           deadnix = {
             enable = true;
@@ -585,7 +593,10 @@
           };
           yamllint = {
             enable = true;
-            excludes = [ "^pnpm-lock\\.yaml$" ];
+            excludes = [
+              "^pnpm-lock\\.yaml$"
+              generatedXcodeProject
+            ];
           };
         };
         projectHooks = {
