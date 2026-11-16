@@ -165,11 +165,8 @@ at a time. Close-to-hide plus Open at Login keep the app running, which covers w
 
 ## Phase 3: seamless title bar
 
-The phase 1 window uses the standard macOS title bar. A seamless window, with the traffic lights
-over the sidebar and no title strip, needs an overlay title bar plus web app changes: the desktop
-shell must reserve the traffic-light area at the sidebar top, and mark
-drag regions, which in turn need the window-drag permission for the remote origin. The prototype
-has no reference for this, so the layout needs Luiz's sign-off before it is built.
+Designed in [35](35-seamless-title-bar.md): an overlay title bar with the traffic lights inside
+the page, an optional `windowControls` field in the identity global, and drag regions.
 
 ## Later
 
