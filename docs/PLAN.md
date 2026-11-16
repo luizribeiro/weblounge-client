@@ -139,6 +139,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: hidden-mount transcript remeasure. A row that mounted while the page was hidden
+  spent MessageList's one-shot foreground remeasure, so catch-up rows arriving on return painted
+  with estimated heights (gaps on the first foreground frame). Hidden mounts no longer measure or
+  disarm it; the foreground refresh measures every rendered row. Covered by MessageList unit tests
+  and an iPhone spacing-audit scenario that grows the viewport while hidden.
 - 2026-11-15: hidden-tab unread badge fix. While the page was hidden the engine client held every
   buffer update, so a DM or mention in the open conversation never reached the tab indicator or
   app badge until the tab was shown again. Buffer-list events now apply at once while hidden, in
