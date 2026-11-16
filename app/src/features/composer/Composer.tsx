@@ -27,13 +27,14 @@ import type { NetworkUploads } from "../uploads/types";
 import { AttachmentChip } from "./AttachmentChip";
 import { createAttachmentController } from "./attachment-controller";
 import { imageFromClipboard } from "./clipboard-image";
-import { commandForInput } from "./command-input";
+import { bareCommandForInput, commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
   withBlockSizeHeld,
 } from "./geometry";
+import { ImagePicker } from "./ImagePicker";
 import { InlineConfirmation } from "./InlineConfirmation";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
@@ -72,6 +73,7 @@ export function Composer(props: ComposerProps) {
   const platform = platformEnvironment();
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
+  let imagePicker: HTMLInputElement | undefined;
   let composing = false;
   let caretScrollFrame: number | undefined;
   let pendingTabInput: string | undefined;
@@ -306,10 +308,24 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (!image.hasText) event.preventDefault();
+    attachImage(image.file);
+  };
+  const attachImage = (file: File) => {
     setUploadsUnavailable(false);
-    attachments.attach(image.file);
+    attachments.attach(file);
+  };
+  // Safari opens a file picker only inside the user's gesture, so this runs synchronously from
+  // Enter or Send, before anything reaches the engine.
+  const runFileCommand = () => {
+    if (bareCommandForInput(text(), props.commandSpecs ?? [])?.name !== "file")
+      return false;
+    update("");
+    if (props.uploads === undefined) setUploadsUnavailable(true);
+    else imagePicker?.click();
+    return true;
   };
   const send = () => {
+    if (runFileCommand()) return;
     submit();
     textarea?.focus();
   };
@@ -417,7 +433,7 @@ export function Composer(props: ComposerProps) {
       dropAttachment();
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!accept(undefined, false)) submit();
+      if (!accept(undefined, false) && !runFileCommand()) submit();
     } else if (event.key === "Tab" && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       const cycle = tabCycle;
@@ -507,6 +523,15 @@ export function Composer(props: ComposerProps) {
         />
       )}
       <TypingIndicator typers={props.typers ?? []} />
+      <ImagePicker
+        onPick={(file) => {
+          attachImage(file);
+          focusAfterOverlay();
+        }}
+        inputRef={(input) => {
+          imagePicker = input;
+        }}
+      />
       <UploadOverlays
         attachments={attachments}
         onSettled={focusAfterOverlay}

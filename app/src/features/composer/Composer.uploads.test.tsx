@@ -10,6 +10,7 @@ import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
 } from "./geometry";
+import { fileCommand } from "./test-commands";
 
 const url = "https://files.weblounge.org/AbCdEfGhIjKlMnOpQrStUv.png";
 
@@ -37,7 +38,10 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 function renderComposer(uploads: NetworkUploads | undefined) {
   const onSend = vi.fn(async () => true);
@@ -45,7 +49,7 @@ function renderComposer(uploads: NetworkUploads | undefined) {
     <Composer
       bufferId={2}
       bufferTitle="#lounge"
-      commandSpecs={[]}
+      commandSpecs={[fileCommand]}
       draftKey="network:#lounge"
       onSend={onSend}
       uploads={uploads}
@@ -198,4 +202,102 @@ it("announces the chip's geometry change before and after it renders", () => {
     `${composerGeometryWillChangeEvent}:true`,
     `${composerGeometryChangeEvent}:false`,
   ]);
+});
+
+function pickerClicks() {
+  return vi
+    .spyOn(HTMLInputElement.prototype, "click")
+    .mockImplementation(() => undefined);
+}
+
+function typeAndEnter(input: HTMLElement, value: string) {
+  fireEvent.input(input, { target: { value } });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
+function choose(files: readonly File[]) {
+  const picker = document.querySelector<HTMLInputElement>(
+    "[data-image-picker]",
+  );
+  if (picker === null) throw new Error("no image picker");
+  Object.defineProperty(picker, "files", { value: files, configurable: true });
+  fireEvent.change(picker);
+}
+
+function pickImage() {
+  choose([
+    new File([new Uint8Array([0x89, 0x50, 0x4e])], "photo.png", {
+      type: "image/png",
+    }),
+  ]);
+}
+
+it("opens the image picker on /file Enter, clears the text and attaches the pick", () => {
+  const clicks = pickerClicks();
+  const uploads = new ControlledUploads();
+  const { input, onSend } = renderComposer(uploads);
+  typeAndEnter(input, "/file");
+
+  expect(clicks).toHaveBeenCalledTimes(1);
+  expect(clicks.mock.contexts[0]).toHaveProperty("accept", "image/*");
+  expect(clicks.mock.contexts[0]).toHaveProperty("multiple", false);
+  expect((input as HTMLTextAreaElement).value).toBe("");
+  expect(onSend).not.toHaveBeenCalled();
+  pickImage();
+  expect(screen.getByText("Image · 3 B")).toBeTruthy();
+  expect(uploads.calls).toEqual([]);
+});
+
+it("opens the picker from the Send button", () => {
+  const clicks = pickerClicks();
+  const { input, onSend } = renderComposer(new ControlledUploads());
+  fireEvent.input(input, { target: { value: "/FILE " } });
+  const [send] = screen.getAllByRole("button", { name: "Send" });
+  if (send === undefined) throw new Error("no Send button");
+  fireEvent.click(send);
+  expect(clicks).toHaveBeenCalledTimes(1);
+  expect(onSend).not.toHaveBeenCalled();
+});
+
+it("opens the picker once from a tap on the phone Send button", () => {
+  const clicks = pickerClicks();
+  const { input, onSend } = renderComposer(new ControlledUploads());
+  fireEvent.input(input, { target: { value: "/file" } });
+  const touchSend = document.querySelector(
+    "[data-composer-send] [data-composer-send-visual]",
+  )?.parentElement;
+  if (touchSend == null) throw new Error("no touch Send button");
+  fireEvent.touchEnd(touchSend);
+  fireEvent.click(touchSend);
+  expect(clicks).toHaveBeenCalledTimes(1);
+  expect(onSend).not.toHaveBeenCalled();
+});
+
+it("keeps an earlier image when the picker is cancelled", () => {
+  const clicks = pickerClicks();
+  const { input } = renderComposer(new ControlledUploads());
+  pasteImage(input);
+  typeAndEnter(input, "/file");
+  expect(clicks).toHaveBeenCalledTimes(1);
+  choose([]);
+  expect((input as HTMLTextAreaElement).value).toBe("");
+  expect(screen.getByText("Image · 2 B")).toBeTruthy();
+});
+
+it("notes a network without uploads instead of opening the picker", () => {
+  const clicks = pickerClicks();
+  const { input, onSend } = renderComposer(undefined);
+  typeAndEnter(input, "/file");
+  expect(clicks).not.toHaveBeenCalled();
+  expect(onSend).not.toHaveBeenCalled();
+  expect((input as HTMLTextAreaElement).value).toBe("");
+  expect(screen.getByText("This network doesn’t accept uploads.")).toBeTruthy();
+});
+
+it("sends /file with an argument on to the engine", () => {
+  const clicks = pickerClicks();
+  const { input, onSend } = renderComposer(new ControlledUploads());
+  typeAndEnter(input, "/file holiday.png");
+  expect(clicks).not.toHaveBeenCalled();
+  expect(onSend).toHaveBeenCalledWith("/file holiday.png");
 });
