@@ -181,6 +181,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   composer, and any composer input slides it closed (it covers the composer's right edge and Send).
   Type-to-composer forwarding is now blocked by `aria-modal="true"` rather than any dialog role, so
   Leave/Close confirmations no longer leak keys into the composer behind them.
+- 2026-11-15: the docked members drawer leaves the composer clear (design 34 decision 13): it
+  covers only the transcript, its bottom tracks the composer's top as drafts grow (grid row, no
+  measuring), and typing, clicking or sending in the composer keeps it open; Escape in it, the
+  header button and a transcript click close it. Supersedes the typing-closes entry above.
+  Journeys in `app/e2e/member-pane.spec.ts`.
 - 2026-11-15: browser-tab indicator (F33, design 23 Badging). In a browser tab the favicon's
   tile turns brand red and the title gains "(n) " (capped "(99+)") while `appBadgeCount` is above
   zero, and turns grey while the connection indicator shows connecting or an error; unread wins over
