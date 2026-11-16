@@ -206,12 +206,20 @@ The phone layout's keyboard handling (`keyboard-motion.ts`, `viewport-geometry.t
 `visualViewport`, and WKWebView is the same WebKit as the PWA. The expectation is that it carries
 over, but three things differ and are checked on device in the first build:
 
-- Safe-area insets: `env(safe-area-inset-*)` needs `viewport-fit=cover` (already in
-  `index.html`) and a web view scroll view that doesn't add its own insets. If Tauri leaves
-  `contentInsetAdjustmentBehavior` automatic, the shell sets it to `.never` so the page keeps
-  owning the insets.
-- The status bar: no `apple-mobile-web-app-status-bar-style`; the shell follows the theme's light
-  or dark scheme.
+- Safe-area insets: WebKit sets the web view's scroll view inset behaviour per page from
+  `viewport-fit`: `.never` for a `viewport-fit=cover` page (the app, whose `index.html` has it, so
+  `env(safe-area-inset-*)` reports the real insets and the page owns them) and `.always` for a
+  page without it (the members sign-in page), which WebKit insets below the status bar. The shell
+  leaves that behaviour alone: forcing `.never` would run a page without `viewport-fit=cover` under
+  the status bar.
+- The underlay and the status bar: wherever the page doesn't paint (the band WebKit insets a page
+  without `viewport-fit=cover` by, and the first frames of a load), the web view's own background
+  shows. A watcher the shell runs in an isolated script world reports the page's computed
+  background on each document, on `data-theme` changes and on system appearance flips; the shell
+  paints the web view with it and sets the status bar to light content over a dark background
+  and dark content over a light one, or follows the system when the page paints none. There is no
+  `apple-mobile-web-app-status-bar-style` in a web view, and Tauri's `set_theme` does nothing on
+  iOS.
 - Keyboard: the web view must not scroll the whole document when the composer focuses; the PWA's
   Playwright keyboard specs can't drive WKWebView, so screenshots compared with the PWA are the
   check.
