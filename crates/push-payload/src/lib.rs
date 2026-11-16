@@ -1,8 +1,9 @@
-//! Decryption and typed parsing of IRC Web Push payloads.
+//! Decryption, parsing and notification formatting for IRC Web Push payloads.
 
 mod decrypt;
 mod format;
 mod parse;
+mod prepare;
 
 pub use decrypt::{DecryptError, RouteKeys, decrypt_push_payload};
 pub use format::{
@@ -10,6 +11,7 @@ pub use format::{
     RouteMeta, VisibleNotification, counted_body, notification_for,
 };
 pub use parse::{ChatPayload, ParsePushError, PushEvent, parse_push_payload};
+pub use prepare::{PrepareError, prepare_notification, prepare_notification_json};
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 /// Wasm boundary used by the classic service worker.
