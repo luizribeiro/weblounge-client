@@ -46,7 +46,8 @@ A desktop pane is one self-contained box:
   its place at the header's right end; with the panel open it sits right above it.
 - The panel's own header row (title, count, ×) is dropped on desktop: the count and pressed state
   are on the header button, which also closes it. The panel keeps its accessible name
-  "Members of #papo". The mobile drawer keeps its header (it needs a visible close).
+  "Members of #papo". The narrow-pane drawer has no header either (decision 2); the mobile drawer
+  keeps its header (it needs a visible close).
 - The body is a two-column grid: `minmax(0, 1fr) var(--wl-size-members)`. The member column is
   only rendered for a channel with its list shown inline.
 - Single pane: the 48px main header (sidebar toggle, title, topic, Members). Multi-pane (later):
@@ -96,7 +97,8 @@ switching buffers.
 - Inline needs `232px + 480px` of pane (amends design 09's 320px conversation minimum; see the
   narrow "before" capture). The sidebar breakpoint (760px) is unchanged.
 - Below that, the same button and shortcut open the list as an `OverlayDrawer` anchored to **this
-  pane's** right edge, with an invisible scrim covering only this pane (decision 7).
+  pane's** right edge, below the pane header, with an invisible scrim covering only this pane's
+  body (decisions 2 and 7).
 - The drawer is transient: it never changes the channel's persisted visibility, except that closing
   an inline list (button, shortcut) does. Growing past the threshold closes the drawer and shows the
   inline list if the channel's visibility is on; shrinking hides the inline list without changing
@@ -180,8 +182,8 @@ Matches design 15's rules:
   - toggle by button and Ctrl+.; the choice survives reload; `#a` shown and `#b` hidden stay so
     when switching between them; a never-toggled channel follows the last choice;
   - DM and server buffer: no button, no column, full-width transcript;
-  - narrow window: the drawer opens from the pane's edge, Escape and scrim close it, focus returns
-    to the composer, resizing across the threshold keeps the composer draft and element identity;
+  - narrow window: the drawer opens from the pane's edge below its header; the header button,
+    Escape and scrim close it, focus returns to the composer, resizing across the threshold keeps the composer draft and element identity;
   - committed light/dark screenshots of the open panel (also fixes stale T8 member-panel captures).
 - Every touched journey keeps `nativeFeelAudit` and its idle/hidden checks green; screenshots are
   compared with the mockups above before merge.
@@ -189,9 +191,13 @@ Matches design 15's rules:
 ## Decisions (Luiz, 2026-11-15)
 
 1. The pane header spans the whole pane, over the members panel. Yes.
-2. The inline panel drops its own "Members N ×" header row on desktop. Yes. The narrow-pane drawer
-   keeps it: the drawer covers the header button, so its × is the drawer's visible close (as on the
-   phone).
+2. The inline panel drops its own "Members N ×" header row on desktop. Yes. **Changed:** the
+   narrow-pane drawer drops it too and looks like the inline list: no title or ×, no shadow, the
+   same background and 1px left divider. It starts below the pane header (its top is the header's
+   bottom, as the inline column's is), so the header's Members button stays visible, shows its
+   pressed state and closes the drawer with the same slide as Escape. Escape and a click elsewhere
+   in the pane body still close it; the header stays live, so the drawer is not modal. It keeps the
+   accessible name "Members". The phone drawers keep their header and shadow.
 3. Visibility is per channel; a never-toggled channel follows the last choice. Yes.
 4. Visibility persists across reloads and launches. Yes.
 5. Fixed 232px, no resize. Yes.
