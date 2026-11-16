@@ -30,6 +30,7 @@ weblounge-command-derive = { path = "../command-derive" }
 papo-testing.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+weblounge-ts-export = { path = "../ts-export" }
 
 [lints]
 workspace = true

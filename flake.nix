@@ -688,7 +688,7 @@
                 + checkProtocolExports { outputRoot = "$generated"; };
               }
             }/bin/protocol-types-hook";
-            files = "(^|/)(Cargo\\.(toml|lock)|${
+            files = "(^|/)(Cargo\\.(toml|lock)|crates/ts-export/src/.*\\.rs|${
               pkgs.lib.concatMapStringsSep "|" (
                 export:
                 "crates/${pkgs.lib.escapeRegex export.name}/(src|examples)/.*\\.rs|${pkgs.lib.escapeRegex export.output}/.*\\.ts"

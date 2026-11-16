@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     DeploymentConfig::export_all_to(&output)?;
     export_engine_message_keys(Path::new(&output))?;
     export_database_schema(Path::new(&output))?;
-    trim_trailing_whitespace(Path::new(&output))?;
+    weblounge_ts_export::trim_trailing_whitespace(Path::new(&output))?;
     Ok(())
 }
 
@@ -53,23 +53,5 @@ fn export_database_schema(directory: &Path) -> Result<(), Box<dyn Error>> {
              export const ENGINE_DATABASE_STORES = [{stores}] as const;\n"
         ),
     )?;
-    Ok(())
-}
-
-fn trim_trailing_whitespace(directory: &Path) -> Result<(), Box<dyn Error>> {
-    for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        if path.is_dir() {
-            trim_trailing_whitespace(&path)?;
-        } else {
-            let source = fs::read_to_string(&path)?;
-            let cleaned = source
-                .lines()
-                .map(str::trim_end)
-                .collect::<Vec<_>>()
-                .join("\n");
-            fs::write(path, format!("{cleaned}\n"))?;
-        }
-    }
     Ok(())
 }

@@ -2994,6 +2994,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "weblounge-command-derive",
+ "weblounge-ts-export",
 ]
 
 [[package]]
@@ -3059,6 +3060,10 @@ dependencies = [
  "tracing-subscriber",
  "url",
 ]
+
+[[package]]
+name = "weblounge-ts-export"
+version = "0.1.0"
 
 [[package]]
 name = "webpki-root-certs"
