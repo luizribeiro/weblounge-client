@@ -33,13 +33,27 @@
   --wl-transcript-gutter: var(--wl-space-transcript-desktop-inline);
 
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: [transcript-start] minmax(0, 1fr) [transcript-end] auto;
   min-height: 0;
   min-width: 0;
+  position: relative;
 }
 
 .conversationBody:has(> [data-direct-identity-banner]) {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto [transcript-start] minmax(0, 1fr) [transcript-end] auto;
+}
+
+/* The transcript keeps its own layers so the docked drawer can sit above
+   them yet below the composer's suggestions. */
+.conversationBody > :has(> [data-message-list]) {
+  grid-row: transcript;
+  isolation: isolate;
+}
+
+.conversationBody > [data-overlay-drawer] {
+  grid-column: 1;
+  grid-row: transcript;
+  z-index: 1;
 }
 
 .empty {

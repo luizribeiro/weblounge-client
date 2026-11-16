@@ -240,6 +240,52 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("the docked list ends at the composer and leaves it usable", async ({
+    page,
+    irc,
+  }) => {
+    const pal = await irc.peer("pal");
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await dwellOnPeerMessage(page, pal, irc);
+    const composer = composerOf(page, irc.channel);
+
+    await openDockedDrawer(page);
+    const singleLineTop = await expectDrawerEndsAtComposer(page);
+    await composer.click();
+    await expect(composer).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expectDockedDrawerOpen(page);
+
+    for (const line of ["first line", "second line"]) {
+      await page.keyboard.type(line);
+      await page.keyboard.press("Shift+Enter");
+    }
+    await page.keyboard.type("third line");
+    await expect(composer).toHaveValue("first line\nsecond line\nthird line");
+    await expect.poll(() => composerTop(page)).toBeLessThan(singleLineTop);
+    await expectDrawerEndsAtComposer(page);
+
+    await composer.fill("");
+    await expect.poll(() => composerTop(page)).toBeCloseTo(singleLineTop, 0);
+    await expectDrawerEndsAtComposer(page);
+
+    await composer.fill("sent beside the list");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expectSentFromPane(page, pal, irc, "sent beside the list");
+    await expect(composer).toHaveValue("");
+    await expectDockedDrawerOpen(page);
+
+    await page
+      .locator("[data-overlay-scrim]")
+      .click({ position: { x: 40, y: 200 } });
+    await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
+    await expect(composer).toBeFocused();
+    await nativeFeelAudit(page);
+  });
+
   test("a confirmation over the docked list still swallows typing", async ({
     page,
     irc,
@@ -315,6 +361,19 @@ async function expectDockedDrawerOpen(page: Page): Promise<void> {
   );
 }
 
+const paneComposer = "[data-desktop-pane] [data-composer]";
+
+async function composerTop(page: Page): Promise<number> {
+  return (await paneBox(page, paneComposer)).top;
+}
+
+async function expectDrawerEndsAtComposer(page: Page): Promise<number> {
+  const composer = await paneBox(page, paneComposer);
+  const drawer = await paneBox(page, "[data-overlay-drawer] [role=dialog]");
+  expect(Math.abs(drawer.bottom - composer.top)).toBeLessThanOrEqual(1);
+  return composer.top;
+}
+
 async function expectDrawerLooksInline(
   page: Page,
   drawer: Locator,
@@ -340,8 +399,9 @@ async function expectDrawerLooksInline(
   const header = await paneBox(page, "[data-main-header]");
   const overlay = await paneBox(page, "[data-overlay-drawer]");
   expect(Math.abs(overlay.top - header.bottom)).toBeLessThanOrEqual(1);
-  for (const edge of ["left", "right", "bottom"] as const)
+  for (const edge of ["left", "right"] as const)
     expect(Math.abs(overlay[edge] - pane[edge])).toBeLessThanOrEqual(1);
+  await expectDrawerEndsAtComposer(page);
   expect(pane.left).toBeGreaterThan(0);
   const drawerBox = await drawer.boundingBox();
   if (drawerBox === null) throw new Error("the members drawer has no box");

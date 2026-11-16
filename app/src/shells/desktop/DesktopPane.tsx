@@ -228,6 +228,28 @@ function PaneConversation(props: DesktopPaneProps) {
               />
             )}
           </Show>
+          <Show when={members.drawerShown()}>
+            <OverlayDrawer
+              appearance="docked"
+              closeLabel={t("members.close_drawer")}
+              closing={members.drawerClosing()}
+              edge="right"
+              label={t("members.label")}
+              onClose={() => members.closeDrawer()}
+              width={memberColumnWidthToken}
+            >
+              <div class={styles.drawerContent}>
+                <MembersOf
+                  bufferId={buffer().id}
+                  chrome={{ header: "none" }}
+                  onOpenDirect={(nick) => {
+                    props.onOpenDirect(nick);
+                    members.closeDrawer();
+                  }}
+                />
+              </div>
+            </OverlayDrawer>
+          </Show>
         </div>
         <Show when={members.inlineShown() ? buffer().id : undefined} keyed>
           {(bufferId) => (
@@ -237,28 +259,6 @@ function PaneConversation(props: DesktopPaneProps) {
               onOpenDirect={props.onOpenDirect}
             />
           )}
-        </Show>
-        <Show when={members.drawerShown()}>
-          <OverlayDrawer
-            appearance="docked"
-            closeLabel={t("members.close_drawer")}
-            closing={members.drawerClosing()}
-            edge="right"
-            label={t("members.label")}
-            onClose={() => members.closeDrawer()}
-            width={memberColumnWidthToken}
-          >
-            <div class={styles.drawerContent}>
-              <MembersOf
-                bufferId={buffer().id}
-                chrome={{ header: "none" }}
-                onOpenDirect={(nick) => {
-                  props.onOpenDirect(nick);
-                  members.closeDrawer();
-                }}
-              />
-            </div>
-          </OverlayDrawer>
         </Show>
       </div>
     </section>
