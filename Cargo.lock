@@ -3009,6 +3009,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "weblounge-native-bridge"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "weblounge-ts-export",
+]
+
+[[package]]
 name = "weblounge-push-payload"
 version = "0.1.0"
 dependencies = [

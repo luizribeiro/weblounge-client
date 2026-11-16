@@ -146,6 +146,11 @@
             example = "export_protocol";
             output = "app/src/engine/generated";
           }
+          {
+            name = "native-bridge";
+            example = "export_bridge";
+            output = "app/src/platform/native-bridge/generated";
+          }
         ];
         checkProtocolExports =
           {

@@ -6,7 +6,12 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["app/**", "!app/src/engine/generated", "*.json"]
+    "includes": [
+      "app/**",
+      "!app/src/engine/generated",
+      "!app/src/platform/native-bridge/generated",
+      "*.json"
+    ]
   },
   "formatter": {
     "enabled": true,
