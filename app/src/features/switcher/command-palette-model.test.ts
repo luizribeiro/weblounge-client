@@ -3,6 +3,7 @@ import {
   commandQuery,
   omnibarMode,
   paletteActions,
+  paletteSuffix,
 } from "./command-palette-model";
 
 const actions = [
@@ -24,6 +25,15 @@ const actions = [
 ];
 
 describe("command palette model", () => {
+  it("names an action's group unless it is the default Commands group", () => {
+    expect(
+      paletteSuffix({ id: "buffer.next", title: "Next", group: "Navigation" }),
+    ).toBe("Navigation");
+    expect(
+      paletteSuffix({ id: "command.part", title: "Leave", group: "Commands" }),
+    ).toBeUndefined();
+  });
+
   it("switches modes only while the first character is greater-than", () => {
     expect(omnibarMode(">tog")).toBe("commands");
     expect(commandQuery("> tog")).toBe("tog");

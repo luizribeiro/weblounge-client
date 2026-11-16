@@ -71,12 +71,12 @@ test.describe("omnibar rows against local Ergo", () => {
 
     await page.keyboard.press("Control+Shift+.");
     const results = page.getByRole("listbox", { name: "Commands" });
-    await expect(
-      results.getByRole("option", { name: /^Settings/u }).locator("kbd"),
-    ).toHaveText("Ctrl+Shift+,");
-    await expect(
-      results.getByRole("option", { name: /^Leave a channel/u }).locator("kbd"),
-    ).toHaveCount(0);
+    const settings = results.getByRole("option", { name: /^Settings/u });
+    await expect(settings.locator("kbd")).toHaveText("Ctrl+Shift+,");
+    await expect(settings.locator("[data-omnibar-suffix]")).toHaveText("View");
+    const leave = results.getByRole("option", { name: /^Leave a channel/u });
+    await expect(leave.locator("kbd")).toHaveCount(0);
+    await expect(leave.locator("[data-omnibar-suffix]")).toHaveCount(0);
     expect(
       await results
         .getByRole("option")

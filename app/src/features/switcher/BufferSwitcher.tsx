@@ -20,6 +20,7 @@ import {
   commandQuery,
   omnibarMode,
   paletteActions,
+  paletteSuffix,
 } from "./command-palette-model";
 import { OmnibarRow } from "./OmnibarRow";
 
@@ -203,7 +204,7 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
                     )}
                   </Show>
                 }
-                suffix={action.group}
+                suffix={paletteSuffix(action)}
                 title={action.shortcut?.labels.join(" / ")}
               />
             )}

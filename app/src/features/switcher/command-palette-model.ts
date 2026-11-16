@@ -3,6 +3,10 @@ import { fuzzyScore } from "./buffer-switcher-model";
 
 export type OmnibarMode = "buffers" | "commands";
 
+export function paletteSuffix(action: ActionEntry): string | undefined {
+  return action.group === "Commands" ? undefined : action.group;
+}
+
 export function omnibarMode(query: string): OmnibarMode {
   return query.startsWith(">") ? "commands" : "buffers";
 }
