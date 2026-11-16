@@ -72,6 +72,7 @@ import {
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
+import { hostNotificationCenter } from "./platform/native-bridge/native-notification-center";
 import { supportsPageNotifications } from "./platform/page-notifications/page-notification-capability";
 import {
   type PushDelivery,
@@ -84,7 +85,6 @@ import {
   closeMessageNotifications,
   conversationReadMarkers,
   syncAppPushState,
-  webNotificationCenter,
 } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
@@ -300,7 +300,7 @@ export function App(props: AppProps) {
     readForegroundSnapshot(document, navigator, window),
   );
   const pushPendingClock = new PushPendingClock();
-  const notificationCenter = webNotificationCenter();
+  const notificationCenter = hostNotificationCenter();
   const knownPushRequirements = new Map<number, PushSyncEvent>();
   const knownPushStates = new Map<number, PushSyncEvent>();
   const rememberPushSyncEvent = (event: PushSyncEvent) => {
