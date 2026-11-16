@@ -4,6 +4,7 @@ mod decrypt;
 mod format;
 mod parse;
 mod prepare;
+mod wasm;
 
 pub use decrypt::{DecryptError, RouteKeys, decrypt_push_payload};
 pub use format::{

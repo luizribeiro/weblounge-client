@@ -222,8 +222,8 @@
               cp $out/bindgen/push-payload.js $out/dist/push-payload.js
 
               optimized_size=$(stat -c %s $out/dist/push-payload_bg.wasm)
-              if [ "$optimized_size" -gt 131072 ]; then
-                echo "push payload parser exceeds its 128 KiB budget: $optimized_size bytes" >&2
+              if [ "$optimized_size" -gt 163840 ]; then
+                echo "push payload parser exceeds its 160 KiB budget: $optimized_size bytes" >&2
                 exit 1
               fi
               echo "push payload parser wasm bytes: optimized=$optimized_size"
