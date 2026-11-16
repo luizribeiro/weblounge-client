@@ -325,6 +325,7 @@ export function MessageList(props: MessageListProps) {
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const [measurementEpoch, setMeasurementEpoch] = createSignal(0);
+  const [virtualizerScrolling, setVirtualizerScrolling] = createSignal(false);
   const [expandedSystemIds, setExpandedSystemIds] = createSignal<
     ReadonlySet<number>
   >(new Set());
@@ -761,6 +762,7 @@ export function MessageList(props: MessageListProps) {
     // reached the end. Arrival can therefore come from either source, while
     // only user input can leave the edge; layout gaps must not freeze it.
     onChange: (instance) => {
+      setVirtualizerScrolling(instance.isScrolling);
       if (!logicallyAtLiveEdge && instance.isAtEnd()) setLiveEdge(true);
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
@@ -1293,6 +1295,7 @@ export function MessageList(props: MessageListProps) {
         class={styles.list}
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
+        data-scrolling={virtualizerScrolling() || undefined}
         role="list"
         onScroll={(event) => {
           const element = event.currentTarget;

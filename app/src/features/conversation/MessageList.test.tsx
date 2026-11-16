@@ -2702,6 +2702,24 @@ function twoAnimationFrames(): Promise<void> {
   );
 }
 
+it("marks the transcript as scrolling until the virtualizer settles", async () => {
+  const messages = Array.from({ length: 30 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    text: `message ${index + 1}`,
+  }));
+  const { container } = render(() => <MessageList messages={messages} />);
+  const list = container.querySelector<HTMLElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  await waitFor(() => expect(list).not.toHaveAttribute("data-scrolling"));
+
+  list.scrollTop = 40;
+  list.dispatchEvent(new Event("scroll"));
+
+  await waitFor(() => expect(list).toHaveAttribute("data-scrolling", "true"));
+  await waitFor(() => expect(list).not.toHaveAttribute("data-scrolling"));
+});
+
 it("defers live-edge geometry until after the scroll handler", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const messages = Array.from({ length: 3 }, (_, index) => ({

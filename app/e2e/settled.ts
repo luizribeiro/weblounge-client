@@ -7,6 +7,7 @@ const inFlight = {
   "history page loading": '[data-divider-kind="loading"]',
   "keyboard geometry": "#root[data-keyboard-watch]",
   "chats scroll restore": "[data-restoring-scroll]",
+  "transcript scroll": "[data-message-list][data-scrolling]",
 } as const;
 
 export interface SettledOptions {
