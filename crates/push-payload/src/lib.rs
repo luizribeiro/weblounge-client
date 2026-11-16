@@ -1,7 +1,9 @@
-//! Typed parsing for one decrypted IRC Web Push payload.
+//! Decryption and typed parsing of IRC Web Push payloads.
 
+mod decrypt;
 mod parse;
 
+pub use decrypt::{DecryptError, RouteKeys, decrypt_push_payload};
 pub use parse::{ChatPayload, ParsePushError, PushEvent, parse_push_payload};
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
