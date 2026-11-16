@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatNotification } from "./push-notification";
+import { chatNotification } from "./page-notification-format";
 
 const mention = {
   networkLabel: "weblounge",

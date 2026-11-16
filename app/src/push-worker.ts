@@ -3,6 +3,10 @@ import {
   ENGINE_DATABASE_VERSION,
 } from "./engine/generated/EngineDatabaseSchema";
 import {
+  bufferPath,
+  withNotificationCount,
+} from "./platform/page-notifications/page-notification-format";
+import {
   type NotificationClients,
   routeNotificationClick,
 } from "./platform/push/notification-routing";
@@ -34,14 +38,12 @@ import {
 import type { PushPresentationState } from "./platform/push/push-delivery-state";
 import { replaceDeadlineFallback } from "./platform/push/push-fallback-replacement";
 import {
-  bufferPath,
   deadlineFallbackNotification,
   genericNotification,
   isChatPayload,
   notificationForLine,
   type ParsedPushEvent,
   sameIrcName,
-  withNotificationCount,
 } from "./platform/push/push-notification";
 import {
   closeNotificationsCoveredByMarkers,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatNotificationMessage } from "../push/push-notification";
+import type { ChatNotificationMessage } from "./page-notification-format";
 import {
   type PageNotification,
   type PageNotificationOptions,

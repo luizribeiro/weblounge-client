@@ -2,8 +2,8 @@ import type {
   BufferProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import type { ChatNotificationMessage } from "../push/push-notification";
 import { supportsPageNotifications } from "./page-notification-capability";
+import type { ChatNotificationMessage } from "./page-notification-format";
 import {
   type PushDelivery,
   shouldPostPageNotification,

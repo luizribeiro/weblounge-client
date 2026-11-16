@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { withNotificationCount } from "./platform/page-notifications/page-notification-format";
 import {
   schedulePushPresentation,
   showOnce,
@@ -9,7 +10,6 @@ import {
   genericNotification,
   notificationForLine,
   type ParsedPushEvent,
-  withNotificationCount,
 } from "./platform/push/push-notification";
 import {
   notificationDataIsRead,

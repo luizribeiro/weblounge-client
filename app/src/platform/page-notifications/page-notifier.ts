@@ -1,11 +1,11 @@
+import { notificationDataIsRead } from "../push/push-notification-state";
 import {
   bufferPath,
   type ChatNotificationMessage,
   chatNotification,
   conversationTag,
   withNotificationCount,
-} from "../push/push-notification";
-import { notificationDataIsRead } from "../push/push-notification-state";
+} from "./page-notification-format";
 
 export interface PageNotification {
   onclick: ((event: Event) => void) | null;

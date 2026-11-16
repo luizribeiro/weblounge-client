@@ -1,9 +1,9 @@
 import type { BufferProjection } from "../../engine/protocol";
+import { conversationTag } from "../page-notifications/page-notification-format";
 import {
   type ConversationNotificationCount,
   writeNotificationCounts,
 } from "./push-database";
-import { conversationTag } from "./push-notification";
 import { notificationDataIsRead } from "./push-notification-state";
 
 interface BadgeNavigator {
