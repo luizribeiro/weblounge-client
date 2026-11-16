@@ -6,6 +6,8 @@ mod launch;
 mod login_item;
 #[cfg(desktop)]
 mod menu;
+#[cfg(any(target_os = "ios", test))]
+mod native;
 mod navigation;
 #[cfg_attr(
     target_os = "ios",
@@ -42,6 +44,8 @@ pub fn run() -> tauri::Result<()> {
             notifications::request_notification_permission,
             notifications::post_notification,
             notifications::close_notification,
+            #[cfg(target_os = "ios")]
+            native::commands::push_permission,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]
