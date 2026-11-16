@@ -99,14 +99,8 @@ test.describe("mobile chat list against local Ergo", () => {
     irc,
   }) => {
     const bot = await irc.peer("chips");
-    await installNativeFeelInstrumentation(page);
-    await page.goto(irc.url());
+    await openWithDirectChat(page, irc, bot, "direct chat for filters");
     const channelRow = page.getByRole("button", { name: irc.channel });
-    await expect(channelRow).toBeVisible();
-    bot.privmsg(irc.account, "direct chat for filters");
-    await expect(directRow(page, bot.nickname)).toBeVisible();
-    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
-    await resetNativeFeelLayoutShift(page);
 
     const chip = page.getByRole("button", { name: "Direct", exact: true });
     const pill = await boxOf(chip);
@@ -138,11 +132,7 @@ test.describe("mobile chat list against local Ergo", () => {
   }) => {
     test.skip(browserName !== "chromium", "reads the Chromium layer tree");
     const bot = await irc.peer("layers");
-    await installNativeFeelInstrumentation(page);
-    await page.goto(irc.url());
-    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
-    bot.privmsg(irc.account, "rows paint into the list");
-    await expect(directRow(page, bot.nickname)).toBeVisible();
+    await openWithDirectChat(page, irc, bot, "rows paint into the list");
 
     await nativeFeelAudit(page);
 
@@ -229,6 +219,25 @@ async function hitsChip(chip: Locator, x: number, y: number) {
     (element, point) => document.elementFromPoint(point.x, point.y) === element,
     { x, y },
   );
+}
+
+/**
+ * The new direct chat sorts above the channel row and pushes it down. That shift is setup, and
+ * it only counts when it lands after Chromium's post-navigation input window, so it is excluded.
+ */
+async function openWithDirectChat(
+  page: Page,
+  irc: IrcTestAccount,
+  bot: IrcClient,
+  text: string,
+): Promise<void> {
+  await installNativeFeelInstrumentation(page);
+  await page.goto(irc.url());
+  await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+  bot.privmsg(irc.account, text);
+  await expect(directRow(page, bot.nickname)).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await resetNativeFeelLayoutShift(page);
 }
 
 function directRow(page: Page, nick: string) {
