@@ -13,6 +13,15 @@ settingGroups:
       PRODUCT_NAME: weblounge dev
       PRODUCT_BUNDLE_IDENTIFIER: org.weblounge.ios.dev
       DEVELOPMENT_TEAM: JR4C2QJKWJ
+  push-payload:
+    base:
+      WEBLOUNGE_REPO: $(SRCROOT)/../../../..
+      WEBLOUNGE_RUST_TARGET[sdk=iphoneos*]: aarch64-apple-ios
+      WEBLOUNGE_RUST_TARGET[sdk=iphonesimulator*]: aarch64-apple-ios-sim
+      SWIFT_OBJC_BRIDGING_HEADER: NotificationService/PushPayload.h
+      HEADER_SEARCH_PATHS: $(inherited) "$(WEBLOUNGE_REPO)/crates/push-payload/include"
+      LIBRARY_SEARCH_PATHS: $(inherited) "$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release"
+      OTHER_LDFLAGS: -lweblounge_push_payload
 targetTemplates:
   app:
     type: application
@@ -106,6 +115,7 @@ targets:
     platform: iOS
     sources:
       - path: NotificationService
+      - path: &sharedStorage ../../ios-shell/ios/Sources/Shared/SharedStorage.swift
     info:
       path: NotificationService/Info.plist
       properties:
@@ -134,3 +144,48 @@ targets:
         TARGETED_DEVICE_FAMILY: 1
         ARCHS: [arm64]
         SKIP_INSTALL: true
+      groups: [push-payload]
+    preBuildScripts:
+      # Cargo tracks its own inputs, so Xcode runs this every build and cargo skips clean work.
+      # Always the size-optimised release profile: the extension has about 24 MB of memory.
+      - name: Build push-payload
+        basedOnDependencyAnalysis: false
+        script: |
+          command -v cargo >/dev/null || { echo "error: cargo is not on PATH; build from nix develop" >&2; exit 1; }
+          cargo rustc --manifest-path "${WEBLOUNGE_REPO:?}/Cargo.toml" --target-dir "${WEBLOUNGE_REPO:?}/target" \
+            -p weblounge-push-payload --lib --crate-type staticlib --release --target "${WEBLOUNGE_RUST_TARGET:?}"
+        outputFiles:
+          - $(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release/libweblounge_push_payload.a
+  # Runs in the dev app, which `cargo tauri ios build --debug` must have built, so the extension's
+  # code gets the app's keychain and App Group entitlements; Tauri's Rust step only runs under the
+  # Tauri CLI, so the app can't be built from this scheme.
+  weblounge-notifications-tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NotificationService
+        includes: ["*.swift"]
+      - path: *sharedStorage
+      - path: NotificationServiceTests
+    dependencies:
+      - target: weblounge-notifications
+        embed: false
+    settings:
+      groups: [push-payload]
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.weblounge.ios.dev.notifications-tests
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_FILE: ""
+        ARCHS: [arm64]
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/weblounge dev.app/weblounge dev
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  weblounge-notifications-tests:
+    build:
+      targets:
+        weblounge-notifications-tests: [test]
+    test:
+      targets: [weblounge-notifications-tests]
+      # The host app forwards its stderr to the unified log, which echoes to stderr under test.
+      environmentVariables:
+        OS_ACTIVITY_DT_MODE: "NO"

@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
+		180037152BE5084606C99DAF /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		18736F73E1D39F3C50757A75 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F971CFB6BA1EF47406D9322 /* Security.framework */; };
 		219B79C4E403BCB1409A3CA0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */; };
+		40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		4679C7106E6CDB4B7932261A /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 4D5AE401A83F98461B91ADD0 /* assets */; };
 		46B437F58B4C1DBC82B4C653 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */; };
 		49E31E3A7C246C2C0A07764D /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 07735E446B6577701FBE3E05 /* Metal.framework */; };
 		4D406D129073DBC60DC13B1E /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EB718DCE48602B3344F5103B /* QuartzCore.framework */; };
+		594A95AE26B163BB5A15C8AE /* PushPayloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */; };
 		5B3D42E43DD9A13901C88DE4 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F9084A4E509617E31B9C7526 /* MetalKit.framework */; };
 		5BECB97E529B3C1A88AB6E15 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83E9585FBD3000C2A629FA71 /* WebKit.framework */; };
 		71AFB710E266E86B7947F7E5 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6559F866E46AE0486D582987 /* libapp.a */; };
@@ -21,12 +25,21 @@
 		9966DF30BE9CBCAF46341F19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */; };
 		A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		AE182E69546D4A69BE2CC95D /* weblounge-notifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */; };
+		E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
 		F14596EC45FA786F76B688C5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		BFDD2AB2AA0971C1980BFBD9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0F60D7A73F40F9C9A32F0125 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 88FBC796CF402F62031CD345;
+			remoteInfo = "weblounge-notifications";
+		};
+		E2F4D0084993711B177FA5D6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 0F60D7A73F40F9C9A32F0125 /* Project object */;
 			proxyType = 1;
@@ -55,8 +68,11 @@
 		0C47CD5B3006ABAD6772C1EC /* notification.test.mjs */ = {isa = PBXFileReference; path = notification.test.mjs; sourceTree = "<group>"; };
 		0D360BA0F25D8E58479BD5D4 /* notification.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = notification.js; sourceTree = "<group>"; };
 		0D78E03714F8489CAC4B6B1E /* title_bar.rs */ = {isa = PBXFileReference; path = title_bar.rs; sourceTree = "<group>"; };
+		14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayloadTests.swift; sourceTree = "<group>"; };
 		167A6DF2F79F47A9D8F152E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1BA2D91AC253ADF4051E323C /* failure.rs */ = {isa = PBXFileReference; path = failure.rs; sourceTree = "<group>"; };
+		1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStorage.swift; sourceTree = "<group>"; };
+		28B434B02CAA7C6AB11E5862 /* PushPayload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PushPayload.h; sourceTree = "<group>"; };
 		2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		30F26D139D1475DE27D32600 /* service.rs */ = {isa = PBXFileReference; path = service.rs; sourceTree = "<group>"; };
 		379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "weblounge-notifications.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,6 +91,7 @@
 		7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		7DE182ACA943D2C2748DA9C0 /* page_event.rs */ = {isa = PBXFileReference; path = page_event.rs; sourceTree = "<group>"; };
+		7F1DE7CAF32CF14500EE5C5A /* weblounge-notifications-tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "weblounge-notifications-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7FDA4D6732F335F1E01616CE /* menu.rs */ = {isa = PBXFileReference; path = menu.rs; sourceTree = "<group>"; };
 		80885CB4C4912DF2F902B153 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		81B5FBACE96E687CBEA41126 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
@@ -88,6 +105,7 @@
 		B0C1133853D411030DED36E5 /* login_item.rs */ = {isa = PBXFileReference; path = login_item.rs; sourceTree = "<group>"; };
 		B50FF378CC28A8F869A4944F /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		B7FB1B2C497A82C37FE4766D /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		C50D4220499B5323D07B1C26 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
 		C530C63D1CC9557790FE43AD /* events.rs */ = {isa = PBXFileReference; path = events.rs; sourceTree = "<group>"; };
 		C90ABEE746BF9B949B45394B /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		D179A914815A8FC4D090F766 /* model.rs */ = {isa = PBXFileReference; path = model.rs; sourceTree = "<group>"; };
@@ -134,9 +152,18 @@
 			isa = PBXGroup;
 			children = (
 				47935D9A9BC127CD5CDF3424 /* weblounge-desktop_iOS.app */,
+				7F1DE7CAF32CF14500EE5C5A /* weblounge-notifications-tests.xctest */,
 				379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3ACEAA5FDBBEA0B15C35D971 /* NotificationServiceTests */ = {
+			isa = PBXGroup;
+			children = (
+				14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */,
+			);
+			path = NotificationServiceTests;
 			sourceTree = "<group>";
 		};
 		53E189743713489F3214B637 /* window */ = {
@@ -230,6 +257,15 @@
 			path = notifications;
 			sourceTree = "<group>";
 		};
+		CFBB789DC49BDD081971CB62 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */,
+			);
+			name = Shared;
+			path = "../../ios-shell/ios/Sources/Shared";
+			sourceTree = "<group>";
+		};
 		DF34E124DB2C5073594A5661 = {
 			isa = PBXGroup;
 			children = (
@@ -238,6 +274,8 @@
 				8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */,
 				F67944E4D650C275D0A0689A /* Externals */,
 				FDAF777B06ED64476766C3D1 /* NotificationService */,
+				3ACEAA5FDBBEA0B15C35D971 /* NotificationServiceTests */,
+				CFBB789DC49BDD081971CB62 /* Shared */,
 				9A5043A950C305307BF67A0A /* Sources */,
 				76895B04EE3FB70B3C46CF8D /* src */,
 				E3F350922CE915DDB1AECADE /* weblounge-desktop_iOS */,
@@ -270,6 +308,8 @@
 				588AA8C84FC4CE6699448C62 /* NotificationService.entitlements */,
 				E15EC80151E2A23B84CCE80A /* NotificationService.swift */,
 				7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */,
+				28B434B02CAA7C6AB11E5862 /* PushPayload.h */,
+				C50D4220499B5323D07B1C26 /* PushPayload.swift */,
 			);
 			path = NotificationService;
 			sourceTree = "<group>";
@@ -303,6 +343,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = AE0B9A6C9261A9EED822E174 /* Build configuration list for PBXNativeTarget "weblounge-notifications" */;
 			buildPhases = (
+				15CB92CDD9FF042C70EBB414 /* Build push-payload */,
 				6ED2A28FD132B249D2014056 /* Sources */,
 				DDEB3A99433277C303618AED /* Resources */,
 			);
@@ -316,6 +357,24 @@
 			productName = "weblounge-notifications";
 			productReference = 379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		96DB799274DBA79BA349FE1E /* weblounge-notifications-tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5C6D28259F8898FF24EE6384 /* Build configuration list for PBXNativeTarget "weblounge-notifications-tests" */;
+			buildPhases = (
+				367BDF6A34F3569BF3EBD1CD /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6E968A8AC026FDF2465AD301 /* PBXTargetDependency */,
+			);
+			name = "weblounge-notifications-tests";
+			packageProductDependencies = (
+			);
+			productName = "weblounge-notifications-tests";
+			productReference = 7F1DE7CAF32CF14500EE5C5A /* weblounge-notifications-tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -350,6 +409,7 @@
 			targets = (
 				453E13F1530E2FAE17074396 /* weblounge-desktop_iOS */,
 				88FBC796CF402F62031CD345 /* weblounge-notifications */,
+				96DB799274DBA79BA349FE1E /* weblounge-notifications-tests */,
 			);
 		};
 /* End PBXProject section */
@@ -398,9 +458,40 @@
 			shellPath = /bin/sh;
 			shellScript = "cargo tauri ios xcode-script -v --platform \"${PLATFORM_DISPLAY_NAME:?}\" --sdk-root \"${SDKROOT:?}\" --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration \"${CONFIGURATION:?}\" ${FORCE_COLOR} ${ARCHS:?}\n";
 		};
+		15CB92CDD9FF042C70EBB414 /* Build push-payload */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build push-payload";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release/libweblounge_push_payload.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "command -v cargo >/dev/null || { echo \"error: cargo is not on PATH; build from nix develop\" >&2; exit 1; }\ncargo rustc --manifest-path \"${WEBLOUNGE_REPO:?}/Cargo.toml\" --target-dir \"${WEBLOUNGE_REPO:?}/target\" \\\n  -p weblounge-push-payload --lib --crate-type staticlib --release --target \"${WEBLOUNGE_RUST_TARGET:?}\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		367BDF6A34F3569BF3EBD1CD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */,
+				40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */,
+				594A95AE26B163BB5A15C8AE /* PushPayloadTests.swift in Sources */,
+				E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		53CC901B510478C174059CE7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -414,12 +505,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */,
+				180037152BE5084606C99DAF /* PushPayload.swift in Sources */,
+				156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		6E968A8AC026FDF2465AD301 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 88FBC796CF402F62031CD345 /* weblounge-notifications */;
+			targetProxy = E2F4D0084993711B177FA5D6 /* PBXContainerItemProxy */;
+		};
 		A2DDAAC03945198821F4315F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 88FBC796CF402F62031CD345 /* weblounge-notifications */;
@@ -531,20 +629,55 @@
 				);
 				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
 				DEVELOPMENT_TEAM = JR4C2QJKWJ;
+				HEADER_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/crates/push-payload/include\"";
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release\"";
+				OTHER_LDFLAGS = "-lweblounge_push_payload";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(WEBLOUNGE_APP_IDENTIFIER).notifications";
 				PRODUCT_NAME = "weblounge-notifications";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = NotificationService/PushPayload.h;
 				TARGETED_DEVICE_FAMILY = 1;
 				WEBLOUNGE_APP_IDENTIFIER = "$(TAURI_WEBLOUNGE_APP_IDENTIFIER:default=org.weblounge.ios.dev)";
+				WEBLOUNGE_REPO = "$(SRCROOT)/../../../..";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphoneos*]" = "aarch64-apple-ios";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphonesimulator*]" = "aarch64-apple-ios-sim";
 			};
 			name = release;
+		};
+		85302E301E114068B3462770 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = (
+					arm64,
+				);
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/crates/push-payload/include\"";
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release\"";
+				OTHER_LDFLAGS = "-lweblounge_push_payload";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.weblounge.ios.dev.notifications-tests";
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = NotificationService/PushPayload.h;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/weblounge dev.app/weblounge dev";
+				WEBLOUNGE_REPO = "$(SRCROOT)/../../../..";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphoneos*]" = "aarch64-apple-ios";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphonesimulator*]" = "aarch64-apple-ios-sim";
+			};
+			name = debug;
 		};
 		8693D9B1BB4C06005A5ADBA2 /* release */ = {
 			isa = XCBuildConfiguration;
@@ -634,6 +767,34 @@
 			};
 			name = debug;
 		};
+		D9985BEA23D7374481FA3BE9 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = (
+					arm64,
+				);
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/crates/push-payload/include\"";
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release\"";
+				OTHER_LDFLAGS = "-lweblounge_push_payload";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.weblounge.ios.dev.notifications-tests";
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = NotificationService/PushPayload.h;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/weblounge dev.app/weblounge dev";
+				WEBLOUNGE_REPO = "$(SRCROOT)/../../../..";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphoneos*]" = "aarch64-apple-ios";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphonesimulator*]" = "aarch64-apple-ios-sim";
+			};
+			name = release;
+		};
 		E2627396D6F49704954A1C70 /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -642,24 +803,40 @@
 				);
 				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
 				DEVELOPMENT_TEAM = JR4C2QJKWJ;
+				HEADER_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/crates/push-payload/include\"";
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) \"$(WEBLOUNGE_REPO)/target/$(WEBLOUNGE_RUST_TARGET)/release\"";
+				OTHER_LDFLAGS = "-lweblounge_push_payload";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(WEBLOUNGE_APP_IDENTIFIER).notifications";
 				PRODUCT_NAME = "weblounge-notifications";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = NotificationService/PushPayload.h;
 				TARGETED_DEVICE_FAMILY = 1;
 				WEBLOUNGE_APP_IDENTIFIER = "$(TAURI_WEBLOUNGE_APP_IDENTIFIER:default=org.weblounge.ios.dev)";
+				WEBLOUNGE_REPO = "$(SRCROOT)/../../../..";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphoneos*]" = "aarch64-apple-ios";
+				"WEBLOUNGE_RUST_TARGET[sdk=iphonesimulator*]" = "aarch64-apple-ios-sim";
 			};
 			name = debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		5C6D28259F8898FF24EE6384 /* Build configuration list for PBXNativeTarget "weblounge-notifications-tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				85302E301E114068B3462770 /* debug */,
+				D9985BEA23D7374481FA3BE9 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
 		66D0731E4E491B3021805550 /* Build configuration list for PBXProject "weblounge-desktop" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
