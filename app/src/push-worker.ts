@@ -2,10 +2,7 @@ import {
   ENGINE_DATABASE_NAME,
   ENGINE_DATABASE_VERSION,
 } from "./engine/generated/EngineDatabaseSchema";
-import {
-  bufferPath,
-  withNotificationCount,
-} from "./platform/page-notifications/page-notification-format";
+import { decodeBase64Url } from "./platform/push/base64url";
 import {
   type NotificationClients,
   routeNotificationClick,
@@ -22,10 +19,6 @@ import {
   transactionDone,
 } from "./platform/push/push-database";
 import {
-  decodePushBase64Url,
-  decryptPushPayload,
-} from "./platform/push/push-decryption";
-import {
   type PreparedPushDelivery,
   PushDeliveryCoordinator,
 } from "./platform/push/push-delivery-coordinator";
@@ -40,10 +33,10 @@ import { replaceDeadlineFallback } from "./platform/push/push-fallback-replaceme
 import {
   deadlineFallbackNotification,
   genericNotification,
-  isChatPayload,
-  notificationForLine,
-  type ParsedPushEvent,
-  sameIrcName,
+  type NotificationPresentation,
+  PushDecryptError,
+  type PushedMessage,
+  preparePushNotification,
 } from "./platform/push/push-notification";
 import {
   closeNotificationsCoveredByMarkers,
@@ -169,7 +162,7 @@ type PushCommit =
   | {
       readonly kind: "visible";
       readonly route: StoredRoute;
-      readonly event: ParsedPushEvent | undefined;
+      readonly pushed: PushedMessage | undefined;
       readonly tag: string | undefined;
       readonly receiptId: string;
     }
@@ -613,40 +606,32 @@ async function preparePushDelivery(
     state.generic.receiptId,
   );
   await waitForPushDeliveryTestGate(event.data?.json());
-  let plaintext: Uint8Array<ArrayBuffer>;
+  let prepared: Awaited<ReturnType<typeof preparePushNotification>>;
   try {
-    plaintext = await trace.measure("decrypt", () =>
-      decryptPushPayload(
-        decodePushBase64Url(envelope.ciphertext),
-        route.privateKeyPkcs8,
-        route.p256dh,
-        route.auth,
-      ),
+    prepared = await preparePushNotification(
+      route,
+      decodeBase64Url(envelope.ciphertext),
+      parser,
+      (error) => reportPushError(error, input),
+      (stage, work) => trace.measure(stage, work),
     );
   } catch (error: unknown) {
-    if (!state.expired)
+    if (error instanceof PushDecryptError && !state.expired)
       await markForReregistration(route.routeId).catch(() => undefined);
     throw error;
   }
-  const parsed = await notificationForLine(
-    route,
-    new TextDecoder().decode(plaintext),
-    parser,
-    (error) => reportPushError(error, input),
-    (stage, work) => trace.measure(stage, work),
-  );
-  if (parsed.event?.type === "markread") {
+  if (prepared.kind === "markread") {
     return {
       kind: "silent",
       commit: {
         kind: "markread",
-        tag: conversationTag(route, parsed.event.target),
-        until: parsed.event.until,
+        tag: prepared.tag,
+        until: prepared.until,
         receiptId: requiredReceiptId(state.generic),
       },
     };
   }
-  if (parsed.event?.type === "ping") {
+  if (prepared.kind === "ping") {
     return {
       kind: "silent",
       commit: { kind: "ping", receiptId: requiredReceiptId(state.generic) },
@@ -654,25 +639,27 @@ async function preparePushDelivery(
   }
   const receiptId = requiredReceiptId(state.generic);
   const receiptSequence = requiredReceiptSequence(state.generic);
+  const pushed = prepared.kind === "visible" ? prepared.pushed : undefined;
   const presentation =
-    parsed.event !== undefined && isChatPayload(parsed.event)
+    prepared.kind === "visible" && pushed !== undefined
       ? countedChatPresentation(
-          parsed.presentation,
-          parsed.event,
+          prepared.presentation,
+          pushed,
+          prepared.countedBody,
           notificationState,
           receiptId,
           receiptSequence,
           pendingMessages,
         )
-      : parsed.presentation;
+      : prepared.presentation;
   return {
     kind: "visible",
     presentation,
-    ...(parsed.event === undefined ? { finalGeneric: true } : {}),
+    ...(prepared.kind === "generic" ? { finalGeneric: true } : {}),
     commit: {
       kind: "visible",
       route,
-      event: parsed.event,
+      pushed,
       tag: presentation.options.tag,
       receiptId,
     },
@@ -717,17 +704,17 @@ async function commitPushDelivery(commit: PushCommit): Promise<void> {
       await recordShownNotification(undefined, undefined);
       return;
     }
-    await recordShownNotification(commit.tag, commit.event);
-    if (commit.event !== undefined && isChatPayload(commit.event)) {
-      await storePushedMessage(commit.route, commit.event);
+    await recordShownNotification(commit.tag, commit.pushed);
+    if (commit.pushed !== undefined) {
+      await storePushedMessage(commit.pushed);
       if (commit.tag !== undefined) {
         await closeSupersededConversationNotifications(
           registrationNotifications,
           commit.tag,
           {
             receiptId: commit.receiptId,
-            messageId: commit.event.msgid,
-            messageTime: commit.event.time,
+            messageId: commit.pushed.msgid,
+            messageTime: commit.pushed.time,
           },
           pendingReceipts,
         );
@@ -751,9 +738,8 @@ async function notifyWindowsOfSubscriptionChange(): Promise<void> {
 
 async function recordShownNotification(
   tag: string | undefined,
-  event: ParsedPushEvent | undefined,
+  chat: PushedMessage | undefined,
 ): Promise<void> {
-  const chat = event !== undefined && isChatPayload(event) ? event : undefined;
   const total = await updateNotificationState((state) =>
     recordPresentedNotification(state, {
       ...(tag === undefined ? {} : { tag }),
@@ -915,9 +901,6 @@ async function setWorkerBadge(count: number): Promise<void> {
   else await badgeNavigator.setAppBadge?.(count);
 }
 
-function conversationTag(route: StoredRoute, target: string): string {
-  return `${route.networkLabel}/${target.toLowerCase()}`;
-}
 async function loadPushParser(
   measure: MeasurePushParserStage,
 ): Promise<PushPayloadParser> {
@@ -1012,8 +995,9 @@ async function findRouteContext(
 }
 
 function countedChatPresentation(
-  presentation: PushPresentation,
-  event: Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }>,
+  presentation: NotificationPresentation,
+  message: PushedMessage,
+  countedBody: (body: string, count: number) => string,
   state: NotificationState,
   receiptId: string,
   receiptSequence: number,
@@ -1025,23 +1009,21 @@ function countedChatPresentation(
     receiptId,
     receiptSequence,
     tag,
-    messageId: event.msgid,
-    messageTime: event.time,
+    messageId: message.msgid,
+    messageTime: message.time,
   };
   for (const pending of [...pendingMessages, current]
     .filter((message) => message.receiptSequence <= receiptSequence)
     .sort((left, right) => left.receiptSequence - right.receiptSequence)) {
     recordPresentedNotification(state, pending);
   }
-  const counted = withNotificationCount(
-    presentation,
-    conversationNotificationCount(state, tag),
-  );
-  const data = counted.options.data;
+  const body = presentation.options.body ?? "";
+  const data = presentation.options.data;
   return {
-    ...counted,
+    ...presentation,
     options: {
-      ...counted.options,
+      ...presentation.options,
+      body: countedBody(body, conversationNotificationCount(state, tag)),
       data:
         typeof data === "object" && data !== null
           ? { ...data, receiptId, receiptSequence }
@@ -1112,28 +1094,7 @@ async function markForReregistration(routeId: string): Promise<void> {
   }
 }
 
-async function storePushedMessage(
-  route: StoredRoute,
-  message: Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }>,
-): Promise<boolean> {
-  const direct = sameIrcName(message.target, route.nickname);
-  const record = {
-    schema: 1,
-    network_label: route.networkLabel,
-    nickname: route.nickname,
-    route: bufferPath(
-      route.networkLabel,
-      direct ? message.sender : message.target,
-      direct,
-    ),
-    sender: message.sender,
-    account: message.account,
-    target: message.target,
-    msgid: message.msgid,
-    time: message.time,
-    text: message.text,
-    kind: message.type,
-  };
+async function storePushedMessage(message: PushedMessage): Promise<boolean> {
   const database = await openCurrentEngineDatabase();
   try {
     if (!database.objectStoreNames.contains(engineCacheStore)) return true;
@@ -1141,9 +1102,9 @@ async function storePushedMessage(
     const completed = transactionDone(transaction);
     const store = transaction.objectStore(engineCacheStore);
     const key = textEncoder.encode(
-      `pushed-message\0${route.networkLabel}\0${message.msgid}`,
+      `pushed-message\0${message.network_label}\0${message.msgid}`,
     );
-    const value = textEncoder.encode(JSON.stringify(record));
+    const value = textEncoder.encode(JSON.stringify(message));
     const existing = await requestResult(store.get(key));
     store.put(value, key);
     await completed;

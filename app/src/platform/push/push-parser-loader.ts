@@ -1,11 +1,23 @@
 export interface PushPayloadParser {
-  parse_push_payload_json(input: string): string;
+  prepare_notification(
+    ciphertext: Uint8Array,
+    privateKeyPkcs8: Uint8Array,
+    auth: Uint8Array,
+    networkLabel: string,
+    nickname: string,
+  ): string;
+  counted_notification_body(
+    body: string,
+    count: number,
+    newMessages: string,
+  ): string;
 }
 
 export type PushParserStage =
   | "parser_cache_lookup"
   | "parser_load"
   | "parser_wasm_load"
+  | "decrypt"
   | "parse";
 export type MeasurePushParserStage = <T>(
   stage: PushParserStage,
@@ -24,18 +36,16 @@ export class PushParserLoader {
     this.#load = load;
   }
 
-  async parse(
-    line: string,
+  async load(
     measure: MeasurePushParserStage = async (_stage, work) => work(),
-  ): Promise<string> {
+  ): Promise<PushPayloadParser> {
     let ready = this.#ready;
     if (ready === undefined) {
       ready = this.#load(measure);
       this.#ready = ready;
     }
     try {
-      const loaded = await measure("parser_load", () => ready);
-      return await measure("parse", () => loaded.parse_push_payload_json(line));
+      return await measure("parser_load", () => ready);
     } catch (error: unknown) {
       if (this.#ready === ready) this.#ready = undefined;
       throw error;

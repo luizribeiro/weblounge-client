@@ -1,42 +1,15 @@
-import {
-  bufferPath,
-  chatNotification,
-  conversationTag,
-} from "../page-notifications/page-notification-format";
+import { decodeBase64Url } from "./base64url";
 import type {
   MeasurePushParserStage,
   PushParserLoader,
+  PushPayloadParser,
 } from "./push-parser-loader";
 
-const noticeType = `not${"ice"}` as const;
-
 export interface PushNotificationRoute {
-  readonly networkId: number;
   readonly networkLabel: string;
   readonly nickname: string;
-}
-
-export type ParsedPushEvent =
-  | ({ readonly type: "message" | typeof noticeType | "action" } & ChatPayload)
-  | {
-      readonly type: "invite";
-      readonly sender: string;
-      readonly target: string;
-    }
-  | {
-      readonly type: "markread";
-      readonly target: string;
-      readonly until: string;
-    }
-  | { readonly type: "ping" };
-
-export interface ChatPayload {
-  readonly sender: string;
-  readonly account: string | null;
-  readonly target: string;
-  readonly msgid: string;
-  readonly time: string;
-  readonly text: string;
+  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
+  readonly auth: string;
 }
 
 export interface NotificationPresentation {
@@ -47,27 +20,66 @@ export interface NotificationPresentation {
   readonly fallbackId?: string;
 }
 
-export interface ParsedNotification {
-  readonly presentation: NotificationPresentation;
-  readonly event?: ParsedPushEvent;
+export interface PushedMessage {
+  readonly schema: 1;
+  readonly network_label: string;
+  readonly nickname: string;
+  readonly route: string;
+  readonly sender: string;
+  readonly account: string | null;
+  readonly target: string;
+  readonly msgid: string;
+  readonly time: string;
+  readonly text: string;
+  readonly kind: "message" | "notice" | "action";
 }
 
-export async function notificationForLine(
+export type PreparedPush =
+  | {
+      readonly kind: "visible";
+      readonly presentation: NotificationPresentation;
+      readonly pushed: PushedMessage | undefined;
+      readonly countedBody: (body: string, count: number) => string;
+    }
+  | { readonly kind: "markread"; readonly tag: string; readonly until: string }
+  | { readonly kind: "ping" }
+  | {
+      readonly kind: "generic";
+      readonly presentation: NotificationPresentation;
+    };
+
+export class PushDecryptError extends Error {}
+
+export async function preparePushNotification(
   route: PushNotificationRoute,
-  line: string,
-  parser: PushParserLoader,
+  ciphertext: Uint8Array<ArrayBuffer>,
+  loader: PushParserLoader,
   reportError: (error: unknown) => void = () => undefined,
-  measure?: MeasurePushParserStage,
-): Promise<ParsedNotification> {
+  measure: MeasurePushParserStage = async (_stage, work) => work(),
+): Promise<PreparedPush> {
+  let parser: PushPayloadParser;
   try {
-    const parsed = await parser.parse(line, measure);
-    const decode = () => decodeParsedEvent(JSON.parse(parsed));
-    const event =
-      measure === undefined ? decode() : await measure("parse", decode);
-    return { presentation: notificationFor(route, event), event };
+    parser = await loader.load(measure);
   } catch (error: unknown) {
     reportError(error);
-    return { presentation: genericNotification(route.networkLabel) };
+    return genericPush(route.networkLabel);
+  }
+  const outcome = await measure("decrypt", () =>
+    decryptedOutcome(
+      parser.prepare_notification(
+        ciphertext,
+        route.privateKeyPkcs8,
+        decodeBase64Url(route.auth),
+        route.networkLabel,
+        route.nickname,
+      ),
+    ),
+  );
+  try {
+    return await measure("parse", () => preparedPush(outcome, parser));
+  } catch (error: unknown) {
+    reportError(error);
+    return genericPush(route.networkLabel);
   }
 }
 
@@ -103,89 +115,123 @@ export function deadlineFallbackNotification(
   };
 }
 
-export function isChatPayload(
-  event: ParsedPushEvent,
-): event is Extract<
-  ParsedPushEvent,
-  { type: "message" | typeof noticeType | "action" }
-> {
-  return ["message", noticeType, "action"].includes(event.type);
+function genericPush(networkLabel: string): PreparedPush {
+  return { kind: "generic", presentation: genericNotification(networkLabel) };
 }
 
-function notificationFor(
-  route: PushNotificationRoute,
-  event: ParsedPushEvent,
-): NotificationPresentation {
-  if (isChatPayload(event)) {
-    const direct = sameIrcName(event.target, route.nickname);
-    return chatNotification({
-      networkLabel: route.networkLabel,
-      buffer: direct ? event.sender : event.target,
-      direct,
-      sender: event.sender,
-      action: event.type === "action",
-      text: event.text,
-      msgid: event.msgid,
-      time: event.time,
-    });
+function decryptedOutcome(json: string): object {
+  const outcome = parsedJson(json);
+  if (typeof outcome !== "object" || outcome === null) return {};
+  if (
+    "outcome" in outcome &&
+    outcome.outcome === "failed" &&
+    "stage" in outcome &&
+    outcome.stage === "decrypt"
+  ) {
+    throw new PushDecryptError(
+      "message" in outcome ? String(outcome.message) : "decrypt failed",
+    );
   }
-  if (event.type === "invite") {
-    const bufferRoute = bufferPath(route.networkLabel, event.target, false);
+  return outcome;
+}
+
+function preparedPush(
+  outcome: object,
+  parser: PushPayloadParser,
+): PreparedPush {
+  if (
+    !("outcome" in outcome) ||
+    outcome.outcome !== "prepared" ||
+    !("notification" in outcome) ||
+    typeof outcome.notification !== "object" ||
+    outcome.notification === null ||
+    !("kind" in outcome.notification)
+  ) {
+    throw new Error(
+      "message" in outcome ? String(outcome.message) : "invalid prepared push",
+    );
+  }
+  const notification = outcome.notification;
+  if (notification.kind === "ping") return { kind: "ping" };
+  if (
+    notification.kind === "markread" &&
+    "tag" in notification &&
+    typeof notification.tag === "string" &&
+    "until" in notification &&
+    typeof notification.until === "string"
+  ) {
     return {
-      title: event.sender,
-      options: {
-        body: `Invited you to ${event.target}`,
-        tag: conversationTag(route.networkLabel, event.target),
-        data: { route: bufferRoute },
-      },
+      kind: "markread",
+      tag: notification.tag,
+      until: notification.until,
     };
   }
-  return genericNotification(route.networkLabel);
+  if (
+    notification.kind === "visible" &&
+    "title" in notification &&
+    typeof notification.title === "string" &&
+    "body" in notification &&
+    typeof notification.body === "string" &&
+    "threadId" in notification &&
+    typeof notification.threadId === "string" &&
+    "userInfo" in notification &&
+    typeof notification.userInfo === "object" &&
+    notification.userInfo !== null &&
+    "pushed" in notification
+  ) {
+    return {
+      kind: "visible",
+      presentation: {
+        title: notification.title,
+        options: {
+          body: notification.body,
+          tag: notification.threadId,
+          data: notification.userInfo,
+        },
+      },
+      pushed: pushedMessage(notification.pushed),
+      countedBody: (body, count) =>
+        parser.counted_notification_body(body, count, __PUSH_NEW_MESSAGES__),
+    };
+  }
+  throw new Error("invalid prepared push");
 }
 
-export function sameIrcName(first: string, second: string): boolean {
-  return first.localeCompare(second, "en", { sensitivity: "base" }) === 0;
+function parsedJson(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
 }
 
-function decodeParsedEvent(value: unknown): ParsedPushEvent {
-  if (typeof value !== "object" || value === null || !("type" in value)) {
-    throw new Error("invalid parsed push event");
-  }
-  if (value.type === "ping") return { type: "ping" };
+function pushedMessage(value: unknown): PushedMessage | undefined {
+  if (value === null) return undefined;
   if (
-    value.type === "markread" &&
-    "target" in value &&
-    typeof value.target === "string" &&
-    "until" in value &&
-    typeof value.until === "string"
-  ) {
-    return { type: value.type, target: value.target, until: value.until };
-  }
-  if (
-    value.type === "invite" &&
-    "sender" in value &&
-    typeof value.sender === "string" &&
-    "target" in value &&
-    typeof value.target === "string"
-  ) {
-    return { type: value.type, sender: value.sender, target: value.target };
-  }
-  if (
-    ["message", noticeType, "action"].includes(String(value.type)) &&
-    "sender" in value &&
-    typeof value.sender === "string" &&
+    typeof value === "object" &&
+    "schema" in value &&
+    value.schema === 1 &&
+    "kind" in value &&
+    ["message", "notice", "action"].includes(String(value.kind)) &&
     "account" in value &&
     (value.account === null || typeof value.account === "string") &&
-    "target" in value &&
-    typeof value.target === "string" &&
-    "msgid" in value &&
-    typeof value.msgid === "string" &&
-    "time" in value &&
-    typeof value.time === "string" &&
-    "text" in value &&
-    typeof value.text === "string"
+    pushedTextFields.every(
+      (field) =>
+        field in value && typeof Reflect.get(value, field) === "string",
+    )
   ) {
-    return value as ParsedPushEvent;
+    return value as PushedMessage;
   }
-  throw new Error("invalid parsed push event");
+  throw new Error("invalid pushed message");
 }
+
+const pushedTextFields = [
+  "network_label",
+  "nickname",
+  "route",
+  "sender",
+  "target",
+  "msgid",
+  "time",
+  "text",
+] as const;
