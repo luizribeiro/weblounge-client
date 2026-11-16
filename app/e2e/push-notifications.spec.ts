@@ -10,6 +10,10 @@ import { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { deliverPush, deliverPushes } from "./push-delivery";
 import { deliverStablePushBatch } from "./stable-push-batch";
+import {
+  notificationPromptDismissed,
+  trackDedicatedEngine,
+} from "./tracked-engine-worker";
 
 const routeId = "route-push-e2e";
 const pushHarnessScope = "/e2e/push-events/";
@@ -57,7 +61,7 @@ test("leaves a fresh engine database for the engine to create", async ({
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
 
-  await expect(loadNotificationPromptDismissal(page)).resolves.toBeUndefined();
+  await expect(notificationPromptDismissed(page)).resolves.toBe(false);
   const database = await openEngineDatabase(page);
   try {
     await expect(
@@ -836,62 +840,6 @@ test("reconciles a restored pushed direct message with history", async ({
   // The plaintext fixture turns the provisional row into an unverified authoritative row.
   await expect(row).toHaveAttribute("data-unverified-sender", "true");
 });
-
-async function trackDedicatedEngine(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(globalThis, "SharedWorker", {
-      configurable: true,
-      value: undefined,
-    });
-    const NativeWorker = Worker;
-    class TrackedWorker extends NativeWorker {
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options);
-        Reflect.set(globalThis, "pushTestEngineWorker", this);
-      }
-    }
-    Object.defineProperty(globalThis, "Worker", {
-      configurable: true,
-      value: TrackedWorker,
-    });
-  });
-}
-
-async function loadNotificationPromptDismissal(page: Page): Promise<void> {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const worker = Reflect.get(globalThis, "pushTestEngineWorker");
-        if (!(worker instanceof Worker)) {
-          reject(new Error("dedicated engine worker is unavailable"));
-          return;
-        }
-        const id = crypto.randomUUID();
-        const onMessage = (event: MessageEvent<unknown>) => {
-          const message = event.data;
-          if (
-            typeof message !== "object" ||
-            message === null ||
-            !("id" in message) ||
-            message.id !== id
-          ) {
-            return;
-          }
-          worker.removeEventListener("message", onMessage);
-          if ("type" in message && message.type === "command_result") resolve();
-          else reject(new Error("notification prompt dismissal read failed"));
-        };
-        worker.addEventListener("message", onMessage);
-        worker.postMessage({
-          type: "request",
-          payload: {
-            id,
-            request: { type: "load_notification_prompt_dismissal" },
-          },
-        });
-      }),
-  );
-}
 
 async function notifications(page: Page, scope = "/") {
   return page.evaluate(async (registrationScope) => {
