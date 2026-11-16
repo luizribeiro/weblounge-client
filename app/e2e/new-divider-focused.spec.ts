@@ -9,6 +9,11 @@ import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import {
+  installFocusControl,
+  setPageFocused,
+  setPageHidden,
+} from "./page-lifecycle";
+import {
   installPageNotificationStub,
   postedPageNotifications,
 } from "./page-notification-stub";
@@ -194,40 +199,6 @@ function bufferUnreadCount(page: Page, title: string): Promise<number> {
     if (desktopCount !== null) return Number(desktopCount);
     return Number(row.querySelector('[role="status"]')?.textContent ?? 0);
   });
-}
-
-async function setPageHidden(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("visibility control is missing");
-    setter(nextHidden);
-  }, hidden);
-}
-
-async function installFocusControl(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    let focused = true;
-    Object.defineProperty(document, "hasFocus", {
-      configurable: true,
-      value: () => focused,
-    });
-    Reflect.set(globalThis, "__setPageFocused", (next: boolean) => {
-      focused = next;
-      window.dispatchEvent(new Event(next ? "focus" : "blur"));
-    });
-  });
-}
-
-async function setPageFocused(page: Page, focused: boolean): Promise<number> {
-  return page.evaluate((next) => {
-    const setter = Reflect.get(globalThis, "__setPageFocused");
-    if (typeof setter !== "function")
-      throw new Error("focus control is missing");
-    const at = performance.timeOrigin + performance.now();
-    setter(next);
-    return at;
-  }, focused);
 }
 
 async function markReadSentAt(

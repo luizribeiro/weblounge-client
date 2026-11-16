@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { IrcClient, isolatedPassword, registerAccount } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 test.skip(
@@ -36,7 +37,7 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
       await expect(page.getByText(opening, { exact: true })).toBeVisible();
       await expectSettled(page, { conversation: nick });
 
-      if (cycle === "hidden") await setVisibility(page, true);
+      if (cycle === "hidden") await setPageHidden(page, true);
       if (cycle === "reconnecting") {
         await context.setOffline(true);
         await expect.poll(() => networkState(page)).not.toBe("online");
@@ -52,7 +53,7 @@ for (const cycle of ["visible", "hidden", "reconnecting"] as const) {
       peer = await connectPeer(nick);
 
       if (cycle === "hidden") {
-        await setVisibility(page, false);
+        await setPageHidden(page, false);
         await expectOfflineBarrier(page, watcher);
       }
       if (cycle === "reconnecting") {
@@ -106,21 +107,4 @@ async function networkState(page: Page): Promise<string | null> {
     .locator("[data-network-state]")
     .first()
     .getAttribute("data-network-state");
-}
-
-async function setVisibility(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("visibility control is missing");
-    setter(nextHidden);
-  }, hidden);
-}
-
-async function dispatchPersistedPageShow(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const event = new Event("pageshow");
-    Object.defineProperty(event, "persisted", { value: true });
-    window.dispatchEvent(event);
-  });
 }

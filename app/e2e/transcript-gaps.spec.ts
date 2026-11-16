@@ -10,6 +10,7 @@ import { type IrcClient, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 test.describe("transcript gap and boundary dividers", () => {
@@ -81,8 +82,8 @@ test.describe("transcript gap and boundary dividers", () => {
         await irc.forwarder.drop();
         const firstRetainedLine = await sendCappedGap(senders, channel, suffix);
 
-        await setVisibility(page, true);
-        await setVisibility(page, false);
+        await setPageHidden(page, true);
+        await setPageHidden(page, false);
         await dispatchPersistedPageShow(page);
         await expect.poll(() => currentNetworkState(page)).not.toBe("online");
         await irc.forwarder.restore();
@@ -228,23 +229,6 @@ function currentNetworkState(page: Page): Promise<string | null> {
     .locator("[data-network-state]")
     .first()
     .getAttribute("data-network-state");
-}
-
-async function setVisibility(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("visibility control is missing");
-    setter(nextHidden);
-  }, hidden);
-}
-
-async function dispatchPersistedPageShow(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const event = new Event("pageshow");
-    Object.defineProperty(event, "persisted", { value: true });
-    window.dispatchEvent(event);
-  });
 }
 
 async function setAppAlwaysOn(irc: IrcTestAccount): Promise<void> {

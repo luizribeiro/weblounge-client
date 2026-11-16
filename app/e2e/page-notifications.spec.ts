@@ -4,6 +4,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { setPageHidden } from "./page-lifecycle";
 import {
   clickPageNotification,
   installPageNotificationStub,
@@ -58,7 +59,7 @@ test.describe("page-posted notifications without Web Push", () => {
         },
       ]);
 
-    await setHidden(page, true);
+    await setPageHidden(page, true);
     await peer.privmsgConfirmed(channel, "hidden chatter");
     await peer.privmsgConfirmed(channel, `${irc.account}: hidden mention`);
     await expect
@@ -76,7 +77,7 @@ test.describe("page-posted notifications without Web Push", () => {
       closed: false,
     });
 
-    await setHidden(page, false);
+    await setPageHidden(page, false);
     await clickPageNotification(page, peer.nickname);
     await expect(
       page.getByRole("heading", { name: peer.nickname }),
@@ -121,13 +122,4 @@ async function notificationsFrom(
 
 function messageText(page: Page, text: string) {
   return page.locator("[data-message-row]").filter({ hasText: text });
-}
-
-async function setHidden(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("visibility control is missing");
-    setter(nextHidden);
-  }, hidden);
 }
