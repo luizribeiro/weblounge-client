@@ -1,0 +1,4 @@
+# The minimum `tauri ios build` exports from tauri.ios.conf.json, so plain cargo builds compile
+# the Swift plugin against it too.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "17.0"

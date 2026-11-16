@@ -76,6 +76,19 @@ mod tests {
     }
 
     #[test]
+    fn cargo_builds_the_swift_plugin_for_the_bundles_minimum_ios() {
+        let overlay: Value =
+            serde_json::from_str(include_str!("../tauri.ios.conf.json")).expect("config is JSON");
+        let minimum = overlay["bundle"]["iOS"]["minimumSystemVersion"]
+            .as_str()
+            .expect("a minimum iOS version");
+        assert!(
+            include_str!("../.cargo/config.toml")
+                .contains(&format!("IPHONEOS_DEPLOYMENT_TARGET = \"{minimum}\""))
+        );
+    }
+
+    #[test]
     fn freezes_the_identity_under_the_page_contract_name() {
         let script = identity_script().expect("script builds");
         assert!(script.starts_with("Object.defineProperty(globalThis, \"__WEBLOUNGE_SHELL__\""));

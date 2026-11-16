@@ -44,6 +44,8 @@ pub fn run() -> tauri::Result<()> {
             notifications::close_notification,
         ])
         .setup(setup);
+    #[cfg(target_os = "ios")]
+    let builder = builder.plugin(weblounge_ios_shell::init());
     #[cfg(desktop)]
     let builder = builder
         .plugin(window::desktop::state_plugin())
