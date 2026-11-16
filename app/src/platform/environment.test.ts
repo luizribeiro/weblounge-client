@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { type ThemeDefinition, themes } from "../theme/theme-registry";
 import {
   desktopPanelBoundary,
   installPlatformEnvironment,
@@ -110,5 +111,41 @@ describe("platform environment", () => {
     expect(controller.environment().shell).toBe("mobile");
     expect(root.dataset.input).toBe("touch");
     controller.dispose();
+  });
+
+  it("has no window controls in a plain browser", () => {
+    const root = document.createElement("div");
+    const browser = installPlatformEnvironment(root, window);
+
+    expect(browser.windowControls()).toBeUndefined();
+    expect(root.dataset.windowControls).toBeUndefined();
+    expect(() =>
+      browser.applyWindowTheme(themes[0] as ThemeDefinition),
+    ).not.toThrow();
+    browser.dispose();
+  });
+
+  it("exposes the wrapper's window controls and themes its window", () => {
+    const commands: string[] = [];
+    vi.stubGlobal("__WEBLOUNGE_SHELL__", {
+      kind: "macos-app",
+      version: "0.2.0",
+      windowControls: { inlineStart: 84, blockSize: 48 },
+    });
+    vi.stubGlobal("__TAURI_INTERNALS__", {
+      invoke: (command: string) => {
+        commands.push(command);
+        return new Promise(() => {});
+      },
+    });
+    const root = document.createElement("div");
+    const app = installPlatformEnvironment(root, window);
+
+    expect(app.windowControls()).toBe("overlay");
+    expect(root.dataset.windowControls).toBe("overlay");
+    app.applyWindowTheme(themes[0] as ThemeDefinition);
+    expect(commands).toContain("plugin:window|set_theme");
+    app.dispose();
+    expect(root.dataset.windowControls).toBeUndefined();
   });
 });

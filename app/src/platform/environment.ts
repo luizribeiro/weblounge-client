@@ -4,6 +4,11 @@ import { type HostShell, hostShell } from "./host-shell";
 import { observeKeyboardMotion } from "./keyboard-motion";
 import { observeTouchMoveLock } from "./touch-move-lock";
 import { observeViewportGeometry } from "./viewport-geometry";
+import {
+  observeWindowControls,
+  type WindowControlsState,
+  type WindowTheme,
+} from "./window-controls";
 
 export const desktopPanelBoundary = 760;
 
@@ -29,6 +34,8 @@ export interface PlatformController {
   readonly prefersReducedMotion: Accessor<boolean>;
   readonly shortcutPlatform: ShortcutPlatform;
   readonly shortcutShell: ShortcutShell;
+  readonly windowControls: Accessor<WindowControlsState | undefined>;
+  applyWindowTheme(theme: WindowTheme): void;
   dispose(): void;
 }
 
@@ -111,6 +118,7 @@ export function installPlatformEnvironment(
     onScreenKeyboard: () => environment().input === "touch",
   });
   const stopTouchMoveLock = observeTouchMoveLock(root, browserWindow);
+  const windowControls = observeWindowControls(root, browserWindow);
   publish();
 
   const controller: PlatformController = {
@@ -120,6 +128,8 @@ export function installPlatformEnvironment(
     prefersReducedMotion,
     shortcutPlatform: resolveShortcutPlatform(browserWindow.navigator),
     shortcutShell: resolveShortcutShell(target, hostShell(browserWindow)),
+    windowControls: windowControls.state,
+    applyWindowTheme: windowControls.applyTheme,
     dispose() {
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
@@ -131,6 +141,7 @@ export function installPlatformEnvironment(
       stopKeyboardMotion();
       stopTouchMoveLock();
       stopWidthObserver();
+      windowControls.dispose();
       delete root.dataset.input;
       delete root.dataset.display;
       delete root.dataset.shell;

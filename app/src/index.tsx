@@ -115,6 +115,7 @@ function Bootstrap(props: BootstrapProps) {
     document,
     platform.prefersDark(),
     () => localStorage,
+    platform.applyWindowTheme,
   );
   const applyAppearance = (settings: AppSettings) => appearance.apply(settings);
   const removePageZoomGuard = installPageZoomGuard(document);
