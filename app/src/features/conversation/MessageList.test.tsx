@@ -3019,6 +3019,69 @@ it("refreshes rendered-row measurements once after returning to foreground", asy
   expect(layoutReads).toHaveBeenCalled();
 });
 
+async function mountRowWhileHidden() {
+  const [foreground, setForeground] = createSignal(true);
+  const measured: Element[] = [];
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      measured.push(this);
+      return rect(0, 28);
+    },
+  );
+  const { container } = render(() => (
+    <MessageList
+      foreground={foreground()}
+      messages={[message, { ...message, id: 2 }, { ...message, id: 3 }]}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const motionLayer = container.querySelector<HTMLOListElement>(
+    "[data-message-motion-layer]",
+  );
+  if (motionLayer === null) throw new Error("message motion layer is missing");
+  const mountRow = async (index: number, key: string) => {
+    const row = document.createElement("li");
+    row.dataset.index = String(index);
+    row.dataset.rowKey = key;
+    motionLayer.append(row);
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    return row;
+  };
+  setForeground(false);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  measured.length = 0;
+  const hiddenRow = await mountRow(1, "message-2");
+  return { hiddenRow, measured, mountRow, setForeground };
+}
+
+it("does not measure rows that mount while hidden", async () => {
+  const { measured } = await mountRowWhileHidden();
+
+  expect(measured).toEqual([]);
+});
+
+it("measures rows mounted while hidden together with the foreground catch-up", async () => {
+  const { hiddenRow, measured, mountRow, setForeground } =
+    await mountRowWhileHidden();
+
+  setForeground(true);
+  const catchUpRow = await mountRow(2, "message-3");
+
+  expect(measured).toContain(hiddenRow);
+  expect(measured).toContain(catchUpRow);
+});
+
+it("measures rows mounted while hidden on the first foreground frames", async () => {
+  const { hiddenRow, measured, setForeground } = await mountRowWhileHidden();
+
+  setForeground(true);
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+
+  expect(measured).toContain(hiddenRow);
+});
+
 it("restacks measured rows when the New boundary moves past a long row", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(

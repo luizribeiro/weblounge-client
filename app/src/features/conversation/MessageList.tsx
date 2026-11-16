@@ -1187,6 +1187,7 @@ export function MessageList(props: MessageListProps) {
     const rowMountObserver = new MutationObserver((records) => {
       if (
         !foregroundRefreshArmed ||
+        props.foreground === false ||
         !records.some((record) =>
           [...record.addedNodes].some(
             (node) =>

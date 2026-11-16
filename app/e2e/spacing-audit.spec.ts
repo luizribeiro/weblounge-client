@@ -263,6 +263,22 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
   );
   await expectHiddenCatchUpPaintsContiguously(page, irc, {
     channelName: "sa-hidden",
+    historyRounds: 0,
+  });
+});
+
+test("paints hidden catch-up contiguously after rows mount while hidden", async ({
+  page,
+  irc,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "webkit-phone-layout",
+    "covers iPhone WebKit foreground layout",
+  );
+  await expectHiddenCatchUpPaintsContiguously(page, irc, {
+    channelName: "sa-hidden-mount",
+    historyRounds: 6,
+    whileHidden: growViewportMountingRows,
   });
 });
 
@@ -270,6 +286,8 @@ const phoneViewport = { width: 390, height: 844 } as const;
 
 interface HiddenCatchUpScenario {
   readonly channelName: string;
+  readonly historyRounds: number;
+  readonly whileHidden?: (page: Page) => Promise<void>;
 }
 
 async function expectHiddenCatchUpPaintsContiguously(
@@ -283,6 +301,11 @@ async function expectHiddenCatchUpPaintsContiguously(
   const channel = irc.channelNamed(scenario.channelName);
   const startUrl = irc.url({ autojoin: [channel] });
   const writer = await irc.peer(`${scenario.channelName}-writer`, [channel]);
+  const historyLines = await seedHistoryFromPeers(
+    irc,
+    channel,
+    scenario.historyRounds,
+  );
   const hiddenMessages = [
     `hidden multiline one ${suffix} ${"variable width words for wrapping ".repeat(8)}\nsecond explicit line ${suffix}\n\nlast line ${suffix}`,
     `hidden long two ${suffix} ${"i".repeat(330)}`,
@@ -292,7 +315,10 @@ async function expectHiddenCatchUpPaintsContiguously(
   await page.goto(startUrl);
   await page.getByRole("button", { name: channel }).click();
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  for (const text of historyLines.slice(-1))
+    await expect(messageRow(page, text)).toBeVisible();
   await setPageHidden(page, true);
+  await scenario.whileHidden?.(page);
   for (const text of hiddenMessages)
     await writer.multilineConfirmed(channel, text);
   await expect(
@@ -321,6 +347,59 @@ async function expectHiddenCatchUpPaintsContiguously(
         .filter({ hasText: text.split("\n")[0] }),
     ).toBeVisible();
   await expectContiguousRows(page, hiddenMessages.length);
+}
+
+const historyPeerCount = 10;
+
+async function seedHistoryFromPeers(
+  irc: IrcTestAccount,
+  channel: string,
+  rounds: number,
+): Promise<readonly string[]> {
+  if (rounds === 0) return [];
+  const peers = await Promise.all(
+    Array.from({ length: historyPeerCount }, (_, index) =>
+      irc.peer(`sa-history-${index}`, [channel]),
+    ),
+  );
+  const lines: string[] = [];
+  for (let round = 0; round < rounds; round += 1)
+    lines.push(
+      ...(await Promise.all(
+        peers.map(async (peer, index) => {
+          const text = `hidden history ${round}.${index} ${irc.id}`;
+          await peer.privmsgConfirmed(channel, text);
+          return text;
+        }),
+      )),
+    );
+  return lines;
+}
+
+async function growViewportMountingRows(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const list = document.querySelector("[data-message-list]");
+    if (list === null) throw new Error("message list is missing");
+    const state = window as Window & { __rowMounts?: number };
+    state.__rowMounts = 0;
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof HTMLElement && node.matches("li[data-row-key]"))
+            state.__rowMounts = (state.__rowMounts ?? 0) + 1;
+    }).observe(list, { childList: true, subtree: true });
+  });
+  await page.setViewportSize({
+    ...phoneViewport,
+    height: phoneViewport.height * 2,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { __rowMounts?: number }).__rowMounts,
+      ),
+    )
+    .toBeGreaterThan(0);
 }
 
 async function leaveConversation(page: Page, phone: boolean): Promise<void> {
