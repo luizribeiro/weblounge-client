@@ -48,6 +48,8 @@ pub fn run() -> tauri::Result<()> {
             native::commands::push_permission,
             #[cfg(target_os = "ios")]
             native::commands::request_push_permission,
+            #[cfg(target_os = "ios")]
+            native::commands::push_target,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]

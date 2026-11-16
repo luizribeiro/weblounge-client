@@ -1,3 +1,4 @@
+import Foundation
 import Tauri
 import UserNotifications
 
@@ -45,6 +46,29 @@ final class ShellPlugin: Plugin {
       }
     }
   }
+
+  @objc func pushTarget(_ invoke: Invoke) {
+    switch registration.current() {
+    case .unknown: invoke.resolve(Optional<String>.none)
+    case .failed(let failure): invoke.reject(failure)
+    case .token(let token): invoke.resolve(registrationAnswer(token))
+    }
+  }
+}
+
+#if targetEnvironment(simulator)
+  private let isSimulator = true
+#else
+  private let isSimulator = false
+#endif
+
+/// The token with what decides its APNs host, which the Rust side turns into a `PushTarget`.
+private func registrationAnswer(_ token: Data) -> [String: Any?] {
+  [
+    "token": token.map { String(format: "%02x", $0) }.joined(),
+    "simulator": isSimulator,
+    "profileApsEnvironment": ProvisioningProfile.apsEnvironment() ?? NSNull(),
+  ]
 }
 
 @_cdecl("init_plugin_weblounge_ios_shell")

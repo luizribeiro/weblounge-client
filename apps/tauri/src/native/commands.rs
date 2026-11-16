@@ -4,9 +4,12 @@
 use serde::{Serialize, de::DeserializeOwned};
 use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
-use weblounge_native_bridge::{NativeBridgeError, PushPermission};
+use weblounge_native_bridge::{NativeBridgeError, PushPermission, PushTarget};
 
-use super::failure::{self, Fallback, notification_center};
+use super::{
+    answers::Registration,
+    failure::{self, Fallback, apns_registration, notification_center},
+};
 
 pub(super) async fn call<T: DeserializeOwned>(
     app: &AppHandle,
@@ -37,4 +40,11 @@ pub async fn request_push_permission(app: AppHandle) -> Result<PushPermission, N
 #[tauri::command]
 pub async fn push_permission(app: AppHandle) -> Result<PushPermission, NativeBridgeError> {
     call(&app, "pushPermission", (), notification_center).await
+}
+
+#[tauri::command]
+pub async fn push_target(app: AppHandle) -> Result<Option<PushTarget>, NativeBridgeError> {
+    let registration: Option<Registration> =
+        call(&app, "pushTarget", (), apns_registration).await?;
+    Ok(registration.map(Registration::into_target))
 }
