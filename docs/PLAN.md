@@ -142,6 +142,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: a dismissed "Get notified about DMs and mentions" prompt stays dismissed. The
+  dismissal was saved, but the engine worker dropped the async read's reply, so the 2-second read
+  deadline showed the prompt again on every launch. The worker now routes every reply carrying
+  `command_id` to the tab that asked. Covered by `worker-runtime.test.ts` and the real-engine
+  `e2e/notification-prompt.spec.ts` (reload and relaunch).
 - 2026-11-15: per-pane members (design 34). The desktop member list lives inside the
   conversation pane: the pane header spans it, the inline list has no header or fade, and it is a
   fixed 232px (`--wl-size-members`) column. Visibility is per channel (never-toggled channels follow
