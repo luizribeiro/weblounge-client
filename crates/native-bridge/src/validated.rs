@@ -4,6 +4,9 @@ pub enum InvalidValue {
     /// Not at least 64 lowercase hex digits in pairs.
     #[error("APNs device token must be at least 64 lowercase hex digits, in pairs")]
     ApnsToken,
+    /// Not a same-origin buffer path in the page's route form.
+    #[error("route must be a buffer path such as /Libera/@mel")]
+    BufferRoutePath,
 }
 
 /// Declares a string newtype whose only constructor checks `$valid`, including when serde
