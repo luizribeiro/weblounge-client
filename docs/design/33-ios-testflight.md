@@ -70,7 +70,10 @@ which in the app is native.
    in the iOS 26.5 simulator: the added method received an APNs token (a simulator token),
    before the authorization prompt was even answered. The device checklist re-checks it.
    `push_target()` returns
-   `{ platform: "apns", token, environment }` and the page caches it like a `PushSubscription`.
+   `{ platform: "apns", token, environment }`, or null until the token arrives, when the shell
+   also dispatches `weblounge:push-target`; the page caches it like a `PushSubscription`. At
+   launch the page reads `push_permission`, which never prompts, to choose between its prompt and
+   a quiet re-registration.
 3. The page's existing device flow runs unchanged. It upserts the target at the relay
    (`POST /v1/devices`, `PUT /v1/devices/:id/target` when the token changes) on every launch and
    return to visible, the same rule as `getSubscription()`.
@@ -282,7 +285,7 @@ iOS builds run from the dev shell, with three differences from the macOS build:
 
 | Area | Change |
 |---|---|
-| `apps/tauri/` | lib + mobile entry; iOS identity overlay; shared navigation, shell and notification modules; iOS commands `request_push_permission`, `push_target`, `create_route_keys`, `drop_route_keys`, `take_pushed_messages`, badge, delivered-notification list/remove; tap, lifecycle and content-process handling; capability scoped to `https://beta.weblounge.org/*` granting exactly those |
+| `apps/tauri/` | lib + mobile entry; iOS identity overlay; shared navigation, shell and notification modules; iOS commands as listed in `crates/native-bridge` (`push_permission`, `request_push_permission`, `push_target`, route keys, `take_pushed_messages`, badge and counts, delivered-notification list/remove); tap, lifecycle, token (`weblounge:push-target`) and content-process handling; capability scoped to `https://beta.weblounge.org/*` granting exactly those |
 | `apps/tauri/gen/apple/` | committed Xcode project from `tauri ios init`: the XcodeGen `project.yml` with the NSE target, Info.plist, entitlements and privacy manifests. Changes go through `project.yml`, never the generated `.xcodeproj` |
 | NSE (Swift, in `gen/apple`) | keychain and App Group I/O plus calls into `push-payload`; no rules of its own |
 | `crates/push-payload` | decrypt + format moved here; `staticlib` C ABI for iOS; the service worker switches to the wasm formatter |
