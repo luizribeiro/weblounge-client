@@ -161,6 +161,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   elsewhere in the pane); phone drawers keep their floating look. Escape in the inline list focuses
   the composer. Local-Ergo journeys in
   `app/e2e/member-pane.spec.ts` and `member-panel.spec.ts`.
+- 2026-11-15: typing closes the docked members drawer: a printable key typed in it goes to the
+  composer, and any composer input slides it closed (it covers the composer's right edge and Send).
+  Type-to-composer forwarding is now blocked by `aria-modal="true"` rather than any dialog role, so
+  Leave/Close confirmations no longer leak keys into the composer behind them.
 - 2026-11-15: browser-tab indicator (F33, design 23 Badging). In a browser tab the favicon's
   tile turns brand red and the title gains "(n) " (capped "(99+)") while `appBadgeCount` is above
   zero, and turns grey while the connection indicator shows connecting or an error; unread wins over
