@@ -1,4 +1,5 @@
 import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
+import { onAppLifecycle } from "./native-bridge/app-lifecycle";
 import { pageIsForeground } from "./push/foreground-state";
 
 export interface ForegroundSignal extends Accessor<boolean> {
@@ -23,7 +24,9 @@ export function createForegroundSignal(
     document.addEventListener("visibilitychange", update);
     window.addEventListener("focus", update);
     window.addEventListener("blur", update);
+    const stopLifecycle = onAppLifecycle(update);
     onCleanup(() => {
+      stopLifecycle();
       document.removeEventListener("visibilitychange", update);
       window.removeEventListener("focus", update);
       window.removeEventListener("blur", update);

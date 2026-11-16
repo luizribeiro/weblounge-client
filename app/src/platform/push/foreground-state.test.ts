@@ -24,3 +24,18 @@ it("trusts visibility in an installed iOS app with a false focus signal", () => 
     ),
   ).toBe(false);
 });
+
+it("follows visibility and the shell's lifecycle in the iPhone app, not focus", () => {
+  const visible = { hidden: false, hasFocus: () => false };
+
+  expect(pageIsForeground(visible, {}, "ios-app", "foreground")).toBe(true);
+  expect(pageIsForeground(visible, {}, "ios-app", "background")).toBe(false);
+  expect(
+    pageIsForeground(
+      { hidden: true, hasFocus: () => true },
+      {},
+      "ios-app",
+      "foreground",
+    ),
+  ).toBe(false);
+});

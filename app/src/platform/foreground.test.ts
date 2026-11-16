@@ -80,6 +80,30 @@ it("retains a foreground exit when reactive consumers see only the final state",
   expect(readForeground.exitEpoch()).toBe(1);
 });
 
+it("follows the iPhone shell's lifecycle while the page stays visible and unfocused", () => {
+  vi.stubGlobal("__WEBLOUNGE_SHELL__", { kind: "ios-app", version: "0.1.3" });
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const lifecycle = (detail: string) =>
+    window.dispatchEvent(new CustomEvent("weblounge:lifecycle", { detail }));
+  let readForeground = () => false;
+
+  try {
+    render(() => {
+      readForeground = createForegroundSignal();
+      return undefined;
+    });
+    expect(readForeground()).toBe(true);
+    lifecycle("background");
+    expect(readForeground()).toBe(false);
+    lifecycle("foreground");
+    expect(readForeground()).toBe(true);
+  } finally {
+    lifecycle("foreground");
+    vi.unstubAllGlobals();
+  }
+});
+
 it("runs the entry hook before consumers see the page return", () => {
   let hidden = false;
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
