@@ -47,6 +47,7 @@ import {
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
+import { createTabIndicator } from "./features/unread/createTabIndicator";
 import { CanvasImageCodec } from "./features/uploads/image-codec";
 import { networkUploads } from "./features/uploads/network-uploads";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
@@ -378,6 +379,11 @@ export function App(props: AppProps) {
       .catch(() => undefined);
   };
   createEffect(syncEnginePushState);
+  createTabIndicator({
+    buffers,
+    networks,
+    settings: engineSettings.current,
+  });
   createEffect(() => {
     const networkLabels = new Map(
       networks().map((network) => [network.id, network.label]),
