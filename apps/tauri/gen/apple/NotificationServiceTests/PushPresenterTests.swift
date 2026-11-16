@@ -91,6 +91,27 @@ final class PushPresenterTests: XCTestCase {
     XCTAssertEqual(try route.storage.readNotificationCounts().map(\.count), [1])
   }
 
+  func testQueuesTheMessageForTheAppBeforeItsHistoryLoads() throws {
+    let route = try StoredTestRoute(self)
+
+    _ = present(
+      try route.relayPayload(
+        "@time=2026-11-16T22:42:00.000Z;msgid=m3-queue :mel!m@example.test PRIVMSG weblounge :soba/ramen 🍜?"),
+      storage: route.storage)
+    _ = present(
+      try route.relayPayload(":mel!m@example.test INVITE weblounge #secret"), storage: route.storage)
+
+    let queued = try route.storage.drainPushedMessages().compactMap {
+      try JSONSerialization.jsonObject(with: $0) as? [String: Any]
+    }
+    XCTAssertEqual(queued.count, 1)
+    XCTAssertEqual(queued.first?["msgid"] as? String, "m3-queue")
+    XCTAssertEqual(queued.first?["route"] as? String, "/Libera/@mel")
+    XCTAssertEqual(queued.first?["schema"] as? Int, 1)
+    XCTAssertEqual(queued.first?["text"] as? String, "soba/ramen 🍜?")
+    XCTAssertTrue(queued.first?["account"] is NSNull)
+  }
+
   func testOffersNothingForWhatItCannotShow() throws {
     let route = try StoredTestRoute(self)
     var dropped = try route.relayPayload(":mel!m@example.test PRIVMSG weblounge :hi")

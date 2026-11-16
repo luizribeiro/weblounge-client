@@ -7,12 +7,16 @@ struct PushPresenter {
   let offer: (UNNotificationContent) -> Void
 
   func present(_ placeholder: UNNotificationContent) {
-    guard let push = RelayPush(placeholder.userInfo), let outcome = push.prepare(storage) else {
+    guard let push = RelayPush(placeholder.userInfo), let prepared = push.prepare(storage) else {
       return
     }
-    switch outcome {
+    switch prepared.outcome {
     case .prepared(.visible(let visible)):
       show(visible, over: placeholder)
+      // Best effort: the notification is already shown, and the page still loads history.
+      if let pushed = pushedRecord(in: prepared.json) {
+        try? storage.appendPushedMessage(pushed)
+      }
     case .prepared(.markread), .prepared(.ping), .failed:
       return
     }

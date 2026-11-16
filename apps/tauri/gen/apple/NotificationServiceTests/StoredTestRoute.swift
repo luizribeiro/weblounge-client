@@ -1,7 +1,7 @@
 import XCTest
 
-/// A route whose keys and metadata sit in the dev app's keychain and App Group for one test,
-/// which starts with no notification counts and restores the app's own afterwards.
+/// A route whose keys and metadata sit in the dev app's keychain and App Group for one test.
+/// The test starts with no notification counts (restored afterwards) and an empty queue.
 struct StoredTestRoute {
   let storage: SharedStorage
   let sealer = WebPushSealer()
@@ -21,6 +21,7 @@ struct StoredTestRoute {
       try? storage.deleteRouteMeta(routeId: routeId)
     }
     try storage.writeNotificationCounts([])
+    _ = try storage.drainPushedMessages()
     try storage.storeSecret(.privateKeyPkcs8, routeId: routeId, data: sealer.privateKeyPkcs8)
     try storage.storeSecret(.auth, routeId: routeId, data: sealer.auth)
     try storage.storeRouteMeta(

@@ -59,3 +59,14 @@ struct VisibleNotification: Decodable, Equatable {
   var messageId: String? { userInfo["messageId"] }
   var messageTime: String? { userInfo["messageTime"] }
 }
+
+/// The notification's `pushed` record as JSON for the App Group queue, or nil when it carries
+/// none.
+func pushedRecord(in json: Data) -> Data? {
+  guard
+    let outcome = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+    let notification = outcome["notification"] as? [String: Any],
+    let pushed = notification["pushed"] as? [String: Any]
+  else { return nil }
+  return try? JSONSerialization.data(withJSONObject: pushed)
+}

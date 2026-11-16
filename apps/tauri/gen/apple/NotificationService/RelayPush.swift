@@ -13,14 +13,16 @@ struct RelayPush {
     self.ciphertext = ciphertext
   }
 
-  /// Nil when the route's keys or metadata are gone, as after the page dropped the route.
-  func prepare(_ storage: SharedStorage) -> PrepareOutcome? {
+  /// The outcome with the JSON it was decoded from, or nil when the route's keys or metadata
+  /// are gone, as after the page dropped the route.
+  func prepare(_ storage: SharedStorage) -> (outcome: PrepareOutcome, json: Data)? {
     guard let route = try? storage.readRouteMeta(routeId: routeId),
       let privateKey = try? storage.readSecret(.privateKeyPkcs8, routeId: routeId),
       let auth = try? storage.readSecret(.auth, routeId: routeId),
       let json = PushPayload.prepare(
-        ciphertext: ciphertext, privateKeyPkcs8: privateKey, auth: auth, route: route)
+        ciphertext: ciphertext, privateKeyPkcs8: privateKey, auth: auth, route: route),
+      let outcome = try? PrepareOutcome.decode(json)
     else { return nil }
-    return try? PrepareOutcome.decode(json)
+    return (outcome, json)
   }
 }

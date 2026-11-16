@@ -29,8 +29,9 @@ final class RelayPushTests: XCTestCase {
       try route.sealer.seal(
         "@time=2026-11-16T22:42:00.000Z;msgid=m3-2 :mel!m@example.test PRIVMSG weblounge :hi"))
 
-    XCTAssertEqual(
-      RelayPush(["r": route.routeId, "c": record])?.prepare(route.storage).map(isVisible), true)
+    let prepared = RelayPush(["r": route.routeId, "c": record])?.prepare(route.storage)
+
+    XCTAssertEqual(prepared.map { isVisible($0.outcome) }, true)
     XCTAssertNil(RelayPush(["r": "dropped-route", "c": record])?.prepare(route.storage))
   }
 
