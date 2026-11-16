@@ -2,6 +2,7 @@ import Foundation
 import Tauri
 import UIKit
 import UserNotifications
+import WebKit
 
 struct WatchEventsArgs: Decodable { let handler: Channel }
 struct EndBackgroundTaskArgs: Decodable { let id: Int }
@@ -30,6 +31,14 @@ final class ShellPlugin: Plugin {
     registration.install()
     center.delegate = routing
     lifecycle.start()
+  }
+
+  override func load(webview: WKWebView) {
+    // The web view's own background shows wherever the page doesn't paint: the band WebKit
+    // insets a page without `viewport-fit=cover` by, and the first frames of a reload.
+    PageBackground { [weak webview] color in
+      webview?.backgroundColor = color ?? .systemBackground
+    }.watch(webview)
   }
 
   @objc func watchEvents(_ invoke: Invoke) {
