@@ -47,6 +47,14 @@
   text-underline-offset: 2px;
 }
 
+.lightsRow {
+  align-items: center;
+  display: flex;
+  flex: 0 0 var(--wl-window-controls-block);
+  justify-content: flex-end;
+  padding-inline: var(--wl-window-controls-inline) 14px;
+}
+
 .brand {
   --wl-connection-bg: var(--wl-color-panel);
   --wl-connection-fg: var(--wl-color-panel-fg);
@@ -96,6 +104,9 @@
   align-items: center;
   display: flex;
   flex: 0 0 auto;
+}
+
+.brand .headerButtons {
   --wl-header-buttons-gap: 4px;
   margin-inline-start: calc(
     var(--wl-header-buttons-gap) -

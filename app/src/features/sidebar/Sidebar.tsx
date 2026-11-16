@@ -17,6 +17,7 @@ import {
 import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
+import { windowDragRegion } from "../../platform/window-controls";
 import { t, translate } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
@@ -115,6 +116,25 @@ export function Sidebar(props: SidebarProps) {
       onClick={() => run("switcher.open")}
       shortcut={props.registry.bindingLabel("switcher.open")}
     />
+  );
+  const lightsRowShown = () => platform.windowControls() === "overlay";
+  const headerButtons = () => (
+    <div class={styles.headerButtons}>
+      <Show when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "icon"}>
+        {switcherLauncher()}
+      </Show>
+      <Show when={available("settings.open")}>
+        <HeaderIconButton
+          ariaKeyShortcuts={props.registry.ariaKeyShortcuts("settings.open")}
+          hasPopup="dialog"
+          label={props.registry.title("settings.open")}
+          onClick={() => run("settings.open")}
+          shortcut={props.registry.bindingLabel("settings.open")}
+        >
+          <GearIcon />
+        </HeaderIconButton>
+      </Show>
+    </div>
   );
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(brand),
@@ -244,6 +264,15 @@ export function Sidebar(props: SidebarProps) {
       class={styles.sidebar}
       data-sidebar="true"
     >
+      <Show when={lightsRowShown()}>
+        <div
+          class={styles.lightsRow}
+          data-sidebar-lights-row="true"
+          data-tauri-drag-region={windowDragRegion(platform.windowControls())}
+        >
+          {headerButtons()}
+        </div>
+      </Show>
       <div
         class={styles.brand}
         data-connection-brand="true"
@@ -277,26 +306,7 @@ export function Sidebar(props: SidebarProps) {
           </h1>
           <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
         </div>
-        <div class={styles.headerButtons}>
-          <Show
-            when={switcherAvailable() && SWITCHER_LAUNCHER_VARIANT === "icon"}
-          >
-            {switcherLauncher()}
-          </Show>
-          <Show when={available("settings.open")}>
-            <HeaderIconButton
-              ariaKeyShortcuts={props.registry.ariaKeyShortcuts(
-                "settings.open",
-              )}
-              hasPopup="dialog"
-              label={props.registry.title("settings.open")}
-              onClick={() => run("settings.open")}
-              shortcut={props.registry.bindingLabel("settings.open")}
-            >
-              <GearIcon />
-            </HeaderIconButton>
-          </Show>
-        </div>
+        <Show when={!lightsRowShown()}>{headerButtons()}</Show>
       </div>
 
       <Show
