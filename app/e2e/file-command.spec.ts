@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
 import { E2E_FILEHOST_ORIGIN } from "../csp";
@@ -91,6 +92,39 @@ test.describe("/file against local Ergo", () => {
       await composer.press("Enter");
       await (await again).setFiles(landscape);
       await expectPickedChip(page);
+    });
+  });
+
+  // A system without a MIME database for the extension (CI's sandboxed WebKit) leaves the
+  // picked file untyped; Playwright then reports it as application/octet-stream.
+  test("types an untyped pick by its bytes and notes a non-image", async ({
+    page,
+    irc,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "covered on desktop");
+    await withDirectPeer(page, irc, "fileuntyped", async (_peer, composer) => {
+      const pick = async (file: {
+        name: string;
+        mimeType: string;
+        buffer: Buffer;
+      }) => {
+        await composer.fill("/file");
+        const chooser = page.waitForEvent("filechooser");
+        await composer.press("Enter");
+        await (await chooser).setFiles(file);
+      };
+      await pick({ name: "notes", mimeType: "", buffer: Buffer.from("%PDF") });
+      await expect(page.getByText("Can’t read this image.")).toBeVisible();
+      await expect(page.locator("[data-attachment-chip]")).toHaveCount(0);
+
+      await pick({
+        name: "landscape",
+        mimeType: "",
+        buffer: await readFile(landscape),
+      });
+      await expectPickedChip(page);
+      await expect(page.getByText("Can’t read this image.")).toHaveCount(0);
     });
   });
 

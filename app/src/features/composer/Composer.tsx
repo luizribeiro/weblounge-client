@@ -36,10 +36,11 @@ import {
 } from "./geometry";
 import { ImagePicker } from "./ImagePicker";
 import { InlineConfirmation } from "./InlineConfirmation";
+import { pickedImage } from "./picked-image";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
-import { UploadOverlays } from "./UploadOverlays";
+import { type UploadNote, UploadOverlays } from "./UploadOverlays";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -87,7 +88,7 @@ export function Composer(props: ComposerProps) {
   const [dismissedInput, setDismissedInput] = createSignal<string>();
   const [pendingConfirmation, setPendingConfirmation] =
     createSignal<CommandSpec>();
-  const [uploadsUnavailable, setUploadsUnavailable] = createSignal(false);
+  const [uploadNote, setUploadNote] = createSignal<UploadNote>();
   const attachments = createAttachmentController({
     uploads: () => props.uploads,
   });
@@ -97,7 +98,7 @@ export function Composer(props: ComposerProps) {
   };
   const dropAttachment = () => {
     attachments.remove();
-    setUploadsUnavailable(false);
+    setUploadNote(undefined);
   };
   // The chip, the note and the replace question resize the composer like a new text line, so
   // the message list keeps its live edge through the same geometry events: the computation
@@ -106,7 +107,7 @@ export function Composer(props: ComposerProps) {
     () =>
       [
         attachments.attachment() !== undefined,
-        uploadsUnavailable(),
+        uploadNote() !== undefined,
         attachments.pendingReplacement() !== undefined,
       ] as const,
     undefined,
@@ -249,7 +250,7 @@ export function Composer(props: ComposerProps) {
     }
     setText(value);
     setPendingConfirmation(undefined);
-    setUploadsUnavailable(false);
+    setUploadNote(undefined);
     setSelected(-1);
     if (dismissedInput() !== value) setDismissedInput(undefined);
   };
@@ -304,15 +305,23 @@ export function Composer(props: ComposerProps) {
     const image = imageFromClipboard(event.clipboardData);
     if (image === undefined) return;
     if (props.uploads === undefined) {
-      setUploadsUnavailable(true);
+      setUploadNote("unavailable");
       return;
     }
     if (!image.hasText) event.preventDefault();
     attachImage(image.file);
   };
   const attachImage = (file: File) => {
-    setUploadsUnavailable(false);
+    setUploadNote(undefined);
     attachments.attach(file);
+  };
+  const attachPicked = async (file: File) => {
+    const buffer = currentBuffer;
+    const image = await pickedImage(file);
+    if (buffer !== currentBuffer) return;
+    if (image === undefined) setUploadNote("unreadable");
+    else attachImage(image);
+    focusAfterOverlay();
   };
   // Safari opens a file picker only inside the user's gesture, so this runs synchronously from
   // Enter or Send, before anything reaches the engine.
@@ -320,7 +329,7 @@ export function Composer(props: ComposerProps) {
     if (bareCommandForInput(text(), props.commandSpecs ?? [])?.name !== "file")
       return false;
     update("");
-    if (props.uploads === undefined) setUploadsUnavailable(true);
+    if (props.uploads === undefined) setUploadNote("unavailable");
     else imagePicker?.click();
     return true;
   };
@@ -524,10 +533,7 @@ export function Composer(props: ComposerProps) {
       )}
       <TypingIndicator typers={props.typers ?? []} />
       <ImagePicker
-        onPick={(file) => {
-          attachImage(file);
-          focusAfterOverlay();
-        }}
+        onPick={(file) => void attachPicked(file)}
         inputRef={(input) => {
           imagePicker = input;
         }}
@@ -535,7 +541,7 @@ export function Composer(props: ComposerProps) {
       <UploadOverlays
         attachments={attachments}
         onSettled={focusAfterOverlay}
-        unavailable={uploadsUnavailable()}
+        note={uploadNote()}
       />
       {pendingConfirmation() !== undefined && (
         <InlineConfirmation

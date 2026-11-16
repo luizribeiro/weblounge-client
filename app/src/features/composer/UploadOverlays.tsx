@@ -6,19 +6,22 @@ import styles from "../conversation/SimpleComposer.module.css";
 import type { AttachmentController } from "./attachment-controller";
 import { InlineConfirmation } from "./InlineConfirmation";
 
+/** Why an image was not attached: no file host, or a picked file that is not an image. */
+export type UploadNote = "unavailable" | "unreadable";
+
 interface UploadOverlaysProps {
   readonly attachments: AttachmentController;
-  readonly unavailable: boolean;
+  readonly note: UploadNote | undefined;
   readonly onSettled: () => void;
 }
 
-/** The no-uploads note, the replace question (U8) and the password-release dialog (U1). */
+/** The upload note, the replace question (U8) and the password-release dialog (U1). */
 export function UploadOverlays(props: UploadOverlaysProps) {
   return (
     <>
-      {props.unavailable && (
+      {props.note !== undefined && (
         <p class={styles.uploadNote} role="status">
-          {t("upload.unavailable")}
+          {noteText(props.note)}
         </p>
       )}
       {props.attachments.pendingReplacement() !== undefined && (
@@ -53,4 +56,13 @@ export function UploadOverlays(props: UploadOverlaysProps) {
       </Show>
     </>
   );
+}
+
+function noteText(note: UploadNote): string {
+  switch (note) {
+    case "unavailable":
+      return t("upload.unavailable");
+    case "unreadable":
+      return t("upload.failed.undecodable");
+  }
 }

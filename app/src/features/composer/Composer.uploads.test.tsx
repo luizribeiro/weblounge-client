@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
   NetworkUploads,
@@ -43,11 +44,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderComposer(uploads: NetworkUploads | undefined) {
+function renderComposer(
+  uploads: NetworkUploads | undefined,
+  bufferId: () => number = () => 2,
+) {
   const onSend = vi.fn(async () => true);
   render(() => (
     <Composer
-      bufferId={2}
+      bufferId={bufferId()}
       bufferTitle="#lounge"
       commandSpecs={[fileCommand]}
       draftKey="network:#lounge"
@@ -232,7 +236,7 @@ function pickImage() {
   ]);
 }
 
-it("opens the image picker on /file Enter, clears the text and attaches the pick", () => {
+it("opens the image picker on /file Enter, clears the text and attaches the pick", async () => {
   const clicks = pickerClicks();
   const uploads = new ControlledUploads();
   const { input, onSend } = renderComposer(uploads);
@@ -244,8 +248,57 @@ it("opens the image picker on /file Enter, clears the text and attaches the pick
   expect((input as HTMLTextAreaElement).value).toBe("");
   expect(onSend).not.toHaveBeenCalled();
   pickImage();
-  expect(screen.getByText("Image · 3 B")).toBeTruthy();
+  await waitFor(() => expect(screen.getByText("Image · 3 B")).toBeTruthy());
   expect(uploads.calls).toEqual([]);
+});
+
+it("attaches a picked image the browser left untyped", async () => {
+  pickerClicks();
+  const { input } = renderComposer(new ControlledUploads());
+  typeAndEnter(input, "/file");
+  choose([
+    new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      "landscape.png",
+    ),
+  ]);
+  await waitFor(() => expect(screen.getByText("Image · 8 B")).toBeTruthy());
+});
+
+it("drops a pick still being read when the conversation changes", async () => {
+  pickerClicks();
+  const [bufferId, setBufferId] = createSignal(2);
+  const { input } = renderComposer(new ControlledUploads(), bufferId);
+  typeAndEnter(input, "/file");
+  let release: (bytes: ArrayBuffer) => void = () => undefined;
+  const slow = new File([], "landscape.png");
+  slow.slice = () =>
+    Object.assign(new Blob(), {
+      arrayBuffer: () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          release = resolve;
+        }),
+    });
+  choose([slow]);
+  setBufferId(3);
+  release(
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer,
+  );
+  // A macrotask runs only after every microtask the pick's reading queued.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(document.querySelector("[data-attachment-chip]")).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("notes a picked file that is not an image", async () => {
+  pickerClicks();
+  const { input } = renderComposer(new ControlledUploads());
+  typeAndEnter(input, "/file");
+  choose([new File(["%PDF-1.7\n"], "notes.pdf", { type: "application/pdf" })]);
+  await waitFor(() =>
+    expect(screen.getByText("Can’t read this image.")).toBeTruthy(),
+  );
+  expect(document.querySelector("[data-attachment-chip]")).toBeNull();
 });
 
 it("opens the picker from the Send button", () => {
