@@ -2,6 +2,8 @@
 
 #[cfg(desktop)]
 pub mod desktop;
+#[cfg(target_os = "macos")]
+pub mod title_bar;
 
 use tauri::{
     AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder,

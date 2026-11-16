@@ -20,11 +20,14 @@ pub fn configure<'a>(
     builder: WebviewWindowBuilder<'a, Wry, AppHandle>,
     title: &str,
 ) -> WebviewWindowBuilder<'a, Wry, AppHandle> {
-    builder
+    let builder = builder
         .title(title)
         .visible(false)
         .inner_size(1280.0, 840.0)
-        .min_inner_size(400.0, 480.0)
+        .min_inner_size(400.0, 480.0);
+    #[cfg(target_os = "macos")]
+    let builder = super::title_bar::overlay(builder);
+    builder
 }
 
 pub fn show(app: &AppHandle) {

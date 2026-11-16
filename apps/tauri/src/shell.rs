@@ -6,14 +6,19 @@ use serde::Serialize;
 const GLOBAL: &str = "__WEBLOUNGE_SHELL__";
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Shell {
     kind: &'static str,
     version: &'static str,
+    #[cfg(target_os = "macos")]
+    window_controls: crate::window::title_bar::WindowControls,
 }
 
 const SHELL: Shell = Shell {
     kind: "macos-app",
     version: env!("CARGO_PKG_VERSION"),
+    #[cfg(target_os = "macos")]
+    window_controls: crate::window::title_bar::WINDOW_CONTROLS,
 };
 
 fn identity() -> Result<String, serde_json::Error> {
@@ -34,13 +39,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identifies_the_mac_app_and_its_crate_version() {
-        let identity: Value =
-            serde_json::from_str(&identity().expect("identity serializes")).expect("JSON");
+    fn identifies_the_app_and_its_crate_version() {
+        let identity = parsed_identity();
+        assert_eq!(identity["kind"], "macos-app");
+        assert_eq!(identity["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reserves_the_traffic_light_band_for_the_page() {
         assert_eq!(
-            identity,
-            json!({ "kind": "macos-app", "version": env!("CARGO_PKG_VERSION") })
+            parsed_identity()["windowControls"],
+            json!({ "inlineStart": 84, "blockSize": 48 })
         );
+    }
+
+    fn parsed_identity() -> Value {
+        serde_json::from_str(&identity().expect("identity serializes")).expect("JSON")
     }
 
     #[test]
