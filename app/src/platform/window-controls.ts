@@ -54,7 +54,7 @@ export function observeWindowControls(
     setState(next);
     root.dataset.windowControls = next;
   };
-  const checkFullScreen = latestFullScreenCheck(invoke, (fullScreen) =>
+  const checkFullScreen = coalescedFullScreenCheck(invoke, (fullScreen) =>
     publish(fullScreen ? "hidden" : "overlay"),
   );
   const applyTheme = deduplicatedThemeCalls(invoke);
@@ -90,18 +90,27 @@ function reserveInsets(root: HTMLElement, controls: WindowControls): void {
   root.style.setProperty(blockProperty, `${controls.blockSize}px`);
 }
 
-function latestFullScreenCheck(
+function coalescedFullScreenCheck(
   invoke: Invoke,
   onAnswer: (fullScreen: boolean) => void,
 ): () => void {
-  let latest = 0;
-  return () => {
-    const check = ++latest;
+  let inFlight = false;
+  let outdated = false;
+  const check = () => {
+    if (inFlight) {
+      outdated = true;
+      return;
+    }
+    inFlight = true;
     void invoke("plugin:window|is_fullscreen").then((fullScreen) => {
-      if (check === latest && typeof fullScreen === "boolean")
-        onAnswer(fullScreen);
+      inFlight = false;
+      if (typeof fullScreen === "boolean") onAnswer(fullScreen);
+      if (!outdated) return;
+      outdated = false;
+      check();
     });
   };
+  return check;
 }
 
 function deduplicatedThemeCalls(invoke: Invoke): (theme: WindowTheme) => void {

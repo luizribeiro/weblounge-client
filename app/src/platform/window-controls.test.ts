@@ -131,19 +131,21 @@ describe("window controls", () => {
     expect(root.dataset.windowControls).toBe("overlay");
   });
 
-  it("keeps only the newest full-screen answer", async () => {
+  it("folds a live resize's burst of events into one trailing check", async () => {
     const answers: ((fullScreen: boolean) => void)[] = [];
     const scope = observe(
       macApp,
       () => new Promise<boolean>((resolve) => answers.push(resolve)),
     );
-    scope.resize();
+    for (let frame = 0; frame < 60; frame += 1) scope.resize();
+    expect(scope.calls).toHaveLength(1);
 
+    answers[0]?.(false);
+    await vi.waitFor(() => expect(scope.calls).toHaveLength(2));
     answers[1]?.(true);
     await vi.waitFor(() => expect(controller?.state()).toBe("hidden"));
-    answers[0]?.(false);
     await flushInvokes();
-    expect(controller?.state()).toBe("hidden");
+    expect(scope.calls).toHaveLength(2);
   });
 
   it("keeps the last state when a check fails or answers nonsense", async () => {
