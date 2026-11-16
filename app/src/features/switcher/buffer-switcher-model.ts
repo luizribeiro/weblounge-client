@@ -5,7 +5,7 @@ import type {
 
 export interface SwitcherBuffer {
   readonly buffer: BufferProjection;
-  readonly network: string;
+  readonly network: string | undefined;
 }
 
 export type SwitcherKeyIntent = "dismiss" | "next" | "open" | "previous";
@@ -20,6 +20,7 @@ export function switcherBuffers(
     networks.map((network) => [network.id, network.label]),
   );
   const recency = new Map(recentBufferIds.map((id, index) => [id, index]));
+  const networkShown = networks.length > 1;
   const needle = normalize(query);
   return buffers
     .filter(
@@ -30,7 +31,7 @@ export function switcherBuffers(
     )
     .map((buffer) => ({
       buffer,
-      network: networkNames.get(buffer.network_id) ?? "",
+      network: networkShown ? networkNames.get(buffer.network_id) : undefined,
       score: fuzzyScore(normalize(buffer.title), needle),
     }))
     .filter((item) => item.score !== undefined)

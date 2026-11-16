@@ -54,10 +54,7 @@ test.describe("omnibar rows against local Ergo", () => {
       await nativeFeelAudit(page);
       await captureEachLook(page, "Quick switcher", "switcher");
       expect(await truncated(long)).toBe(true);
-      await expect(long.locator("[data-omnibar-suffix]")).toHaveJSProperty(
-        "clientWidth",
-        0,
-      );
+      await expect(results.locator("[data-omnibar-suffix]")).toHaveCount(0);
     } finally {
       peer.close();
     }

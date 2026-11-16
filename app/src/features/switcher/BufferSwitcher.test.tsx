@@ -126,6 +126,40 @@ it("leads with the sidebar's prefix and bolds unread names", () => {
   expect(emphasized(/^Bea/u)).toBe(emphasized(/^#general/u));
 });
 
+it.each([
+  ["two networks", networks, "OFTC"],
+  ["one network", networks.slice(1), undefined],
+] as const)(
+  "names the network after each row with %s",
+  (_, connected, suffix) => {
+    render(() => (
+      <BufferSwitcher
+        actions={[]}
+        buffers={buffers}
+        networks={connected}
+        onDismiss={() => {}}
+        onOpen={() => {}}
+        onRunAction={() => false}
+        recentActionIds={[]}
+        recentBufferIds={[]}
+      />
+    ));
+    const alice = screen.getByRole("option", { name: /^Alice/u });
+    expect(alice).toHaveAccessibleName(
+      ["Alice", suffix, "3 unread, including mentions"]
+        .filter(Boolean)
+        .join(", "),
+    );
+
+    if (suffix === undefined)
+      expect(alice.querySelector("[data-omnibar-suffix]")).toBeNull();
+    else
+      expect(alice.querySelector("[data-omnibar-suffix]")).toHaveTextContent(
+        suffix,
+      );
+  },
+);
+
 it("shows only an action's primary chord and keeps the rest in its tooltip", () => {
   render(() => (
     <BufferSwitcher

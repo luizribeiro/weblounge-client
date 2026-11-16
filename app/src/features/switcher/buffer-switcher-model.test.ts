@@ -21,6 +21,30 @@ const buffers = [
 ];
 
 describe("buffer switcher model", () => {
+  it("names each row's network only when there is more than one", () => {
+    const names = (configured: readonly NetworkProjection[]) =>
+      switcherBuffers(
+        buffers.filter((current) => current.network_id === 1),
+        configured,
+        [],
+        "",
+      ).map(({ network }) => network);
+    const [libera, oftc] = networks;
+    if (libera === undefined || oftc === undefined)
+      throw new Error("fixture needs two networks");
+
+    expect(names([libera])).toEqual([undefined, undefined]);
+    expect(
+      names([
+        libera,
+        {
+          ...oftc,
+          state: { reconnecting: { attempt: 2, next_retry_at_ms: 0 } },
+        },
+      ]),
+    ).toEqual(["Libera", "Libera"]);
+  });
+
   it("ranks visited buffers before activity when the query is empty", () => {
     expect(
       switcherBuffers(buffers, networks, [1, 3], "").map(
