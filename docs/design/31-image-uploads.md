@@ -196,9 +196,37 @@ Luiz asked:
   suggestions and no attachment still does nothing (design 14).
 - The approval prompt extends `ConfirmationDialog` with an explanation line and an optional
   "Remember" checkbox. It returns focus to the composer (design 15).
-- No Attach button or picker yet; `composer.upload` (design 14) arrives with arbitrary files.
+- No Attach button yet; `composer.upload` (design 14) arrives with arbitrary files. The system
+  picker opens only through `/file` (below).
 - Tokens only; the chip uses `chip`, `panel-border`, `accent` and `error` colours and the motion
   tokens.
+
+## The `/file` command
+
+Added 2026-11-15 (a slice of backlog F9): `/file` opens the system picker for one image and attaches
+the choice exactly as a paste does, so the chip, U2 to U8, the limits and the failures are the same.
+
+- **Declared in the engine** (`Command::File {}`, surfaces `Slash`, description "Upload an image"),
+  so completion, `/help` and the catalog list it like any command. It is not on the palette: a
+  palette entry dispatches to the engine, and the picker cannot open after that hop (next point).
+- **Run by the composer, synchronously.** Safari and iOS open a file picker only inside the user's
+  gesture, so the composer recognises a bare `/file` in its Enter keydown or Send tap and calls
+  `click()` on its hidden `<input type="file" accept="image/*">` (single file) before anything
+  asynchronous. The engine never sees a bare `/file`; if one reaches it, it is refused.
+- **The text is cleared** when the command runs, like any accepted command: cancelling the picker
+  leaves an empty composer and any existing attachment untouched. A picked file goes through the
+  paste path (`attach`), so it replaces an earlier image or, while one uploads, asks first (U8).
+- **No file host:** the picker does not open, and the same "This network doesn't accept uploads."
+  note shows above the composer.
+- **Arguments:** `/file anything` is not intercepted; the engine refuses it with "That command has
+  an unexpected argument.", like `/version` or `/close` with an argument.
+- **Native shells.** The macOS wrapper (design 27) needs no change: wry's WKWebView UI delegate
+  answers a file input with the system open panel, and the page's CSP does not govern pickers. The
+  iOS app (design 33) will need `NSCameraUsageDescription`, because WKWebView's image picker offers
+  "Take Photo".
+- **Testing:** unit tests for the interception, the cleared text, the no-host note and the picked
+  file's chip; Playwright picks a fixture PNG through the `filechooser` event on Chromium, WebKit
+  and the phone projects, sends it, and covers cancel and a network without a file host.
 
 ## CSP
 
@@ -235,5 +263,5 @@ images (design 30); Tauri has no CSP.
 
 ## Out of scope
 
-The Attach button and picker, drag-and-drop, several images, arbitrary files, an outbox for
+The Attach button, drag-and-drop, several images, arbitrary files, an outbox for
 offline sends, deleting uploads (the spec has none), and a native Tauri uploader.
