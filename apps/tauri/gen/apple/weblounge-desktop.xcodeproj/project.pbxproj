@@ -397,7 +397,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.weblounge.ios.dev;
 				PRODUCT_NAME = "weblounge dev";
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALID_ARCHS = arm64;
 			};
 			name = release;
@@ -485,7 +485,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.weblounge.ios.dev;
 				PRODUCT_NAME = "weblounge dev";
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALID_ARCHS = arm64;
 			};
 			name = debug;
