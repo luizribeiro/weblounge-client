@@ -1,4 +1,4 @@
-//! Carries the Swift side's taps and device tokens into the page.
+//! Carries the Swift side's taps and lifecycle changes into the page.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,13 +8,17 @@ use tauri::{
     ipc::{Channel, InvokeResponseBody},
     webview::PageLoadPayload,
 };
+use weblounge_native_bridge::{AppLifecycle, PageEvent};
 
 use super::{
     commands::call,
     failure::notification_center,
     shell_event::{ShellEvent, TapAction, app_page_loaded, tap_action, token_script},
 };
-use crate::window::{self, MAIN_LABEL, log_failure};
+use crate::{
+    page_event::dispatch_script,
+    window::{self, MAIN_LABEL, log_failure},
+};
 
 /// Whether the hosted page has finished loading, so a tap can be handed to it.
 #[derive(Default)]
@@ -55,6 +59,10 @@ fn handle(app: &AppHandle, json: &str) {
             Ok(script) => window::eval_in_page(app, &script),
             Err(error) => eprintln!("could not announce the push target: {error}"),
         },
+        Ok(ShellEvent::Lifecycle {
+            side,
+            background_task,
+        }) => report_lifecycle(app, side, background_task),
         Err(error) => eprintln!("could not read a shell event: {error}"),
     }
 }
@@ -76,4 +84,39 @@ fn open_route(app: &AppHandle, user_info: Value) {
         Ok(TapAction::Navigate(url)) => log_failure("load the tapped route", window.navigate(url)),
         Err(error) => eprintln!("dropped a notification tap: {error}"),
     }
+}
+
+fn report_lifecycle(app: &AppHandle, side: AppLifecycle, background_task: Option<i64>) {
+    let dispatched = dispatch_script(&PageEvent::Lifecycle(side))
+        .map_err(|error| error.to_string())
+        .and_then(|script| {
+            let window = main_window(app).ok_or("no window")?;
+            let ending = app.clone();
+            window
+                .eval_with_callback(script, move |_| {
+                    if let Some(task) = background_task {
+                        end_background_task(&ending, task);
+                    }
+                })
+                .map_err(|error| error.to_string())
+        });
+    if let Err(error) = dispatched {
+        eprintln!("could not report the lifecycle to the page: {error}");
+        if let Some(task) = background_task {
+            end_background_task(app, task);
+        }
+    }
+}
+
+fn end_background_task(app: &AppHandle, task: i64) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let ending = call::<()>(
+            &app,
+            "endBackgroundTask",
+            json!({ "id": task }),
+            notification_center,
+        );
+        log_failure("end the background task", ending.await);
+    });
 }

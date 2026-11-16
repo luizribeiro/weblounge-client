@@ -1,15 +1,17 @@
 import Foundation
 import Tauri
+import UIKit
 import UserNotifications
 
 struct WatchEventsArgs: Decodable { let handler: Channel }
+struct EndBackgroundTaskArgs: Decodable { let id: Int }
 struct CreateRouteKeysArgs: Decodable {
   let routeId: String
   let route: RouteMeta
 }
 struct RouteIdArgs: Decodable { let routeId: String }
-struct WriteNotificationCountsArgs: Decodable { let counts: [NotificationCount] }
 struct SetBadgeArgs: Decodable { let count: Int }
+struct WriteNotificationCountsArgs: Decodable { let counts: [NotificationCount] }
 struct IdentifiersArgs: Decodable { let identifiers: [String] }
 
 /// The iOS shell's Apple API calls. Each command answers in the bridge's JSON shapes; the Rust
@@ -20,17 +22,26 @@ final class ShellPlugin: Plugin {
     events.send(registrationAnswer(token).merging(["kind": "token"]) { current, _ in current })
   }
   private lazy var routing = NotificationRouting(events: events)
+  private lazy var lifecycle = LifecycleObserver(events: events)
   private var center: UNUserNotificationCenter { .current() }
 
   override init() {
     super.init()
     registration.install()
     center.delegate = routing
+    lifecycle.start()
   }
 
   @objc func watchEvents(_ invoke: Invoke) {
     invoke.settle(.notificationCenter) {
       events.attach(try invoke.parseArgs(WatchEventsArgs.self).handler)
+      return nil
+    }
+  }
+
+  @objc func endBackgroundTask(_ invoke: Invoke) {
+    invoke.settle(.notificationCenter) {
+      LifecycleObserver.endBackgroundTask(try invoke.parseArgs(EndBackgroundTaskArgs.self).id)
       return nil
     }
   }

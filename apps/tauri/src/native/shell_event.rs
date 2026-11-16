@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::{Url, webview::PageLoadEvent};
-use weblounge_native_bridge::{BufferRoutePath, PageEvent, RouteNotificationData};
+use weblounge_native_bridge::{AppLifecycle, BufferRoutePath, PageEvent, RouteNotificationData};
 
 use super::answers::Registration;
 use crate::{page_event::dispatch_script, window::APP_URL};
@@ -19,6 +19,11 @@ pub enum ShellEvent {
     Tap { user_info: Value },
     /// APNs issued a device token, or a different one.
     Token(Registration),
+    /// The app crossed the lifecycle; going to the background holds a task to end afterwards.
+    Lifecycle {
+        side: AppLifecycle,
+        background_task: Option<i64>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -100,6 +105,26 @@ mod tests {
             "window.dispatchEvent(new CustomEvent(\"weblounge:push-target\", { detail: \
              {\"environment\":\"sandbox\",\"platform\":\"apns\",\"token\":\
              \"740f4707bebcf74f9b7c25d48e3358945f6aa01da5ddb387462c7eaf61bb78ad\"} }));"
+        );
+    }
+
+    #[test]
+    fn lifecycle_events_parse() {
+        let background = json!({ "kind": "lifecycle", "side": "background", "backgroundTask": 7 });
+        assert_eq!(
+            serde_json::from_value::<ShellEvent>(background).expect("parses"),
+            ShellEvent::Lifecycle {
+                side: AppLifecycle::Background,
+                background_task: Some(7)
+            }
+        );
+        let foreground = json!({ "kind": "lifecycle", "side": "foreground" });
+        assert_eq!(
+            serde_json::from_value::<ShellEvent>(foreground).expect("parses"),
+            ShellEvent::Lifecycle {
+                side: AppLifecycle::Foreground,
+                background_task: None
+            }
         );
     }
 
