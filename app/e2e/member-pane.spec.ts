@@ -286,6 +286,47 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("transcript menus and composer suggestions paint on top", async ({
+    page,
+    irc,
+  }) => {
+    const pal = await irc.peer("pal");
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 800, height: 700 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await dwellOnPeerMessage(page, pal, irc);
+    const composer = composerOf(page, irc.channel);
+    await composer.fill("bottom row");
+    await composer.press("Enter");
+    await expectSentFromPane(page, pal, irc, "bottom row");
+
+    await page
+      .locator('[data-message-row][data-message-text="bottom row"] time')
+      .click({ button: "right" });
+    const remove = page.getByRole("menuitem", { name: "Delete message" });
+    await expect(remove).toBeVisible();
+    const menu = await paneBox(page, "[role=menu]");
+    expect(menu.bottom).toBeGreaterThan(await composerTop(page));
+    await expectTopmostAt(remove, await centreOf(remove));
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+
+    await openDockedDrawer(page);
+    await composer.click();
+    await page.keyboard.type("/");
+    const suggestions = page.locator("[data-composer-suggestions]");
+    await expect(suggestions).toBeVisible();
+    const drawer = await paneBox(page, "[data-overlay-drawer] [role=dialog]");
+    const popup = await paneBox(page, "[data-composer-suggestions]");
+    expect(popup.right).toBeGreaterThan(drawer.left + 8);
+    await expectTopmostAt(suggestions, {
+      x: drawer.left + 4,
+      y: (popup.top + popup.bottom) / 2,
+    });
+    await nativeFeelAudit(page);
+  });
+
   test("a confirmation over the docked list still swallows typing", async ({
     page,
     irc,
@@ -351,6 +392,28 @@ async function dwellOnPeerMessage(
   const sent = await peer.privmsgConfirmed(irc.channel, text);
   await expect(page.getByText(text, { exact: true })).toBeVisible();
   await waitForReadDwell(irc, irc.channel, serverTime(sent));
+}
+
+async function centreOf(target: Locator) {
+  const box = await target.boundingBox();
+  if (box === null) throw new Error("the target has no box");
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+async function expectTopmostAt(
+  target: Locator,
+  point: { readonly x: number; readonly y: number },
+): Promise<void> {
+  await expect(target).toBeVisible();
+  await expect
+    .poll(() =>
+      target.evaluate(
+        (element, { x, y }) =>
+          element.contains(document.elementFromPoint(x, y)),
+        point,
+      ),
+    )
+    .toBe(true);
 }
 
 async function expectDockedDrawerOpen(page: Page): Promise<void> {

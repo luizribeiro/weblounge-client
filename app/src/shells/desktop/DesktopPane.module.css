@@ -43,17 +43,21 @@
   grid-template-rows: auto [transcript-start] minmax(0, 1fr) [transcript-end] auto;
 }
 
-/* The transcript keeps its own layers so the docked drawer can sit above
-   them yet below the composer's suggestions. */
 .conversationBody > :has(> [data-message-list]) {
   grid-row: transcript;
-  isolation: isolate;
 }
 
+/* The drawer covers the transcript's jump pill and the composer covers the
+   drawer, so its suggestions show over it; both stay low enough for the
+   transcript's context menu and confirmation dialog to cover them. */
 .conversationBody > [data-overlay-drawer] {
   grid-column: 1;
   grid-row: transcript;
-  z-index: 1;
+  z-index: 3;
+}
+
+.conversationBody > [data-composer] {
+  z-index: 4;
 }
 
 .empty {
