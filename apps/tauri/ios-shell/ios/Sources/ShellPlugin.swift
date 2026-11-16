@@ -8,6 +8,7 @@ struct CreateRouteKeysArgs: Decodable {
   let route: RouteMeta
 }
 struct RouteIdArgs: Decodable { let routeId: String }
+struct WriteNotificationCountsArgs: Decodable { let counts: [NotificationCount] }
 struct SetBadgeArgs: Decodable { let count: Int }
 
 /// The iOS shell's Apple API calls. Each command answers in the bridge's JSON shapes; the Rust
@@ -74,6 +75,14 @@ final class ShellPlugin: Plugin {
     invoke.settle(.keychain) {
       let args = try invoke.parseArgs(RouteIdArgs.self)
       try RouteKeyMaker(storage: try storage()).drop(routeId: args.routeId)
+      return nil
+    }
+  }
+
+  @objc func writeNotificationCounts(_ invoke: Invoke) {
+    invoke.settle(.appGroup) {
+      let args = try invoke.parseArgs(WriteNotificationCountsArgs.self)
+      try storage().writeNotificationCounts(args.counts)
       return nil
     }
   }

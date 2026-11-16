@@ -6,12 +6,12 @@ use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
 use weblounge_native_bridge::{
     CreateRouteKeysRequest, DropRouteKeysRequest, NativeBridgeError, PushPermission, PushTarget,
-    RouteKeys, SetBadgeRequest,
+    RouteKeys, SetBadgeRequest, WriteNotificationCountsRequest,
 };
 
 use super::{
     answers::Registration,
-    failure::{self, Fallback, apns_registration, keychain, notification_center},
+    failure::{self, Fallback, apns_registration, app_group, keychain, notification_center},
 };
 
 pub(super) async fn call<T: DeserializeOwned>(
@@ -71,4 +71,12 @@ pub async fn drop_route_keys(
 #[tauri::command]
 pub async fn set_badge(app: AppHandle, request: SetBadgeRequest) -> Result<(), NativeBridgeError> {
     call(&app, "setBadge", request, notification_center).await
+}
+
+#[tauri::command]
+pub async fn write_notification_counts(
+    app: AppHandle,
+    request: WriteNotificationCountsRequest,
+) -> Result<(), NativeBridgeError> {
+    call(&app, "writeNotificationCounts", request, app_group).await
 }
