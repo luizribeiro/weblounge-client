@@ -55,7 +55,7 @@ test.describe("browser tab indicator against local Ergo", () => {
   }) => {
     await installNativeFeelInstrumentation(page);
     await openHome(page, irc);
-    await settingsButton(page).click();
+    await openNotificationSettings(page);
     const dialog = page.getByRole("dialog", { name: "Settings" });
     const tabSwitch = dialog.getByRole("switch", {
       name: "Show unread in the tab",
@@ -82,7 +82,7 @@ test.describe("browser tab indicator against local Ergo", () => {
 
     await page.goto(irc.url());
     await expect(directRow(page, peer)).toHaveAccessibleName(/, 1 unread/u);
-    await settingsButton(page).click();
+    await openNotificationSettings(page);
     await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
     await expectTab(page, "connected", "weblounge");
     await tabSwitch.click();
@@ -117,10 +117,18 @@ async function whileOffline(
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
 }
 
-function settingsButton(page: Page) {
-  return page
+async function openNotificationSettings(page: Page): Promise<void> {
+  await page
     .getByRole("complementary", { name: "Channel list" })
-    .getByRole("button", { name: "Settings" });
+    .getByRole("button", { name: "Settings" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const section = dialog.getByRole("button", { name: "Notifications" });
+  await section.click();
+  await expect(section).toHaveAttribute("aria-current", "page");
+  await expect(
+    dialog.getByRole("region", { name: "Notifications" }),
+  ).toBeVisible();
 }
 
 function directRow(page: Page, peer: IrcClient) {

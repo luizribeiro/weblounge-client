@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
+import { installPlatformEnvironment } from "../../platform/environment";
 import { SettingsModal } from "./SettingsModal";
 
 function setup(rail = false) {
@@ -88,9 +89,43 @@ describe("SettingsModal", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("shows the Notifications page from its nav item", () => {
+    setup();
+    const notifications = screen.getByRole("button", { name: "Notifications" });
+
+    fireEvent.click(notifications);
+
+    expect(notifications).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("button", { name: "Appearance" }),
+    ).not.toHaveAttribute("aria-current");
+    expect(screen.queryByRole("region", { name: "Appearance" })).toBeNull();
+    expect(
+      screen.getByRole("region", { name: "Notifications" }),
+    ).toContainElement(
+      screen.getByRole("switch", { name: "Show unread in the tab" }),
+    );
+  });
+
+  it("lists only Appearance where no notification setting applies", () => {
+    installPlatformEnvironment(document.body, window, {
+      target: "tauri-desktop",
+    });
+    setup();
+
+    expect(
+      screen
+        .getByRole("navigation", { name: "Settings sections" })
+        .querySelectorAll("button"),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Notifications" })).toBeNull();
+  });
+
   it("wraps Tab between the last switch and Close", async () => {
     const { dialog } = setup();
     await waitFor(() => expect(dialog).toHaveFocus());
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    dialog.focus();
     const last = screen.getByRole("switch", { name: "Show unread in the tab" });
 
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
@@ -104,6 +139,7 @@ describe("SettingsModal", () => {
 
   it("closes on Escape after flipping a switch", () => {
     const { onClose } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
     const tabSwitch = screen.getByRole("switch", {
       name: "Show unread in the tab",
     });

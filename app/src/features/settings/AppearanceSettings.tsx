@@ -1,10 +1,8 @@
-import { createUniqueId, Show } from "solid-js";
+import { createUniqueId } from "solid-js";
 import { densities } from "../../engine/decodeSettings";
 import type { AppSetting } from "../../engine/generated/AppSetting";
 import type { Density } from "../../engine/generated/Density";
-import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
-import { NotificationsSettings } from "./NotificationsSettings";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { SettingRow } from "./SettingRow";
 import styles from "./SettingsHeading.module.css";
@@ -13,8 +11,6 @@ import { ThemeCards } from "./ThemeCards";
 
 export function AppearanceSettings(props: SettingsPageProps) {
   const themeId = createUniqueId();
-  const inBrowserTab = () =>
-    platformEnvironment().environment().display === "browser";
   const change = (setting: AppSetting) =>
     props.onChange({ scope: "app", setting });
   return (
@@ -43,12 +39,6 @@ export function AppearanceSettings(props: SettingsPageProps) {
           />
         )}
       </SettingRow>
-      <Show when={inBrowserTab()}>
-        <NotificationsSettings
-          onChange={props.onChange}
-          settings={props.settings}
-        />
-      </Show>
     </>
   );
 }

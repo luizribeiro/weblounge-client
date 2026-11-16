@@ -335,6 +335,9 @@ export const messages = {
   "settings.message_density": "Message density",
   "settings.message_density.description":
     "Spacing, text size and avatar size in the conversation.",
+  "settings.notifications": "Notifications",
+  "settings.notifications.summary.tab_off": "Unread hidden from the tab",
+  "settings.notifications.summary.tab_on": "Unread in the tab",
   "settings.sections": "Settings sections",
   "settings.theme": "Theme",
   "settings.theme.system": "System",

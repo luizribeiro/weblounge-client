@@ -2,7 +2,6 @@ import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "../../engine/generated/AppSettings";
-import { installPlatformEnvironment } from "../../platform/environment";
 import { themes } from "../../theme/theme-registry";
 import { AppearanceSettings } from "./AppearanceSettings";
 
@@ -167,15 +166,9 @@ describe("AppearanceSettings", () => {
 
     for (const radio of screen.getAllByRole("radio"))
       expect(radio).not.toBeChecked();
-    expect(
-      screen.getByRole("switch", { name: "Show unread in the tab" }),
-    ).toBeDisabled();
   });
 
-  it("offers the tab switch only in a browser tab", () => {
-    installPlatformEnvironment(document.body, window, {
-      target: "tauri-desktop",
-    });
+  it("leaves the browser tab switch to the Notifications section", () => {
     setup();
 
     expect(screen.queryByRole("switch")).toBeNull();
