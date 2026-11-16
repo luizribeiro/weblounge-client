@@ -3,6 +3,7 @@ import {
   dispatchShellEvent,
   installIosShellStub,
   nativeCalls,
+  queuePushedMessage,
 } from "./ios-shell-stub";
 import { expect, test } from "./irc-fixture";
 import {
@@ -17,6 +18,51 @@ test.describe("the iPhone app's page against local Ergo", () => {
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
+
+  test("shows a message the extension queued when its notification is tapped", async ({
+    page,
+    irc,
+  }) => {
+    await installIosShellStub(page);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel }).click();
+    await expect(
+      page.getByRole("heading", { name: irc.channel }),
+    ).toBeVisible();
+    const route = new URL(page.url()).pathname;
+    const networkLabel = decodeURIComponent(route.split("/")[1] ?? "");
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    await expectSettled(page);
+    const text = `queued by the extension ${irc.id}`;
+
+    await queuePushedMessage(page, {
+      schema: 1,
+      network_label: networkLabel,
+      nickname: irc.account,
+      route,
+      sender: irc.nickNamed("mel"),
+      account: null,
+      target: irc.channel,
+      msgid: `extension-${irc.id}`,
+      time: new Date().toISOString(),
+      text,
+      kind: "message",
+    });
+    await dispatchShellEvent(page, {
+      name: "weblounge:open-route",
+      detail: route,
+    });
+
+    await expect(
+      page.getByRole("heading", { name: irc.channel }),
+    ).toBeVisible();
+    await expect(
+      page.locator(`[data-message-row][data-message-text="${text}"]`),
+    ).toBeVisible();
+    const commands = (await nativeCalls(page)).map(({ command }) => command);
+    expect(commands).toContain("push_permission");
+    expect(commands).not.toContain("request_push_permission");
+  });
 
   test("badges an unread DM and opens it from a notification tap", async ({
     page,
