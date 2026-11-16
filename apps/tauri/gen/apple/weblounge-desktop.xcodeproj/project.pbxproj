@@ -33,6 +33,7 @@
 		9966DF30BE9CBCAF46341F19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */; };
 		A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		AE182E69546D4A69BE2CC95D /* weblounge-notifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AE8C759D8AE7F5C7D983ED58 /* NotificationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACA34ED9A95E820048096C4 /* NotificationServiceTests.swift */; };
 		B20A8BA7E685982D0ECAF48D /* RelayPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0BF69FD89981B403B18EA /* RelayPushTests.swift */; };
 		C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */; };
@@ -102,6 +103,7 @@
 		4D71C1325039A56A88496E06 /* desktop.rs */ = {isa = PBXFileReference; path = desktop.rs; sourceTree = "<group>"; };
 		4F971CFB6BA1EF47406D9322 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		588AA8C84FC4CE6699448C62 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
+		5ACA34ED9A95E820048096C4 /* NotificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationServiceTests.swift; sourceTree = "<group>"; };
 		6559F866E46AE0486D582987 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		67934DDE50D2FFB92F416321 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 		6F8A25D6864443CF2E6E1D18 /* badge.test.mjs */ = {isa = PBXFileReference; path = badge.test.mjs; sourceTree = "<group>"; };
@@ -183,6 +185,7 @@
 		3ACEAA5FDBBEA0B15C35D971 /* NotificationServiceTests */ = {
 			isa = PBXGroup;
 			children = (
+				5ACA34ED9A95E820048096C4 /* NotificationServiceTests.swift */,
 				333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */,
 				14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */,
 				8391BA0135225869789B0BC4 /* PushPresenterTests.swift */,
@@ -518,6 +521,7 @@
 			files = (
 				0BCEC72F0F570FA37516B5F9 /* Base64URL.swift in Sources */,
 				C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */,
+				AE8C759D8AE7F5C7D983ED58 /* NotificationServiceTests.swift in Sources */,
 				00B8FDFE01EEB40A3BB4DDF6 /* PreparedPush.swift in Sources */,
 				EA22FE2B062623BB294ABC81 /* PreparedPushTests.swift in Sources */,
 				40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */,
