@@ -17,20 +17,35 @@ pub(crate) struct TlsServer {
     task: tokio::task::JoinHandle<()>,
 }
 
+/// A TLS acceptor for `hosts` that offers `alpn`, and its DER certificate to trust.
+pub(crate) fn self_signed_acceptor(hosts: &[&str], alpn: &[&[u8]]) -> (TlsAcceptor, Vec<u8>) {
+    let CertifiedKey { cert, signing_key } = generate_simple_self_signed(
+        hosts
+            .iter()
+            .map(|host| (*host).to_owned())
+            .collect::<Vec<_>>(),
+    )
+    .expect("test certificate");
+    let key = PrivatePkcs8KeyDer::from(signing_key.serialize_der());
+    let mut config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.der().clone()], key.into())
+        .expect("TLS config");
+    config.alpn_protocols = alpn.iter().map(|protocol| protocol.to_vec()).collect();
+    (TlsAcceptor::from(Arc::new(config)), cert.der().to_vec())
+}
+
+pub(crate) async fn loopback_listener() -> TcpListener {
+    TcpListener::bind((IpAddr::from([127, 0, 0, 1]), 0))
+        .await
+        .expect("TLS listener")
+}
+
 impl TlsServer {
     pub(crate) async fn start(host: &str, response: impl Into<Vec<u8>>) -> Self {
-        let CertifiedKey { cert, signing_key } =
-            generate_simple_self_signed(vec![host.to_owned()]).expect("test certificate");
-        let key = PrivatePkcs8KeyDer::from(signing_key.serialize_der());
-        let config = ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(vec![cert.der().clone()], key.into())
-            .expect("TLS config");
-        let listener = TcpListener::bind((IpAddr::from([127, 0, 0, 1]), 0))
-            .await
-            .expect("TLS listener");
+        let (acceptor, certificate) = self_signed_acceptor(&[host], &[]);
+        let listener = loopback_listener().await;
         let address = listener.local_addr().expect("TLS address");
-        let acceptor = TlsAcceptor::from(Arc::new(config));
         let response = Arc::new(response.into());
         let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let seen = Arc::clone(&requests);
@@ -53,7 +68,7 @@ impl TlsServer {
         });
         Self {
             address,
-            certificate: cert.der().to_vec(),
+            certificate,
             requests,
             task,
         }
