@@ -124,6 +124,36 @@ test.describe("Settings section rail in a narrow desktop window", () => {
     await expect(nav).not.toHaveAttribute("data-expanded");
   });
 
+  test("stays open for keyboard focus when the pointer leaves, but not after a click", async ({
+    irc,
+    page,
+  }) => {
+    await page.setViewportSize(narrow);
+    const { nav } = await openSettings(page, irc);
+    const appearance = page.getByRole("button", { name: "Appearance" });
+    const away = { x: narrow.width - 20, y: narrow.height / 2 };
+
+    await page.getByRole("button", { name: "Close settings" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(appearance).toBeFocused();
+    await expect(nav).toHaveAttribute("data-expanded", "true");
+    await appearance.hover();
+    await page.mouse.move(away.x, away.y);
+    await expect(appearance).toBeFocused();
+    await expect(nav).toHaveAttribute("data-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(nav).not.toHaveAttribute("data-expanded");
+
+    await page.getByRole("heading", { name: "Settings" }).click();
+    await appearance.click();
+    await expect(appearance).toBeFocused();
+    await page.mouse.move(away.x, away.y);
+    await appearance.hover();
+    await expect(nav).toHaveAttribute("data-expanded", "true");
+    await page.mouse.move(away.x, away.y);
+    await expect(nav).not.toHaveAttribute("data-expanded");
+  });
+
   test("shows the labelled list in a wide window", async ({ irc, page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: "light" });

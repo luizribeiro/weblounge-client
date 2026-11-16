@@ -79,6 +79,17 @@ describe("SettingsSectionNav", () => {
     expect(expanded()).toBe(false);
   });
 
+  it("stays expanded when the pointer leaves while keyboard focus is inside", () => {
+    const { expanded, nav } = setup(true);
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    screen.getByRole("button", { name: "Appearance" }).focus();
+
+    fireEvent.pointerEnter(nav);
+    fireEvent.pointerLeave(nav);
+
+    expect(expanded()).toBe(true);
+  });
+
   it("does not expand when the pointer only passes over", () => {
     vi.useFakeTimers();
     const { expanded, nav } = setup(true);

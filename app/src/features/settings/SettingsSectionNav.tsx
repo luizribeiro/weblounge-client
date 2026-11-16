@@ -38,6 +38,8 @@ export function SettingsSectionNav<Id extends string>(
     if (props.rail) props.onExpandedChange(false);
   };
   const expandedRail = () => props.rail && props.expanded;
+  const keyboardFocusInside = () =>
+    nav?.querySelector(":focus-visible") != null;
   const moveWithKey = (event: KeyboardEvent) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const index = props.sections.findIndex(({ id }) => id === props.current);
@@ -64,7 +66,10 @@ export function SettingsSectionNav<Id extends string>(
         cancelHoverIntent();
         if (props.rail) hoverIntent = window.setTimeout(expand, hoverIntentMs);
       }}
-      onPointerLeave={collapse}
+      onPointerLeave={() => {
+        if (keyboardFocusInside()) cancelHoverIntent();
+        else collapse();
+      }}
       ref={nav}
     >
       <div class={styles.panel}>
