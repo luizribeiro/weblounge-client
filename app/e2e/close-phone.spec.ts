@@ -8,7 +8,7 @@ import {
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
-import { expectSettled } from "./settled";
+import { backToChats, expectSettled } from "./settled";
 
 const screenshots = path.join(
   process.cwd(),
@@ -35,7 +35,7 @@ test.describe("phone conversation closing against local Ergo", () => {
     await page.goto(irc.url());
     await openChannel(page, irc, channel);
     const peer = await irc.peer("phone", [channel]);
-    await page.getByRole("button", { name: "Back to chats" }).click();
+    await backToChats(page, channel);
 
     await peer.privmsgConfirmed(irc.account, "phone close");
     const directRow = () => rowFor(page, peer.nickname);
@@ -87,10 +87,7 @@ test.describe("phone conversation closing against local Ergo", () => {
     await expect(toast).toBeVisible();
     await captureThemes(page, shell, "undo-toast", browserName);
     await toast.getByRole("button", { name: "Undo" }).click();
-    await expect(
-      page.getByRole("heading", { name: peer.nickname }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "Back to chats" }).click();
+    await backToChats(page, peer.nickname);
     await expect(directRow()).toBeVisible();
 
     const channelRow = rowFor(page, channel);
@@ -156,7 +153,7 @@ test.describe("phone conversation closing against local Ergo", () => {
     await page.goto(irc.url());
     await openChannel(page, irc, channel);
     const peer = await irc.peer("tapper", [channel]);
-    await page.getByRole("button", { name: "Back to chats" }).click();
+    await backToChats(page, channel);
     await peer.privmsgConfirmed(irc.account, "tap close");
     const directRow = rowFor(page, peer.nickname);
     await expect(directRow).toBeVisible();
@@ -399,7 +396,7 @@ async function seedScrollableChannels(page: Page, irc: IrcTestAccount) {
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     current = channel;
   }
-  await page.getByRole("button", { name: "Back to chats" }).click();
+  await backToChats(page, current);
   await expectSettled(page);
 }
 

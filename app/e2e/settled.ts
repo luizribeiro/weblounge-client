@@ -43,3 +43,13 @@ export async function expectSettled(
     )
     .toEqual([]);
 }
+
+// A tap lands on whatever is under it, so tapping Back while the pushed
+// screen is still sliding in hits its header instead of the button.
+export async function backToChats(
+  page: Page,
+  conversation: string,
+): Promise<void> {
+  await expectSettled(page, { conversation });
+  await page.getByRole("button", { name: "Back to chats" }).click();
+}
