@@ -114,14 +114,17 @@ APNs shows the placeholder alert unless the NSE replaces it, so a crashed or slo
 produces a silent push. The NSE is a thin Swift target over one Rust function:
 
 ```rust
-// crates/push-payload, built as a staticlib for aarch64-apple-ios with a C ABI
+// crates/push-payload, also built as a staticlib whose C ABI returns this as JSON
 pub fn prepare_notification(ciphertext: &[u8], keys: &RouteKeys, route: &RouteMeta)
-    -> Result<PreparedNotification, PrepareError>;
-pub struct PreparedNotification {
-    title: String, body: String, thread_id: String /* the net/buffer tag */,
-    user_info: NotificationData /* route, tag, msgid, server time */,
-    pushed: Option<PushedMessage>, kind: PreparedKind /* Visible | Control */,
+    -> Result<PreparedNotification, PrepareError /* Decrypt | Parse */>;
+pub enum PreparedNotification {
+    Visible(VisibleNotification { title, body, thread_id /* the net/buffer tag */,
+        user_info /* route, tag, msgid, server time */, pushed: Option<PushedMessage> }),
+    Markread { tag, until },
+    Ping,
 }
+// The platform counts after it knows the tag, then adds the localised count line:
+pub fn counted_body(body: &str, count: u32, strings: &NotificationStrings) -> String;
 ```
 
 Decryption (RFC 8291 through the RustCrypto `p256`, `hkdf` and `aes-gcm` crates the relay already
