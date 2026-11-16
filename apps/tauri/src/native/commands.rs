@@ -5,12 +5,13 @@ use serde::{Serialize, de::DeserializeOwned};
 use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
 use weblounge_native_bridge::{
-    CreateRouteKeysRequest, DropRouteKeysRequest, NativeBridgeError, PushPermission, PushTarget,
-    RouteKeys, SetBadgeRequest, WriteNotificationCountsRequest,
+    CreateRouteKeysRequest, DeliveredNotification, DropRouteKeysRequest, NativeBridgeError,
+    PushPermission, PushTarget, RemoveDeliveredNotificationsRequest, RouteKeys, SetBadgeRequest,
+    WriteNotificationCountsRequest,
 };
 
 use super::{
-    answers::Registration,
+    answers::{Delivered, Registration},
     failure::{self, Fallback, apns_registration, app_group, keychain, notification_center},
 };
 
@@ -79,4 +80,27 @@ pub async fn write_notification_counts(
     request: WriteNotificationCountsRequest,
 ) -> Result<(), NativeBridgeError> {
     call(&app, "writeNotificationCounts", request, app_group).await
+}
+
+#[tauri::command]
+pub async fn delivered_notifications(
+    app: AppHandle,
+) -> Result<Vec<DeliveredNotification>, NativeBridgeError> {
+    let delivered: Delivered =
+        call(&app, "deliveredNotifications", (), notification_center).await?;
+    Ok(delivered.into_notifications())
+}
+
+#[tauri::command]
+pub async fn remove_delivered_notifications(
+    app: AppHandle,
+    request: RemoveDeliveredNotificationsRequest,
+) -> Result<(), NativeBridgeError> {
+    call(
+        &app,
+        "removeDeliveredNotifications",
+        request,
+        notification_center,
+    )
+    .await
 }

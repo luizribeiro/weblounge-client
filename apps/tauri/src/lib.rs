@@ -58,6 +58,10 @@ pub fn run() -> tauri::Result<()> {
             native::commands::set_badge,
             #[cfg(target_os = "ios")]
             native::commands::write_notification_counts,
+            #[cfg(target_os = "ios")]
+            native::commands::delivered_notifications,
+            #[cfg(target_os = "ios")]
+            native::commands::remove_delivered_notifications,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]

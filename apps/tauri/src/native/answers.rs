@@ -1,7 +1,8 @@
 //! The Swift side's raw answers, and how each becomes the bridge type the page receives.
 
 use serde::Deserialize;
-use weblounge_native_bridge::{ApnsEnvironment, ApnsToken, PushTarget};
+use serde_json::Value;
+use weblounge_native_bridge::{ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget};
 
 /// The device token and what decides its APNs host.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -29,9 +30,35 @@ impl Registration {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawDelivered {
+    identifier: String,
+    user_info: Value,
+}
+
+#[derive(Deserialize)]
+pub struct Delivered {
+    notifications: Vec<RawDelivered>,
+}
+
+impl Delivered {
+    /// A `userInfo` without valid notification data, such as APNs' placeholder, has no data.
+    pub fn into_notifications(self) -> Vec<DeliveredNotification> {
+        self.notifications
+            .into_iter()
+            .map(|raw| DeliveredNotification {
+                identifier: raw.identifier,
+                data: serde_json::from_value(raw.user_info).ok(),
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use weblounge_native_bridge::NotificationData;
 
     use super::*;
 
@@ -70,5 +97,35 @@ mod tests {
                 json!({ "token": token, "simulator": true, "profileApsEnvironment": null });
             assert!(serde_json::from_value::<Registration>(answer).is_err());
         }
+    }
+
+    #[test]
+    fn delivered_user_info_becomes_notification_data_or_none() {
+        let delivered: Delivered = serde_json::from_value(json!({ "notifications": [
+            { "identifier": "Bq3k7jTr2qRwWb5A", "userInfo": {
+                "route": "/Libera/%23weblounge",
+                "conversationTag": "Libera/#weblounge",
+                "messageId": "Bq3k7jTr2qRwWb5A",
+                "messageTime": "2026-11-16T12:34:56.789Z",
+                "aps": { "alert": { "title": "weblounge" } },
+            } },
+            { "identifier": "placeholder", "userInfo": {
+                "aps": { "alert": { "title": "weblounge", "body": "New message" } },
+                "r": "Xq3vY0bH2kRmT7nW9pLs1A",
+                "c": "AAAA",
+            } },
+            { "identifier": "unsafe", "userInfo": { "route": "//evil.example/" } },
+        ] }))
+        .expect("parses");
+        let notifications = delivered.into_notifications();
+
+        assert_eq!(notifications.len(), 3);
+        assert!(matches!(
+            &notifications[0].data,
+            Some(NotificationData::Chat(chat)) if chat.message_id == "Bq3k7jTr2qRwWb5A"
+        ));
+        assert_eq!(notifications[1].identifier, "placeholder");
+        assert_eq!(notifications[1].data, None);
+        assert_eq!(notifications[2].data, None);
     }
 }

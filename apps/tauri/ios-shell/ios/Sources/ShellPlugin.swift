@@ -10,6 +10,7 @@ struct CreateRouteKeysArgs: Decodable {
 struct RouteIdArgs: Decodable { let routeId: String }
 struct WriteNotificationCountsArgs: Decodable { let counts: [NotificationCount] }
 struct SetBadgeArgs: Decodable { let count: Int }
+struct IdentifiersArgs: Decodable { let identifiers: [String] }
 
 /// The iOS shell's Apple API calls. Each command answers in the bridge's JSON shapes; the Rust
 /// side validates every answer into the bridge's types before the page sees it.
@@ -99,6 +100,27 @@ final class ShellPlugin: Plugin {
       }
     } catch {
       invoke.reject(BridgeFailure(.notificationCenter, error))
+    }
+  }
+
+  @objc func deliveredNotifications(_ invoke: Invoke) {
+    center.getDeliveredNotifications { notifications in
+      invoke.resolve([
+        "notifications": notifications.map {
+          [
+            "identifier": $0.request.identifier,
+            "userInfo": jsonUserInfo($0.request.content.userInfo),
+          ]
+        }
+      ])
+    }
+  }
+
+  @objc func removeDeliveredNotifications(_ invoke: Invoke) {
+    invoke.settle(.notificationCenter) {
+      let args = try invoke.parseArgs(IdentifiersArgs.self)
+      center.removeDeliveredNotifications(withIdentifiers: args.identifiers)
+      return nil
     }
   }
 
