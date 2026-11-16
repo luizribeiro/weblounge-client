@@ -32,6 +32,7 @@ mod delivered;
 mod page_event;
 mod push;
 mod pushed_message;
+mod read_state;
 mod route_keys;
 mod validated;
 
@@ -44,6 +45,9 @@ pub use delivered::{
 pub use page_event::{AppLifecycle, PageEvent};
 pub use push::{ApnsEnvironment, ApnsToken, PushPermission, PushTarget};
 pub use pushed_message::{PushedMessage, PushedMessageKind, PushedMessageSchema};
+pub use read_state::{
+    ConversationNotificationCount, SetBadgeRequest, WriteNotificationCountsRequest,
+};
 pub use route_keys::{
     AuthSecret, CreateRouteKeysRequest, DropRouteKeysRequest, P256dhKey, RouteId, RouteKeys,
     RouteMeta,
