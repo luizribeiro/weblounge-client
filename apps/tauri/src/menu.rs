@@ -14,6 +14,7 @@ use crate::{
 
 const RELOAD_ID: &str = "reload";
 const LOGIN_ID: &str = "open-at-login";
+const FULLSCREEN_ID: &str = "toggle-full-screen";
 
 pub struct LoginCheck(CheckMenuItem<Wry>);
 
@@ -29,6 +30,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     app.manage(LoginCheck(login.clone()));
     let reload = MenuItem::with_id(app, RELOAD_ID, "Reload", true, Some("CmdOrCtrl+R"))?;
+    let fullscreen = MenuItem::with_id(
+        app,
+        FULLSCREEN_ID,
+        "Toggle Full Screen",
+        true,
+        Some("CmdOrCtrl+Shift+F"),
+    )?;
     let settings = page_action_item(app, PageAction::OpenSettings)?;
     Menu::with_items(
         app,
@@ -64,12 +72,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                     &PredefinedMenuItem::select_all(app, None)?,
                 ],
             )?,
-            &Submenu::with_items(
-                app,
-                "View",
-                true,
-                &[&reload, &PredefinedMenuItem::fullscreen(app, None)?],
-            )?,
+            &Submenu::with_items(app, "View", true, &[&reload, &fullscreen])?,
             &Submenu::with_items(
                 app,
                 "Window",
@@ -87,9 +90,23 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )
 }
 
+// AppKit adds its own full-screen item to the View menu when no item uses `toggleFullScreen:`.
+#[cfg(target_os = "macos")]
+pub fn hide_system_full_screen_item() {
+    objc2_foundation::NSUserDefaults::standardUserDefaults().setBool_forKey(
+        false,
+        objc2_foundation::ns_string!("NSFullScreenMenuItemEverywhere"),
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn hide_system_full_screen_item() {}
+
 pub fn handle_event(app: &AppHandle, event: &MenuEvent) {
     if event.id() == RELOAD_ID {
         window::reload(app);
+    } else if event.id() == FULLSCREEN_ID {
+        window::toggle_fullscreen(app);
     } else if event.id() == LOGIN_ID {
         toggle_login_item(app);
     } else if let Some(action) = PageAction::from_name(event.id().as_ref()) {
@@ -131,7 +148,7 @@ mod tests {
 
     #[test]
     fn every_menu_item_id_is_distinct() {
-        let ids: Vec<&str> = [RELOAD_ID, LOGIN_ID]
+        let ids: Vec<&str> = [RELOAD_ID, LOGIN_ID, FULLSCREEN_ID]
             .into_iter()
             .chain(PageAction::ALL.map(PageAction::name))
             .collect();

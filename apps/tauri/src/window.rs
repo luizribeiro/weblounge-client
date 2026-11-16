@@ -99,6 +99,15 @@ pub fn eval_in_page(app: &AppHandle, script: &str) {
     }
 }
 
+pub fn toggle_fullscreen(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+        let result = window
+            .is_fullscreen()
+            .and_then(|fullscreen| window.set_fullscreen(!fullscreen));
+        log_failure("toggle full screen", result);
+    }
+}
+
 pub fn reload(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         log_failure("reload the window", window.reload());

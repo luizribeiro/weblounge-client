@@ -56,6 +56,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn install(app: &App) -> Result<(), SetupError> {
+    menu::hide_system_full_screen_item();
     app.set_menu(menu::build(app.handle())?)?;
     notifications::install_click_delegate(app.handle());
     let identity_script = shell::identity_script()?;
