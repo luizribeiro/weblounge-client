@@ -585,6 +585,15 @@ test.describe("independent push recovery", () => {
       );
       if (legacyEndpoint === undefined)
         throw new Error("new push endpoint is missing");
+      // The page stores the route active, rewriting its byte-backed keys,
+      // only after the relay reports it active; converting earlier is undone.
+      await expect
+        .poll(() => storedRouteKeyState(page))
+        .toMatchObject({
+          byteKeys: 1,
+          activeRoutes: 1,
+          routeIds: [expect.any(String)],
+        });
       const legacyRouteId = await convertStoredRouteToLegacyCryptoKey(page);
 
       await page.reload();
@@ -1558,6 +1567,7 @@ async function convertStoredRouteToLegacyCryptoKey(
 async function storedRouteKeyState(page: Page): Promise<{
   cryptoKeys: number;
   byteKeys: number;
+  activeRoutes: number;
   routeIds: readonly string[];
 }> {
   return page.evaluate(async () => {
@@ -1583,6 +1593,7 @@ async function storedRouteKeyState(page: Page): Promise<{
       byteKeys: routes.filter(
         (route) => route.privateKeyPkcs8 instanceof Uint8Array,
       ).length,
+      activeRoutes: routes.filter((route) => route.active === true).length,
       routeIds: routes.flatMap((route) =>
         typeof route.routeId === "string" ? [route.routeId] : [],
       ),
