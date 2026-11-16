@@ -15,6 +15,7 @@ import type { RelayClient } from "./relay-client";
 import type {
   PushRouteRecord,
   PushRouteStore,
+  RouteKeyFactory,
   StoredPushRoute,
 } from "./route-store";
 
@@ -169,7 +170,13 @@ function fakeRelay() {
   return { deadEndpoints, relay };
 }
 
-function fixture() {
+function fixture(
+  generateRouteKeys: RouteKeyFactory = async () => ({
+    p256dh: "route-public-key",
+    auth: "route-auth",
+    privateKeyPkcs8: Uint8Array.of(1, 2, 3),
+  }),
+) {
   const engine = new FakeEngine();
   const devices = new MemoryDevices();
   const routes = new MemoryRoutes();
@@ -189,11 +196,7 @@ function fixture() {
     onAuthorizationRequired: authorizationRequired,
     routeContext: () => ({ networkLabel: "Lounge", nickname: "weblounge" }),
     onRouteDiagnostic: diagnostics,
-    generateRouteKeys: async () => ({
-      p256dh: "route-public-key",
-      auth: "route-auth",
-      privateKeyPkcs8: Uint8Array.of(1, 2, 3),
-    }),
+    generateRouteKeys,
     exclusive: async (_name, work) => work(),
     retry: (work, delay) => {
       retries.push(work);
@@ -284,6 +287,45 @@ describe("push state synchronization", () => {
       { id: "device-1", secret: "device-secret" },
       "route-1",
     );
+  });
+
+  it("asks for keys made for the relay's route and keeps natively stored keys out of the record", async () => {
+    const generateRouteKeys = vi.fn<RouteKeyFactory>(async () => ({
+      p256dh: "keychain-public-key",
+      auth: "keychain-auth",
+      keyStorage: "native",
+    }));
+    const current = fixture(generateRouteKeys);
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(generateRouteKeys).toHaveBeenCalledWith({
+      routeId: "route-1",
+      networkId: 1,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
+    });
+    expect(current.routes.values.get("home-vapid")).toMatchObject({
+      routeId: "route-1",
+      p256dh: "keychain-public-key",
+      keyStorage: "native",
+    });
+    expect(current.routes.values.get("home-vapid")).not.toHaveProperty(
+      "privateKeyPkcs8",
+    );
+    expect(current.engine.requests[0]?.request).toMatchObject({
+      type: "ensure_push",
+      route: {
+        route_id: "route-1",
+        p256dh: "keychain-public-key",
+        auth: "keychain-auth",
+      },
+    });
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    expect(generateRouteKeys).toHaveBeenCalledOnce();
   });
 
   it("reuses one relay reconciliation for repeated connection requirements", async () => {
@@ -485,9 +527,9 @@ describe("push state synchronization", () => {
       device_id: "device-1",
       secret: "device-secret",
     };
-    const { privateKeyPkcs8: _privateKeyPkcs8, ...metadata } = route({
-      routeId: "failed-route",
-    });
+    const seeded = route({ routeId: "failed-route" });
+    if (!("privateKeyPkcs8" in seeded)) throw new Error("route has no key");
+    const { privateKeyPkcs8: _privateKeyPkcs8, ...metadata } = seeded;
     current.routes.values.set("home-vapid", {
       ...metadata,
       keyStorage: "legacy-crypto-key",

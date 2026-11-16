@@ -9,7 +9,7 @@ import {
   transactionDone,
 } from "./push-database";
 
-export interface StoredPushRoute {
+interface PushRouteMetadata {
   readonly networkId: number;
   readonly networkLabel: string;
   readonly nickname: string;
@@ -19,17 +19,22 @@ export interface StoredPushRoute {
   readonly endpoint: string;
   readonly p256dh: string;
   readonly auth: string;
-  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
   readonly target?: DeviceTarget;
   readonly active?: boolean;
   readonly needsReregistration?: boolean;
   readonly retiring?: boolean;
 }
 
-export interface LegacyStoredPushRoute
-  extends Omit<StoredPushRoute, "privateKeyPkcs8"> {
+/** Where a route's private key lives: in this record, or in the iPhone shell's keychain. */
+export type RouteKeyStorage =
+  | { readonly privateKeyPkcs8: Uint8Array<ArrayBuffer> }
+  | { readonly keyStorage: "native" };
+
+export type StoredPushRoute = PushRouteMetadata & RouteKeyStorage;
+
+export type LegacyStoredPushRoute = PushRouteMetadata & {
   readonly keyStorage: "legacy-crypto-key";
-}
+};
 
 export type PushRouteRecord = StoredPushRoute | LegacyStoredPushRoute;
 
@@ -41,15 +46,24 @@ export interface PushRouteStore {
   all(): Promise<readonly PushRouteRecord[]>;
 }
 
-export interface RouteKeys {
+export type RouteKeys = {
   readonly p256dh: string;
   readonly auth: string;
-  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
+} & RouteKeyStorage;
+
+/** The route a key pair is made for, which native key storage files the keys under. */
+export interface RouteKeyRequest {
+  readonly routeId: string;
+  readonly networkId: number;
+  readonly networkLabel: string;
+  readonly nickname: string;
 }
+
+export type RouteKeyFactory = (route: RouteKeyRequest) => Promise<RouteKeys>;
 
 export async function createRouteKeys(
   webCrypto: Crypto = crypto,
-): Promise<RouteKeys> {
+): Promise<RouteKeys & { readonly privateKeyPkcs8: Uint8Array<ArrayBuffer> }> {
   const pair = (await webCrypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
@@ -217,6 +231,9 @@ function decodeRoute(value: unknown): PushRouteRecord {
   if (privateKeyPkcs8 !== undefined) {
     return { ...metadata, privateKeyPkcs8 };
   }
+  if ("keyStorage" in value && value.keyStorage === "native") {
+    return { ...metadata, keyStorage: "native" };
+  }
   if (
     ("keyStorage" in value && value.keyStorage === "legacy-crypto-key") ||
     ("privateKey" in value && isCryptoKey(value.privateKey))
@@ -239,10 +256,8 @@ function decodePrivateKeyBytes(
   return Uint8Array.from(value as Uint8Array);
 }
 
-export function hasRouteKeyBytes(
-  route: PushRouteRecord,
-): route is StoredPushRoute {
-  return "privateKeyPkcs8" in route;
+export function hasRouteKeys(route: PushRouteRecord): route is StoredPushRoute {
+  return !("keyStorage" in route) || route.keyStorage === "native";
 }
 
 function encodeRoute(route: StoredPushRoute): StoredPushRoute {
@@ -255,7 +270,9 @@ function encodeRoute(route: StoredPushRoute): StoredPushRoute {
     endpoint: route.endpoint,
     p256dh: route.p256dh,
     auth: route.auth,
-    privateKeyPkcs8: route.privateKeyPkcs8.slice(),
+    ...("privateKeyPkcs8" in route
+      ? { privateKeyPkcs8: route.privateKeyPkcs8.slice() }
+      : { keyStorage: route.keyStorage }),
     ...(route.deviceId === undefined ? {} : { deviceId: route.deviceId }),
     ...(route.target === undefined ? {} : { target: route.target }),
     ...(route.active === true ? { active: true } : {}),
@@ -278,7 +295,7 @@ async function replaceLegacyKey(
   database: IDBDatabase,
   route: PushRouteRecord,
 ): Promise<void> {
-  if (hasRouteKeyBytes(route)) return;
+  if (hasRouteKeys(route)) return;
   await replaceLegacyKeys(database, [route]);
 }
 
@@ -286,7 +303,7 @@ async function replaceLegacyKeys(
   database: IDBDatabase,
   routes: readonly PushRouteRecord[],
 ): Promise<void> {
-  const legacy = routes.filter((route) => !hasRouteKeyBytes(route));
+  const legacy = routes.filter((route) => !hasRouteKeys(route));
   if (legacy.length === 0) return;
   const transaction = database.transaction(pushRoutesStore, "readwrite");
   const store = transaction.objectStore(pushRoutesStore);

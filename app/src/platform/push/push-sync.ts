@@ -14,9 +14,10 @@ import type {
 import { relayRetryDelay } from "./relay-client";
 import {
   createRouteKeys,
-  hasRouteKeyBytes,
+  hasRouteKeys,
   type PushRouteRecord,
   type PushRouteStore,
+  type RouteKeyFactory,
   type RouteKeys,
   type StoredPushRoute,
 } from "./route-store";
@@ -45,7 +46,7 @@ export interface PushSynchronizerOptions {
   readonly routeContext: (networkId: number) => PushRouteContext | undefined;
   readonly onRouteDiagnostic?: (diagnostic: PushRouteDiagnostic) => void;
   readonly onDeviceReady?: (device: RelayDevice) => void;
-  readonly generateRouteKeys?: () => Promise<RouteKeys>;
+  readonly generateRouteKeys?: RouteKeyFactory;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly retry?: (work: () => void, delayMs: number) => () => void;
   readonly random?: () => number;
@@ -81,7 +82,7 @@ export class PushSynchronizer {
   readonly #routeContext: (networkId: number) => PushRouteContext | undefined;
   readonly #onRouteDiagnostic: (diagnostic: PushRouteDiagnostic) => void;
   readonly #onDeviceReady: (device: RelayDevice) => void;
-  readonly #generateRouteKeys: () => Promise<RouteKeys>;
+  readonly #generateRouteKeys: RouteKeyFactory;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly #retry: (work: () => void, delayMs: number) => () => void;
   readonly #random: () => number;
@@ -112,7 +113,8 @@ export class PushSynchronizer {
     this.#routeContext = options.routeContext;
     this.#onRouteDiagnostic = options.onRouteDiagnostic ?? (() => {});
     this.#onDeviceReady = options.onDeviceReady ?? (() => {});
-    this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
+    this.#generateRouteKeys =
+      options.generateRouteKeys ?? (() => createRouteKeys());
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#retry = options.retry ?? browserRetry;
     this.#random = options.random ?? Math.random;
@@ -277,7 +279,7 @@ export class PushSynchronizer {
     if (
       !rotate &&
       reconciledRoute?.vapid === home &&
-      hasRouteKeyBytes(reconciledRoute) &&
+      hasRouteKeys(reconciledRoute) &&
       reconciledRoute.deviceId === device.id &&
       reconciledRoute.needsReregistration !== true
     ) {
@@ -288,7 +290,7 @@ export class PushSynchronizer {
     const stored = await this.#routes.get(home);
     const current =
       stored !== undefined &&
-      hasRouteKeyBytes(stored) &&
+      hasRouteKeys(stored) &&
       stored.deviceId === device.id &&
       stored.networkLabel.length > 0 &&
       stored.needsReregistration !== true
@@ -329,7 +331,11 @@ export class PushSynchronizer {
             networkId,
             context,
             home,
-            await this.#generateRouteKeys(),
+            await this.#generateRouteKeys({
+              routeId: ensured.value.id,
+              networkId,
+              ...context,
+            }),
             ensured.value,
             device.id,
             this.#reconciledTarget ?? this.#target,
@@ -408,7 +414,7 @@ export class PushSynchronizer {
       routeId,
     );
     if (activated.ok) {
-      if (!hasRouteKeyBytes(route)) return;
+      if (!hasRouteKeys(route)) return;
       await this.#routes.put({ ...route, active: true });
       this.#activeRoutes.add(routeId);
       this.#publish(networkId, "active", routeId);
@@ -450,7 +456,7 @@ export class PushSynchronizer {
     const home = this.#homes.get(networkId);
     const route = await this.#routes.findRoute(failedRouteId);
     if (home === undefined || route === undefined) return;
-    if (!hasRouteKeyBytes(route)) return;
+    if (!hasRouteKeys(route)) return;
     if (route.active === true) {
       const { active: _active, ...probingRoute } = route;
       await this.#routes.put(probingRoute);
@@ -586,7 +592,7 @@ export class PushSynchronizer {
     await Promise.all(
       routes
         .filter((route) => route.deviceId === device.id)
-        .filter(hasRouteKeyBytes)
+        .filter(hasRouteKeys)
         .map((route) => this.#routes.put({ ...route, target })),
     );
   }
@@ -597,7 +603,7 @@ export class PushSynchronizer {
     const legacy: PushRouteRecord[] = [];
     for (const route of await this.#routes.all()) {
       if (
-        !hasRouteKeyBytes(route) ||
+        !hasRouteKeys(route) ||
         route.networkLabel.length === 0 ||
         route.deviceId === undefined ||
         route.deviceId !== device.id
@@ -711,9 +717,7 @@ function storedRoute(
     routeId: route.id,
     deviceId,
     endpoint: route.endpoint,
-    p256dh: keys.p256dh,
-    auth: keys.auth,
-    privateKeyPkcs8: keys.privateKeyPkcs8,
+    ...keys,
     target,
   };
 }

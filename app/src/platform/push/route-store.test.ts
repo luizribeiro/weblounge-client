@@ -9,6 +9,7 @@ import {
 } from "./push-database";
 import {
   createRouteKeys,
+  hasRouteKeys,
   IndexedDbPushRouteStore,
   type StoredPushRoute,
 } from "./route-store";
@@ -51,6 +52,18 @@ it("keeps a route's browser or APNs target", async () => {
 
     await expect(store.get("home-vapid")).resolves.toMatchObject({ target });
   }
+});
+
+it("keeps a route whose private key lives in the iPhone keychain", async () => {
+  const factory = new IDBFactory();
+  const store = new IndexedDbPushRouteStore(factory);
+
+  await store.put(route({ keyStorage: "native" }));
+
+  const stored = await store.get("home-vapid");
+  expect(stored).toMatchObject({ keyStorage: "native", routeId: "route-1" });
+  expect(stored).not.toHaveProperty("privateKeyPkcs8");
+  expect(stored !== undefined && hasRouteKeys(stored)).toBe(true);
 });
 
 it("detects a legacy CryptoKey route without returning its key", async () => {
