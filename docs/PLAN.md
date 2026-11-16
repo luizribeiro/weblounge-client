@@ -75,7 +75,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F32: parked: notify when a watched person comes online (MONITOR). Luiz: hold for now. Luiz on IRC, 2026-11-15.
 - F34: show who reacted: desktop tooltip on a reaction chip ("alice, bob and 3 others"); phone placement undecided (Luiz doesn't want it always shown; candidate: long-press a chip). Design 25. Luiz on IRC, 2026-11-15.
 - F35: animate the phone message action sheet (slide up and down like a native iOS sheet). Design 25. Luiz on IRC, 2026-11-15.
-- F36: Tauri iOS app distributed through TestFlight (120Hz scrolling). Apple Developer account exists; push (APNs) required for the first TestFlight build; builds on the weblounge-desktop Mac; design 33. Related F16, F18. Luiz on IRC, 2026-11-15.
+- F36: Tauri iOS app distributed through TestFlight (120Hz scrolling). Apple Developer account exists; push (APNs) required for the first TestFlight build; builds on the weblounge-desktop Mac; design 33. Related F16, F18. Luiz on IRC, 2026-11-15. Status: spikes S1 (APNs token hook) and S2 (content-process reload) answered in the simulator; S3 (120 Hz) waits for the iPhone; the darwin dev shell builds the iOS app.
 - F37: IRC bot that is an LLM agent with tool calling and read access to our repos, filing GitHub issues (GitHub account bender-rodz, IRC account bender); lives in weblounge-server; design before any work. Luiz on IRC, 2026-11-15.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
