@@ -19,3 +19,4 @@ pub use outbound::{
     Delivery, DnsResolver, EndpointValidator, HttpTransport, OutboundRequest, PushOutcome,
     PushSender, Urgency, WebPushSender,
 };
+pub use target::ApnsEnvironment;

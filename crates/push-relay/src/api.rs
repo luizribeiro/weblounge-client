@@ -23,13 +23,15 @@ use crate::{
     auth::verify_vapid,
     db::Route,
     outbound::PushOutcome,
-    target::{PushTarget, WebPushTarget},
+    target::{ApnsEnvironment, ApnsTarget, PushTarget, WebPushTarget},
 };
 
 const MAX_HOME_BODY: usize = 2_800;
 const MAX_TTL: u32 = 28 * 24 * 60 * 60;
 const MAX_DEAD_ENDPOINT_ACKS: usize = 5;
 const LEASE_TTL: Duration = Duration::from_secs(75);
+const MIN_APNS_TOKEN_LENGTH: usize = 64;
+const MAX_APNS_TOKEN_LENGTH: usize = 200;
 
 #[derive(Clone)]
 struct AppState {
@@ -194,6 +196,7 @@ enum PlatformTarget {
     },
     Apns {
         token: String,
+        environment: ApnsEnvironment,
     },
     Fcm {
         token: String,
@@ -244,7 +247,13 @@ async fn validated_target(state: &AppState, target: PlatformTarget) -> Result<Pu
                 auth,
             }))
         }
-        PlatformTarget::Apns { token } | PlatformTarget::Fcm { token } => {
+        PlatformTarget::Apns { token, environment } if state.sender.delivers_apns() => {
+            Ok(PushTarget::Apns(ApnsTarget {
+                token: validated_apns_token(&token)?,
+                environment,
+            }))
+        }
+        PlatformTarget::Apns { token, .. } | PlatformTarget::Fcm { token } => {
             drop(token);
             Err(Error::NotImplemented)
         }
@@ -827,6 +836,19 @@ fn decode_public_key(encoded: &str) -> Result<Vec<u8>> {
     PublicKey::from_sec1_bytes(&bytes)
         .map_err(|_| Error::BadRequest("VAPID key is not a P-256 public key".to_owned()))?;
     Ok(bytes)
+}
+
+fn validated_apns_token(token: &str) -> Result<String> {
+    if (MIN_APNS_TOKEN_LENGTH..=MAX_APNS_TOKEN_LENGTH).contains(&token.len())
+        && token.len().is_multiple_of(2)
+        && token.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        Ok(token.to_ascii_lowercase())
+    } else {
+        Err(Error::BadRequest(
+            "APNs token must be an even number of hex digits".to_owned(),
+        ))
+    }
 }
 
 fn validate_subscription_keys(p256dh: &str, auth: &str) -> Result<()> {

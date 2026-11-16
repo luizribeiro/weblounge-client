@@ -16,7 +16,8 @@ pub(crate) struct ApnsTarget {
 }
 
 /// The APNs environment a device token belongs to; tokens are not valid across environments.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ApnsEnvironment {
     /// `api.push.apple.com`, used by distribution-signed builds.
     Production,

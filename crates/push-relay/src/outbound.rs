@@ -157,6 +157,11 @@ pub enum PushOutcome {
 pub trait PushSender: Send + Sync + 'static {
     /// Wraps, encrypts, signs, and sends one opaque home push.
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome>;
+
+    /// Whether devices may register APNs targets, which needs a configured APNs key.
+    fn delivers_apns(&self) -> bool {
+        false
+    }
 }
 
 /// Fully prepared request passed to the no-redirect HTTP transport.

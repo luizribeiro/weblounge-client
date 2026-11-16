@@ -37,6 +37,7 @@ use weblounge_push_relay::{
 const ORIGIN: &str = "https://push.weblounge.test";
 const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
 const FIXTURE_ACCOUNT: &str = "private-account@example.test";
+const APNS_TOKEN: &str = "5f1c6e0b9a3d4c2e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e";
 type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32, Urgency)>>>;
 
 fn encoded_home(home: &SecretKey) -> String {
@@ -111,10 +112,15 @@ struct FakeSender {
     delivered: Arc<Notify>,
     outcome: Arc<Mutex<PushOutcome>>,
     unavailable: Arc<std::sync::atomic::AtomicBool>,
+    apns: bool,
 }
 
 #[async_trait]
 impl PushSender for FakeSender {
+    fn delivers_apns(&self) -> bool {
+        self.apns
+    }
+
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
         if self.unavailable.load(Ordering::SeqCst) {
             return Err(Error::DeliveryUnavailable);
@@ -157,6 +163,14 @@ impl Harness {
     }
 
     async fn with_lease_ttl(lease_ttl: Duration) -> Self {
+        Self::build(lease_ttl, false).await
+    }
+
+    async fn with_apns() -> Self {
+        Self::build(Duration::from_secs(75), true).await
+    }
+
+    async fn build(lease_ttl: Duration, apns: bool) -> Self {
         let temporary = tempfile::tempdir().expect("temporary state");
         let database = Database::open(temporary.path().join("relay.sqlite3"))
             .await
@@ -186,6 +200,7 @@ impl Harness {
                 delivered: Arc::clone(&delivered),
                 outcome: Arc::clone(&outcome),
                 unavailable: Arc::clone(&unavailable),
+                apns,
             },
             targets,
             &Url::parse(ORIGIN).expect("origin"),
@@ -234,6 +249,28 @@ impl Harness {
         .await;
         assert_eq!(response.0, StatusCode::CREATED);
         response.1
+    }
+
+    async fn register_apns(&self, token: &str, environment: &str) -> (StatusCode, Value) {
+        call_json(
+            &self.app,
+            Method::POST,
+            "/v1/devices",
+            Some("member-session"),
+            json!({
+                "target": { "platform": "apns", "token": token, "environment": environment }
+            }),
+            &[],
+        )
+        .await
+    }
+
+    async fn create_apns_route(&self, token: &str, home: &SecretKey) -> (Value, Value) {
+        let (status, device) = self.register_apns(token, "production").await;
+        assert_eq!(status, StatusCode::CREATED);
+        let route = self.create_route(&device, home).await;
+        self.activate(&device, &route).await;
+        (device, route)
     }
 
     async fn create_route(&self, device: &Value, home_key: &SecretKey) -> Value {
@@ -849,7 +886,7 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
         Method::POST,
         "/v1/devices",
         Some("expired-session"),
-        json!({"target":{"platform":"apns","token":"later"}}),
+        json!({"target":{"platform":"apns","token":APNS_TOKEN,"environment":"sandbox"}}),
         &[],
     )
     .await;
@@ -1453,6 +1490,142 @@ async fn urgency_policy_filters_silent_controls_by_push_service() {
             before + forwarded_count
         );
     }
+}
+
+#[tokio::test]
+async fn apns_registration_needs_a_configured_apns_sender() {
+    let web_push_only = Harness::new().await;
+    let (status, _) = web_push_only.register_apns(APNS_TOKEN, "production").await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+
+    let harness = Harness::with_apns().await;
+    for (token, environment) in [
+        (APNS_TOKEN, "sandbox"),
+        (&APNS_TOKEN.to_ascii_uppercase(), "production"),
+        (&"ab".repeat(100), "production"),
+    ] {
+        let (status, _) = harness.register_apns(token, environment).await;
+        assert_eq!(status, StatusCode::CREATED, "{token} in {environment}");
+    }
+    for token in [
+        &APNS_TOKEN[..62],
+        &APNS_TOKEN[..63],
+        &format!("{}zz", &APNS_TOKEN[..62]),
+        &"ab".repeat(101),
+    ] {
+        let (status, _) = harness.register_apns(token, "production").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{token}");
+    }
+    let unknown_environment = json!({
+        "target": { "platform": "apns", "token": APNS_TOKEN, "environment": "staging" }
+    });
+    let status = call_bytes(
+        &harness.app,
+        Method::POST,
+        "/v1/devices",
+        Some("member-session"),
+        unknown_environment.to_string().into_bytes(),
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn apns_reinstall_with_the_same_token_retires_the_old_device() {
+    let harness = Harness::with_apns().await;
+    let (_, first) = harness.register_apns(APNS_TOKEN, "production").await;
+    let (_, second) = harness
+        .register_apns(&APNS_TOKEN.to_ascii_uppercase(), "production")
+        .await;
+    let home = SecretKey::random(&mut OsRng);
+
+    let retired = call_json(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/devices/{}/routes", first["id"].as_str().expect("id")),
+        first["secret"].as_str(),
+        json!({ "home_vapid": encoded_home(&home) }),
+        &[],
+    )
+    .await;
+    assert_eq!(retired.0, StatusCode::GONE);
+    harness.create_route(&second, &home).await;
+}
+
+#[tokio::test]
+async fn apns_delivers_only_high_urgency_pushes() {
+    let harness = Harness::with_apns().await;
+    let home = SecretKey::random(&mut OsRng);
+    let (_, route) = harness.create_apns_route(APNS_TOKEN, &home).await;
+
+    for urgency in [Some("normal"), Some("low"), Some("very-low"), None] {
+        assert_eq!(
+            harness
+                .push_with_urgency(&route, &home, b"MARKREAD control", urgency)
+                .await,
+            StatusCode::CREATED
+        );
+    }
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+    assert_eq!(
+        harness.push(&route, &home, b"visible message").await,
+        StatusCode::CREATED
+    );
+    let deliveries = harness.deliveries.lock().expect("deliveries").clone();
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].1, b"visible message");
+    assert_eq!(deliveries[0].3, Urgency::High);
+}
+
+#[tokio::test]
+async fn foreground_lease_holds_pushes_for_an_apns_device() {
+    let harness = Harness::with_apns().await;
+    let laptop = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let (_, route) = harness.create_apns_route(APNS_TOKEN, &home).await;
+    harness.renew_lease(&laptop, "laptop-tab").await;
+
+    assert_eq!(
+        harness.push(&route, &home, b"held for the phone").await,
+        StatusCode::CREATED
+    );
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+
+    harness.release_lease(&laptop, "laptop-tab").await;
+    harness.wait_for_deliveries(1).await;
+    assert_eq!(
+        harness.deliveries.lock().expect("deliveries")[0].1,
+        b"held for the phone"
+    );
+}
+
+#[tokio::test]
+async fn dead_apns_token_retires_the_device_and_answers_404() {
+    let harness = Harness::with_apns().await;
+    let home = SecretKey::random(&mut OsRng);
+    let (device, route) = harness.create_apns_route(APNS_TOKEN, &home).await;
+    *harness.outcome.lock().expect("outcome") = PushOutcome::Dead;
+
+    assert_eq!(
+        harness.push(&route, &home, b"to an uninstalled app").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        harness.push(&route, &home, b"after the route died").await,
+        StatusCode::NOT_FOUND
+    );
+    let dead = call_json(
+        &harness.app,
+        Method::GET,
+        &dead_endpoints_path(&device, &home),
+        device["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(dead.0, StatusCode::GONE);
+    assert_eq!(harness.deliveries.lock().expect("deliveries").len(), 1);
 }
 
 #[tokio::test]
