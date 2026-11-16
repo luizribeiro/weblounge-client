@@ -39,7 +39,7 @@ pub fn init_script(permission: Permission) -> Result<String, serde_json::Error> 
 pub fn install_click_delegate(app: &AppHandle) {
     let app = app.clone();
     center::install_delegate(Box::new(move |id| {
-        window::show(&app);
+        window::desktop::show(&app);
         match click_script(&id) {
             Ok(script) => window::eval_in_page(&app, &script),
             Err(error) => window::log_failure("build the click script", Err::<(), _>(error)),

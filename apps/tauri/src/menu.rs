@@ -104,9 +104,9 @@ pub fn hide_system_full_screen_item() {}
 
 pub fn handle_event(app: &AppHandle, event: &MenuEvent) {
     if event.id() == RELOAD_ID {
-        window::reload(app);
+        window::desktop::reload(app);
     } else if event.id() == FULLSCREEN_ID {
-        window::toggle_fullscreen(app);
+        window::desktop::toggle_fullscreen(app);
     } else if event.id() == LOGIN_ID {
         toggle_login_item(app);
     } else if let Some(action) = PageAction::from_name(event.id().as_ref()) {
@@ -125,7 +125,7 @@ fn page_action_item(app: &AppHandle, action: PageAction) -> tauri::Result<MenuIt
 }
 
 fn run_in_page(app: &AppHandle, action: PageAction) {
-    window::show(app);
+    window::desktop::show(app);
     window::eval_in_page(app, &page_action::dispatch_script(action));
 }
 

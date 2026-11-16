@@ -22,7 +22,7 @@ const BADGE_SCRIPT: &str = include_str!("badge.js");
 pub fn run() -> tauri::Result<()> {
     let app = tauri::Builder::default()
         .plugin(rust_side_opener())
-        .plugin(window::state_plugin())
+        .plugin(window::desktop::state_plugin())
         .plugin(login_item::plugin())
         .manage(notifications::service())
         .invoke_handler(tauri::generate_handler![
@@ -68,14 +68,16 @@ fn install(app: &App) -> Result<(), SetupError> {
     let notification_script = notifications::init_script(notifications::initial_permission())?;
     window::create(
         app.handle(),
-        !launch::starts_hidden(std::env::args()),
         &[&identity_script, BADGE_SCRIPT, &notification_script],
     )?;
+    if !launch::starts_hidden(std::env::args()) {
+        window::desktop::show(app.handle());
+    }
     Ok(())
 }
 
 fn handle_run_event(app: &AppHandle, event: &RunEvent) {
     if let RunEvent::Reopen { .. } = *event {
-        window::show(app);
+        window::desktop::show(app);
     }
 }

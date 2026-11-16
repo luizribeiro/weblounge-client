@@ -1,11 +1,13 @@
-//! The single main window and its close-to-hide behaviour.
+//! The single main window and the navigation policy it enforces.
+
+#[cfg(desktop)]
+pub mod desktop;
 
 use tauri::{
-    AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder,
     utils::config::BackgroundThrottlingPolicy, webview::NewWindowResponse,
 };
 use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
 
 use crate::navigation::{RequestKind, Route, route};
 
@@ -20,35 +22,20 @@ pub enum WindowError {
 pub const MAIN_LABEL: &str = "main";
 pub const APP_URL: &str = "https://beta.weblounge.org";
 
-// Persisting visibility would restore a window hidden by close-to-hide as hidden at the next launch.
-fn persisted_state() -> StateFlags {
-    StateFlags::all() - StateFlags::VISIBLE
-}
-
-pub fn state_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
-    WindowStateBuilder::default()
-        .with_state_flags(persisted_state())
-        .build()
-}
-
-pub fn create(
-    app: &AppHandle,
-    show_on_launch: bool,
-    page_scripts: &[&str],
-) -> Result<(), WindowError> {
+pub fn create(app: &AppHandle, page_scripts: &[&str]) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
-    let mut builder = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url))
-        .title(&app.package_info().name)
-        .visible(false);
+    let mut builder = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::External(url));
+    #[cfg(desktop)]
+    {
+        builder = desktop::configure(builder, &app.package_info().name);
+    }
     for script in page_scripts {
         builder = builder.initialization_script(*script);
     }
     let window = builder
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
-        .inner_size(1280.0, 840.0)
-        .min_inner_size(400.0, 480.0)
         .on_navigation(move |url| {
             let decision = route(RequestKind::Navigation, url);
             follow(decision, url, |url| open_externally(&navigating, url));
@@ -61,10 +48,8 @@ pub fn create(
             NewWindowResponse::Deny
         })
         .build()?;
-    hide_instead_of_closing(&window);
-    if show_on_launch {
-        show(app);
-    }
+    #[cfg(desktop)]
+    desktop::hide_instead_of_closing(&window);
     Ok(())
 }
 
@@ -86,42 +71,10 @@ fn open_externally(app: &AppHandle, url: &Url) {
     }
 }
 
-pub fn show(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        log_failure("show the window", window.show());
-        log_failure("focus the window", window.set_focus());
-    }
-}
-
 pub fn eval_in_page(app: &AppHandle, script: &str) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         log_failure("run a script in the page", window.eval(script));
     }
-}
-
-pub fn toggle_fullscreen(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        let result = window
-            .is_fullscreen()
-            .and_then(|fullscreen| window.set_fullscreen(!fullscreen));
-        log_failure("toggle full screen", result);
-    }
-}
-
-pub fn reload(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        log_failure("reload the window", window.reload());
-    }
-}
-
-fn hide_instead_of_closing(window: &WebviewWindow) {
-    let hidden = window.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            log_failure("hide the window", hidden.hide());
-        }
-    });
 }
 
 #[cfg(test)]
@@ -137,12 +90,6 @@ mod tests {
             opened.borrow_mut().push(url.to_string());
         });
         opened.into_inner()
-    }
-
-    #[test]
-    fn window_visibility_is_not_persisted() {
-        assert!(!persisted_state().contains(StateFlags::VISIBLE));
-        assert!(persisted_state().contains(StateFlags::SIZE | StateFlags::POSITION));
     }
 
     #[test]
