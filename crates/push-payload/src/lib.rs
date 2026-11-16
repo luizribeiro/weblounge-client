@@ -1,6 +1,8 @@
 //! Decryption, parsing and notification formatting for IRC Web Push payloads.
 
 mod decrypt;
+#[cfg(not(target_arch = "wasm32"))]
+mod ffi;
 mod format;
 mod parse;
 mod prepare;
