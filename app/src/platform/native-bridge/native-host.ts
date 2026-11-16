@@ -1,3 +1,4 @@
+import { onAppLifecycle } from "./app-lifecycle";
 import { type NativeBridge, nativeBridge } from "./native-bridge";
 import { observeNativePageEvents } from "./page-events";
 import { nativePushedMessageDrain } from "./pushed-message-drain";
@@ -16,10 +17,6 @@ export function startHostIntegration(
   events: HostEvents,
   launchRoute: string,
   bridge: NativeBridge | undefined = nativeBridge(),
-  target: Pick<
-    EventTarget,
-    "addEventListener" | "removeEventListener"
-  > = window,
 ): () => void {
   if (bridge === undefined) return () => {};
   const drain = nativePushedMessageDrain(bridge);
@@ -31,20 +28,21 @@ export function startHostIntegration(
       if (!stopped) events.openRoute(route);
     });
   };
-  const stopListening = observeNativePageEvents(target, {
+  const stopTaps = observeNativePageEvents(window, {
     "weblounge:open-route": openAfterDrain,
-    "weblounge:lifecycle": (lifecycle) => {
-      if (lifecycle === "background") {
-        events.background();
-        return;
-      }
-      void drain();
-      events.foreground();
-    },
+  });
+  const stopLifecycle = onAppLifecycle((lifecycle) => {
+    if (lifecycle === "background") {
+      events.background();
+      return;
+    }
+    void drain();
+    events.foreground();
   });
   openAfterDrain(launchRoute);
   return () => {
     stopped = true;
-    stopListening();
+    stopTaps();
+    stopLifecycle();
   };
 }

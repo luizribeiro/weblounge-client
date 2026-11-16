@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NativeBridge } from "./native-bridge";
 import { startHostIntegration } from "./native-host";
 
-function shell() {
+const running: (() => void)[] = [];
+
+afterEach(() => {
+  for (const stop of running.splice(0)) stop();
+});
+
+function shell(native = true) {
   const log: string[] = [];
-  const target = new EventTarget();
   const bridge = {
     call: async (command: string) => {
       log.push(command);
@@ -16,16 +21,25 @@ function shell() {
     background: () => log.push("background"),
     foreground: () => log.push("foreground"),
   };
+  const start = (launchRoute: string) => {
+    const stop = startHostIntegration(
+      events,
+      launchRoute,
+      native ? bridge : undefined,
+    );
+    running.push(stop);
+    return stop;
+  };
   const dispatch = (name: string, detail: string) =>
-    target.dispatchEvent(new CustomEvent(name, { detail }));
-  return { bridge, dispatch, events, log, target };
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  return { dispatch, log, start };
 }
 
 describe("host integration", () => {
   it("opens the launch route and each tapped route after draining", async () => {
-    const { bridge, dispatch, events, log, target } = shell();
+    const { dispatch, log, start } = shell();
 
-    startHostIntegration(events, "/Lounge/@mel", bridge, target);
+    start("/Lounge/@mel");
     await vi.waitFor(() => expect(log).toContain("open /Lounge/@mel"));
     dispatch("weblounge:open-route", "/Lounge/%23ops");
     await vi.waitFor(() => expect(log).toContain("open /Lounge/%23ops"));
@@ -39,8 +53,8 @@ describe("host integration", () => {
   });
 
   it("releases on background and drains on foreground", async () => {
-    const { bridge, dispatch, events, log, target } = shell();
-    startHostIntegration(events, "/", bridge, target);
+    const { dispatch, log, start } = shell();
+    start("/");
     await vi.waitFor(() => expect(log).toContain("open /"));
     log.length = 0;
 
@@ -51,8 +65,8 @@ describe("host integration", () => {
   });
 
   it("ignores the shell's events once stopped", async () => {
-    const { bridge, dispatch, events, log, target } = shell();
-    const stop = startHostIntegration(events, "/", bridge, target);
+    const { dispatch, log, start } = shell();
+    const stop = start("/");
     await vi.waitFor(() => expect(log).toContain("open /"));
     log.length = 0;
 
@@ -64,10 +78,11 @@ describe("host integration", () => {
   });
 
   it("does nothing outside the iPhone app", () => {
-    const { dispatch, events, log, target } = shell();
+    const { dispatch, log, start } = shell(false);
 
-    startHostIntegration(events, "/Lounge/@mel", undefined, target);
+    start("/Lounge/@mel");
     dispatch("weblounge:open-route", "/Lounge/@mel");
+    dispatch("weblounge:lifecycle", "background");
 
     expect(log).toEqual([]);
   });

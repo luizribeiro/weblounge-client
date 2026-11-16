@@ -8,7 +8,7 @@ type PageEventDetail<Name extends PageEventName> = Extract<
 >["detail"];
 
 export type NativePageEventHandlers = {
-  readonly [Name in PageEventName]: (detail: PageEventDetail<Name>) => void;
+  readonly [Name in PageEventName]?: (detail: PageEventDetail<Name>) => void;
 };
 
 const lifecycles: readonly AppLifecycle[] = ["foreground", "background"];
@@ -29,16 +29,17 @@ export function observeNativePageEvents(
   target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
   handlers: NativePageEventHandlers,
 ): () => void {
-  const listeners = (Object.keys(detailReaders) as PageEventName[]).map(
-    (name) => {
-      const listener = (event: Event) => {
-        if (!(event instanceof CustomEvent)) return;
-        dispatch(name, event.detail, handlers);
-      };
-      target.addEventListener(name, listener);
-      return () => target.removeEventListener(name, listener);
-    },
+  const handled = (Object.keys(detailReaders) as PageEventName[]).filter(
+    (name) => handlers[name] !== undefined,
   );
+  const listeners = handled.map((name) => {
+    const listener = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      dispatch(name, event.detail, handlers);
+    };
+    target.addEventListener(name, listener);
+    return () => target.removeEventListener(name, listener);
+  });
   return () => {
     for (const remove of listeners) remove();
   };
@@ -50,5 +51,5 @@ function dispatch<Name extends PageEventName>(
   handlers: NativePageEventHandlers,
 ): void {
   const read = detailReaders[name](detail);
-  if (read !== undefined) handlers[name](read);
+  if (read !== undefined) handlers[name]?.(read);
 }
