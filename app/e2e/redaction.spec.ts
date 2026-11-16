@@ -16,6 +16,7 @@ import {
   reviewShot,
   waitForReadDwell,
 } from "./redaction";
+import { expectSettled } from "./settled";
 
 test.describe("message redaction on desktop against local Ergo", () => {
   test.skip(({ isMobile }) => isMobile, "desktop layout");
@@ -112,7 +113,7 @@ test.describe("message redaction on desktop against local Ergo", () => {
 
     await expect(redactedRow(page)).toHaveCount(1);
     await expectRowTop(page, anchor);
-    await expectNoLayoutShift(page);
+    await expectSettledAndIdle(page);
   });
 
   test("shrinks a deleted message in place inside the viewport", async ({
@@ -145,7 +146,7 @@ test.describe("message redaction on desktop against local Ergo", () => {
     expect((await redacted.boundingBox())?.height ?? 0).toBeLessThan(
       before?.height ?? 0,
     );
-    await expectNoLayoutShift(page);
+    await expectSettledAndIdle(page);
   });
 });
 
@@ -224,21 +225,9 @@ async function scrollToCentre(page: Page, row: Locator): Promise<void> {
   await expect(row).toBeInViewport();
 }
 
-/**
- * Reading away from the live edge keeps the list's scroll bookkeeping busy, which the idle audit
- * counts, so these cases check the native-feel layout-shift budget once the geometry has settled;
- * the peer-deletion cases run the full idle audit at rest.
- */
-async function expectNoLayoutShift(page: Page): Promise<void> {
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as Window & { __nativeFeelMetrics?: { layoutShift: number } })
-            .__nativeFeelMetrics?.layoutShift ?? Number.POSITIVE_INFINITY,
-      ),
-    )
-    .toBeLessThanOrEqual(0.01);
+async function expectSettledAndIdle(page: Page): Promise<void> {
+  await expectSettled(page);
+  await nativeFeelAudit(page);
 }
 
 interface RowPosition {
