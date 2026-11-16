@@ -77,8 +77,11 @@ Additions to the prototype's content:
 - **Network card:** below Connect automatically, an "Uploads" row once the user has been asked:
   "Send your password to `<upload host>`" switch, revocable (D6). The card's button pair gains
   **Sign out** (D7).
-- **Appearance → Browser tab:** "Show unread in the tab" switch, on by default, only in a browser
-  tab (design 23, Badging).
+- **Notifications → Browser tab:** "Show unread in the tab" switch, on by default, only in a
+  browser tab (design 23, Badging). Until push and Notify me about land it is the section's only
+  row, so in the PWA and the Tauri apps Notifications would be empty: a section with no rows for
+  this platform is hidden (its nav item on desktop, its root row on the phone), never shown empty.
+  On the phone its root row's value is "Unread in the tab" or "Unread hidden from the tab".
 - **A fourth section, About** (D8): version and build, "Keyboard shortcuts" (desktop; dispatches
   `shortcuts.open`), "Copy diagnostics" (the `/debug` lines), and "Sign out of everything", which
   clears the device (design 22). On the phone its root row's value is the version.
@@ -308,9 +311,10 @@ share an ID. The same registry can later feed ⌘K search over settings.
 
 - The modal is a `dialog` with `aria-modal`, a focus trap and a labelled title. Esc
   (`navigation.escape`) closes it and returns focus to the invoker, then the composer (design 15).
-- The section nav marks its current item `aria-current="page"` (as drawn). Arrow keys moving
-  within it arrive with the second section (F24 in the plan's Backlog); today Tab reaches its one
-  item. Switches are `role="switch"`. Segmented controls become a `radiogroup` with arrow
+- The section nav marks its current item `aria-current="page"` (as drawn). Only the current item
+  is in the Tab order; Up and Down arrows move to the previous and next section and show it at
+  once (wrapping), Home and End to the first and last. In the folded rail, focus keeps it expanded
+  while the arrows move. Switches are `role="switch"`. Segmented controls become a `radiogroup` with arrow
   keys rather than the prototype's `aria-pressed` buttons, so a screen reader hears one choice.
 - Labels, descriptions and section headers are chrome and not selectable (brief §2); values the
   user may copy (server, account, version, diagnostics) are.
