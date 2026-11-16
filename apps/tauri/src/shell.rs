@@ -14,8 +14,13 @@ struct Shell {
     window_controls: crate::window::title_bar::WindowControls,
 }
 
+#[cfg(target_os = "macos")]
+const KIND: &str = "macos-app";
+#[cfg(target_os = "ios")]
+const KIND: &str = "ios-app";
+
 const SHELL: Shell = Shell {
-    kind: "macos-app",
+    kind: KIND,
     version: env!("CARGO_PKG_VERSION"),
     #[cfg(target_os = "macos")]
     window_controls: crate::window::title_bar::WINDOW_CONTROLS,
@@ -34,15 +39,27 @@ pub fn identity_script() -> Result<String, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{Value, json};
+    use serde_json::Value;
 
     use super::*;
 
     #[test]
-    fn identifies_the_app_and_its_crate_version() {
+    fn identifies_the_crate_version() {
+        assert_eq!(parsed_identity()["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn identifies_the_macos_app() {
+        assert_eq!(parsed_identity()["kind"], "macos-app");
+    }
+
+    #[cfg(target_os = "ios")]
+    #[test]
+    fn identifies_the_ios_app_without_window_controls() {
         let identity = parsed_identity();
-        assert_eq!(identity["kind"], "macos-app");
-        assert_eq!(identity["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(identity["kind"], "ios-app");
+        assert!(identity.get("windowControls").is_none());
     }
 
     #[cfg(target_os = "macos")]
@@ -50,7 +67,7 @@ mod tests {
     fn reserves_the_traffic_light_band_for_the_page() {
         assert_eq!(
             parsed_identity()["windowControls"],
-            json!({ "inlineStart": 84, "blockSize": 48 })
+            serde_json::json!({ "inlineStart": 84, "blockSize": 48 })
         );
     }
 
