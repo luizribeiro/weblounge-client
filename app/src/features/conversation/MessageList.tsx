@@ -43,9 +43,16 @@ import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { createLongPress } from "../../ui/long-press";
 import { Selectable } from "../../ui/Selectable";
-import { ScrollIntentTracker } from "../../ui/scroll-intent";
+import {
+  type FrameScheduler,
+  ScrollIntentTracker,
+} from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
-import { preserveVisualScrollAnchor } from "../../ui/visual-scroll-anchor";
+import {
+  preserveVisualScrollAnchor,
+  type RowAnchor,
+  settleRowAnchor,
+} from "../../ui/visual-scroll-anchor";
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
@@ -302,11 +309,9 @@ export function MessageList(props: MessageListProps) {
   let olderPageArmed = true;
   let olderPageRequestFrame: number | undefined;
   let olderPageRequestIsAutomatic = false;
-  let olderAnchorFrame: number | undefined;
+  let cancelOlderAnchorSettle: (() => void) | undefined;
   let loadingEdgePinFrame: number | undefined;
-  let pendingOlderAnchor:
-    | { readonly key: string; readonly top: number }
-    | undefined;
+  let pendingOlderAnchor: RowAnchor | undefined;
   let olderPageLanded = false;
   let olderPageTimelineRestored = false;
   let observedScrollTop = 0;
@@ -446,15 +451,17 @@ export function MessageList(props: MessageListProps) {
       props.onLiveEdgeChange?.(logicallyAtLiveEdge);
     });
   };
-  const userScrollIntent = new ScrollIntentTracker(() => list?.scrollTop ?? 0, {
+  const animationFrames: FrameScheduler = {
     request: (callback) => window.requestAnimationFrame(callback),
     cancel: (handle) => window.cancelAnimationFrame(handle),
-  });
+  };
+  const userScrollIntent = new ScrollIntentTracker(
+    () => list?.scrollTop ?? 0,
+    animationFrames,
+  );
   const cancelOlderAnchorCorrection = () => {
-    if (olderAnchorFrame !== undefined) {
-      window.cancelAnimationFrame(olderAnchorFrame);
-      olderAnchorFrame = undefined;
-    }
+    cancelOlderAnchorSettle?.();
+    cancelOlderAnchorSettle = undefined;
     pendingOlderAnchor = undefined;
     olderPageLanded = false;
     olderPageTimelineRestored = false;
@@ -800,7 +807,7 @@ export function MessageList(props: MessageListProps) {
   const remeasureRows = (
     clearMeasurements: boolean,
     revisedIndexes: readonly number[] = [],
-    olderAnchor?: { readonly key: string; readonly top: number },
+    olderAnchor?: RowAnchor,
     pinTop = false,
   ) => {
     if (list?.isConnected !== true) return;
@@ -841,28 +848,13 @@ export function MessageList(props: MessageListProps) {
       if (index >= 0) {
         virtualizer.scrollToIndex(index, { align: "start" });
         scroller.scrollTop -= olderAnchor.top;
-        if (olderAnchorFrame !== undefined)
-          window.cancelAnimationFrame(olderAnchorFrame);
-        let stableFrames = 0;
-        const correctAnchor = () => {
-          olderAnchorFrame = undefined;
-          const moved = [
-            ...scroller.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
-          ].find((row) => row.dataset.rowKey === olderAnchor.key);
-          if (moved === undefined) return;
-          const delta =
-            moved.getBoundingClientRect().top -
-            scroller.getBoundingClientRect().top -
-            olderAnchor.top;
-          if (Math.abs(delta) <= 0.1) stableFrames += 1;
-          else {
-            scroller.scrollTop += delta;
-            stableFrames = 0;
-          }
-          if (stableFrames < 2)
-            olderAnchorFrame = window.requestAnimationFrame(correctAnchor);
-        };
-        olderAnchorFrame = window.requestAnimationFrame(correctAnchor);
+        cancelOlderAnchorSettle?.();
+        cancelOlderAnchorSettle = settleRowAnchor(
+          scroller,
+          olderAnchor,
+          animationFrames,
+          () => virtualizer.isScrolling,
+        );
       }
     } else if (logicallyAtLiveEdge) resize();
     else preserveVisualScrollAnchor(scroller, resize);
@@ -1279,8 +1271,7 @@ export function MessageList(props: MessageListProps) {
         window.cancelAnimationFrame(scrollLiveEdgeFrame);
       if (foregroundRefreshFrame !== undefined)
         window.cancelAnimationFrame(foregroundRefreshFrame);
-      if (olderAnchorFrame !== undefined)
-        window.cancelAnimationFrame(olderAnchorFrame);
+      cancelOlderAnchorSettle?.();
       cancelLoadingEdgePin();
       cancelOlderPageRequest();
       userScrollIntent.dispose();

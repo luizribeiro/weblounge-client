@@ -1,4 +1,4 @@
-interface FrameScheduler {
+export interface FrameScheduler {
   readonly request: (callback: FrameRequestCallback) => number;
   readonly cancel: (handle: number) => void;
 }
