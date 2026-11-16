@@ -61,5 +61,5 @@ private func presentFromSharedStorage(
   _ placeholder: UNNotificationContent, offer: @escaping (UNNotificationContent) -> Void
 ) async {
   guard let storage = try? SharedStorage.fromInfoPlist() else { return }
-  PushPresenter(storage: storage, offer: offer).present(placeholder)
+  await PushPresenter(storage: storage, center: .current(), offer: offer).present(placeholder)
 }
