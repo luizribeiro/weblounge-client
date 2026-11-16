@@ -47,6 +47,10 @@ mousedowns that `isMovableByWindowBackground` would need, so neither is an alter
 
 **Theme.** The lights follow the window's appearance, not the page's. Whenever the resolved theme
 changes, the page invokes `plugin:window|set_theme` with `"light"` or `"dark"` (decision 4).
+The same change sets the window and web view background to the theme's `--wl-color-bg`
+(`plugin:window|set_background_color`, `plugin:webview|set_webview_background_color`): during a
+live resize WKWebView paints the newly exposed strip a frame late, and without these it shows
+macOS's default white or grey instead of the page's colour.
 
 ## Types
 
@@ -86,7 +90,7 @@ title and topic). Never the transcript, composer, lists or drawer bodies, and no
 |---|---|
 | `apps/tauri/src/window.rs` | overlay title bar, hidden title, light position |
 | `apps/tauri/src/shell.rs` | `windowControls` in the identity global |
-| `apps/tauri/tauri.conf.json` | the `remote-page` capability gains `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize`, `core:window:allow-is-fullscreen` and `core:window:allow-set-theme`; its description names them |
+| `apps/tauri/tauri.conf.json` | the `remote-page` capability gains `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize`, `core:window:allow-is-fullscreen`, `core:window:allow-set-theme`, `core:window:allow-set-background-color` and `core:webview:allow-set-webview-background-color`; its description names them |
 | `app/src/platform/` | parse `windowControls`; one module owns `data-window-controls`, the CSS variables, the full-screen check and the theme call |
 | `app/src/shells/desktop/` | the sidebar lights row, the header inset, drag-region attributes; tokens only |
 
