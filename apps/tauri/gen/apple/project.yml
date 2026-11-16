@@ -83,6 +83,7 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
       groups: [app]
     dependencies:
+      - target: weblounge-notifications
       - framework: libapp.a
         embed: false
       - sdk: CoreGraphics.framework
@@ -100,3 +101,36 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  weblounge-notifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService
+    info:
+      path: NotificationService/Info.plist
+      properties:
+        CFBundleShortVersionString: 0.1.3
+        CFBundleVersion: "0.1.3"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+        WebloungeAppGroup: group.$(WEBLOUNGE_APP_IDENTIFIER)
+        WebloungeKeychainGroup: $(AppIdentifierPrefix)$(WEBLOUNGE_APP_IDENTIFIER)
+    entitlements:
+      path: NotificationService/NotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WEBLOUNGE_APP_IDENTIFIER)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(WEBLOUNGE_APP_IDENTIFIER)
+    settings:
+      base:
+        # Tauri's release `--config` rewrites only the app target and forwards only TAURI_*
+        # variables to Xcode, so release builds also set TAURI_WEBLOUNGE_APP_IDENTIFIER.
+        WEBLOUNGE_APP_IDENTIFIER: $(TAURI_WEBLOUNGE_APP_IDENTIFIER:default=org.weblounge.ios.dev)
+        PRODUCT_BUNDLE_IDENTIFIER: $(WEBLOUNGE_APP_IDENTIFIER).notifications
+        PRODUCT_NAME: weblounge-notifications
+        DEVELOPMENT_TEAM: JR4C2QJKWJ
+        TARGETED_DEVICE_FAMILY: 1
+        ARCHS: [arm64]
+        SKIP_INSTALL: true
