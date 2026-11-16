@@ -2,6 +2,7 @@ import type { EngineClient } from "../../engine/EngineClient";
 import type { PushDeviceCredentials } from "../../engine/generated/PushDeviceCredentials";
 import type { PushFailure } from "../../engine/generated/PushFailure";
 import type { EngineClientMessage } from "../../engine/protocol";
+import { type DeviceTarget, sameDeviceTarget } from "./device-target";
 import type { PushDeviceStore } from "./engine-device-store";
 import type {
   RelayClient,
@@ -19,7 +20,6 @@ import {
   type RouteKeys,
   type StoredPushRoute,
 } from "./route-store";
-import type { WebPushTarget } from "./subscription";
 
 type RelayApi = Pick<
   RelayClient,
@@ -37,7 +37,7 @@ export interface PushSynchronizerOptions {
   readonly engine: EngineClient;
   readonly relay: RelayApi;
   readonly relayOrigin: string;
-  readonly target: WebPushTarget;
+  readonly target: DeviceTarget;
   readonly devices: PushDeviceStore;
   readonly routes: PushRouteStore;
   readonly acquireSessionToken: () => Promise<string>;
@@ -95,8 +95,8 @@ export class PushSynchronizer {
   readonly #activeRoutes = new Set<string>();
   readonly #legacyEndpoints = new Set<string>();
   #reconciledDeviceId: string | undefined;
-  #reconciledTarget: WebPushTarget | undefined;
-  #target: WebPushTarget;
+  #reconciledTarget: DeviceTarget | undefined;
+  #target: DeviceTarget;
   #pending: Promise<void> = Promise.resolve();
   #disposed = false;
 
@@ -184,7 +184,7 @@ export class PushSynchronizer {
     }
   }
 
-  async refreshTarget(target: WebPushTarget): Promise<void> {
+  async refreshTarget(target: DeviceTarget): Promise<void> {
     this.#target = target;
     this.#enqueue(async () => {
       const device = await this.#ensureDevice();
@@ -558,18 +558,18 @@ export class PushSynchronizer {
 
   async #targetIsCurrent(
     device: RelayDevice,
-    target: WebPushTarget,
+    target: DeviceTarget,
   ): Promise<boolean> {
     if (
       this.#reconciledDeviceId === device.id &&
-      sameTarget(this.#reconciledTarget, target)
+      sameDeviceTarget(this.#reconciledTarget, target)
     ) {
       return true;
     }
     const routes = await this.#routes.all();
     const current = routes.some(
       (route) =>
-        route.deviceId === device.id && sameTarget(route.target, target),
+        route.deviceId === device.id && sameDeviceTarget(route.target, target),
     );
     if (current) {
       this.#reconciledDeviceId = device.id;
@@ -580,7 +580,7 @@ export class PushSynchronizer {
 
   async #storeCurrentTarget(
     device: RelayDevice,
-    target: WebPushTarget,
+    target: DeviceTarget,
   ): Promise<void> {
     const routes = await this.#routes.all();
     await Promise.all(
@@ -702,7 +702,7 @@ function storedRoute(
   keys: RouteKeys,
   route: { readonly id: string; readonly endpoint: string },
   deviceId: string,
-  target: WebPushTarget,
+  target: DeviceTarget,
 ): StoredPushRoute {
   return {
     networkId,
@@ -716,18 +716,6 @@ function storedRoute(
     privateKeyPkcs8: keys.privateKeyPkcs8,
     target,
   };
-}
-
-function sameTarget(
-  current: WebPushTarget | undefined,
-  next: WebPushTarget,
-): boolean {
-  return (
-    current !== undefined &&
-    current.endpoint === next.endpoint &&
-    current.p256dh === next.p256dh &&
-    current.auth === next.auth
-  );
 }
 
 function temporaryRelayFailure(failure: RelayFailure): boolean {

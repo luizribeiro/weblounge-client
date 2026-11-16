@@ -1,4 +1,4 @@
-import type { WebPushTarget } from "./subscription";
+import { type DeviceTarget, relayTargetBody } from "./device-target";
 
 export interface RelayDevice {
   readonly id: string;
@@ -56,14 +56,14 @@ export class RelayClient {
 
   createDevice(
     sessionToken: string,
-    target: WebPushTarget,
+    target: DeviceTarget,
   ): Promise<RelayResult<RelayDevice>> {
     return this.request(
       "/v1/devices",
       sessionToken,
       "POST",
       {
-        target: { platform: "web_push", ...target },
+        target: relayTargetBody(target),
       },
       isDevice,
     );
@@ -71,13 +71,13 @@ export class RelayClient {
 
   updateTarget(
     device: RelayDevice,
-    target: WebPushTarget,
+    target: DeviceTarget,
   ): Promise<RelayResult<null>> {
     return this.request(
       `/v1/devices/${encodeURIComponent(device.id)}/target`,
       device.secret,
       "PUT",
-      { target: { platform: "web_push", ...target } },
+      { target: relayTargetBody(target) },
       isNull,
     );
   }

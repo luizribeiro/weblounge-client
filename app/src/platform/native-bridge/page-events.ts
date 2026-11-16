@@ -17,7 +17,7 @@ const lifecycles: readonly AppLifecycle[] = ["foreground", "background"];
 const apnsEnvironments: readonly ApnsEnvironment[] = ["production", "sandbox"];
 const apnsToken = /^(?:[0-9a-f]{2}){32,}$/u;
 
-function readPushTarget(detail: unknown): PushTarget | undefined {
+export function readPushTarget(detail: unknown): PushTarget | undefined {
   if (typeof detail !== "object" || detail === null) return undefined;
   const { platform, token, environment } = detail as Record<string, unknown>;
   const knownEnvironment = apnsEnvironments.find(

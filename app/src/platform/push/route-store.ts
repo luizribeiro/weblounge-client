@@ -1,4 +1,5 @@
 import { encodeBase64Url } from "./base64url";
+import { type DeviceTarget, isDeviceTarget } from "./device-target";
 import {
   openPushDatabase,
   pageDatabaseDeadlineMs,
@@ -7,7 +8,6 @@ import {
   requestResult,
   transactionDone,
 } from "./push-database";
-import type { WebPushTarget } from "./subscription";
 
 export interface StoredPushRoute {
   readonly networkId: number;
@@ -20,7 +20,7 @@ export interface StoredPushRoute {
   readonly p256dh: string;
   readonly auth: string;
   readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
-  readonly target?: WebPushTarget;
+  readonly target?: DeviceTarget;
   readonly active?: boolean;
   readonly needsReregistration?: boolean;
   readonly retiring?: boolean;
@@ -205,7 +205,7 @@ function decodeRoute(value: unknown): PushRouteRecord {
     ...("retiring" in value && value.retiring === true
       ? { retiring: true }
       : {}),
-    ...("target" in value && isWebPushTarget(value.target)
+    ...("target" in value && isDeviceTarget(value.target)
       ? { target: value.target }
       : {}),
     ...("active" in value && value.active === true ? { active: true } : {}),
@@ -292,17 +292,4 @@ async function replaceLegacyKeys(
   const store = transaction.objectStore(pushRoutesStore);
   for (const route of legacy) store.put(route);
   await transactionDone(transaction, pageDatabaseDeadlineMs);
-}
-
-function isWebPushTarget(value: unknown): value is WebPushTarget {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "endpoint" in value &&
-    typeof value.endpoint === "string" &&
-    "p256dh" in value &&
-    typeof value.p256dh === "string" &&
-    "auth" in value &&
-    typeof value.auth === "string"
-  );
 }

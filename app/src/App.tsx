@@ -87,6 +87,7 @@ import {
   conversationReadMarkers,
   syncAppPushState,
 } from "./platform/push/app-badge";
+import type { DeviceTarget } from "./platform/push/device-target";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
@@ -110,10 +111,7 @@ import { decodePushSyncMessage } from "./platform/push/push-sync-channel";
 import { PushSyncOwner } from "./platform/push/push-sync-owner";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
-import {
-  ensurePushSubscription,
-  type WebPushTarget,
-} from "./platform/push/subscription";
+import { ensurePushSubscription } from "./platform/push/subscription";
 import { XhrUploader } from "./platform/upload/uploader";
 import {
   onServiceWorkerUpdateReady,
@@ -289,7 +287,7 @@ export function App(props: AppProps) {
   let pushStartup: Promise<void> | undefined;
   let pushStartupKey: string | undefined;
   let pushRefresh: Promise<void> | undefined;
-  let pushTarget: WebPushTarget | undefined;
+  let pushTarget: DeviceTarget | undefined;
   let pushSetupGeneration = 0;
   let notificationPromptLoadId: string | undefined;
   let notificationPromptReadDeadline: number | undefined;

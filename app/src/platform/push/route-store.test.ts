@@ -32,6 +32,27 @@ it("stores no CryptoKey anywhere in a route record", async () => {
   expect(containsCryptoKey(await readRawRoute(factory))).toBe(false);
 });
 
+it("keeps a route's browser or APNs target", async () => {
+  const keys = await createRouteKeys(webcrypto as unknown as Crypto);
+  const browser = {
+    endpoint: "https://fcm.googleapis.com/fcm/send/e2e",
+    p256dh: "browser-key",
+    auth: "browser-auth",
+  };
+  const iphone = {
+    platform: "apns",
+    token: "ab".repeat(32),
+    environment: "sandbox",
+  } as const;
+
+  for (const target of [browser, iphone]) {
+    const store = new IndexedDbPushRouteStore(new IDBFactory());
+    await store.put({ ...route(keys), target });
+
+    await expect(store.get("home-vapid")).resolves.toMatchObject({ target });
+  }
+});
+
 it("detects a legacy CryptoKey route without returning its key", async () => {
   const factory = new IDBFactory();
   const pair = (await webcrypto.subtle.generateKey(
