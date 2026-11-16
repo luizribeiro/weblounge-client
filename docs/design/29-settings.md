@@ -107,7 +107,8 @@ immediately; there is no Save button. Below design 09's narrow-desktop breakpoin
   flicker. The expanded rail floats over the content at the list's width, on `panelAlt` with the
   border and `overlayShadow` tokens, and never pushes the content; its width and label fade use the
   `railExpand` motion token, which reduced motion zeroes. Pointer leave, focus leaving the rail,
-  choosing a section and Escape collapse it.
+  choosing a section with the pointer and Escape collapse it; a pointer leaving while keyboard
+  focus (`:focus-visible`) is inside keeps it open.
 - **Escape order:** an expanded rail collapses first; the next Escape closes the modal (design 14's
   `navigation.escape` cascade, design 15's focus return).
 - **Phone-width windows** use the mobile shell and its Settings pages, unchanged.
