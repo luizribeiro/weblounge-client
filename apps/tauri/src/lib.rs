@@ -18,6 +18,8 @@ mod navigation;
 mod notifications;
 #[cfg(desktop)]
 mod page_action;
+#[cfg(any(target_os = "ios", test))]
+mod page_event;
 mod security;
 mod shell;
 mod window;
