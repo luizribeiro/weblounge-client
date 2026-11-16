@@ -15,7 +15,7 @@ use crate::{
     ApnsSettings, Delivery, Error, PushOutcome, PushSender, Result,
     jwt::unix_seconds,
     outbound::{log_upstream_delivery, upstream_error},
-    target::{ApnsEnvironment, PushTarget},
+    target::{ApnsEnvironment, ApnsEnvironments, PushTarget},
 };
 use token::ProviderTokens;
 
@@ -34,18 +34,12 @@ pub struct ApnsCredentials {
     pub topic: String,
 }
 
-#[derive(Debug)]
-struct ApnsHosts {
-    production: Url,
-    sandbox: Url,
-}
-
 /// Sends opaque home pushes to APNs over HTTP/2 with a cached provider token.
 #[derive(Clone, Debug)]
 pub struct ApnsSender {
     topic: Arc<str>,
     tokens: Arc<ProviderTokens>,
-    hosts: Arc<ApnsHosts>,
+    hosts: Arc<ApnsEnvironments<Url>>,
     client: reqwest::Client,
 }
 
@@ -82,7 +76,7 @@ impl ApnsSender {
     ///
     /// Returns an error when the key is not a PKCS #8 P-256 private key.
     pub fn new(credentials: ApnsCredentials) -> Result<Self> {
-        let hosts = ApnsHosts {
+        let hosts = ApnsEnvironments {
             production: apple_host("https://api.push.apple.com/")?,
             sandbox: apple_host("https://api.sandbox.push.apple.com/")?,
         };
@@ -107,7 +101,7 @@ impl ApnsSender {
 
     fn with_client(
         credentials: ApnsCredentials,
-        hosts: ApnsHosts,
+        hosts: ApnsEnvironments<Url>,
         client: reqwest::ClientBuilder,
     ) -> Result<Self> {
         let pem = std::str::from_utf8(&credentials.key_pem)
@@ -127,10 +121,7 @@ impl ApnsSender {
     }
 
     fn device_url(&self, environment: ApnsEnvironment, token: &str) -> Result<Url> {
-        let host = match environment {
-            ApnsEnvironment::Production => &self.hosts.production,
-            ApnsEnvironment::Sandbox => &self.hosts.sandbox,
-        };
+        let host = self.hosts.get(environment);
         if !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(Error::DeliveryUnavailable);
         }

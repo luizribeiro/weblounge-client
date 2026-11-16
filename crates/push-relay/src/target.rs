@@ -25,6 +25,25 @@ pub enum ApnsEnvironment {
     Sandbox,
 }
 
+/// One value for each APNs environment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApnsEnvironments<T> {
+    /// The value for [`ApnsEnvironment::Production`].
+    pub production: T,
+    /// The value for [`ApnsEnvironment::Sandbox`].
+    pub sandbox: T,
+}
+
+impl<T> ApnsEnvironments<T> {
+    /// The value for `environment`.
+    pub fn get(&self, environment: ApnsEnvironment) -> &T {
+        match environment {
+            ApnsEnvironment::Production => &self.production,
+            ApnsEnvironment::Sandbox => &self.sandbox,
+        }
+    }
+}
+
 /// Where a device receives its pushes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PushTarget {

@@ -11,11 +11,11 @@ use url::Url;
 
 use std::net::SocketAddr;
 
-use super::{ApnsCredentials, ApnsHosts, ApnsSender, client_builder};
+use super::{ApnsCredentials, ApnsSender, client_builder};
 use crate::{
     ApnsSettings, Delivery, Error, PushOutcome, PushSender as _, Urgency,
     jwt::unix_seconds,
-    target::{ApnsEnvironment, ApnsTarget, PushTarget},
+    target::{ApnsEnvironment, ApnsEnvironments, ApnsTarget, PushTarget},
     test_apns::{ApnsRequest, FakeApns},
 };
 
@@ -56,7 +56,7 @@ fn sender_at(address: SocketAddr, root: &[u8], key: &SecretKey) -> ApnsSender {
         .resolve(SANDBOX, address);
     ApnsSender::with_client(
         credentials(p8(key)),
-        ApnsHosts {
+        ApnsEnvironments {
             production: host(PRODUCTION),
             sandbox: host(SANDBOX),
         },

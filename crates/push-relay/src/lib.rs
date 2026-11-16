@@ -26,4 +26,4 @@ pub use outbound::{
     PushSender, Urgency, WebPushSender,
 };
 pub use platform_sender::PlatformSender;
-pub use target::ApnsEnvironment;
+pub use target::{ApnsEnvironment, ApnsEnvironments};
