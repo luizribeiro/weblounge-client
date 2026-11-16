@@ -172,35 +172,6 @@ describe("AppearanceSettings", () => {
     ).toBeDisabled();
   });
 
-  it("turns the unread tab indicator off and on from its switch", () => {
-    const { onChange, setSettings } = setup();
-    const tabSwitch = screen.getByRole("switch", {
-      name: "Show unread in the tab",
-    });
-
-    expect(tabSwitch).toBeChecked();
-    expect(tabSwitch).toHaveAccessibleDescription(
-      "Turns the tab icon red and counts unread direct messages and mentions in its title.",
-    );
-    fireEvent.click(tabSwitch);
-    expect(onChange).toHaveBeenLastCalledWith({
-      scope: "app",
-      setting: { key: "unread_tab_indicator", value: false },
-    });
-
-    setSettings({
-      theme: "system",
-      message_density: "cozy",
-      unread_tab_indicator: false,
-    });
-    expect(tabSwitch).not.toBeChecked();
-    fireEvent.click(tabSwitch);
-    expect(onChange).toHaveBeenLastCalledWith({
-      scope: "app",
-      setting: { key: "unread_tab_indicator", value: true },
-    });
-  });
-
   it("offers the tab switch only in a browser tab", () => {
     installPlatformEnvironment(document.body, window, {
       target: "tauri-desktop",

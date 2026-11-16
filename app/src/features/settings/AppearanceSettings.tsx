@@ -4,9 +4,9 @@ import type { AppSetting } from "../../engine/generated/AppSetting";
 import type { Density } from "../../engine/generated/Density";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
+import { NotificationsSettings } from "./NotificationsSettings";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { SettingRow } from "./SettingRow";
-import { SettingSwitch } from "./SettingSwitch";
 import styles from "./SettingsHeading.module.css";
 import type { SettingsPageProps } from "./settings-page-props";
 import { ThemeCards } from "./ThemeCards";
@@ -44,22 +44,10 @@ export function AppearanceSettings(props: SettingsPageProps) {
         )}
       </SettingRow>
       <Show when={inBrowserTab()}>
-        <h3 class={styles.section}>{t("settings.browser_tab")}</h3>
-        <SettingRow
-          control="switch"
-          description={t("settings.unread_tab_indicator.description")}
-          label={t("settings.unread_tab_indicator")}
-        >
-          {(ids) => (
-            <SettingSwitch
-              {...ids}
-              checked={props.settings?.unread_tab_indicator}
-              onChange={(value) =>
-                change({ key: "unread_tab_indicator", value })
-              }
-            />
-          )}
-        </SettingRow>
+        <NotificationsSettings
+          onChange={props.onChange}
+          settings={props.settings}
+        />
       </Show>
     </>
   );
