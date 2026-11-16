@@ -17,7 +17,9 @@ struct PushPresenter {
       if let pushed = pushedRecord(in: prepared.json) {
         try? storage.appendPushedMessage(pushed)
       }
-    case .prepared(.markread), .prepared(.ping), .failed:
+    case .failed(.decrypt):
+      try? storage.flagForReregistration(routeId: push.routeId)
+    case .prepared(.markread), .prepared(.ping), .failed(.parse):
       return
     }
   }

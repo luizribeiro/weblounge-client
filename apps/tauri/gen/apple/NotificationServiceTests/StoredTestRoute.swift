@@ -19,6 +19,7 @@ struct StoredTestRoute {
         try? storage.deleteSecret(secret, routeId: routeId)
       }
       try? storage.deleteRouteMeta(routeId: routeId)
+      try? storage.clearReregistrationFlag(routeId: routeId)
     }
     try storage.writeNotificationCounts([])
     _ = try storage.drainPushedMessages()

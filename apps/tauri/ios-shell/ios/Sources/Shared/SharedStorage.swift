@@ -44,6 +44,7 @@ struct SharedStorage {
   static let appGroupInfoKey = "WebloungeAppGroup"
   static let keychainGroupInfoKey = "WebloungeKeychainGroup"
   static let routeMetaKeyPrefix = "route-meta."
+  static let reregistrationKeyPrefix = "route-needs-reregistration."
   static let notificationCountsKey = "notification-counts"
   static let pushedMessagesFolder = "PushedMessages"
 
@@ -136,6 +137,21 @@ extension SharedStorage {
 
   func deleteRouteMeta(routeId: String) throws {
     try defaults().removeObject(forKey: Self.routeMetaKeyPrefix + routeId)
+  }
+
+  /// Set by the extension when a route's keys no longer open its pushes (design 23 step 7), so
+  /// the page registers the route again. One key per route, because the extension and the app
+  /// write from different processes and a shared list would need a read-modify-write.
+  func flagForReregistration(routeId: String) throws {
+    try defaults().set(true, forKey: Self.reregistrationKeyPrefix + routeId)
+  }
+
+  func needsReregistration(routeId: String) throws -> Bool {
+    try defaults().bool(forKey: Self.reregistrationKeyPrefix + routeId)
+  }
+
+  func clearReregistrationFlag(routeId: String) throws {
+    try defaults().removeObject(forKey: Self.reregistrationKeyPrefix + routeId)
   }
 
   func writeNotificationCounts(_ counts: [NotificationCount]) throws {

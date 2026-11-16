@@ -112,6 +112,24 @@ final class PushPresenterTests: XCTestCase {
     XCTAssertTrue(queued.first?["account"] is NSNull)
   }
 
+  func testFlagsTheRouteForReregistrationWhenItsKeysNoLongerOpenAPush() throws {
+    let route = try StoredTestRoute(self)
+    var stale = try route.relayPayload(":mel!m@example.test PRIVMSG weblounge :hi")
+    stale["c"] = base64URL(try WebPushSealer().seal(":mel!m@example.test PRIVMSG weblounge :hi"))
+
+    XCTAssertEqual(present(stale, storage: route.storage).count, 0)
+    XCTAssertTrue(try route.storage.needsReregistration(routeId: route.routeId))
+  }
+
+  func testLeavesTheRouteRegisteredWhenAPushOpensButDoesNotParse() throws {
+    let route = try StoredTestRoute(self)
+
+    _ = present(
+      try route.relayPayload(":mel!m@example.test JOIN #weblounge"), storage: route.storage)
+
+    XCTAssertFalse(try route.storage.needsReregistration(routeId: route.routeId))
+  }
+
   func testOffersNothingForWhatItCannotShow() throws {
     let route = try StoredTestRoute(self)
     var dropped = try route.relayPayload(":mel!m@example.test PRIVMSG weblounge :hi")

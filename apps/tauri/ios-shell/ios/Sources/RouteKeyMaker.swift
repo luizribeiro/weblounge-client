@@ -13,6 +13,7 @@ struct RouteKeyMaker {
       try storage.storeSecret(.privateKeyPkcs8, routeId: routeId, data: privateKey.derRepresentation)
       try storage.storeSecret(.auth, routeId: routeId, data: auth)
       try storage.storeRouteMeta(meta, routeId: routeId)
+      try storage.clearReregistrationFlag(routeId: routeId)
     } catch {
       try? drop(routeId: routeId)
       throw BridgeFailure.storage(error)
@@ -29,6 +30,7 @@ struct RouteKeyMaker {
         try storage.deleteSecret(secret, routeId: routeId)
       }
       try storage.deleteRouteMeta(routeId: routeId)
+      try storage.clearReregistrationFlag(routeId: routeId)
     } catch {
       throw BridgeFailure.storage(error)
     }
