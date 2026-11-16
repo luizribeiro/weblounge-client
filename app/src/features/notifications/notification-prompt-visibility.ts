@@ -8,6 +8,7 @@ export interface NotificationPromptVisibility {
   readonly dismissed: boolean | undefined;
   readonly ios: boolean;
   readonly display: DisplayMode;
+  readonly nativePush: boolean;
 }
 
 export function shouldShowNotificationPrompt(
@@ -17,9 +18,10 @@ export function shouldShowNotificationPrompt(
     conditions.configured &&
     conditions.permission === "default" &&
     conditions.dismissed === false &&
-    (conditions.supported
-      ? !conditions.ios || conditions.display === "standalone"
-      : conditions.pageNotifications)
+    (conditions.nativePush ||
+      (conditions.supported
+        ? !conditions.ios || conditions.display === "standalone"
+        : conditions.pageNotifications))
   );
 }
 
@@ -34,6 +36,7 @@ export function formatNotificationPromptVisibility(
     `ios=${conditions.ios}`,
     `display=${conditions.display}`,
     `page=${conditions.pageNotifications}`,
+    `native=${conditions.nativePush}`,
   ].join(" / ");
 }
 

@@ -13,6 +13,7 @@ const visible = {
   dismissed: false,
   ios: false,
   display: "browser" as const,
+  nativePush: false,
 };
 
 describe("notification prompt visibility", () => {
@@ -41,7 +42,7 @@ describe("notification prompt visibility", () => {
     expect(
       formatNotificationPromptVisibility({ ...visible, dismissed: undefined }),
     ).toBe(
-      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true",
+      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true / native=false",
     );
   });
 
@@ -59,6 +60,28 @@ describe("notification prompt visibility", () => {
         display: "standalone",
       }),
     ).toBe(true);
+  });
+
+  it("shows in the iPhone app, whose shell registers push itself", () => {
+    const iphoneApp = {
+      ...visible,
+      supported: true,
+      pageNotifications: false,
+      ios: true,
+      display: "tauri" as const,
+      nativePush: true,
+    };
+
+    expect(shouldShowNotificationPrompt(iphoneApp)).toBe(true);
+    expect(
+      shouldShowNotificationPrompt({ ...iphoneApp, permission: "granted" }),
+    ).toBe(false);
+    expect(
+      shouldShowNotificationPrompt({ ...iphoneApp, permission: "denied" }),
+    ).toBe(false);
+    expect(
+      shouldShowNotificationPrompt({ ...iphoneApp, nativePush: false }),
+    ).toBe(false);
   });
 
   it("recognizes iPhone, iPad, and touch-capable iPadOS desktop identity", () => {

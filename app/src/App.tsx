@@ -333,6 +333,7 @@ export function App(props: AppProps) {
     dismissed: notificationPromptDismissed(),
     ios: isIos(navigator),
     display: platformEnvironment().environment().display,
+    nativePush: pushRegistrar.native,
   });
   const notificationPromptVisible = () =>
     shouldShowNotificationPrompt(notificationPromptConditions());

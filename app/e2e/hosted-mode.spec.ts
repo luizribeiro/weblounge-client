@@ -1,6 +1,12 @@
 import { devices, expect, type Page, type Route, test } from "@playwright/test";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 import {
+  installIosShellStub,
+  issueApnsToken,
+  nativeCalls,
+  stubRouteKeys,
+} from "./ios-shell-stub";
+import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
@@ -1561,6 +1567,152 @@ test("grants page notifications without a service worker or Web Push", async ({
   expect(await pageNotificationPermissionRequests(page)).toBe(1);
   expect(relayRequests).toEqual([]);
 });
+
+test.describe("the iPhone app's push registration", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 402, height: 874 },
+  });
+
+  test("registers the APNs token and keychain route keys through the shell", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    await installIosShellStub(page);
+    await installFakeEngine(page);
+    await installFakeOAuth(page);
+    await page.addInitScript(() => {
+      Reflect.set(globalThis, "hostedPushEnabled", true);
+    });
+    await page.route("**/config.json", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(pushHostedConfig(route.request().url())),
+      });
+    });
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(baseURL).origin);
+        return;
+      }
+      await fulfillSessionToken(route, baseURL, "push-session-token");
+    });
+    const relay = await routeApnsRelay(page, new URL(baseURL).origin);
+    const issued = {
+      platform: "apns",
+      token: "0a".repeat(32),
+      environment: "production",
+    } as const;
+    const rotated = { ...issued, token: "0b".repeat(32) };
+
+    await page.goto("/?debug=viewport");
+    const prompt = page.getByRole("region", { name: "Notifications" });
+    await expect(prompt).toBeVisible();
+    await expect(page.locator("[data-debug-overlay]")).toContainText(
+      "permission=default / dismissed=false / ios=false / display=tauri / page=false / native=true",
+    );
+    expect(await commands(page)).not.toContain("request_push_permission");
+
+    await prompt.getByRole("button", { name: "Turn on" }).click();
+    await expect(prompt).toHaveCount(0);
+    await issueApnsToken(page, issued);
+
+    await expect
+      .poll(() => relay.bodies("POST /v1/devices"))
+      .toEqual([{ target: issued }]);
+    await expect
+      .poll(() => nativeCalls(page))
+      .toContainEqual({
+        command: "create_route_keys",
+        request: {
+          routeId: "route-ios",
+          route: expect.objectContaining({
+            networkId: 1,
+            networkLabel: "weblounge",
+          }),
+        },
+      });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          return Array.isArray(requests) ? requests : [];
+        }),
+      )
+      .toContainEqual(
+        expect.objectContaining({
+          type: "ensure_push",
+          route: expect.objectContaining({
+            route_id: "route-ios",
+            p256dh: stubRouteKeys.p256dh,
+            auth: stubRouteKeys.auth,
+          }),
+        }),
+      );
+    expect(
+      (await commands(page)).filter(
+        (command) => command === "request_push_permission",
+      ),
+    ).toHaveLength(1);
+
+    await issueApnsToken(page, rotated);
+
+    await expect
+      .poll(() => relay.bodies("PUT /v1/devices/device-1/target"))
+      .toEqual([{ target: rotated }]);
+  });
+});
+
+async function commands(page: Page): Promise<string[]> {
+  return (await nativeCalls(page)).map(({ command }) => command);
+}
+
+async function routeApnsRelay(page: Page, origin: string) {
+  const requests: { readonly call: string; readonly body: unknown }[] = [];
+  const cors = {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "POST, PUT, DELETE",
+  };
+  await page.route("https://push.weblounge.org/**", async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
+    const call = `${request.method()} ${new URL(request.url()).pathname}`;
+    requests.push({ call, body: request.postDataJSON() });
+    const answers: Record<string, unknown> = {
+      "POST /v1/devices": { id: "device-1", secret: "device-secret" },
+      "POST /v1/devices/device-1/routes": {
+        id: "route-ios",
+        endpoint: "https://push.weblounge.org/v1/r/route-ios",
+      },
+      "GET /v1/devices/device-1/dead-endpoints": { endpoints: [] },
+    };
+    const answer = answers[call];
+    await route.fulfill(
+      answer === undefined
+        ? { status: 204, headers: cors }
+        : {
+            status: call.startsWith("GET") ? 200 : 201,
+            headers: cors,
+            contentType: "application/json",
+            body: JSON.stringify(answer),
+          },
+    );
+  });
+  return {
+    bodies: (call: string) =>
+      requests
+        .filter((request) => request.call === call)
+        .map(({ body }) => body),
+  };
+}
 
 for (const surface of [
   { browser: "chromium", use: pixel7 },
