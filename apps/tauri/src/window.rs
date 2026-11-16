@@ -24,7 +24,7 @@ pub enum WindowError {
 pub const MAIN_LABEL: &str = "main";
 pub const APP_URL: &str = "https://beta.weblounge.org";
 
-pub fn create(app: &AppHandle, page_scripts: &[&str]) -> Result<(), WindowError> {
+pub fn create(app: &AppHandle, page_scripts: &[String]) -> Result<(), WindowError> {
     let url = APP_URL.parse()?;
     let navigating = app.clone();
     let opening = app.clone();
@@ -34,7 +34,7 @@ pub fn create(app: &AppHandle, page_scripts: &[&str]) -> Result<(), WindowError>
         builder = desktop::configure(builder, &app.package_info().name);
     }
     for script in page_scripts {
-        builder = builder.initialization_script(*script);
+        builder = builder.initialization_script(script);
     }
     #[cfg_attr(
         mobile,

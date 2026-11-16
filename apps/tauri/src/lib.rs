@@ -14,7 +14,7 @@ mod navigation;
     expect(
         dead_code,
         unused_imports,
-        reason = "the shared notification model has no iOS backend yet"
+        reason = "the notification commands have no iOS backend yet and the page shim is desktop-only"
     )
 )]
 mod notifications;
@@ -120,12 +120,7 @@ fn install(app: &App) -> Result<(), SetupError> {
     #[cfg(desktop)]
     install_menu(app)?;
     notifications::install_click_delegate(app.handle());
-    let identity_script = shell::identity_script()?;
-    let notification_script = notifications::init_script(notifications::initial_permission())?;
-    window::create(
-        app.handle(),
-        &[&identity_script, BADGE_SCRIPT, &notification_script],
-    )?;
+    window::create(app.handle(), &page_scripts()?)?;
     #[cfg(target_os = "ios")]
     native::watch(app.handle());
     #[cfg(desktop)]
@@ -133,6 +128,19 @@ fn install(app: &App) -> Result<(), SetupError> {
         window::desktop::show(app.handle());
     }
     Ok(())
+}
+
+fn page_scripts() -> Result<Vec<String>, SetupError> {
+    #[cfg_attr(
+        mobile,
+        expect(unused_mut, reason = "only desktop pages get the notification shim")
+    )]
+    let mut scripts = vec![shell::identity_script()?, BADGE_SCRIPT.to_owned()];
+    #[cfg(desktop)]
+    scripts.push(notifications::init_script(
+        notifications::initial_permission(),
+    )?);
+    Ok(scripts)
 }
 
 #[cfg(desktop)]
@@ -151,3 +159,16 @@ fn handle_run_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
 
 #[cfg(not(target_os = "macos"))]
 fn handle_run_event(_: &tauri::AppHandle, _: &tauri::RunEvent) {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn injects_the_notification_shim_only_into_desktop_pages() {
+        let scripts = super::page_scripts().expect("page scripts build");
+        let shim = include_str!("notification.js");
+        assert_eq!(
+            scripts.iter().any(|script| script.contains(shim)),
+            cfg!(desktop)
+        );
+    }
+}
