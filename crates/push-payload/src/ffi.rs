@@ -71,6 +71,8 @@ pub unsafe extern "C" fn weblounge_prepare_notification(
 
 /// Appends the unread-count line; see [`crate::counted_body`].
 ///
+/// `new_messages` is a template whose first `{count}` becomes the number.
+///
 /// Returns null when a pointer is null or a string is not UTF-8.
 ///
 /// # Safety

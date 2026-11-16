@@ -20,6 +20,7 @@ char *weblounge_prepare_notification(WebloungeBytes ciphertext,
                                      const char *nickname);
 
 /* Returns body with the unread-count line, or NULL for a NULL pointer or non-UTF-8 string.
+ * new_messages is a template whose first {count} becomes the number, e.g. "{count} new messages".
  * Release the result with weblounge_string_free. */
 char *weblounge_counted_notification_body(const char *body,
                                           uint32_t count,
