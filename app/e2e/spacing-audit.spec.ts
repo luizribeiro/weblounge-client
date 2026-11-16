@@ -1,11 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
 import { messageId, serverTime } from "./irc-client";
-import { expect, test } from "./irc-fixture";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   scrollAwayFromLiveEdge,
   scrollToTranscriptTop,
 } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { setPageHidden } from "./page-lifecycle";
 import { useDedicatedWorker } from "./production-ergo";
 import { expectSettled } from "./settled";
 import { seedMixedConversation } from "./spacing-audit-fixture";
@@ -260,12 +261,28 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
     testInfo.project.name !== "webkit-phone-layout",
     "covers iPhone WebKit foreground layout",
   );
+  await expectHiddenCatchUpPaintsContiguously(page, irc, {
+    channelName: "sa-hidden",
+  });
+});
+
+const phoneViewport = { width: 390, height: 844 } as const;
+
+interface HiddenCatchUpScenario {
+  readonly channelName: string;
+}
+
+async function expectHiddenCatchUpPaintsContiguously(
+  page: Page,
+  irc: IrcTestAccount,
+  scenario: HiddenCatchUpScenario,
+): Promise<void> {
   await installNativeFeelInstrumentation(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize(phoneViewport);
   const suffix = irc.id;
-  const channel = irc.channelNamed("sa-hidden");
+  const channel = irc.channelNamed(scenario.channelName);
   const startUrl = irc.url({ autojoin: [channel] });
-  const writer = await irc.peer("sa-hidden-writer", [channel]);
+  const writer = await irc.peer(`${scenario.channelName}-writer`, [channel]);
   const hiddenMessages = [
     `hidden multiline one ${suffix} ${"variable width words for wrapping ".repeat(8)}\nsecond explicit line ${suffix}\n\nlast line ${suffix}`,
     `hidden long two ${suffix} ${"i".repeat(330)}`,
@@ -275,13 +292,7 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
   await page.goto(startUrl);
   await page.getByRole("button", { name: channel }).click();
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-  await page.evaluate(() =>
-    (
-      window as Window & {
-        __setNativeVisibility?: (hidden: boolean) => void;
-      }
-    ).__setNativeVisibility?.(true),
-  );
+  await setPageHidden(page, true);
   for (const text of hiddenMessages)
     await writer.multilineConfirmed(channel, text);
   await expect(
@@ -310,7 +321,7 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
         .filter({ hasText: text.split("\n")[0] }),
     ).toBeVisible();
   await expectContiguousRows(page, hiddenMessages.length);
-});
+}
 
 async function leaveConversation(page: Page, phone: boolean): Promise<void> {
   if (phone) {
