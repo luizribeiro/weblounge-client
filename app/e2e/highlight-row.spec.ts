@@ -139,6 +139,14 @@ test("keeps highlighted transcript rows in the message rhythm and scroll layer",
         ),
       )
       .toBeCloseTo(normalContinuationGap, 0);
+    await expect
+      .poll(() => virtualRowHeight(messageRow(page, messages.normalAfter)))
+      .toBe(cozyPhoneRowHeight.groupStart);
+    await expect
+      .poll(() =>
+        virtualRowHeight(messageRow(page, messages.normalContinuation)),
+      )
+      .toBe(cozyPhoneRowHeight.continuation);
   }
 
   const layers = await rowLayerStyles(
@@ -215,6 +223,19 @@ async function textGap(before: Locator, after: Locator): Promise<number> {
   if (beforeBox === null || afterBox === null)
     throw new Error("message content is not rendered");
   return afterBox.y - beforeBox.y - beforeBox.height;
+}
+
+const cozyPhoneRowHeight = {
+  groupStart: 16 + 21 + 4 + 21,
+  continuation: 6 + 21,
+} as const;
+
+function virtualRowHeight(row: Locator): Promise<number> {
+  return row.evaluate((element) => {
+    const virtualRow = element.closest<HTMLElement>("li[data-index]");
+    if (virtualRow === null) throw new Error("message has no virtual row");
+    return virtualRow.getBoundingClientRect().height;
+  });
 }
 
 function distanceFromBottom(page: Page): Promise<number> {

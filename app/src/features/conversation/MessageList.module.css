@@ -297,6 +297,12 @@
     "nick time status"
     "content content content";
   grid-template-columns: max-content max-content minmax(0, 1fr);
+  /* Baseline-aligning the nick with the smaller monospace time would size
+     this track from each engine's font metrics (20.5px in Chromium, 22.25px
+     in WebKit). The virtualizer positions rows from whole-pixel estimates
+     (message-size-estimate.ts) until it measures them, and never re-measures
+     a row whose size stays put, so the track must be exactly one line box. */
+  grid-template-rows: 1lh auto;
   padding: var(--wl-density-message-mobile-group-top-padding)
     var(--wl-space-transcript-inline) 0;
   row-gap: var(--wl-density-message-mobile-header-gap);
@@ -321,6 +327,7 @@
 .list[data-presentation="mobile"] .row[data-message-group-start="false"] {
   grid-template-areas: "content status";
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: none;
   padding-block-start: var(--wl-density-message-mobile-continuation-padding);
   row-gap: 0;
 }
