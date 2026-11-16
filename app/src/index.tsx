@@ -40,6 +40,7 @@ import {
   installPlatformEnvironment,
   platformEnvironment,
 } from "./platform/environment";
+import { captureNativeEventsAtStartup } from "./platform/native-bridge/native-host";
 import "./platform/platform.css";
 import { installPageZoomGuard } from "./page-zoom";
 import { installRequestedDebugOverlays } from "./platform/debug-overlays";
@@ -440,6 +441,7 @@ if (root === null) {
   throw new Error("missing application root");
 }
 
+captureNativeEventsAtStartup();
 installPlatformEnvironment(root, window);
 exposeBuildVersion(window);
 installRequestedDebugOverlays(root, window);

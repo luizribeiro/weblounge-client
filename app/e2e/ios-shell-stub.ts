@@ -132,6 +132,18 @@ export async function issueApnsToken(
   );
 }
 
+/** Fires `event` right after the page's load event, when the shell delivers a warm tap. */
+export async function dispatchShellEventOnLoad(
+  page: Page,
+  event: PageEvent,
+): Promise<void> {
+  await page.addInitScript(({ name, detail }) => {
+    window.addEventListener("load", () =>
+      window.dispatchEvent(new CustomEvent(name, { detail })),
+    );
+  }, event);
+}
+
 export async function dispatchShellEvent(
   page: Page,
   event: PageEvent,

@@ -1,6 +1,7 @@
 import {
   deliverNativeNotification,
   dispatchShellEvent,
+  dispatchShellEventOnLoad,
   installIosShellStub,
   nativeCalls,
   queuePushedMessage,
@@ -62,6 +63,24 @@ test.describe("the iPhone app's page against local Ergo", () => {
     const commands = (await nativeCalls(page)).map(({ command }) => command);
     expect(commands).toContain("push_permission");
     expect(commands).not.toContain("request_push_permission");
+  });
+
+  test("opens a tap the shell sends as soon as the page has loaded", async ({
+    page,
+    irc,
+  }) => {
+    await installIosShellStub(page);
+    await dispatchShellEventOnLoad(page, {
+      name: "weblounge:open-route",
+      detail: `/Local%20Ergo/${irc.channel.slice(1)}`,
+    });
+
+    await page.goto(irc.url());
+
+    await expect(
+      page.getByRole("heading", { name: irc.channel }),
+    ).toBeVisible();
+    await expectSettled(page, { conversation: irc.channel });
   });
 
   test("badges an unread DM and opens it from a notification tap", async ({

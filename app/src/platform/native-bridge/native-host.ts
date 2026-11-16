@@ -1,4 +1,4 @@
-import { onAppLifecycle } from "./app-lifecycle";
+import { currentAppLifecycle, onAppLifecycle } from "./app-lifecycle";
 import { type NativeBridge, nativeBridge } from "./native-bridge";
 import { observeNativePageEvents } from "./page-events";
 import { nativePushedMessageDrain } from "./pushed-message-drain";
@@ -7,6 +7,23 @@ export interface HostEvents {
   openRoute(route: string): void;
   background(): void;
   foreground(): void;
+}
+
+const earlyTaps: string[] = [];
+let stopEarlyTaps: (() => void) | undefined;
+
+/**
+ * Holds the shell's taps and lifecycle from page start until `startHostIntegration` runs: the app
+ * mounts only after config and sign-in, while the shell taps as soon as the page has loaded.
+ */
+export function captureNativeEventsAtStartup(
+  bridge: NativeBridge | undefined = nativeBridge(),
+): void {
+  if (bridge === undefined || stopEarlyTaps !== undefined) return;
+  currentAppLifecycle();
+  stopEarlyTaps = observeNativePageEvents(window, {
+    "weblounge:open-route": (route) => earlyTaps.push(route),
+  });
 }
 
 /**
@@ -28,6 +45,8 @@ export function startHostIntegration(
       if (!stopped) events.openRoute(route);
     });
   };
+  stopEarlyTaps?.();
+  stopEarlyTaps = undefined;
   const stopTaps = observeNativePageEvents(window, {
     "weblounge:open-route": openAfterDrain,
   });
@@ -40,6 +59,7 @@ export function startHostIntegration(
     events.foreground();
   });
   openAfterDrain(launchRoute);
+  for (const route of earlyTaps.splice(0)) openAfterDrain(route);
   return () => {
     stopped = true;
     stopTaps();

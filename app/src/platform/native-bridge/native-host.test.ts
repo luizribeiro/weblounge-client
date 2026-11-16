@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NativeBridge } from "./native-bridge";
-import { startHostIntegration } from "./native-host";
+import {
+  captureNativeEventsAtStartup,
+  startHostIntegration,
+} from "./native-host";
 
 const running: (() => void)[] = [];
 
@@ -50,6 +53,35 @@ describe("host integration", () => {
       "take_pushed_messages",
       "open /Lounge/%23ops",
     ]);
+  });
+
+  it("keeps a tap that arrives before the app mounts and opens it after the launch route", async () => {
+    const { dispatch, log, start } = shell();
+    const bridge = { call: async () => [] } as unknown as NativeBridge;
+
+    captureNativeEventsAtStartup(bridge);
+    dispatch("weblounge:open-route", "/Lounge/%23ops");
+    start("/");
+    await vi.waitFor(() => expect(log).toContain("open /Lounge/%23ops"));
+    dispatch("weblounge:open-route", "/Lounge/@mel");
+    await vi.waitFor(() => expect(log).toContain("open /Lounge/@mel"));
+
+    expect(log.filter((entry) => entry.startsWith("open"))).toEqual([
+      "open /",
+      "open /Lounge/%23ops",
+      "open /Lounge/@mel",
+    ]);
+  });
+
+  it("captures nothing outside the iPhone app", async () => {
+    const { dispatch, log, start } = shell();
+
+    captureNativeEventsAtStartup(undefined);
+    dispatch("weblounge:open-route", "/Lounge/%23ops");
+    start("/");
+    await vi.waitFor(() => expect(log).toContain("open /"));
+
+    expect(log).not.toContain("open /Lounge/%23ops");
   });
 
   it("releases on background and drains on foreground", async () => {
