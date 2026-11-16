@@ -3,6 +3,7 @@ import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { messageId } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
+import { choosePhoneAppearance } from "./settings-fixture";
 import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 import { armMessageTime } from "./time-rewrite";
@@ -195,6 +196,52 @@ for (const keyboard of ["closed", "open"] as const)
     expect(await isCapped(composer)).toBe(true);
   });
 
+for (const appearance of [
+  { theme: "Lounge", density: "Cozy" },
+  { theme: "Terminal", density: "Compact" },
+] as const)
+  test(`keeps phone header items inside the one-line header in ${appearance.theme} ${appearance.density}`, async ({
+    context,
+    page,
+    irc,
+  }, testInfo) => {
+    test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
+    const channel = irc.channelNamed("header");
+    const bot = await irc.peer("header-bot", [channel]);
+    await bot.mode(bot.nickname, "+B");
+    const botText = `header bot ${irc.id}`;
+    const ownText = `header own ${irc.id}`;
+    const pendingText = `header pending ${irc.id}`;
+    await page.goto(irc.url({ autojoin: [channel] }));
+    await choosePhoneAppearance(page, [appearance.theme, appearance.density]);
+    await page.getByRole("button", { name: channel }).click();
+    await expectSettled(page, { conversation: channel });
+
+    await bot.privmsgConfirmed(channel, botText);
+    const composer = page.getByRole("textbox", { name: `Message ${channel}` });
+    await composer.fill(ownText);
+    await composer.press("Enter");
+    await bot.waitForPrivmsg(channel, ownText, irc.account);
+    const groupBreak = `header break ${irc.id}`;
+    await bot.privmsgConfirmed(channel, groupBreak);
+    await context.setOffline(true);
+    await composer.fill(pendingText);
+    await composer.press("Enter");
+    await expect(messageRow(page, pendingText)).toHaveAttribute(
+      "data-delivery",
+      "optimistic",
+    );
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+
+    for (const text of [botText, ownText, pendingText]) {
+      await expect(messageRow(page, text)).toHaveAttribute(
+        "data-message-group-start",
+        "true",
+      );
+      expect(await headerOverflow(messageRow(page, text))).toBeCloseTo(0, 2);
+    }
+  });
+
 test("keeps the desktop row while replacing its bot label", async ({
   page,
   irc,
@@ -342,6 +389,25 @@ function isPhoneProject(name: string): boolean {
 
 function messageRow(page: Page, text: string): Locator {
   return page.locator(`[data-message-row][data-message-text="${text}"]`);
+}
+
+/** How far any item in a group-start row's header pokes out of its one-line track. */
+function headerOverflow(row: Locator): Promise<number> {
+  return row.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const top =
+      element.getBoundingClientRect().top + Number.parseFloat(style.paddingTop);
+    const bottom = top + Number.parseFloat(style.gridTemplateRows);
+    const boxes = [...element.children]
+      .filter((child) => getComputedStyle(child).gridRowStart !== "content")
+      .flatMap((child) => [child, ...child.querySelectorAll("*")])
+      .map((item) => item.getBoundingClientRect())
+      .filter((box) => box.height > 0);
+    return Math.max(
+      0,
+      ...boxes.map((box) => Math.max(top - box.top, box.bottom - bottom)),
+    );
+  });
 }
 
 function maskImageOrigin(icon: Locator): Promise<string> {

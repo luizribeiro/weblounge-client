@@ -374,6 +374,15 @@
   grid-area: status;
   justify-self: start;
 }
+/* The header track is one line box: the smaller time and status text share
+   the nick's baseline, so a full-height line box would hang below the track.
+   Their glyphs overflow the tight box, so only the inline axis may clip. */
+.list[data-presentation="mobile"] :is(.time, .pending, .failed) {
+  line-height: 1;
+}
+.list[data-presentation="mobile"] :is(.pending, .failed) {
+  overflow: clip visible;
+}
 .list[data-presentation="mobile"] .row[data-message-group-start="false"] .time,
 .list[data-presentation="mobile"]
   .row[data-message-group-start="false"]

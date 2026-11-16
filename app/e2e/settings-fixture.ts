@@ -30,3 +30,21 @@ export async function choose(page: Page, name: string): Promise<void> {
   await choice(page, name).click();
   await expect(page.getByRole("radio", { name, exact: true })).toBeChecked();
 }
+
+export async function choosePhoneAppearance(
+  page: Page,
+  names: readonly string[],
+): Promise<void> {
+  await page
+    .getByRole("region", { name: "Chats" })
+    .getByRole("button", { name: "Settings" })
+    .tap();
+  await page.getByRole("button", { name: /^Appearance/u }).tap();
+  for (const name of names) {
+    await choice(page, name).tap();
+    await expect(page.getByRole("radio", { name, exact: true })).toBeChecked();
+  }
+  await page.getByRole("button", { name: "Back to Settings" }).tap();
+  await page.getByRole("button", { name: "Back to chats" }).tap();
+  await expect(page.getByRole("region", { name: "Chats" })).toBeVisible();
+}
