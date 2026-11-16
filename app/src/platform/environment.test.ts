@@ -71,10 +71,10 @@ describe("platform environment", () => {
     );
   });
 
-  it("uses the native keymap in Tauri and the Mac app, and the web keymap elsewhere", () => {
-    expect(resolveShortcutShell("web", "web")).toBe("web");
-    expect(resolveShortcutShell("web", "macos-app")).toBe("native");
-    expect(resolveShortcutShell("tauri-desktop", "web")).toBe("native");
+  it("uses the native keymap in Tauri and the web keymap elsewhere", () => {
+    expect(resolveShortcutShell("web")).toBe("web");
+    expect(resolveShortcutShell("tauri-desktop")).toBe("native");
+    expect(resolveShortcutShell("tauri-mobile")).toBe("native");
   });
 
   it("centralizes shortcut-label platform adaptation", () => {
@@ -113,10 +113,33 @@ describe("platform environment", () => {
     controller.dispose();
   });
 
+  it("lets the Mac app's identity pick the desktop target over touch input", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        new FakeMediaQuery(query, true) as unknown as MediaQueryList,
+    );
+    vi.stubGlobal("__WEBLOUNGE_SHELL__", {
+      kind: "macos-app",
+      version: "0.1.3",
+    });
+    const root = document.createElement("div");
+    const app = installPlatformEnvironment(root, window);
+
+    expect(app.environment()).toMatchObject({
+      input: "mouse",
+      display: "tauri",
+      shell: "desktop",
+    });
+    app.dispose();
+  });
+
   it("has no window controls in a plain browser", () => {
     const root = document.createElement("div");
     const browser = installPlatformEnvironment(root, window);
 
+    expect(browser.environment().display).toBe("browser");
+    expect(browser.shortcutShell).toBe("web");
     expect(browser.windowControls()).toBeUndefined();
     expect(root.dataset.windowControls).toBeUndefined();
     expect(() =>
@@ -141,6 +164,8 @@ describe("platform environment", () => {
     const root = document.createElement("div");
     const app = installPlatformEnvironment(root, window);
 
+    expect(app.environment().display).toBe("tauri");
+    expect(app.shortcutShell).toBe("native");
     expect(app.windowControls()).toBe("overlay");
     expect(root.dataset.windowControls).toBe("pending");
     app.applyWindowTheme(themes[0] as ThemeDefinition);

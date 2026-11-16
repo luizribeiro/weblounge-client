@@ -144,6 +144,42 @@ test.describe("browser tab indicator against local Ergo", () => {
     await expect(dialog).toHaveCount(0);
     await nativeFeelAudit(page);
   });
+  test("the Mac app leaves the tab alone and has no tab setting", async ({
+    irc,
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis, "__WEBLOUNGE_SHELL__", {
+        value: Object.freeze({ kind: "macos-app", version: "0.1.3" }),
+      });
+    });
+    await installNativeFeelInstrumentation(page);
+    await openHome(page, irc);
+    const untouched = await tabState(page);
+    expect(untouched.title).toBe("weblounge");
+
+    const peer = await irc.peer("app-peer");
+    await peer.privmsgConfirmed(irc.account, "no tab here");
+    await expect(directRow(page, peer)).toHaveAccessibleName(/, 1 unread/u);
+    expect(await tabState(page)).toEqual(untouched);
+
+    await page
+      .getByRole("complementary", { name: "Channel list" })
+      .getByRole("button", { name: "Settings" })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(dialog).toBeFocused();
+    await expect(
+      dialog.getByRole("button", { name: "Appearance" }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Notifications" }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
 });
 
 async function openHome(page: Page, irc: IrcTestAccount): Promise<void> {

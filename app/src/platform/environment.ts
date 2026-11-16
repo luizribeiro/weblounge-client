@@ -55,12 +55,18 @@ const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
 
 let installed: PlatformController | undefined;
 
+const platformTargetForHost: Readonly<Record<HostShell, PlatformTarget>> = {
+  "macos-app": "tauri-desktop",
+  web: "web",
+};
+
 export function installPlatformEnvironment(
   root: HTMLElement,
   browserWindow: Window,
   options: InstallOptions = {},
 ): PlatformController {
-  const target = options.target ?? "web";
+  const target =
+    options.target ?? platformTargetForHost[hostShell(browserWindow)];
   const touch = mediaQuery(browserWindow, touchQuery);
   const standalone = mediaQuery(browserWindow, standaloneQuery);
   const dark = mediaQuery(browserWindow, darkSchemeQuery);
@@ -127,7 +133,7 @@ export function installPlatformEnvironment(
     prefersDark,
     prefersReducedMotion,
     shortcutPlatform: resolveShortcutPlatform(browserWindow.navigator),
-    shortcutShell: resolveShortcutShell(target, hostShell(browserWindow)),
+    shortcutShell: resolveShortcutShell(target),
     windowControls: windowControls.state,
     applyWindowTheme: windowControls.applyTheme,
     dispose() {
@@ -198,11 +204,8 @@ export function resolveShortcutPlatform(
   return /Linux/u.test(browserNavigator.platform) ? "linux" : "other";
 }
 
-export function resolveShortcutShell(
-  target: PlatformTarget,
-  host: HostShell,
-): ShortcutShell {
-  return target === "web" && host === "web" ? "web" : "native";
+export function resolveShortcutShell(target: PlatformTarget): ShortcutShell {
+  return target === "web" ? "web" : "native";
 }
 
 function panelsForWidth(width: number): DesktopPanels {
