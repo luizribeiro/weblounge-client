@@ -156,8 +156,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   conversation pane: the pane header spans it, the inline list has no header or fade, and it is a
   fixed 232px (`--wl-size-members`) column. Visibility is per channel (never-toggled channels follow
   the last choice) and persists across launches in device storage. Below 232 + 480px of pane the
-  list is a drawer inside the pane with an invisible scrim (Escape or a click elsewhere in the pane
-  closes it); Escape in the inline list focuses the composer. Local-Ergo journeys in
+  list is a drawer inside the pane body that looks like the inline list (no title, ×, shadow or
+  dimming; it starts below the pane header, whose Members button closes it, as do Escape and a click
+  elsewhere in the pane); phone drawers keep their floating look. Escape in the inline list focuses
+  the composer. Local-Ergo journeys in
   `app/e2e/member-pane.spec.ts` and `member-panel.spec.ts`.
 - 2026-11-15: browser-tab indicator (F33, design 23 Badging). In a browser tab the favicon's
   tile turns brand red and the title gains "(n) " (capped "(99+)") while `appBadgeCount` is above
