@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  connectionIndicatorShown,
   connectionPresentation,
   connectionStateKind,
 } from "./connection-state";
@@ -55,6 +56,31 @@ it("gives terminal failures one deterministic action", () => {
     progressing: false,
     sendsBlocked: true,
   });
+});
+
+it("shows the connection indicator while connecting or failed, not while online or stopped", () => {
+  expect(connectionIndicatorShown([])).toBe(false);
+  expect(connectionIndicatorShown([network("online")])).toBe(false);
+  expect(
+    connectionIndicatorShown([network({ offline: { reason: "requested" } })]),
+  ).toBe(false);
+  expect(connectionIndicatorShown([network("connecting")])).toBe(true);
+  expect(
+    connectionIndicatorShown([
+      network("online"),
+      network({ offline: { reason: "device_offline" } }),
+    ]),
+  ).toBe(true);
+  expect(
+    connectionIndicatorShown([
+      network({
+        failed: {
+          reason: "transport",
+          message_key: "engine.connection_failed",
+        },
+      }),
+    ]),
+  ).toBe(true);
 });
 
 function network(state: NetworkProjection["state"]): NetworkProjection {

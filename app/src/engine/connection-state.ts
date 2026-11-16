@@ -74,6 +74,14 @@ export function connectionPresentation(
   };
 }
 
+/** Whether the shell shows its connecting sweep or its connection error. */
+export function connectionIndicatorShown(
+  networks: readonly NetworkProjection[],
+): boolean {
+  const { error, progressing } = connectionPresentation(networks);
+  return progressing || error !== undefined;
+}
+
 export function connectionFailureMessage(
   state: NetworkProjection["state"],
 ): string | undefined {
