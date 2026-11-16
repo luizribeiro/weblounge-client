@@ -29,6 +29,7 @@ interface NativeFeelMetrics extends WasteCounters {
   enginePatches: number;
   intervalRegistrations: IntervalRegistration[];
   layoutShift: number;
+  pointerLog: string[];
   timeoutSites: string[];
   trackingWaste: boolean;
 }
@@ -45,6 +46,7 @@ export async function installNativeFeelInstrumentation(
       intervals: 0,
       layoutShift: 0,
       timeouts: 0,
+      pointerLog: [],
       timeoutSites: [],
       trackingWaste: false,
     };
@@ -53,6 +55,22 @@ export async function installNativeFeelInstrumentation(
       __setNativeVisibility?: (hidden: boolean) => void;
     };
     state.__nativeFeelMetrics = metrics;
+
+    // A touch on a message row turns off text selection in it while pressed.
+    for (const type of ["pointerdown", "pointerup", "pointercancel"]) {
+      document.addEventListener(
+        type,
+        (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const row = target?.closest("[data-message-row]") ? " in a row" : "";
+          metrics.pointerLog.push(
+            `${Math.round(event.timeStamp)}ms ${type} (${(event as PointerEvent).pointerType}) on ${target?.tagName ?? "?"}${row}`,
+          );
+          metrics.pointerLog.splice(0, metrics.pointerLog.length - 8);
+        },
+        true,
+      );
+    }
 
     const addPortListener = MessagePort.prototype.addEventListener;
     const removePortListener = MessagePort.prototype.removeEventListener;
@@ -192,12 +210,19 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     .evaluateAll((elements) =>
       elements.flatMap((element) => {
         const style = getComputedStyle(element);
-        return style.userSelect === "text" && style.cursor === "text"
-          ? []
-          : [`${element.tagName}: selectable style lost`];
+        if (style.userSelect === "text" && style.cursor === "text") return [];
+        const pressed = element.closest("[data-pressing]")
+          ? ", row pressed"
+          : "";
+        return [
+          `${element.tagName}: selectable style lost (user-select ${style.userSelect}, cursor ${style.cursor}${pressed}) "${element.textContent?.slice(0, 40) ?? ""}"`,
+        ];
       }),
     );
-  expect(selectableViolations).toEqual([]);
+  if (selectableViolations.length > 0)
+    throw new Error(
+      `${selectableViolations.join("\n")}\n${await recentPointerEvents(page)}`,
+    );
   await auditMobileTextFieldZoom(page);
 
   const chromeMenuPrevented = await page
@@ -328,6 +353,16 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     animationFrames: 0,
     intervals: 0,
     timeouts: 0,
+  });
+}
+
+function recentPointerEvents(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const metrics = (
+      window as Window & { __nativeFeelMetrics?: { pointerLog: string[] } }
+    ).__nativeFeelMetrics;
+    const events = metrics?.pointerLog.join("\n") ?? "none recorded";
+    return `recent pointer events at ${Math.round(performance.now())}ms:\n${events}`;
   });
 }
 
