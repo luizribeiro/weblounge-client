@@ -88,18 +88,31 @@ describe("SettingsModal", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("wraps Tab between the checked density and Close", async () => {
+  it("wraps Tab between the last switch and Close", async () => {
     const { dialog } = setup();
     await waitFor(() => expect(dialog).toHaveFocus());
-    const cozy = screen.getByRole("radio", { name: "Cozy" });
+    const last = screen.getByRole("switch", { name: "Show unread in the tab" });
 
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-    expect(cozy).toHaveFocus();
-    fireEvent.keyDown(cozy, { key: "Tab" });
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: "Tab" });
 
     expect(
       screen.getByRole("button", { name: "Close settings" }),
     ).toHaveFocus();
+  });
+
+  it("closes on Escape after flipping a switch", () => {
+    const { onClose } = setup();
+    const tabSwitch = screen.getByRole("switch", {
+      name: "Show unread in the tab",
+    });
+
+    tabSwitch.focus();
+    fireEvent.click(tabSwitch);
+    fireEvent.keyDown(tabSwitch, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("passes setting changes through", () => {

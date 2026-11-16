@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "../../engine/generated/AppSettings";
+import { installPlatformEnvironment } from "../../platform/environment";
 import { themes } from "../../theme/theme-registry";
 import { AppearanceSettings } from "./AppearanceSettings";
 
@@ -166,5 +167,47 @@ describe("AppearanceSettings", () => {
 
     for (const radio of screen.getAllByRole("radio"))
       expect(radio).not.toBeChecked();
+    expect(
+      screen.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toBeDisabled();
+  });
+
+  it("turns the unread tab indicator off and on from its switch", () => {
+    const { onChange, setSettings } = setup();
+    const tabSwitch = screen.getByRole("switch", {
+      name: "Show unread in the tab",
+    });
+
+    expect(tabSwitch).toBeChecked();
+    expect(tabSwitch).toHaveAccessibleDescription(
+      "Turns the tab icon red and counts unread direct messages and mentions in its title.",
+    );
+    fireEvent.click(tabSwitch);
+    expect(onChange).toHaveBeenLastCalledWith({
+      scope: "app",
+      setting: { key: "unread_tab_indicator", value: false },
+    });
+
+    setSettings({
+      theme: "system",
+      message_density: "cozy",
+      unread_tab_indicator: false,
+    });
+    expect(tabSwitch).not.toBeChecked();
+    fireEvent.click(tabSwitch);
+    expect(onChange).toHaveBeenLastCalledWith({
+      scope: "app",
+      setting: { key: "unread_tab_indicator", value: true },
+    });
+  });
+
+  it("offers the tab switch only in a browser tab", () => {
+    installPlatformEnvironment(document.body, window, {
+      target: "tauri-desktop",
+    });
+    setup();
+
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByText("Browser tab")).toBeNull();
   });
 });

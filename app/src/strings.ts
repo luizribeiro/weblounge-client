@@ -325,6 +325,7 @@ export const messages = {
   "settings.appearance": "Appearance",
   "settings.appearance.summary": "{theme} · {density}",
   "settings.back_to_settings": "Back to Settings",
+  "settings.browser_tab": "Browser tab",
   "settings.close": "Close settings",
   "settings.conversation": "Conversation",
   "settings.density.comfortable": "Comfortable",
@@ -337,6 +338,9 @@ export const messages = {
   "settings.theme": "Theme",
   "settings.theme.system": "System",
   "settings.theme.system_description": "Matches your device",
+  "settings.unread_tab_indicator": "Show unread in the tab",
+  "settings.unread_tab_indicator.description":
+    "Turns the tab icon red and counts unread direct messages and mentions in its title.",
   "sidebar.channel_list": "Channel list",
   "sidebar.context_menu": "Actions for {title}",
   "sidebar.close_conversation": "Close conversation with {title}",

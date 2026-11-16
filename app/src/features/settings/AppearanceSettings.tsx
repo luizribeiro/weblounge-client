@@ -1,13 +1,15 @@
-import { createUniqueId } from "solid-js";
+import { createUniqueId, Show } from "solid-js";
 import { densities } from "../../engine/decodeSettings";
 import type { AppSetting } from "../../engine/generated/AppSetting";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { Density } from "../../engine/generated/Density";
 import type { SettingChange } from "../../engine/generated/SettingChange";
+import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
 import styles from "./AppearanceSettings.module.css";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { SettingRow } from "./SettingRow";
+import { SettingSwitch } from "./SettingSwitch";
 import { ThemeCards } from "./ThemeCards";
 
 interface AppearanceSettingsProps {
@@ -17,6 +19,8 @@ interface AppearanceSettingsProps {
 
 export function AppearanceSettings(props: AppearanceSettingsProps) {
   const themeId = createUniqueId();
+  const inBrowserTab = () =>
+    platformEnvironment().environment().display === "browser";
   const change = (setting: AppSetting) =>
     props.onChange({ scope: "app", setting });
   return (
@@ -31,6 +35,7 @@ export function AppearanceSettings(props: AppearanceSettingsProps) {
       />
       <h3 class={styles.section}>{t("settings.conversation")}</h3>
       <SettingRow
+        control="choice"
         description={t("settings.message_density.description")}
         label={t("settings.message_density")}
       >
@@ -44,6 +49,24 @@ export function AppearanceSettings(props: AppearanceSettingsProps) {
           />
         )}
       </SettingRow>
+      <Show when={inBrowserTab()}>
+        <h3 class={styles.section}>{t("settings.browser_tab")}</h3>
+        <SettingRow
+          control="switch"
+          description={t("settings.unread_tab_indicator.description")}
+          label={t("settings.unread_tab_indicator")}
+        >
+          {(ids) => (
+            <SettingSwitch
+              {...ids}
+              checked={props.settings?.unread_tab_indicator}
+              onChange={(value) =>
+                change({ key: "unread_tab_indicator", value })
+              }
+            />
+          )}
+        </SettingRow>
+      </Show>
     </>
   );
 }

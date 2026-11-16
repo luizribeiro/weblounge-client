@@ -31,8 +31,17 @@
   flex-direction: column;
 }
 
+[data-settings-layout="phone"] .row[data-control="switch"] {
+  align-items: center;
+  flex-direction: row;
+}
+
 [data-settings-layout="phone"] .text {
   flex: none;
+}
+
+[data-settings-layout="phone"] .row[data-control="switch"] .text {
+  flex: 1 1 0;
 }
 
 [data-settings-layout="phone"] .label {

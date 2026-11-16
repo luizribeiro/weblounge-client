@@ -9,6 +9,7 @@ export interface SettingControlIds {
 interface SettingRowProps {
   readonly label: string;
   readonly description: string;
+  readonly control: "choice" | "switch";
   readonly children: (ids: SettingControlIds) => JSX.Element;
 }
 
@@ -18,7 +19,7 @@ export function SettingRow(props: SettingRowProps) {
     describedBy: createUniqueId(),
   };
   return (
-    <div class={styles.row}>
+    <div class={styles.row} data-control={props.control}>
       <div class={styles.text}>
         <span class={styles.label} id={ids.labelledBy}>
           {props.label}

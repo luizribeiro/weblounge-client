@@ -8,6 +8,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { dispatchPersistedPageShow } from "./page-lifecycle";
+import { settingsScreenshot } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
 type TabIcon = "connected" | "unread" | "disconnected";
@@ -52,6 +53,51 @@ test.describe("browser tab indicator against local Ergo", () => {
     await expectSettled(page, { conversation: peer.nickname });
     await nativeFeelAudit(page);
   });
+
+  test("the Settings switch hides unread from the tab but keeps grey", async ({
+    irc,
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await openHome(page, irc);
+    await settingsButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    const tabSwitch = dialog.getByRole("switch", {
+      name: "Show unread in the tab",
+    });
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "true");
+    await tabSwitch.click();
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
+    await nativeFeelAudit(page);
+    await settingsScreenshot(dialog, "desktop-tab-indicator-off");
+    // The audit focuses text fields to measure zoom, so put focus back where the click left it.
+    await tabSwitch.focus();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+
+    const peer = await irc.peer("quiet-peer");
+    await peer.privmsgConfirmed(irc.account, "quietly");
+    await expect(directRow(page, peer)).toHaveAccessibleName(/, 1 unread/u);
+    await expectTab(page, "connected", "weblounge");
+
+    await whileOffline(page, () =>
+      expectTab(page, "disconnected", "weblounge"),
+    );
+    await expectTab(page, "connected", "weblounge");
+
+    await page.goto(irc.url());
+    await expect(directRow(page, peer)).toHaveAccessibleName(/, 1 unread/u);
+    await settingsButton(page).click();
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
+    await expectTab(page, "connected", "weblounge");
+    await tabSwitch.click();
+    await expectTab(page, "unread", "(1) weblounge");
+    await expectSettled(page);
+    await settingsScreenshot(dialog, "desktop-tab-indicator-on");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
 });
 
 async function openHome(page: Page, irc: IrcTestAccount): Promise<void> {
@@ -74,6 +120,12 @@ async function whileOffline(
     await dispatchPersistedPageShow(page);
   }
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+}
+
+function settingsButton(page: Page) {
+  return page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: "Settings" });
 }
 
 function directRow(page: Page, peer: IrcClient) {
