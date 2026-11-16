@@ -76,7 +76,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F30: browser history on the hosted web UI only: switching conversations pushes a history entry so Back/Forward move between conversations; not in the installed PWA (display-mode standalone), not in the Tauri apps, and not in the phone layout. Needs a short design. Luiz on IRC, 2026-11-15.
 - F31: log out / reset session in Settings: sign out of the weblounge account and clear this device's saved login, caches and push registration. Needs a design together with exposing other members-site features in the app (cookies, hosted auth). Luiz on IRC, 2026-11-15.
 - F32: parked: notify when a watched person comes online (MONITOR). Luiz: hold for now. Luiz on IRC, 2026-11-15.
-- F33: favicon badge for notifications using the same rules as notifications (DMs and mentions), with a Settings opt-out. Variant pending Luiz's pick from previews. Luiz on IRC, 2026-11-15.
 - F34: show who reacted: desktop tooltip on a reaction chip ("alice, bob and 3 others"); phone placement undecided (Luiz doesn't want it always shown; candidate: long-press a chip). Design 25. Luiz on IRC, 2026-11-15.
 - F35: animate the phone message action sheet (slide up and down like a native iOS sheet). Design 25. Luiz on IRC, 2026-11-15.
 - F36: Tauri iOS app distributed through TestFlight (120Hz scrolling). Apple Developer account exists; push (APNs) required for the first TestFlight build; builds on the weblounge-desktop Mac; design 33. Related F16, F18. Luiz on IRC, 2026-11-15.
@@ -143,6 +142,13 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: browser-tab indicator (F33, design 23 Badging). In a browser tab the favicon's
+  tile turns brand red and the title gains "(n) " (capped "(99+)") while `appBadgeCount` is above
+  zero, and turns grey while the connection indicator shows connecting or an error; unread wins over
+  grey. The three tiles (SVG and 32px PNG) are generated from `assets/favicon.svg`, and the page
+  swaps the existing icon links only when the state changes. Settings → Appearance → "Show unread
+  in the tab" (engine setting `unread_tab_indicator`, on by default, browser tabs only) turns the
+  red tile and count off; grey stays. Local-Ergo journeys in `e2e/tab-indicator.spec.ts`.
 - 2026-11-15: TD11, the desktop redaction stability journeys run the idle audit. The older-page
   anchor correction requested a frame forever when its remainder was below a whole scroll pixel;
   it now stops once the scroller cannot move and the virtualizer has stopped scrolling. The message
