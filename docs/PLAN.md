@@ -319,6 +319,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - 2026-11-13: fixed a WebKit flake in the mobile read-state e2e: it tapped Back while the
   conversation was still sliding in, so the tap missed the moving button and the chat stayed open.
   The spec now waits for the push to settle before each Back.
+- 2026-11-15: fixed the same WebKit flake in `close-phone.spec.ts:26` (3 in 40 local runs, once in
+  CI): Back was tapped while Undo's reopened DM slid in, so the tap hit the header. Specs can now
+  share `backToChats` in `e2e/settled.ts`, which waits for the conversation to settle (40 of 40).
 - 2026-11-13: centred the sidebar network header's label in its highlight, moving the extra space
   above it into a margin so the rows keep their place, a signed-off departure (design 09).
 - 2026-11-13: pinned the sidebar header's search button to the row's right edge, as in the
