@@ -140,14 +140,35 @@
             doCheck = false;
           }
         );
+        protocolExports = [
+          {
+            name = "engine";
+            example = "export_protocol";
+            output = "app/src/engine/generated";
+          }
+        ];
+        checkProtocolExports =
+          {
+            outputRoot,
+            release ? false,
+          }:
+          pkgs.lib.concatMapStrings (export: ''
+            cargo run${pkgs.lib.optionalString release " --release"} --locked \
+              --package weblounge-${export.name} \
+              --example ${export.example} -- "${outputRoot}/${export.output}"
+            diff --recursive --unified \
+              ${export.output} "${outputRoot}/${export.output}"
+          '') protocolExports;
         protocolSource = pkgs.lib.fileset.toSource {
           root = ./.;
-          fileset = pkgs.lib.fileset.unions [
-            ./Cargo.lock
-            ./Cargo.toml
-            ./crates
-            ./app/src/engine/generated
-          ];
+          fileset = pkgs.lib.fileset.unions (
+            [
+              ./Cargo.lock
+              ./Cargo.toml
+              ./crates
+            ]
+            ++ map (export: ./. + "/${export.output}") protocolExports
+          );
         };
         protocolTypes = craneLib.mkCargoDerivation (
           cargoArgs
@@ -156,12 +177,10 @@
             src = protocolSource;
             inherit cargoArtifacts;
             doInstallCargoArtifacts = false;
-            buildPhaseCargoCommand = ''
-              cargo run --release --locked --package weblounge-engine \
-                --example export_protocol -- "$TMPDIR/generated"
-              diff --recursive --unified \
-                app/src/engine/generated "$TMPDIR/generated"
-            '';
+            buildPhaseCargoCommand = checkProtocolExports {
+              outputRoot = "$TMPDIR/generated";
+              release = true;
+            };
             installPhaseCommand = "touch $out";
           }
         );
@@ -665,13 +684,16 @@
                 text = ''
                   generated="$(mktemp -d)"
                   trap 'rm -rf -- "$generated"' EXIT
-                  cargo run --locked --package weblounge-engine \
-                    --example export_protocol -- "$generated"
-                  diff --recursive --unified app/src/engine/generated "$generated"
-                '';
+                ''
+                + checkProtocolExports { outputRoot = "$generated"; };
               }
             }/bin/protocol-types-hook";
-            files = "(^|/)(Cargo\\.(toml|lock)|crates/engine/(src|examples)/.*\\.rs|app/src/engine/generated/.*\\.ts)$";
+            files = "(^|/)(Cargo\\.(toml|lock)|${
+              pkgs.lib.concatMapStringsSep "|" (
+                export:
+                "crates/${pkgs.lib.escapeRegex export.name}/(src|examples)/.*\\.rs|${pkgs.lib.escapeRegex export.output}/.*\\.ts"
+              ) protocolExports
+            })$";
             pass_filenames = false;
           };
         };
