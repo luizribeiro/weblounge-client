@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { setPageHidden } from "./page-lifecycle";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -31,10 +32,10 @@ for (const shell of ["desktop", "mobile"] as const) {
       await expect(title).toHaveCSS("animation-duration", "1s");
       await expect(title).toHaveCSS("background-clip", "text");
 
-      await setVisibility(page, true);
+      await setPageHidden(page, true);
       await expect(title).not.toHaveAttribute("data-connection-visible");
       await expect(title).toHaveCSS("animation-play-state", "paused");
-      await setVisibility(page, false);
+      await setPageHidden(page, false);
       await expect(title).toHaveCSS("animation-play-state", "running");
 
       await pauseSweep(title, 0);
@@ -235,15 +236,6 @@ async function observedCompletionPhases(locator: Locator): Promise<string[]> {
       ? phases.filter((phase): phase is string => typeof phase === "string")
       : [];
   });
-}
-
-async function setVisibility(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("visibility control is missing");
-    setter(nextHidden);
-  }, hidden);
 }
 
 async function holdSyncedBufferProjection(

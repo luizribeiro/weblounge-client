@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { setPageHidden } from "./page-lifecycle";
 import { useDedicatedWorker } from "./production-ergo";
 
 test.skip(
@@ -49,13 +50,13 @@ for (const layout of [
     const moving = await sampledTransforms(loader);
     expect(moving.after).not.toBe(moving.before);
 
-    await setNativeVisibility(page, true);
+    await setPageHidden(page, true);
     await expect(
       page.locator('[data-transcript-foreground="false"]'),
     ).toHaveCount(1);
     await expect(loader).toHaveCSS("animation-play-state", "paused");
     await expect.poll(() => activeAnimations(loader)).toBe(0);
-    await setNativeVisibility(page, false);
+    await setPageHidden(page, false);
     await expect(loader).toHaveCSS("animation-play-state", "running");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -101,15 +102,6 @@ function sampledTransforms(
         );
       }),
   );
-}
-
-function setNativeVisibility(page: Page, hidden: boolean): Promise<void> {
-  return page.evaluate((nextHidden) => {
-    const setter = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setter !== "function")
-      throw new Error("native visibility instrumentation is missing");
-    setter(nextHidden);
-  }, hidden);
 }
 
 interface HistoryFixture {

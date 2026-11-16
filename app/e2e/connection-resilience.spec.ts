@@ -13,6 +13,7 @@ import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
 import { visibleMessageAnchor } from "./visible-message-anchor";
 
 test.describe("connection resilience against local Ergo", () => {
@@ -70,11 +71,11 @@ test.describe("connection resilience against local Ergo", () => {
         const draft = `draft survives ${Date.now()}`;
         await composer.fill(draft);
 
-        await setVisibility(page, true);
+        await setPageHidden(page, true);
         process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
         ergoStopped = true;
         await bot.waitForDisconnect();
-        await setVisibility(page, false);
+        await setPageHidden(page, false);
         await dispatchPersistedPageShow(page);
         await expectTransientConnectionPresentation(
           page,
@@ -171,7 +172,7 @@ test.describe("connection resilience against local Ergo", () => {
     await expectShellToRemain(page, channel);
 
     await context.setOffline(false);
-    await setVisibility(page, false);
+    await setPageHidden(page, false);
     await dispatchPersistedPageShow(page);
     for (const text of texts)
       await expect(messageRow(page, text, "confirmed")).toHaveCount(1);
@@ -211,8 +212,8 @@ test.describe("connection resilience against local Ergo", () => {
       await composer.press("Enter");
       await expect(messageRow(page, text, "optimistic")).toHaveCount(1);
 
-      await setVisibility(page, true);
-      await setVisibility(page, false);
+      await setPageHidden(page, true);
+      await setPageHidden(page, false);
       await dispatchPersistedPageShow(page);
       await waitForForegroundProbeToGiveUp(page, testInfo.project.name);
       await expectTransientConnectionPresentation(
@@ -285,8 +286,8 @@ test.describe("connection resilience against local Ergo", () => {
       )
       .toBe(1);
 
-    await setVisibility(page, true);
-    await setVisibility(page, false);
+    await setPageHidden(page, true);
+    await setPageHidden(page, false);
     await dispatchPersistedPageShow(page);
     await sendAndExpectEcho(
       page,
@@ -338,8 +339,8 @@ test.describe("connection resilience against local Ergo", () => {
       await bot.privmsgConfirmed(irc.account, gapDm);
       await bot.privmsgConfirmed(channel, gapChannel);
 
-      await setVisibility(page, true);
-      await setVisibility(page, false);
+      await setPageHidden(page, true);
+      await setPageHidden(page, false);
       await dispatchPersistedPageShow(page);
       await expectTransientConnectionPresentation(page, mobile);
       await irc.forwarder.restore();
@@ -392,7 +393,7 @@ test.describe("connection resilience against local Ergo", () => {
       );
       await expect(channelButton).toBeVisible();
 
-      await setVisibility(page, true);
+      await setPageHidden(page, true);
       await irc.forwarder.drop();
       dropped = true;
       const identity = messageIdentity(
@@ -410,7 +411,7 @@ test.describe("connection resilience against local Ergo", () => {
         network_id: 1,
       });
       await expect(channelButton).toHaveCount(1);
-      await setVisibility(page, false);
+      await setPageHidden(page, false);
       await dispatchPersistedPageShow(page);
       await page.bringToFront();
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -585,8 +586,8 @@ test.describe("connection resilience against local Ergo", () => {
     });
     await expectShellToRemain(page, channel);
 
-    await setVisibility(page, true);
-    await setVisibility(page, false);
+    await setPageHidden(page, true);
+    await setPageHidden(page, false);
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -912,23 +913,6 @@ async function ircPortIsReady(): Promise<boolean> {
       resolve(true);
     });
     socket.once("error", () => resolve(false));
-  });
-}
-
-async function setVisibility(page: Page, hidden: boolean): Promise<void> {
-  await page.evaluate((nextHidden) => {
-    const setVisibility = Reflect.get(globalThis, "__setNativeVisibility");
-    if (typeof setVisibility !== "function")
-      throw new Error("visibility control was not installed");
-    setVisibility(nextHidden);
-  }, hidden);
-}
-
-async function dispatchPersistedPageShow(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const event = new Event("pageshow");
-    Object.defineProperty(event, "persisted", { value: true });
-    window.dispatchEvent(event);
   });
 }
 
