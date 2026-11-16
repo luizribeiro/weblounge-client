@@ -8,7 +8,7 @@ import {
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
-import { choice } from "./settings-fixture";
+import { choosePhoneAppearance } from "./settings-fixture";
 
 test.use({
   colorScheme: "light",
@@ -75,18 +75,11 @@ test.describe("mobile chat list against local Ergo", () => {
     const row = directRow(page, bot.nickname);
     await expect(row).toBeVisible();
 
-    await page
-      .getByRole("region", { name: "Chats" })
-      .getByRole("button", { name: "Settings" })
-      .tap();
-    await page.getByRole("button", { name: /^Appearance/u }).tap();
-    await choice(page, "Terminal").tap();
+    await choosePhoneAppearance(page, ["Terminal"]);
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",
       "terminal",
     );
-    await page.getByRole("button", { name: "Back to Settings" }).tap();
-    await page.getByRole("button", { name: "Back to Chats" }).tap();
     await expect(row).toBeVisible();
 
     const themeFont = await page.evaluate(
