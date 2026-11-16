@@ -38,6 +38,7 @@ final class ShellPlugin: Plugin {
     // insets a page without `viewport-fit=cover` by, and the first frames of a reload.
     PageBackground { [weak webview] color in
       webview?.backgroundColor = color ?? .systemBackground
+      StatusBarStyle.follow(color, in: webview?.window?.rootViewController)
     }.watch(webview)
   }
 
