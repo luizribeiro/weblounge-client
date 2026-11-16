@@ -42,6 +42,14 @@ impl<T> ApnsEnvironments<T> {
             ApnsEnvironment::Sandbox => &self.sandbox,
         }
     }
+
+    /// Applies `convert` to both values.
+    pub fn map<U>(self, convert: impl Fn(T) -> U) -> ApnsEnvironments<U> {
+        ApnsEnvironments {
+            production: convert(self.production),
+            sandbox: convert(self.sandbox),
+        }
+    }
 }
 
 /// Where a device receives its pushes.

@@ -6,7 +6,7 @@ use std::{
 use clap::Parser;
 use url::Url;
 
-use crate::{Error, Result};
+use crate::{ApnsEnvironments, Error, Result};
 
 /// The loopback-only default used behind the production reverse proxy.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8098";
@@ -77,9 +77,13 @@ pub struct Config {
     #[arg(long, env = "PUSH_RELAY_APNS_TEAM_ID")]
     pub apns_team_id: Option<String>,
 
-    /// The iOS app's bundle identifier, sent as `apns-topic`.
-    #[arg(long, env = "PUSH_RELAY_APNS_TOPIC")]
-    pub apns_topic: Option<String>,
+    /// Bundle identifier of the build that registers sandbox tokens (the dev app).
+    #[arg(long, env = "PUSH_RELAY_APNS_TOPIC_SANDBOX")]
+    pub apns_topic_sandbox: Option<String>,
+
+    /// Bundle identifier of the build that registers production tokens (`TestFlight`).
+    #[arg(long, env = "PUSH_RELAY_APNS_TOPIC_PRODUCTION")]
+    pub apns_topic_production: Option<String>,
 
     /// TEST ONLY: push-service hostname allowed to resolve to TEST-NET-3.
     #[cfg(feature = "push-e2e")]
@@ -101,8 +105,8 @@ pub struct ApnsSettings<'a> {
     pub key_id: &'a str,
     /// Team that owns the provider key.
     pub team_id: &'a str,
-    /// The app's bundle identifier.
-    pub topic: &'a str,
+    /// The bundle identifier sent as `apns-topic` for each environment.
+    pub topics: ApnsEnvironments<&'a str>,
 }
 
 impl Config {
@@ -116,11 +120,12 @@ impl Config {
             &self.apns_key_file,
             &self.apns_key_id,
             &self.apns_team_id,
-            &self.apns_topic,
+            &self.apns_topic_sandbox,
+            &self.apns_topic_production,
         ) {
-            (None, None, None, None) => Ok(None),
-            (Some(key_file), Some(key_id), Some(team_id), Some(topic))
-                if [key_id, team_id, topic]
+            (None, None, None, None, None) => Ok(None),
+            (Some(key_file), Some(key_id), Some(team_id), Some(sandbox), Some(production))
+                if [key_id, team_id, sandbox, production]
                     .iter()
                     .all(|value| !value.is_empty()) =>
             {
@@ -128,11 +133,15 @@ impl Config {
                     key_file,
                     key_id,
                     team_id,
-                    topic,
+                    topics: ApnsEnvironments {
+                        production,
+                        sandbox,
+                    },
                 }))
             }
             _ => Err(Error::Config(
-                "--apns-key-file, --apns-key-id, --apns-team-id and --apns-topic go together"
+                "--apns-key-file, --apns-key-id, --apns-team-id, --apns-topic-sandbox and \
+                 --apns-topic-production go together"
                     .to_owned(),
             )),
         }
@@ -212,6 +221,8 @@ mod tests {
     use clap::Parser as _;
     use url::Url;
 
+    use crate::ApnsEnvironments;
+
     #[tokio::test]
     async fn state_directory_is_private() {
         let temporary = tempfile::tempdir().expect("temporary parent");
@@ -280,14 +291,16 @@ mod tests {
         super::Config::try_parse_from(arguments).expect("configuration")
     }
 
-    const APNS: [&str; 8] = [
+    const APNS: [&str; 10] = [
         "--apns-key-file",
         "/run/secrets/push-relay-apns-key",
         "--apns-key-id",
         "ABC123DEFG",
         "--apns-team-id",
         "DEF123GHIJ",
-        "--apns-topic",
+        "--apns-topic-sandbox",
+        "org.weblounge.ios.dev",
+        "--apns-topic-production",
         "org.weblounge.ios",
     ];
 
@@ -304,9 +317,13 @@ mod tests {
             apns.key_file,
             std::path::Path::new("/run/secrets/push-relay-apns-key")
         );
+        assert_eq!((apns.key_id, apns.team_id), ("ABC123DEFG", "DEF123GHIJ"));
         assert_eq!(
-            (apns.key_id, apns.team_id, apns.topic),
-            ("ABC123DEFG", "DEF123GHIJ", "org.weblounge.ios")
+            apns.topics,
+            ApnsEnvironments {
+                production: "org.weblounge.ios",
+                sandbox: "org.weblounge.ios.dev",
+            }
         );
     }
 

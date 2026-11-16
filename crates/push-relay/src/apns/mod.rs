@@ -30,14 +30,14 @@ pub struct ApnsCredentials {
     pub key_id: String,
     /// The ten-character team identifier.
     pub team_id: String,
-    /// The app's bundle identifier, sent as `apns-topic`.
-    pub topic: String,
+    /// The bundle identifier sent as `apns-topic`: each environment serves a different build.
+    pub topics: ApnsEnvironments<String>,
 }
 
 /// Sends opaque home pushes to APNs over HTTP/2 with a cached provider token.
 #[derive(Clone, Debug)]
 pub struct ApnsSender {
-    topic: Arc<str>,
+    topics: Arc<ApnsEnvironments<String>>,
     tokens: Arc<ProviderTokens>,
     hosts: Arc<ApnsEnvironments<Url>>,
     client: reqwest::Client,
@@ -93,9 +93,13 @@ impl ApnsSender {
             key_pem: tokio::fs::read(settings.key_file).await?,
             key_id: settings.key_id.to_owned(),
             team_id: settings.team_id.to_owned(),
-            topic: settings.topic.to_owned(),
+            topics: settings.topics.map(str::to_owned),
         })?;
-        tracing::info!(topic = settings.topic, "APNs delivery enabled");
+        tracing::info!(
+            production_topic = settings.topics.production,
+            sandbox_topic = settings.topics.sandbox,
+            "APNs delivery enabled"
+        );
         Ok(sender)
     }
 
@@ -109,7 +113,7 @@ impl ApnsSender {
         let key = SecretKey::from_pkcs8_pem(pem)
             .map_err(|_| Error::Config("APNs key is not a P-256 PKCS #8 key".to_owned()))?;
         Ok(Self {
-            topic: credentials.topic.into(),
+            topics: Arc::new(credentials.topics),
             tokens: Arc::new(ProviderTokens::new(
                 SigningKey::from(key),
                 credentials.key_id,
@@ -129,14 +133,19 @@ impl ApnsSender {
             .map_err(|_| Error::DeliveryUnavailable)
     }
 
-    async fn post(&self, url: Url, delivery: &Delivery) -> Result<reqwest::Response> {
+    async fn post(
+        &self,
+        url: Url,
+        environment: ApnsEnvironment,
+        delivery: &Delivery,
+    ) -> Result<reqwest::Response> {
         self.client
             .post(url)
             .header(
                 "authorization",
                 format!("bearer {}", self.tokens.current()?),
             )
-            .header("apns-topic", &*self.topic)
+            .header("apns-topic", self.topics.get(environment))
             .header("apns-push-type", "alert")
             .header("apns-priority", "10")
             .header(
@@ -215,7 +224,7 @@ impl PushSender for ApnsSender {
         };
         let url = self.device_url(target.environment, &target.token)?;
         let target_host = url.host_str().unwrap_or_default().to_owned();
-        let response = self.post(url, &delivery).await?;
+        let response = self.post(url, target.environment, &delivery).await?;
         let status = response.status();
         let reason = if status.is_success() {
             None

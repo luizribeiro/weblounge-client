@@ -23,6 +23,10 @@ const PRODUCTION: &str = "production.apns.test";
 const SANDBOX: &str = "sandbox.apns.test";
 const TOKEN: &str = "5f1c6e0b9a3d4c2e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e";
 const MAX_APNS_PAYLOAD: usize = 4_096;
+const TOPICS: ApnsEnvironments<&str> = ApnsEnvironments {
+    production: "org.weblounge.ios",
+    sandbox: "org.weblounge.ios.dev",
+};
 const MAX_HOME_BODY: usize = 2_800;
 
 struct Fixture {
@@ -36,7 +40,7 @@ fn credentials(key_pem: Vec<u8>) -> ApnsCredentials {
         key_pem,
         key_id: "ABC123DEFG".to_owned(),
         team_id: "DEF123GHIJ".to_owned(),
-        topic: "org.weblounge.ios".to_owned(),
+        topics: TOPICS.map(str::to_owned),
     }
 }
 
@@ -91,6 +95,10 @@ fn header<'a>(request: &'a ApnsRequest, name: &str) -> &'a str {
         .get(name)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_else(|| panic!("missing {name}"))
+}
+
+fn host_of(request: &ApnsRequest) -> &str {
+    request.authority.split(':').next().expect("host")
 }
 
 fn jwt_part(jwt: &str, index: usize) -> Value {
@@ -166,14 +174,48 @@ async fn sandbox_tokens_go_to_the_sandbox_host_with_the_cached_provider_token() 
     }
 
     let requests = fixture.apns.requests();
-    let hosts = requests
-        .iter()
-        .map(|request| request.authority.split(':').next().expect("host"))
-        .collect::<Vec<_>>();
+    let hosts = requests.iter().map(host_of).collect::<Vec<_>>();
     assert_eq!(hosts, [SANDBOX, PRODUCTION]);
     assert_eq!(
         header(&requests[0], "authorization"),
         header(&requests[1], "authorization")
+    );
+}
+
+#[tokio::test]
+async fn each_environment_sends_its_own_topic_to_its_own_host() {
+    let fixture = fixture().await;
+    for environment in [
+        ApnsEnvironment::Production,
+        ApnsEnvironment::Sandbox,
+        ApnsEnvironment::Production,
+    ] {
+        fixture
+            .sender
+            .send(delivery(environment, b"ciphertext".to_vec()))
+            .await
+            .expect("accepted");
+    }
+
+    let sent = fixture
+        .apns
+        .requests()
+        .iter()
+        .map(|request| {
+            (
+                host_of(request).to_owned(),
+                header(request, "apns-topic").to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sent,
+        [
+            (PRODUCTION, "org.weblounge.ios"),
+            (SANDBOX, "org.weblounge.ios.dev"),
+            (PRODUCTION, "org.weblounge.ios"),
+        ]
+        .map(|(host, topic)| (host.to_owned(), topic.to_owned()))
     );
 }
 
@@ -397,7 +439,7 @@ async fn settings_load_the_p8_key_file() {
         key_file,
         key_id: "ABC123DEFG",
         team_id: "DEF123GHIJ",
-        topic: "org.weblounge.ios",
+        topics: TOPICS,
     };
 
     let sender = ApnsSender::from_settings(settings(&key_file))
