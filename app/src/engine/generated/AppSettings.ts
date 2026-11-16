@@ -13,4 +13,8 @@ theme: ThemePreference,
 /**
  * Conversation message density.
  */
-message_density: Density, };
+message_density: Density,
+/**
+ * Whether a browser tab shows unread messages in its icon and title.
+ */
+unread_tab_indicator: boolean, };

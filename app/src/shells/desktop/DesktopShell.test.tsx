@@ -630,7 +630,13 @@ it("opens Settings from the web chord and returns focus on Escape", async () => 
       onMarkRead={() => {}}
       onRequestCompletion={() => {}}
       onSend={async () => true}
-      settings={{ app: { theme: "lounge", message_density: "cozy" } }}
+      settings={{
+        app: {
+          theme: "lounge",
+          message_density: "cozy",
+          unread_tab_indicator: true,
+        },
+      }}
     />
   ));
   const composer = screen.getByRole("textbox", { name: "Message #room" });

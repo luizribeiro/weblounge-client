@@ -59,12 +59,24 @@ pub enum Density {
 }
 
 /// Settings that apply to the whole app on this device.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct AppSettings {
     /// Theme preference.
     pub theme: ThemePreference,
     /// Conversation message density.
     pub message_density: Density,
+    /// Whether a browser tab shows unread messages in its icon and title.
+    pub unread_tab_indicator: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme: ThemePreference::default(),
+            message_density: Density::default(),
+            unread_tab_indicator: true,
+        }
+    }
 }
 
 /// One app-wide setting and its new value.
@@ -75,6 +87,8 @@ pub enum AppSetting {
     Theme(ThemePreference),
     /// Conversation message density.
     MessageDensity(Density),
+    /// Whether a browser tab shows unread messages in its icon and title.
+    UnreadTabIndicator(bool),
 }
 
 /// One requested settings change, addressed by scope.
@@ -100,14 +114,16 @@ pub(crate) struct LoadedSettings {
 }
 
 impl AppSettings {
-    fn entries(self) -> [AppSetting; 2] {
+    fn entries(self) -> [AppSetting; 3] {
         let Self {
             theme,
             message_density,
+            unread_tab_indicator,
         } = self;
         [
             AppSetting::Theme(theme),
             AppSetting::MessageDensity(message_density),
+            AppSetting::UnreadTabIndicator(unread_tab_indicator),
         ]
     }
 
@@ -115,6 +131,7 @@ impl AppSettings {
         match setting {
             AppSetting::Theme(theme) => self.theme = theme,
             AppSetting::MessageDensity(density) => self.message_density = density,
+            AppSetting::UnreadTabIndicator(shown) => self.unread_tab_indicator = shown,
         }
     }
 }
@@ -124,6 +141,7 @@ impl AppSetting {
         match self {
             Self::Theme(_) => "theme",
             Self::MessageDensity(_) => "message_density",
+            Self::UnreadTabIndicator(_) => "unread_tab_indicator",
         }
     }
 
@@ -131,6 +149,7 @@ impl AppSetting {
         match self {
             Self::Theme(theme) => serde_json::to_value(theme),
             Self::MessageDensity(density) => serde_json::to_value(density),
+            Self::UnreadTabIndicator(shown) => serde_json::to_value(shown),
         }
     }
 
@@ -246,6 +265,7 @@ mod tests {
             stored(AppSettings {
                 theme: ThemePreference::System,
                 message_density: Density::Cozy,
+                unread_tab_indicator: true,
             })
         );
     }
@@ -270,6 +290,7 @@ mod tests {
         let expected = AppSettings {
             theme: ThemePreference::LoungeNight,
             message_density: Density::Compact,
+            unread_tab_indicator: true,
         };
         assert_eq!(changed, Settings { app: expected });
         assert_eq!(load(&storage).await.expect("reload"), stored(expected));
@@ -279,6 +300,61 @@ mod tests {
                 .await
                 .expect("read durable")
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn turning_off_the_unread_tab_indicator_persists() {
+        let storage = MemoryKv::default();
+
+        change(
+            &storage,
+            SettingChange::App(AppSetting::UnreadTabIndicator(false)),
+        )
+        .await
+        .expect("change unread tab indicator");
+
+        let loaded = load(&storage).await.expect("reload");
+        assert!(!loaded.settings.app.unread_tab_indicator);
+        assert_eq!(loaded.settings.app.theme, ThemePreference::System);
+    }
+
+    #[tokio::test]
+    async fn a_record_saved_before_the_tab_indicator_existed_loads_it_on() {
+        let storage = MemoryKv::default();
+        seed(
+            &storage,
+            r#"{"version":1,"fields":{"theme":"lounge-night","message_density":"compact"}}"#,
+        )
+        .await;
+
+        let loaded = load(&storage).await.expect("load");
+
+        assert_eq!(
+            loaded,
+            stored(AppSettings {
+                theme: ThemePreference::LoungeNight,
+                message_density: Density::Compact,
+                unread_tab_indicator: true,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_non_boolean_unread_tab_indicator_falls_back_to_on() {
+        let storage = MemoryKv::default();
+        seed(
+            &storage,
+            r#"{"version":1,"fields":{"unread_tab_indicator":"no"}}"#,
+        )
+        .await;
+
+        let loaded = load(&storage).await.expect("load");
+
+        assert!(loaded.settings.app.unread_tab_indicator);
+        assert_eq!(
+            loaded.invalid_fields,
+            vec!["unread_tab_indicator".to_owned()]
         );
     }
 
@@ -298,6 +374,7 @@ mod tests {
             AppSettings {
                 theme: ThemePreference::System,
                 message_density: Density::Comfortable,
+                unread_tab_indicator: true,
             }
         );
         assert_eq!(loaded.invalid_fields, vec!["theme".to_owned()]);

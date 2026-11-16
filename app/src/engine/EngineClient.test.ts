@@ -663,7 +663,11 @@ describe("WorkerEngineClient", () => {
     const listener = vi.fn();
     client.subscribe(listener);
     const settings = {
-      app: { theme: "lounge-night", message_density: "compact" },
+      app: {
+        theme: "lounge-night",
+        message_density: "compact",
+        unread_tab_indicator: true,
+      },
     };
     port.emit({ type: "settings_changed", settings });
     port.emit({ type: "settings_loaded", command_id: "load", settings });
@@ -686,7 +690,13 @@ describe("WorkerEngineClient", () => {
     expect(() =>
       port.emit({
         type: "settings_changed",
-        settings: { app: { theme: "neon", message_density: "cozy" } },
+        settings: {
+          app: {
+            theme: "neon",
+            message_density: "cozy",
+            unread_tab_indicator: true,
+          },
+        },
       }),
     ).toThrow("invalid engine message");
   });

@@ -117,16 +117,40 @@ it("loads appearance settings and follows changes from the engine", async () => 
   client.emit({
     type: "settings_loaded",
     command_id: load?.id ?? "",
-    settings: { app: { theme: "lounge", message_density: "comfortable" } },
+    settings: {
+      app: {
+        theme: "lounge",
+        message_density: "comfortable",
+        unread_tab_indicator: true,
+      },
+    },
   });
   client.emit({
     type: "settings_changed",
-    settings: { app: { theme: "lounge-night", message_density: "compact" } },
+    settings: {
+      app: {
+        theme: "lounge-night",
+        message_density: "compact",
+        unread_tab_indicator: true,
+      },
+    },
   });
 
   expect(onAppearanceChange.mock.calls).toEqual([
-    [{ theme: "lounge", message_density: "comfortable" }],
-    [{ theme: "lounge-night", message_density: "compact" }],
+    [
+      {
+        theme: "lounge",
+        message_density: "comfortable",
+        unread_tab_indicator: true,
+      },
+    ],
+    [
+      {
+        theme: "lounge-night",
+        message_density: "compact",
+        unread_tab_indicator: true,
+      },
+    ],
   ]);
 });
 

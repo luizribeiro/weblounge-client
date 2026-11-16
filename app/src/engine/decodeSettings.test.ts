@@ -1,47 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { decodeAppearance, decodeSettings } from "./decodeSettings";
 
+const lounge = {
+  theme: "lounge",
+  message_density: "cozy",
+  unread_tab_indicator: true,
+};
+
 describe("decodeSettings", () => {
-  it("accepts every theme preference and density the engine sends", () => {
+  it("accepts every theme preference, density and tab indicator the engine sends", () => {
     for (const theme of ["system", "lounge", "lounge-night"]) {
       for (const density of ["compact", "cozy", "comfortable"]) {
-        const settings = { app: { theme, message_density: density } };
-        expect(decodeSettings(settings)).toEqual(settings);
+        for (const shown of [true, false]) {
+          const settings = {
+            app: {
+              theme,
+              message_density: density,
+              unread_tab_indicator: shown,
+            },
+          };
+          expect(decodeSettings(settings)).toEqual(settings);
+        }
       }
     }
   });
 
   it("rejects unknown or missing values", () => {
     expect(
-      decodeSettings({ app: { theme: "solarized", message_density: "cozy" } }),
+      decodeSettings({ app: { ...lounge, theme: "solarized" } }),
     ).toBeUndefined();
     expect(
-      decodeSettings({ app: { theme: "lounge", message_density: "roomy" } }),
+      decodeSettings({ app: { ...lounge, message_density: "roomy" } }),
     ).toBeUndefined();
-    expect(decodeSettings({ app: { theme: "lounge" } })).toBeUndefined();
+    expect(
+      decodeSettings({ app: { ...lounge, unread_tab_indicator: "yes" } }),
+    ).toBeUndefined();
+    expect(
+      decodeSettings({ app: { theme: "lounge", message_density: "cozy" } }),
+    ).toBeUndefined();
     expect(decodeSettings({})).toBeUndefined();
     expect(decodeSettings(null)).toBeUndefined();
   });
 
   it("drops fields this build does not know", () => {
     expect(
-      decodeSettings({
-        app: { theme: "lounge", message_density: "cozy", avatars: false },
-        networks: {},
-      }),
-    ).toEqual({ app: { theme: "lounge", message_density: "cozy" } });
+      decodeSettings({ app: { ...lounge, avatars: false }, networks: {} }),
+    ).toEqual({ app: lounge });
   });
 });
 
 describe("decodeAppearance", () => {
   it("keeps only the theme and density", () => {
-    expect(
-      decodeAppearance({
-        theme: "lounge",
-        message_density: "cozy",
-        avatars: false,
-      }),
-    ).toEqual({ theme: "lounge", message_density: "cozy" });
+    expect(decodeAppearance(lounge)).toEqual({
+      theme: "lounge",
+      message_density: "cozy",
+    });
   });
 
   it("rejects a value that is not a record", () => {

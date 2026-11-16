@@ -218,7 +218,13 @@ it("answers a settings load to its tab and broadcasts settings changes", async (
   runtime.attach(second);
   second.receive({ type: "request", payload: { id: "load-settings" } });
   await vi.waitFor(() => expect(requestHandled).toBe(true));
-  const settings = { app: { theme: "lounge", message_density: "cozy" } };
+  const settings = {
+    app: {
+      theme: "lounge",
+      message_density: "cozy",
+      unread_tab_indicator: true,
+    },
+  };
 
   emit?.(
     JSON.stringify({

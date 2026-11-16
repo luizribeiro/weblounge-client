@@ -31,10 +31,12 @@ export function decodeAppearance(value: unknown): Appearance | undefined {
 }
 
 export function decodeSettings(value: unknown): Settings | undefined {
-  if (!isRecord(value)) return undefined;
+  if (!isRecord(value) || !isRecord(value.app)) return undefined;
   const appearance = decodeAppearance(value.app);
-  if (appearance === undefined) return undefined;
-  return { app: appearance };
+  const { unread_tab_indicator } = value.app;
+  if (appearance === undefined || typeof unread_tab_indicator !== "boolean")
+    return undefined;
+  return { app: { ...appearance, unread_tab_indicator } };
 }
 
 function everyValueOf<T extends string>() {

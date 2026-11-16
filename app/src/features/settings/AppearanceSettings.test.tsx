@@ -9,6 +9,7 @@ function setup(
   initial: AppSettings = {
     theme: "system",
     message_density: "cozy",
+    unread_tab_indicator: true,
   },
 ) {
   const onChange = vi.fn();
@@ -142,11 +143,16 @@ describe("AppearanceSettings", () => {
     const { setSettings } = setup({
       theme: "lounge",
       message_density: "compact",
+      unread_tab_indicator: true,
     });
     expect(screen.getByRole("radio", { name: "Lounge" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "Compact" })).toBeChecked();
 
-    setSettings({ theme: "lounge-night", message_density: "comfortable" });
+    setSettings({
+      theme: "lounge-night",
+      message_density: "comfortable",
+      unread_tab_indicator: true,
+    });
 
     expect(screen.getByRole("radio", { name: "Lounge Night" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "Lounge" })).not.toBeChecked();

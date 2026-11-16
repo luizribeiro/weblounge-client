@@ -11,7 +11,11 @@ function setup(page: MobileSettingsPage) {
       onChange={() => {}}
       onOpenPage={onOpenPage}
       page={page}
-      settings={{ theme: "system", message_density: "comfortable" }}
+      settings={{
+        theme: "system",
+        message_density: "comfortable",
+        unread_tab_indicator: true,
+      }}
     />
   ));
   return { onBack, onOpenPage };

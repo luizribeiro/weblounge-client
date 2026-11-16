@@ -5,4 +5,4 @@ import type { ThemePreference } from "./ThemePreference";
 /**
  * One app-wide setting and its new value.
  */
-export type AppSetting = { "key": "theme", "value": ThemePreference } | { "key": "message_density", "value": Density };
+export type AppSetting = { "key": "theme", "value": ThemePreference } | { "key": "message_density", "value": Density } | { "key": "unread_tab_indicator", "value": boolean };

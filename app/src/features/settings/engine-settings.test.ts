@@ -10,10 +10,18 @@ import type {
 import { createEngineSettings } from "./engine-settings";
 
 const night: Settings = {
-  app: { theme: "lounge-night", message_density: "compact" },
+  app: {
+    theme: "lounge-night",
+    message_density: "compact",
+    unread_tab_indicator: true,
+  },
 };
 const lounge: Settings = {
-  app: { theme: "lounge", message_density: "comfortable" },
+  app: {
+    theme: "lounge",
+    message_density: "comfortable",
+    unread_tab_indicator: true,
+  },
 };
 
 function fakeClient() {

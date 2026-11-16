@@ -11,7 +11,11 @@ function setup(rail = false) {
       onChange={onChange}
       onClose={onClose}
       rail={rail}
-      settings={{ theme: "system", message_density: "cozy" }}
+      settings={{
+        theme: "system",
+        message_density: "cozy",
+        unread_tab_indicator: true,
+      }}
     />
   ));
   const dialog = screen.getByRole("dialog", { name: "Settings" });
@@ -67,7 +71,11 @@ describe("SettingsModal", () => {
         onChange={() => {}}
         onClose={onClose}
         rail={rail()}
-        settings={{ theme: "system", message_density: "cozy" }}
+        settings={{
+          theme: "system",
+          message_density: "cozy",
+          unread_tab_indicator: true,
+        }}
       />
     ));
     screen.getByRole("button", { name: "Appearance" }).focus();

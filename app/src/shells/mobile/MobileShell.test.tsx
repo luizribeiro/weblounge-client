@@ -47,7 +47,13 @@ it("pushes Settings and its Appearance page over Chats and pops them with Back",
       onRequestCompletion={() => {}}
       onSelectBuffer={() => {}}
       onSend={async () => true}
-      settings={{ app: { theme: "lounge-night", message_density: "cozy" } }}
+      settings={{
+        app: {
+          theme: "lounge-night",
+          message_density: "cozy",
+          unread_tab_indicator: true,
+        },
+      }}
     />
   ));
 
