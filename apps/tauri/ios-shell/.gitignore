@@ -1,0 +1,5 @@
+/.tauri/
+/ios/.build/
+/ios/.swiftpm/
+/ios/Package.resolved
+/permissions/
