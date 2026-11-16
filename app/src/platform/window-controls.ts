@@ -1,6 +1,7 @@
 import { type Accessor, createSignal } from "solid-js";
 import type { ThemeDefinition } from "../theme/theme-registry";
 import { hostShellIdentity, type WindowControls } from "./host-shell";
+import { type TauriInvoke, tauriInvoke } from "./tauri-invoke";
 
 export type WindowControlsState = "overlay" | "hidden";
 export type WindowTheme = Pick<ThemeDefinition, "appearance" | "colors">;
@@ -19,10 +20,6 @@ export type WindowControlsScope = Pick<
   | "removeEventListener"
 >;
 
-type Invoke = (
-  command: string,
-  args?: Readonly<Record<string, unknown>>,
-) => Promise<unknown>;
 type WindowColor = string | readonly [number, number, number, number];
 
 const inlineProperty = "--wl-window-controls-inline";
@@ -43,7 +40,7 @@ export function observeWindowControls(
 ): WindowControlsController {
   const controls = hostShellIdentity(scope)?.windowControls;
   if (controls === undefined) return absentControls;
-  const invoke = tauriInvoke(scope);
+  const invoke = silentInvoke(scope);
   const [state, setState] = createSignal<WindowControlsState>("overlay");
   let disposed = false;
   let revealUnanswered: ReturnType<typeof setTimeout> | undefined;
@@ -95,7 +92,7 @@ function reserveInsets(root: HTMLElement, controls: WindowControls): void {
 }
 
 function coalescedFullScreenCheck(
-  invoke: Invoke,
+  invoke: TauriInvoke,
   onAnswer: (answer: unknown) => void,
 ): () => void {
   let inFlight = false;
@@ -125,7 +122,9 @@ function answeredState(
   return answer ? "hidden" : "overlay";
 }
 
-function deduplicatedThemeCalls(invoke: Invoke): (theme: WindowTheme) => void {
+function deduplicatedThemeCalls(
+  invoke: TauriInvoke,
+): (theme: WindowTheme) => void {
   let applied: string | undefined;
   return (theme) => {
     const key = `${theme.appearance} ${theme.colors.bg}`;
@@ -149,23 +148,8 @@ export function windowColor(css: string): WindowColor {
 }
 
 // The wrapper may lack a permission (an older build), so a failed call must stay silent.
-function tauriInvoke(scope: Pick<Window, "__TAURI_INTERNALS__">): Invoke {
-  const internals = scope.__TAURI_INTERNALS__;
-  if (
-    typeof internals !== "object" ||
-    internals === null ||
-    !("invoke" in internals) ||
-    typeof internals.invoke !== "function"
-  )
-    return () => Promise.resolve(undefined);
-  const call = internals.invoke;
-  return (command, args) => {
-    try {
-      return Promise.resolve(
-        Reflect.apply(call, internals, [command, args]),
-      ).catch(() => undefined);
-    } catch {
-      return Promise.resolve(undefined);
-    }
-  };
+function silentInvoke(scope: Pick<Window, "__TAURI_INTERNALS__">): TauriInvoke {
+  const invoke = tauriInvoke(scope);
+  if (invoke === undefined) return () => Promise.resolve(undefined);
+  return (command, args) => invoke(command, args).catch(() => undefined);
 }
