@@ -23,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		02147BED5468FF883AF082C2 /* page_commands.rs */ = {isa = PBXFileReference; path = page_commands.rs; sourceTree = "<group>"; };
 		07735E446B6577701FBE3E05 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		0C47CD5B3006ABAD6772C1EC /* notification.test.mjs */ = {isa = PBXFileReference; path = notification.test.mjs; sourceTree = "<group>"; };
 		0D360BA0F25D8E58479BD5D4 /* notification.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = notification.js; sourceTree = "<group>"; };
@@ -141,6 +142,7 @@
 				0D360BA0F25D8E58479BD5D4 /* notification.js */,
 				0C47CD5B3006ABAD6772C1EC /* notification.test.mjs */,
 				FD6724102A0B8653E046566D /* page_action.rs */,
+				02147BED5468FF883AF082C2 /* page_commands.rs */,
 				7DE182ACA943D2C2748DA9C0 /* page_event.rs */,
 				46A2A8073499D13EB1325888 /* security.rs */,
 				EA050F391D3DFFB7D4CCA743 /* shell.rs */,

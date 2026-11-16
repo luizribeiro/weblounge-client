@@ -34,6 +34,33 @@
             "core:window:allow-set-background-color",
             "core:webview:allow-set-webview-background-color"
           ]
+        },
+        {
+          "identifier": "remote-page-ios",
+          "description": "Lets the hosted app register for APNs, keep its push route keys where the notification extension can read them, and manage the badge and delivered notifications on iOS, and nothing else.",
+          "platforms": [
+            "iOS"
+          ],
+          "windows": [
+            "main"
+          ],
+          "remote": {
+            "urls": [
+              "https://beta.weblounge.org/*"
+            ]
+          },
+          "permissions": [
+            "allow-push-permission",
+            "allow-request-push-permission",
+            "allow-push-target",
+            "allow-create-route-keys",
+            "allow-drop-route-keys",
+            "allow-take-pushed-messages",
+            "allow-set-badge",
+            "allow-write-notification-counts",
+            "allow-delivered-notifications",
+            "allow-remove-delivered-notifications"
+          ]
         }
       ]
     }
