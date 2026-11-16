@@ -30,6 +30,7 @@ mod window;
 
 use tauri::{App, Wry, plugin::Plugin};
 
+#[cfg(desktop)]
 const BADGE_SCRIPT: &str = include_str!("badge.js");
 
 /// Builds and runs the app until it quits.
@@ -131,15 +132,15 @@ fn install(app: &App) -> Result<(), SetupError> {
 }
 
 fn page_scripts() -> Result<Vec<String>, SetupError> {
-    #[cfg_attr(
-        mobile,
-        expect(unused_mut, reason = "only desktop pages get the notification shim")
-    )]
-    let mut scripts = vec![shell::identity_script()?, BADGE_SCRIPT.to_owned()];
+    let identity = shell::identity_script()?;
     #[cfg(desktop)]
-    scripts.push(notifications::init_script(
-        notifications::initial_permission(),
-    )?);
+    let scripts = vec![
+        identity,
+        BADGE_SCRIPT.to_owned(),
+        notifications::init_script(notifications::initial_permission())?,
+    ];
+    #[cfg(mobile)]
+    let scripts = vec![identity];
     Ok(scripts)
 }
 
@@ -163,12 +164,14 @@ fn handle_run_event(_: &tauri::AppHandle, _: &tauri::RunEvent) {}
 #[cfg(test)]
 mod tests {
     #[test]
-    fn injects_the_notification_shim_only_into_desktop_pages() {
+    fn injects_the_badge_and_notification_shims_only_into_desktop_pages() {
         let scripts = super::page_scripts().expect("page scripts build");
-        let shim = include_str!("notification.js");
-        assert_eq!(
-            scripts.iter().any(|script| script.contains(shim)),
-            cfg!(desktop)
-        );
+        for shim in [include_str!("badge.js"), include_str!("notification.js")] {
+            assert_eq!(
+                scripts.iter().any(|script| script.contains(shim)),
+                cfg!(desktop)
+            );
+        }
+        assert!(scripts[0].contains("__WEBLOUNGE_SHELL__"));
     }
 }
