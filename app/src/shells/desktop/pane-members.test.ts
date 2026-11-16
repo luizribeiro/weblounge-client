@@ -24,6 +24,7 @@ it("matches the token that sizes the member column and its drawer", () => {
 });
 
 it("shows members inline once the conversation keeps its minimum width", () => {
+  expect(threshold).toBe(712);
   expect(membersPresentation(threshold)).toBe("inline");
   expect(membersPresentation(1216)).toBe("inline");
 });

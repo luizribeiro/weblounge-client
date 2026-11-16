@@ -4,7 +4,7 @@ import type { MemberWindow } from "../../features/members/MemberPanel";
 
 export const memberColumnWidth = 232;
 export const memberColumnWidthToken = "var(--wl-size-members)";
-export const minConversationBesideMembers = 320;
+export const minConversationBesideMembers = 480;
 
 export type MembersPresentation = "inline" | "drawer";
 
