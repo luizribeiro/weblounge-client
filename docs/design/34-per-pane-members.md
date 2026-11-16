@@ -119,6 +119,12 @@ switching buffers.
   returns focus to the composer (design 15 table, unchanged).
 - Activating a member opens the DM **in the same pane** and focuses its composer; a drawer closes
   first.
+- **Typing closes the drawer.** The drawer is not modal (`aria-modal="false"`), so the shell's
+  type-to-composer forwarding still applies: a printable key typed in the drawer goes to the
+  composer, and any input in the composer slides the drawer closed (it covers the composer's right
+  edge and Send). Arrows, Home/End, Tab, Enter and Escape behave as before; the desktop list
+  has no filter field or type-ahead, so letters have no list meaning to lose. Forwarding is blocked
+  by any `aria-modal="true"` dialog (settings, switcher, image viewer, confirmations).
 - Pointer-down in the panel focuses its pane (split view rule).
 
 ## Motion
