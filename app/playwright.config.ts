@@ -329,17 +329,17 @@ export default defineConfig({
     },
     {
       name: "webkit-uploads",
-      testMatch: "**/image-uploads.spec.ts",
+      testMatch: ["**/image-uploads.spec.ts", "**/file-command.spec.ts"],
       use: { browserName: "webkit" },
     },
     {
       name: "webkit-uploads-phone",
-      testMatch: "**/image-uploads.spec.ts",
+      testMatch: ["**/image-uploads.spec.ts", "**/file-command.spec.ts"],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
       name: "android-uploads-phone",
-      testMatch: "**/image-uploads.spec.ts",
+      testMatch: ["**/image-uploads.spec.ts", "**/file-command.spec.ts"],
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
