@@ -65,6 +65,49 @@ it("traps focus and closes a mirrored drawer with Escape", async () => {
   expect(close).toHaveBeenCalledOnce();
 });
 
+function renderMembers(visibleMember: boolean) {
+  const close = vi.fn();
+  render(() => (
+    <OverlayDrawer
+      closeLabel="Close members"
+      edge="right"
+      label="Members"
+      onClose={close}
+      width="232px"
+    >
+      <ul>
+        <li hidden>
+          <button type="button">Placeholder member</button>
+        </li>
+        {visibleMember && (
+          <li>
+            <button type="button">mel</button>
+          </li>
+        )}
+      </ul>
+    </OverlayDrawer>
+  ));
+  return { close, dialog: screen.getByRole("dialog", { name: "Members" }) };
+}
+
+it("skips hidden placeholders when choosing its initial focus", async () => {
+  const { dialog } = renderMembers(true);
+  const member = screen.getByRole("button", { name: "mel" });
+  await Promise.resolve();
+  expect(member).toHaveFocus();
+  fireEvent.keyDown(dialog, { key: "Tab" });
+  expect(member).toHaveFocus();
+});
+
+it("takes focus itself while its content has nothing visible to focus", async () => {
+  const { close, dialog } = renderMembers(false);
+  await Promise.resolve();
+  expect(dialog).toHaveFocus();
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  await Promise.resolve();
+  expect(close).toHaveBeenCalledOnce();
+});
+
 it("floats as a modal by default and docks as a non-modal surface", () => {
   const { dialog, overlay } = renderDrawer();
   expect(dialog).toHaveAttribute("aria-modal", "true");

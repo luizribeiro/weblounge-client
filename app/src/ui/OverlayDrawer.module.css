@@ -51,6 +51,11 @@
   width: var(--wl-overlay-drawer-width);
 }
 
+/* The docked drawer itself only takes focus while its list is still loading. */
+.overlay[data-appearance="docked"] .drawer:focus-visible {
+  outline: none;
+}
+
 .drawer[data-keyboard-owner] {
   bottom: var(--wl-keyboard-inset);
 }

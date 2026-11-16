@@ -164,6 +164,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
         }}
         ref={drawer}
         role="dialog"
+        tabIndex={-1}
       >
         {typeof props.children === "function"
           ? props.children(requestClose, settledOpen)
@@ -176,7 +177,8 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
 function initialFocus(root: HTMLElement | undefined): HTMLElement | undefined {
   return (
     root?.querySelector<HTMLElement>("[data-initial-focus]") ??
-    focusable(root)[0]
+    focusable(root)[0] ??
+    root
   );
 }
 
@@ -185,6 +187,9 @@ function focusable(root: HTMLElement | undefined): HTMLElement[] {
   return [
     ...root.querySelectorAll<HTMLElement>("button, input, [tabindex]"),
   ].filter(
-    (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0,
+    (element) =>
+      !element.hasAttribute("disabled") &&
+      element.tabIndex >= 0 &&
+      element.closest("[hidden]") === null,
   );
 }
