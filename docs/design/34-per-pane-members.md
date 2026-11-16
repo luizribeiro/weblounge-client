@@ -1,6 +1,6 @@
 # 34 — Per-pane members panel
 
-Status: proposed 2026-11-15, awaiting Luiz's decisions (end of this doc). Amends designs 09 and 10
+Status: accepted 2026-11-15 (decisions at the end of this doc). Amends designs 09 and 10
 where noted; implements the "Member list per pane" section of `docs/reference/split-view.md`.
 
 ## Problem
@@ -96,8 +96,7 @@ switching buffers.
 - Inline needs `232px + 480px` of pane (amends design 09's 320px conversation minimum; see the
   narrow "before" capture). The sidebar breakpoint (760px) is unchanged.
 - Below that, the same button and shortcut open the list as an `OverlayDrawer` anchored to **this
-  pane's** right edge, with the scrim covering only this pane. In the single-pane case that is
-  visually what happens today.
+  pane's** right edge, with an invisible scrim covering only this pane (decision 7).
 - The drawer is transient: it never changes the channel's persisted visibility, except that closing
   an inline list (button, shortcut) does. Growing past the threshold closes the drawer and shows the
   inline list if the channel's visibility is on; shrinking hides the inline list without changing
@@ -125,8 +124,8 @@ switching buffers.
 Matches design 15's rules:
 
 - Inline open/close is **instant** (no width slide: animating the column would reflow the
-  virtualised transcript every frame). The list content keeps its existing
-  `--wl-motion-fade` / `--wl-motion-standard-curve` fade-in.
+  virtualised transcript every frame), and the desktop list content does not fade in. The phone
+  drawer keeps its content fade.
 - The drawer uses `--wl-motion-drawer-open` / `--wl-motion-drawer-close` and
   `--wl-motion-drawer-curve`, the shared `OverlayDrawer` primitive, unchanged.
 - Reduced motion zeroes both through the existing tokens.
@@ -187,22 +186,23 @@ Matches design 15's rules:
 - Every touched journey keeps `nativeFeelAudit` and its idle/hidden checks green; screenshots are
   compared with the mockups above before merge.
 
-## Decisions for Luiz
+## Decisions (Luiz, 2026-11-15)
 
-1. Pane header spans over the members panel (panel starts below it)? **Recommend yes.**
-2. Drop the panel's own "Members N ×" header row on desktop (count and close live on the header
-   button)? **Recommend yes.**
-3. Keep visibility per channel with "last choice" for new channels (your 2026-10-28 call), rather
-   than one global on/off? **Recommend keep per channel.**
-4. Remember it across reloads and launches (today it resets to closed)? **Recommend yes.**
-5. Fixed 232px width, no drag-to-resize for now? **Recommend yes.**
-6. Raise the conversation's minimum beside an inline list from 320px to 480px, switching to the
-   drawer sooner? **Recommend yes** (see the narrow screenshot).
-7. A narrow pane's drawer dims only that pane, not the whole window? **Recommend yes.**
-8. Open/close inline instantly (no slide), keeping the current list fade? **Recommend yes.**
-9. Escape inside the inline list moves focus to the composer but leaves the list open?
-   **Recommend yes.**
-10. Clicking a member opens the DM in the same pane? **Recommend yes.**
-11. Same channel in two panes shows/hides its list together? **Recommend accept.**
-12. Ship this now as a single-pane refactor (visible change: header spans, panel header gone,
-    state remembered), ahead of split view? **Recommend yes.**
+1. The pane header spans the whole pane, over the members panel. Yes.
+2. The inline panel drops its own "Members N ×" header row on desktop. Yes. The narrow-pane drawer
+   keeps it: the drawer covers the header button, so its × is the drawer's visible close (as on the
+   phone).
+3. Visibility is per channel; a never-toggled channel follows the last choice. Yes.
+4. Visibility persists across reloads and launches. Yes.
+5. Fixed 232px, no resize. Yes.
+6. The conversation keeps at least 480px beside an inline list; below that the list is a drawer.
+   Yes.
+7. **Changed:** the desktop narrow-pane drawer has no dimmed backdrop at all; dimming stays
+   phone-only. It keeps its slide, Escape closes it, and a click elsewhere in its pane still closes
+   it through an invisible scrim. The desktop sidebar drawer and the phone drawers are unchanged.
+8. **Changed:** no fade at all. Inline open/close is instant and the desktop list content no longer
+   fades in; the phone drawer is unchanged.
+9. Escape inside the inline list focuses the composer and leaves the list open. Yes.
+10. Activating a member opens the DM in the same pane. Yes.
+11. The same channel in two panes shares its open/closed state. Accepted.
+12. Ship now as a single-pane refactor ahead of split view. Yes.
