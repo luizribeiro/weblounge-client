@@ -26,5 +26,25 @@ struct PushPresenter {
     content.threadIdentifier = visible.threadId
     content.userInfo = visible.userInfo
     offer(content)
+    if let tag = visible.conversationTag {
+      count(visible, tag: tag, into: content)
+      offer(content)
+    }
+  }
+
+  /// Counts that can't be read stay untouched, so a bad read never overwrites the page's.
+  private func count(_ visible: VisibleNotification, tag: String, into content: UNMutableNotificationContent) {
+    guard let counts = try? storage.readNotificationCounts() else { return }
+    var ledger = NotificationLedger(counts: counts)
+    ledger.record(tag: tag, messageTime: visible.messageTime)
+    try? storage.writeNotificationCounts(ledger.counts)
+    content.badge = NSNumber(value: ledger.badge)
+    content.body =
+      PushPayload.countedBody(visible.body, count: ledger.count(tag: tag), newMessages: newMessages)
+      ?? visible.body
   }
 }
+
+private let newMessages = NSLocalizedString(
+  "notifications.new_messages", value: "· {count} new messages",
+  comment: "The unread-count line under a notification; {count} is the number")

@@ -1,6 +1,7 @@
 import XCTest
 
-/// A route whose keys and metadata sit in the dev app's keychain and App Group for one test.
+/// A route whose keys and metadata sit in the dev app's keychain and App Group for one test,
+/// which starts with no notification counts and restores the app's own afterwards.
 struct StoredTestRoute {
   let storage: SharedStorage
   let sealer = WebPushSealer()
@@ -10,16 +11,28 @@ struct StoredTestRoute {
     let storage = try SharedStorage.fromInfoPlist()
     self.storage = storage
     let routeId = self.routeId
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: storage.appGroup))
+    let savedCounts = defaults.data(forKey: SharedStorage.notificationCountsKey)
     test.addTeardownBlock {
+      defaults.set(savedCounts, forKey: SharedStorage.notificationCountsKey)
       for secret in RouteSecret.allCases {
         try? storage.deleteSecret(secret, routeId: routeId)
       }
       try? storage.deleteRouteMeta(routeId: routeId)
     }
+    try storage.writeNotificationCounts([])
     try storage.storeSecret(.privateKeyPkcs8, routeId: routeId, data: sealer.privateKeyPkcs8)
     try storage.storeSecret(.auth, routeId: routeId, data: sealer.auth)
     try storage.storeRouteMeta(
       RouteMeta(networkId: 3, networkLabel: "Libera", nickname: "weblounge"), routeId: routeId)
+  }
+
+  func setCountsData(_ data: Data) {
+    UserDefaults(suiteName: storage.appGroup)?.set(data, forKey: SharedStorage.notificationCountsKey)
+  }
+
+  func countsData() -> Data? {
+    UserDefaults(suiteName: storage.appGroup)?.data(forKey: SharedStorage.notificationCountsKey)
   }
 
   /// The relay's APNs payload for `ircLine` on this route.
