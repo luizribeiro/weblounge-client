@@ -6,6 +6,7 @@ mod config;
 mod db;
 mod error;
 mod outbound;
+mod target;
 #[cfg(test)]
 mod test_tls;
 

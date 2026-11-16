@@ -25,16 +25,19 @@ use serde::Serialize;
 use sha2::Sha256;
 use url::Url;
 
-use crate::{Error, Result, db::WebPushTarget};
+use crate::{
+    Error, Result,
+    target::{PushTarget, WebPushTarget},
+};
 
 const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
 const DELIVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// An opaque home push and the browser subscription that should receive it.
+/// An opaque home push and the device target that should receive it.
 #[derive(Clone, Debug)]
 pub struct Delivery {
     pub(crate) route_id: String,
-    pub(crate) target: WebPushTarget,
+    pub(crate) target: PushTarget,
     pub(crate) body: Vec<u8>,
     pub(crate) ttl: u32,
     pub(crate) urgency: Urgency,
@@ -88,11 +91,11 @@ impl Delivery {
     ) -> Self {
         Self {
             route_id: route_id.into(),
-            target: WebPushTarget {
+            target: PushTarget::WebPush(WebPushTarget {
                 endpoint: endpoint.into(),
                 p256dh: p256dh.into(),
                 auth: auth.into(),
-            },
+            }),
             body,
             ttl,
             urgency: Urgency::Normal,
@@ -130,10 +133,13 @@ impl Delivery {
         self.urgency
     }
 
-    /// The browser push-service endpoint.
+    /// The browser push-service endpoint, for a Web Push target.
     #[must_use]
-    pub fn endpoint(&self) -> &str {
-        &self.target.endpoint
+    pub fn endpoint(&self) -> Option<&str> {
+        match &self.target {
+            PushTarget::WebPush(target) => Some(&target.endpoint),
+            PushTarget::Apns(_) => None,
+        }
     }
 }
 
@@ -527,7 +533,10 @@ struct NotificationData<'a> {
 #[async_trait]
 impl PushSender for WebPushSender {
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
-        let endpoint = Url::parse(&delivery.target.endpoint)
+        let PushTarget::WebPush(target) = &delivery.target else {
+            return Err(Error::DeliveryUnavailable);
+        };
+        let endpoint = Url::parse(&target.endpoint)
             .map_err(|_| Error::TargetRefused("endpoint is not a URL".to_owned()))?;
         let target_host = endpoint
             .host_str()
@@ -554,7 +563,7 @@ impl PushSender for WebPushSender {
             },
         })
         .map_err(|error| Error::BadRequest(error.to_string()))?;
-        let payload = encrypt_payload(&envelope, &delivery.target.p256dh, &delivery.target.auth)?;
+        let payload = encrypt_payload(&envelope, &target.p256dh, &target.auth)?;
         let authorization = vapid_authorization(
             &self.vapid_key,
             &self.vapid_public,

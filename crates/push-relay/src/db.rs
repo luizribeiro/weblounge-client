@@ -5,12 +5,18 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{
+    Connection, OptionalExtension, ToSql, Transaction, TransactionBehavior, params,
+    params_from_iter,
+};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    target::{PushTarget, target_assignments, target_insert_list, target_select_list},
+};
 
 #[cfg(feature = "push-e2e")]
 use serde::Serialize;
@@ -19,16 +25,10 @@ const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
 const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
 const DEAD_ENDPOINT_BATCH_SIZE: u32 = 5;
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
+const SINGLE_PLATFORM_SCHEMA_VERSION: u32 = 5;
 const PROBING_ROUTE_TTL_SECONDS: i64 = 5 * 60;
 const MAX_CONCURRENT_DATABASE_TASKS: usize = 8;
-
-#[derive(Clone, Debug)]
-pub(crate) struct WebPushTarget {
-    pub endpoint: String,
-    pub p256dh: String,
-    pub auth: String,
-}
 
 #[derive(Clone)]
 pub(crate) struct DeviceCredentials {
@@ -59,7 +59,7 @@ pub(crate) enum Route {
         device_id: String,
         account: String,
         home_vapid: Vec<u8>,
-        target: WebPushTarget,
+        target: PushTarget,
     },
 }
 
@@ -68,7 +68,7 @@ struct StoredRoute {
     device_id: String,
     account: String,
     home_vapid: Vec<u8>,
-    target: WebPushTarget,
+    target: PushTarget,
     created_at: i64,
 }
 
@@ -77,7 +77,7 @@ pub(crate) struct HeldPush {
     pub id: i64,
     pub device_id: String,
     pub route_id: String,
-    pub target: WebPushTarget,
+    pub target: PushTarget,
     pub body: Vec<u8>,
     pub ttl: u32,
     pub urgency: String,
@@ -227,7 +227,7 @@ impl Database {
     pub(crate) async fn create_device(
         &self,
         account: String,
-        target: WebPushTarget,
+        target: PushTarget,
     ) -> Result<DeviceCredentials> {
         let credentials = DeviceCredentials {
             id: random_token()?,
@@ -239,7 +239,7 @@ impl Database {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            retire_devices_for_endpoint(&transaction, &target.endpoint, None)?;
+            retire_devices_for_address(&transaction, &target, None)?;
             let device_count = transaction.query_row(
                 "SELECT COUNT(*) FROM devices WHERE account = ?1",
                 [&account],
@@ -248,17 +248,17 @@ impl Database {
             if device_count >= MAX_DEVICES_PER_ACCOUNT {
                 return Err(Error::Capacity);
             }
+            let (columns, placeholders) = target_insert_list(4);
+            let hash = secret_hash(&stored.secret);
+            let values = target.values();
+            let mut parameters: Vec<&dyn ToSql> = vec![&stored.id, &account, &hash];
+            parameters.extend(values.iter().map(|value| value as &dyn ToSql));
             transaction.execute(
-                "INSERT INTO devices (id, account, secret_hash, endpoint, p256dh, auth)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    stored.id,
-                    account,
-                    secret_hash(&stored.secret),
-                    target.endpoint,
-                    target.p256dh,
-                    target.auth,
-                ],
+                &format!(
+                    "INSERT INTO devices (id, account, secret_hash, {columns})
+                     VALUES (?1, ?2, ?3, {placeholders})"
+                ),
+                params_from_iter(parameters),
             )?;
             transaction.commit()?;
             Ok(())
@@ -271,7 +271,7 @@ impl Database {
         &self,
         device_id: String,
         secret: String,
-        target: WebPushTarget,
+        target: PushTarget,
     ) -> Result<()> {
         let path = Arc::clone(&self.path);
         self.spawn(move || -> Result<()> {
@@ -279,10 +279,13 @@ impl Database {
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             authenticate_device(&transaction, &device_id, &secret)?;
-            retire_devices_for_endpoint(&transaction, &target.endpoint, Some(&device_id))?;
+            retire_devices_for_address(&transaction, &target, Some(&device_id))?;
+            let values = target.values();
+            let mut parameters: Vec<&dyn ToSql> = vec![&device_id];
+            parameters.extend(values.iter().map(|value| value as &dyn ToSql));
             transaction.execute(
-                "UPDATE devices SET endpoint = ?2, p256dh = ?3, auth = ?4 WHERE id = ?1",
-                params![device_id, target.endpoint, target.p256dh, target.auth],
+                &format!("UPDATE devices SET {} WHERE id = ?1", target_assignments(2)),
+                params_from_iter(parameters),
             )?;
             transaction.commit()?;
             Ok(())
@@ -647,10 +650,10 @@ impl Database {
             )?;
             connection
                 .query_row(
-                    "SELECT held_pushes.id, routes.device_id, held_pushes.route_id,
-                            devices.endpoint, devices.p256dh, devices.auth,
+                    &format!(
+                        "SELECT held_pushes.id, routes.device_id, held_pushes.route_id,
                             held_pushes.body, held_pushes.ttl, held_pushes.urgency,
-                            held_pushes.held_at
+                            held_pushes.held_at, {}
                      FROM held_pushes
                      JOIN routes ON routes.id = held_pushes.route_id
                      JOIN devices ON devices.id = routes.device_id
@@ -662,22 +665,20 @@ impl Database {
                      )
                      ORDER BY held_pushes.id
                      LIMIT 1",
+                        target_select_list("devices")
+                    ),
                     [now],
                     |row| {
-                        let ttl = row.get::<_, u32>(7)?;
-                        let held_at = row.get::<_, i64>(9)?;
+                        let ttl = row.get::<_, u32>(4)?;
+                        let held_at = row.get::<_, i64>(6)?;
                         Ok(HeldPush {
                             id: row.get(0)?,
                             device_id: row.get(1)?,
                             route_id: row.get(2)?,
-                            target: WebPushTarget {
-                                endpoint: row.get(3)?,
-                                p256dh: row.get(4)?,
-                                auth: row.get(5)?,
-                            },
-                            body: row.get(6)?,
+                            body: row.get(3)?,
                             ttl: remaining_ttl(ttl, held_at, now),
-                            urgency: row.get(8)?,
+                            urgency: row.get(5)?,
+                            target: PushTarget::from_row(row, 7)?,
                         })
                     },
                 )
@@ -735,13 +736,66 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<()> {
         2 => migrate_schema_two(connection)?,
         3 => migrate_schema_three(connection)?,
         4 => migrate_schema_four(connection)?,
-        SCHEMA_VERSION => {}
+        SINGLE_PLATFORM_SCHEMA_VERSION | SCHEMA_VERSION => {}
         version => {
             return Err(Error::Config(format!(
                 "database schema version {version} is newer than supported version {SCHEMA_VERSION}"
             )));
         }
     }
+    if version < SCHEMA_VERSION {
+        migrate_schema_five(connection)?;
+    }
+    Ok(())
+}
+
+fn migrate_schema_five(connection: &Connection) -> Result<()> {
+    connection.pragma_update(None, "foreign_keys", "OFF")?;
+    let migrated = rebuild_devices_for_push_targets(connection);
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    migrated
+}
+
+fn rebuild_devices_for_push_targets(connection: &Connection) -> Result<()> {
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let version =
+        transaction.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?;
+    if version >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    transaction.execute_batch(
+        "CREATE TABLE devices_v6 (
+           id TEXT PRIMARY KEY, account TEXT NOT NULL, secret_hash BLOB NOT NULL,
+           platform TEXT NOT NULL CHECK (platform IN ('web_push', 'apns')),
+           address TEXT NOT NULL, p256dh TEXT, auth TEXT,
+           apns_environment TEXT CHECK (apns_environment IN ('production', 'sandbox')),
+           created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+           CHECK (
+             (platform = 'web_push' AND p256dh IS NOT NULL AND auth IS NOT NULL
+               AND apns_environment IS NULL)
+             OR (platform = 'apns' AND p256dh IS NULL AND auth IS NULL
+               AND apns_environment IS NOT NULL)
+           )
+         );
+         INSERT INTO devices_v6 (id, account, secret_hash, platform, address, p256dh, auth,
+                                 created_at)
+           SELECT id, account, secret_hash, 'web_push', endpoint, p256dh, auth, created_at
+           FROM devices;
+         DROP TABLE devices;
+         ALTER TABLE devices_v6 RENAME TO devices;
+         PRAGMA user_version = 6;",
+    )?;
+    let dangling_table = transaction
+        .query_row("PRAGMA foreign_key_check", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?;
+    if let Some(table) = dangling_table {
+        return Err(Error::Config(format!(
+            "the push-target migration found {table} rows that reference missing devices"
+        )));
+    }
+    transaction.commit()?;
     Ok(())
 }
 
@@ -898,17 +952,21 @@ fn secure_database_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn retire_devices_for_endpoint(
+fn retire_devices_for_address(
     transaction: &rusqlite::Transaction<'_>,
-    endpoint: &str,
+    target: &PushTarget,
     except: Option<&str>,
 ) -> Result<()> {
     let devices = {
         let mut statement = transaction.prepare(
-            "SELECT id FROM devices WHERE endpoint = ?1 AND (?2 IS NULL OR id != ?2) ORDER BY id",
+            "SELECT id FROM devices
+             WHERE platform = ?1 AND address = ?2 AND (?3 IS NULL OR id != ?3) ORDER BY id",
         )?;
         statement
-            .query_map(params![endpoint, except], |row| row.get(0))?
+            .query_map(
+                params![target.platform(), target.address(), except],
+                |row| row.get(0),
+            )?
             .collect::<rusqlite::Result<Vec<String>>>()?
     };
     for device in devices {
@@ -1011,10 +1069,13 @@ fn retire_route(transaction: &rusqlite::Transaction<'_>, route_id: &str) -> Resu
 fn load_route(connection: &Connection, route_id: &str) -> Result<Option<StoredRoute>> {
     connection
         .query_row(
-            "SELECT routes.state, routes.device_id, devices.account, routes.home_vapid,
-                    devices.endpoint, devices.p256dh, devices.auth, routes.created_at
-             FROM routes JOIN devices ON devices.id = routes.device_id
-             WHERE routes.id = ?1",
+            &format!(
+                "SELECT routes.state, routes.device_id, devices.account, routes.home_vapid,
+                        routes.created_at, {}
+                 FROM routes JOIN devices ON devices.id = routes.device_id
+                 WHERE routes.id = ?1",
+                target_select_list("devices")
+            ),
             [route_id],
             |row| {
                 Ok(StoredRoute {
@@ -1022,12 +1083,8 @@ fn load_route(connection: &Connection, route_id: &str) -> Result<Option<StoredRo
                     device_id: row.get(1)?,
                     account: row.get(2)?,
                     home_vapid: row.get(3)?,
-                    target: WebPushTarget {
-                        endpoint: row.get(4)?,
-                        p256dh: row.get(5)?,
-                        auth: row.get(6)?,
-                    },
-                    created_at: row.get(7)?,
+                    created_at: row.get(4)?,
+                    target: PushTarget::from_row(row, 5)?,
                 })
             },
         )
@@ -1182,22 +1239,24 @@ fn unix_seconds() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, task::Poll};
+    use std::{fmt::Write as _, sync::Arc, task::Poll};
 
     use futures::{pin_mut, poll};
 
     use super::{
         Database, MAX_CONCURRENT_DATABASE_TASKS, MAX_DEVICES_PER_ACCOUNT, MAX_ROUTES_PER_DEVICE,
-        WebPushTarget,
     };
-    use crate::Error;
+    use crate::{
+        Error,
+        target::{ApnsEnvironment, ApnsTarget, PushTarget, WebPushTarget},
+    };
 
-    fn target(index: u32) -> WebPushTarget {
-        WebPushTarget {
+    fn target(index: u32) -> PushTarget {
+        PushTarget::WebPush(WebPushTarget {
             endpoint: format!("https://push.example/{index}"),
             p256dh: "key".to_owned(),
             auth: "auth".to_owned(),
-        }
+        })
     }
 
     #[tokio::test]
@@ -1331,6 +1390,188 @@ mod tests {
         );
     }
 
+    const FCM_ENDPOINT: &str = "https://fcm.googleapis.com/fcm/send/dX2-pqLk3uA:APA91bH";
+    const P256DH: &str =
+        "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM";
+    const AUTH: &str = "tBHItJI5svbpez7KI4CCXg";
+    const APNS_TOKEN: &str = "5f1c6e0b9a3d4c2e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e";
+
+    fn single_platform_database(path: &std::path::Path) -> rusqlite::Connection {
+        let connection = rusqlite::Connection::open(path).expect("connection");
+        super::create_schema(&connection).expect("schema version 5");
+        connection
+            .execute_batch(&format!(
+                "INSERT INTO devices (id, account, secret_hash, endpoint, p256dh, auth, created_at)
+                   VALUES ('phone', 'mel', X'{phone_hash}', '{FCM_ENDPOINT}', '{P256DH}',
+                           '{AUTH}', 1762000000),
+                          ('laptop', 'mel', X'00', 'https://web.push.apple.com/QGx3', '{P256DH}',
+                           '{AUTH}', 1762000100);
+                 INSERT INTO routes (id, device_id, state, home_vapid)
+                   VALUES ('phone-route', 'phone', 'active', X'04AA'),
+                          ('laptop-route', 'laptop', 'probing', X'04AA');
+                 INSERT INTO leases (device_id, tab_id, expires_at) VALUES ('laptop', 'tab', 1);
+                 INSERT INTO held_pushes (account, route_id, body, ttl, urgency, held_at)
+                   VALUES ('mel', 'phone-route', X'C1C2', 600, 'high', 1762000000000);
+                 INSERT INTO retired_devices (id, secret_hash) VALUES ('old-phone', X'01');
+                 INSERT INTO dead_endpoints (route_id, account, home_vapid)
+                   VALUES ('old-route', 'mel', X'04AA');",
+                phone_hash = hex(&super::secret_hash("phone-secret")),
+            ))
+            .expect("schema version 5 rows");
+        connection
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().fold(String::new(), |mut text, byte| {
+            write!(text, "{byte:02X}").expect("writing to a String");
+            text
+        })
+    }
+
+    fn fcm_target() -> PushTarget {
+        PushTarget::WebPush(WebPushTarget {
+            endpoint: FCM_ENDPOINT.to_owned(),
+            p256dh: P256DH.to_owned(),
+            auth: AUTH.to_owned(),
+        })
+    }
+
+    #[tokio::test]
+    async fn migration_keeps_single_platform_devices_as_web_push_targets() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let path = temporary.path().join("relay.sqlite3");
+        drop(single_platform_database(&path));
+
+        let database = Database::open(path.clone())
+            .await
+            .expect("migrated database");
+
+        let super::Route::Active { target, .. } = database
+            .route("phone-route".to_owned())
+            .await
+            .expect("active route")
+        else {
+            panic!("the active route must stay active");
+        };
+        assert_eq!(target, fcm_target());
+        let held = database
+            .next_held(1_762_000_001_000)
+            .await
+            .expect("held query")
+            .expect("held push survives");
+        assert_eq!(
+            (held.route_id.as_str(), held.target),
+            ("phone-route", fcm_target())
+        );
+        database
+            .ensure_route(
+                "phone".to_owned(),
+                "phone-secret".to_owned(),
+                vec![4, 0xBB],
+                None,
+            )
+            .await
+            .expect("device secret still authenticates");
+        let connection = rusqlite::Connection::open(&path).expect("connection");
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .expect("foreign keys");
+        let version = connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .expect("schema version");
+        assert_eq!(version, 6);
+        let (platforms, created) = connection
+            .query_row(
+                "SELECT group_concat(platform), group_concat(created_at) FROM devices",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .expect("device rows");
+        assert_eq!(platforms, "web_push,web_push");
+        assert_eq!(created, "1762000000,1762000100");
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO routes (id, device_id, state, home_vapid)
+                     VALUES ('orphan', 'missing', 'active', X'04')",
+                    [],
+                )
+                .is_err(),
+            "routes must still reference devices"
+        );
+    }
+
+    #[tokio::test]
+    async fn stored_target_shape_must_match_its_platform() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let path = temporary.path().join("relay.sqlite3");
+        Database::open(path.clone()).await.expect("database");
+        let connection = rusqlite::Connection::open(path).expect("connection");
+        for (platform, p256dh, environment) in [
+            ("web_push", None, None),
+            ("web_push", Some(P256DH), Some("sandbox")),
+            ("apns", Some(P256DH), Some("sandbox")),
+            ("apns", None, None),
+            ("apns", None, Some("staging")),
+        ] {
+            let inserted = connection.execute(
+                "INSERT INTO devices (id, account, secret_hash, platform, address, p256dh, auth,
+                                      apns_environment)
+                 VALUES ('bad', 'mel', X'00', ?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    platform,
+                    APNS_TOKEN,
+                    p256dh,
+                    p256dh.map(|_| AUTH),
+                    environment
+                ],
+            );
+            assert!(
+                inserted.is_err(),
+                "{platform} with {p256dh:?}/{environment:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn apns_targets_round_trip_and_take_over_their_token() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let database = Database::open(temporary.path().join("relay.sqlite3"))
+            .await
+            .expect("database");
+        let apns = PushTarget::Apns(ApnsTarget {
+            token: APNS_TOKEN.to_owned(),
+            environment: ApnsEnvironment::Sandbox,
+        });
+        let first = database
+            .create_device("mel".to_owned(), apns.clone())
+            .await
+            .expect("first APNs device");
+        let second = database
+            .create_device("mel".to_owned(), apns.clone())
+            .await
+            .expect("reinstalled APNs device");
+        let route = database
+            .ensure_route(second.id.clone(), second.secret.clone(), vec![4, 1], None)
+            .await
+            .expect("route");
+        database
+            .activate_route(route.id.clone(), second.secret)
+            .await
+            .expect("activation");
+
+        let super::Route::Active { target, .. } =
+            database.route(route.id).await.expect("active route")
+        else {
+            panic!("the route must be active");
+        };
+        assert_eq!(target, apns);
+        let retired = database
+            .ensure_route(first.id, first.secret, vec![4, 1], None)
+            .await;
+        assert!(matches!(retired, Err(Error::Gone)));
+    }
+
     #[test]
     fn device_credentials_debug_redacts_the_secret() {
         let credentials = super::DeviceCredentials {
@@ -1363,7 +1604,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         assert_eq!(journal, "wal");
         assert_eq!(mode, 0o600);
     }

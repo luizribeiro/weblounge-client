@@ -21,8 +21,9 @@ use url::Url;
 use crate::{
     Concierge, Database, Delivery, EndpointValidator, Error, PushSender, Result, Urgency,
     auth::verify_vapid,
-    db::{Route, WebPushTarget},
+    db::Route,
     outbound::PushOutcome,
+    target::{PushTarget, WebPushTarget},
 };
 
 const MAX_HOME_BODY: usize = 2_800;
@@ -228,7 +229,7 @@ async fn create_device(
         .into_response())
 }
 
-async fn validated_target(state: &AppState, target: PlatformTarget) -> Result<WebPushTarget> {
+async fn validated_target(state: &AppState, target: PlatformTarget) -> Result<PushTarget> {
     match target {
         PlatformTarget::WebPush {
             endpoint,
@@ -237,11 +238,11 @@ async fn validated_target(state: &AppState, target: PlatformTarget) -> Result<We
         } => {
             validate_subscription_keys(&p256dh, &auth)?;
             state.targets.validate(&endpoint).await?;
-            Ok(WebPushTarget {
+            Ok(PushTarget::WebPush(WebPushTarget {
                 endpoint: endpoint.into(),
                 p256dh,
                 auth,
-            })
+            }))
         }
         PlatformTarget::Apns { token } | PlatformTarget::Fcm { token } => {
             drop(token);
@@ -596,7 +597,10 @@ enum TargetKind {
 }
 
 impl TargetKind {
-    fn for_web_push(target: &WebPushTarget) -> Result<Self> {
+    fn for_target(target: &PushTarget) -> Result<Self> {
+        let PushTarget::WebPush(target) = target else {
+            return Ok(Self::VisiblePushRequired);
+        };
         let endpoint = Url::parse(&target.endpoint).map_err(|_| Error::DeliveryUnavailable)?;
         Ok(
             if endpoint.host_str() == Some("updates.push.services.mozilla.com") {
@@ -646,7 +650,7 @@ async fn deliver_push(
         } => {
             verify_vapid(headers, &home_vapid, &state.origin)?;
             let urgency = Urgency::from_headers(headers)?;
-            if !urgency.is_deliverable_to(TargetKind::for_web_push(&target)?) {
+            if !urgency.is_deliverable_to(TargetKind::for_target(&target)?) {
                 return Ok(PushDisposition::UrgencyDropped { urgency });
             }
             let ttl = headers
