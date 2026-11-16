@@ -3,4 +3,10 @@
 
 #[cfg(target_os = "ios")]
 pub mod commands;
+#[cfg(target_os = "ios")]
+mod events;
 mod failure;
+mod shell_event;
+
+#[cfg(target_os = "ios")]
+pub use events::{PageLoad, track_page_load, watch};

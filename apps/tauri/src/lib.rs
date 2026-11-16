@@ -49,7 +49,10 @@ pub fn run() -> tauri::Result<()> {
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]
-    let builder = builder.plugin(weblounge_ios_shell::init());
+    let builder = builder
+        .plugin(weblounge_ios_shell::init())
+        .manage(native::PageLoad::default())
+        .on_page_load(native::track_page_load);
     #[cfg(desktop)]
     let builder = builder
         .plugin(window::desktop::state_plugin())
@@ -103,6 +106,8 @@ fn install(app: &App) -> Result<(), SetupError> {
         app.handle(),
         &[&identity_script, BADGE_SCRIPT, &notification_script],
     )?;
+    #[cfg(target_os = "ios")]
+    native::watch(app.handle());
     #[cfg(desktop)]
     if !launch::starts_hidden(std::env::args()) {
         window::desktop::show(app.handle());
