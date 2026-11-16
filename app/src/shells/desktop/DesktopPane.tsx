@@ -241,12 +241,12 @@ function PaneConversation(props: DesktopPaneProps) {
       </div>
       <Show when={members.drawerShown()}>
         <OverlayDrawer
+          appearance="docked"
           closeLabel={t("members.close_drawer")}
           closing={members.drawerClosing()}
           edge="right"
           label={t("members.label")}
           onClose={() => members.closeDrawer()}
-          scrim="clear"
           width={memberColumnWidthToken}
         >
           {(requestClose) => (

@@ -65,6 +65,31 @@ it("traps focus and closes a mirrored drawer with Escape", async () => {
   expect(close).toHaveBeenCalledOnce();
 });
 
+it("floats as a modal by default and docks as a non-modal surface", () => {
+  const { dialog, overlay } = renderDrawer();
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+  expect(overlay).toHaveAttribute("data-appearance", "floating");
+
+  render(() => (
+    <OverlayDrawer
+      appearance="docked"
+      closeLabel="Close members"
+      edge="right"
+      label="Members"
+      onClose={() => undefined}
+      width="232px"
+    >
+      <button type="button">Member</button>
+    </OverlayDrawer>
+  ));
+  const docked = screen.getByRole("dialog", { name: "Members" });
+  expect(docked).toHaveAttribute("aria-modal", "false");
+  expect(docked.closest("[data-overlay-drawer]")).toHaveAttribute(
+    "data-appearance",
+    "docked",
+  );
+});
+
 it("paints the start state for two frames before opening", () => {
   const frames = holdFrames();
   runningAnimations([transformTransition]);

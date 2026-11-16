@@ -26,8 +26,12 @@
   width: 100%;
 }
 
-.overlay[data-scrim="clear"] .backdrop {
+.overlay[data-appearance="docked"] .backdrop {
   background: transparent;
+}
+
+.overlay[data-appearance="docked"] .drawer {
+  box-shadow: none;
 }
 
 .drawer {

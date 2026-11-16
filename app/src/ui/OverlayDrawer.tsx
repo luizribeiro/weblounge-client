@@ -24,9 +24,15 @@ interface OverlayDrawerProps {
   readonly dragProgress?: number | undefined;
   readonly dragReturning?: boolean | undefined;
   readonly onDragReturnEnd?: (() => void) | undefined;
-  readonly scrim?: "dimmed" | "clear" | undefined;
+  readonly appearance?: OverlayDrawerAppearance | undefined;
   readonly width: string;
 }
+
+/**
+ * `docked` reads as part of the page beside it: no dimming, no shadow, and
+ * the surroundings stay interactive, so it is not modal.
+ */
+export type OverlayDrawerAppearance = "floating" | "docked";
 
 type DrawerPhase = "entering" | "opening" | "open" | "closing";
 
@@ -69,6 +75,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
     props.dragProgress !== undefined && phase() === "open";
 
   const settledOpen = () => phase() === "open";
+  const appearance = () => props.appearance ?? "floating";
 
   onMount(() => {
     if (phase() !== "entering") return;
@@ -127,7 +134,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
       data-moving={phase() !== "open" || following() ? "true" : undefined}
       data-overlay-drawer={props.edge}
       data-phase={phase()}
-      data-scrim={props.scrim ?? "dimmed"}
+      data-appearance={appearance()}
       style={{
         "--wl-overlay-drawer-offset": following()
           ? props.dragProgress
@@ -144,7 +151,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
       />
       <div
         aria-label={props.label}
-        aria-modal="true"
+        aria-modal={appearance() === "floating"}
         class={styles.drawer}
         data-edge={props.edge}
         data-keyboard-surface="true"
