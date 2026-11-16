@@ -82,25 +82,38 @@ motion variables and their reduced-motion overrides.
 
 ## Shipped themes
 
-In picker order: Lounge, Lounge Night, Black, Modern, Terminal, Retro, Monokai. Lounge Night and
-Lounge are the System pair. Modern, Terminal and Retro take the prototype's `THEMES` values; tokens
-the prototype lacks follow each theme's own family (focus ring = accent, mention badge = the unread
-or error red). Black is Lounge Night for OLED screens: `#000` for the app, surfaces and panels,
-near-black only where layering needs it (`#0a0a0a` inputs and code, `#111` chips and panel borders,
-`#1a1f1c` content borders and `#1a241d` selection), and Lounge Night's accent and text colours,
-which already pass on black (fg 18.1:1, muted 9.7:1, accent 13.7:1, unread 10.1:1). Monokai is
-Luiz's wezterm Monokai: `#1c1c1c` app and surfaces, a darker `#161616` sidebar for separation,
-`#262621` (ANSI black) for inputs, code and panel borders, `#383731` (selection) for selection and
-content borders, `#f8f7f2` text and `#fefefe` selected text. The accent, focus ring and online dot
-are the green `#bbd756`, the self nick the yellow `#ded685`. Where an ANSI colour falls short on
-`#1c1c1c` it is lightened just enough: muted `#717171` (3.5:1) to `#8e8e8e` (5.2:1, and 4.6:1 for
-the composer placeholder on `#262621`), the pink `#cf5a78` (4.4:1) to `#d4607d` (4.7:1) for the
-unread dot and mention badge, the red `#ca4238` (3.5:1) to `#d65e4f` (4.5:1) for errors, and the
-purple `#7b72c2` (4.1:1) to `#8a81d2` (5.0:1) in the nick palette (green, yellow, cyan, purple, pink
-and the classic Monokai orange `#fd971f`, since the scheme has no orange and its red reads as an
-error). It is set in Hack at Terminal's 13px with 3px corners, a touch softer than Terminal's 2px to
-match Hack's rounder forms. A unit test checks text pairs at 4.5:1 and indicators at 3:1 in every
-theme.
+In picker order: Lounge, Lounge Night, Black, Modern, Terminal, Retro, Monokai, Earthsong. Lounge
+Night and Lounge are the System pair. Modern, Terminal and Retro take the prototype's `THEMES`
+values; tokens the prototype lacks follow each theme's own family (focus ring = accent, mention
+badge = the unread or error red). Black is Lounge Night for OLED screens: `#000` for the app,
+surfaces and panels, near-black only where layering needs it (`#0a0a0a` inputs and code, `#111`
+chips and panel borders, `#1a1f1c` content borders and `#1a241d` selection), and Lounge Night's
+accent and text colours, which already pass on black (fg 18.1:1, muted 9.7:1, accent 13.7:1, unread
+10.1:1). Monokai is Luiz's wezterm Monokai: `#1c1c1c` app and surfaces, a darker `#161616` sidebar
+for separation, `#262621` (ANSI black) for inputs, code and panel borders, `#383731` (selection) for
+selection and content borders, `#f8f7f2` text and `#fefefe` selected text. The accent, focus ring
+and online dot are the green `#bbd756`, the self nick the yellow `#ded685`. Where an ANSI colour
+falls short on `#1c1c1c` it is lightened just enough: muted `#717171` (3.5:1) to `#8e8e8e` (5.2:1,
+and 4.6:1 for the composer placeholder on `#262621`), the pink `#cf5a78` (4.4:1) to `#d4607d`
+(4.7:1) for the unread dot and mention badge, the red `#ca4238` (3.5:1) to `#d65e4f` (4.5:1) for
+errors, and the purple `#7b72c2` (4.1:1) to `#8a81d2` (5.0:1) in the nick palette (green, yellow,
+cyan, purple, pink and the classic Monokai orange `#fd971f`, since the scheme has no orange and its
+red reads as an error). It is set in Hack at Terminal's 13px with 3px corners, a touch softer than
+Terminal's 2px to match Hack's rounder forms. Earthsong is the Earthsong terminal scheme as
+published in mbadolato/iTerm2-Color-Schemes (`windowsterminal/Earthsong.json`, MIT): `#292520` app
+and surfaces, a darker `#211e1a` sidebar, `#121418` (ANSI black and the scheme's selection) for
+inputs, code and panel borders, `#e5c7a9` sand text and `#f6f7ec` (bright white) selected text. The
+scheme's near-black selection would vanish on the darker sidebar, so selection and content borders
+use a lifted brown `#403830`. The accent, focus ring and online dot are the green `#85c54c` (7.3:1),
+the self nick the amber `#f5ae2e`, the mention background an amber tint `#3a2f1f`. Lightened just
+enough on `#292520`: muted `#675f54` (2.4:1) to `#9a8f81` (4.8:1, 5.8:1 for the placeholder on
+`#121418`), the orange `#d0633d` (4.0:1, the scheme's magenta slot) to `#db6d46` (4.6:1) for the
+unread dot and mention badge, and the red `#c94234` (3.1:1) to `#e4664f` (4.6:1) for errors. The
+nick palette takes six distinct hues: green, amber, blue `#1398b9` (4.5:1), bright salmon `#ff9269`,
+bright blue `#5fdaff` and bright yellow `#e0d561`. Red stays out, as it reads as an error, and the
+cyan `#509552` too, as it is a second green beside `#85c54c`. Like Monokai it is a terminal scheme,
+so it shares Monokai's Hack, 13px and 3px corners. A unit test checks text pairs at 4.5:1 and
+indicators at 3:1 in every theme.
 
 ## Selection and system appearance
 
@@ -146,11 +159,12 @@ its hinting kept. They are declared once in `theme-fonts.css`, together with met
 `<Family> Fallback` faces over local Arial, Courier New or Times New Roman. Browsers fetch a face
 only when rendered text uses its family, and only a theme's tokens name these families, so Lounge
 downloads none of them on the page (a Playwright test checks this; others check that Terminal
-fetches only IBM Plex Mono and Monokai only Hack). Settings cards draw previews without text, so
-opening Settings loads no theme fonts. The service worker still precaches every hashed asset, fonts
-included, after load and at low priority, so a chosen theme keeps its fonts offline. Latin-subset
-bytes per theme: Modern 52 KB, Terminal 60 KB, Retro 106 KB, Monokai 47 KB upright plus 51 KB italic
-(latin-ext and italic only when such characters or text appear).
+fetches only IBM Plex Mono, and Monokai and Earthsong only Hack). Settings cards draw previews
+without text, so opening Settings loads no theme fonts. The service worker still precaches every
+hashed asset, fonts included, after load and at low priority, so a chosen theme keeps its fonts
+offline. Latin-subset bytes per theme: Modern 52 KB, Terminal 60 KB, Retro 106 KB, Monokai and
+Earthsong 47 KB upright plus 51 KB italic (latin-ext and italic only when such characters or text
+appear).
 
 ## Network icons and brand assets
 
