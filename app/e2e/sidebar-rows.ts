@@ -13,13 +13,16 @@ export async function emulatePlatform(
   }, platform);
 }
 
-export async function emulateMacApp(page: Page): Promise<void> {
+export async function emulateMacApp(
+  page: Page,
+  identity: Readonly<Record<string, unknown>> = {},
+): Promise<void> {
   await emulatePlatform(page, "MacIntel");
-  await page.addInitScript(() => {
+  await page.addInitScript((extra) => {
     Object.defineProperty(globalThis, "__WEBLOUNGE_SHELL__", {
-      value: Object.freeze({ kind: "macos-app", version: "0.1.0" }),
+      value: Object.freeze({ kind: "macos-app", version: "0.1.0", ...extra }),
     });
-  });
+  }, identity);
 }
 
 export async function openWithExtraChannel(
