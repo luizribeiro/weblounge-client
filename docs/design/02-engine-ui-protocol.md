@@ -157,6 +157,11 @@ add/remove pairs with no visible result disappear, and timeline order is retaine
 resolve immediately, but subscriber notifications stay in engine emission order and join the frame
 batch when an earlier projection is queued. Fatal errors bypass the frame delay.
 
+While the page is hidden the client holds render patches until it is visible, but buffer-list
+events (added, updated, removed, reordered, draft-key changes) still apply at once, in engine
+order: the tab indicator and app badge show unread counts exactly then (design 23). A removal
+discards its buffer's held patches.
+
 Hidden clients stop receiving render patches. The engine retains a bounded journal and sends one
 catch-up batch or snapshot on visibility. A client whose outbound queue exceeds 256 batches is
 marked stale and resynchronized. Diagnostics records the event and the UI shows one non-repeating
