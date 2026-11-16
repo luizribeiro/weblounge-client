@@ -54,13 +54,13 @@ export function observeWindowControls(
     setState(next);
     root.dataset.windowControls = next;
   };
-  const checkFullScreen = coalescedFullScreenCheck(invoke, (fullScreen) =>
-    publish(fullScreen ? "hidden" : "overlay"),
+  const checkFullScreen = coalescedFullScreenCheck(invoke, (answer) =>
+    publish(answeredState(answer, state())),
   );
   const applyTheme = deduplicatedThemeCalls(invoke);
 
   reserveInsets(root, controls);
-  publish("overlay");
+  root.dataset.windowControls = "pending";
   checkFullScreen();
   scope.addEventListener("resize", checkFullScreen);
 
@@ -92,7 +92,7 @@ function reserveInsets(root: HTMLElement, controls: WindowControls): void {
 
 function coalescedFullScreenCheck(
   invoke: Invoke,
-  onAnswer: (fullScreen: boolean) => void,
+  onAnswer: (answer: unknown) => void,
 ): () => void {
   let inFlight = false;
   let outdated = false;
@@ -102,15 +102,23 @@ function coalescedFullScreenCheck(
       return;
     }
     inFlight = true;
-    void invoke("plugin:window|is_fullscreen").then((fullScreen) => {
+    void invoke("plugin:window|is_fullscreen").then((answer) => {
       inFlight = false;
-      if (typeof fullScreen === "boolean") onAnswer(fullScreen);
+      onAnswer(answer);
       if (!outdated) return;
       outdated = false;
       check();
     });
   };
   return check;
+}
+
+function answeredState(
+  answer: unknown,
+  fallback: WindowControlsState,
+): WindowControlsState {
+  if (typeof answer !== "boolean") return fallback;
+  return answer ? "hidden" : "overlay";
 }
 
 function deduplicatedThemeCalls(invoke: Invoke): (theme: WindowTheme) => void {

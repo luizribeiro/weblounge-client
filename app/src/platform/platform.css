@@ -38,3 +38,12 @@
 #root[data-keyboard="open"] [data-keyboard-owner] {
   --wl-safe-bottom-effective: 0px;
 }
+
+/*
+ * Until the window says whether it is in full screen, the lights row would
+ * flash in and collapse on a full-screen launch. Opacity rather than
+ * visibility keeps the composer focusable while the answer is in flight.
+ */
+#root[data-window-controls="pending"] {
+  opacity: 0;
+}

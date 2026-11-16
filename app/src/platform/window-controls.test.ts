@@ -91,11 +91,11 @@ afterEach(() => {
 });
 
 describe("window controls", () => {
-  it("reserves the wrapper's inset in overlay mode", async () => {
+  it("reserves the wrapper's inset and paints once full screen is known", async () => {
     const scope = observe();
 
     expect(controller?.state()).toBe("overlay");
-    expect(root.dataset.windowControls).toBe("overlay");
+    expect(root.dataset.windowControls).toBe("pending");
     expect(inlineInset()).toBe("84px");
     expect(root.style.getPropertyValue("--wl-window-controls-block")).toBe(
       "48px",
@@ -105,6 +105,7 @@ describe("window controls", () => {
         { command: "plugin:window|is_fullscreen", args: undefined },
       ]),
     );
+    await vi.waitFor(() => expect(root.dataset.windowControls).toBe("overlay"));
     expect(controller?.state()).toBe("overlay");
   });
 
@@ -215,6 +216,7 @@ describe("window controls", () => {
     await vi.waitFor(() => expect(scope.calls).toHaveLength(5));
     await flushInvokes();
     expect(controller?.state()).toBe("overlay");
+    expect(root.dataset.windowControls).toBe("overlay");
     expect(error).not.toHaveBeenCalled();
   });
 
@@ -238,7 +240,7 @@ describe("window controls", () => {
   it.each([
     ["no bridge", undefined],
     ["a bridge without invoke", {}],
-  ])("works with %s", (_case, internals) => {
+  ])("works with %s", async (_case, internals) => {
     const scope = new FakeWindow(macApp, "absent");
     Object.defineProperty(scope, "__TAURI_INTERNALS__", { value: internals });
     start(scope);
@@ -248,6 +250,7 @@ describe("window controls", () => {
       scope.resize();
     }).not.toThrow();
     expect(controller?.state()).toBe("overlay");
+    await vi.waitFor(() => expect(root.dataset.windowControls).toBe("overlay"));
   });
 
   it("clears the root and goes quiet when disposed", async () => {

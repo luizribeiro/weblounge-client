@@ -9,6 +9,12 @@ export interface WindowCall {
 interface FakeWindowState {
   __fakeFullScreen: boolean;
   __windowCalls: WindowCall[];
+  __heldFullScreenAnswers: (() => void)[] | undefined;
+}
+
+interface FakeWindowOptions {
+  readonly fullScreen?: boolean;
+  readonly holdFullScreenAnswers?: boolean;
 }
 
 export const windowControls = { inlineStart: 84, blockSize: 48 } as const;
@@ -21,26 +27,43 @@ export const windowControls = { inlineStart: 84, blockSize: 48 } as const;
  */
 export async function emulateSeamlessMacApp(
   page: Page,
-  { fullScreen = false }: { readonly fullScreen?: boolean } = {},
+  { fullScreen = false, holdFullScreenAnswers = false }: FakeWindowOptions = {},
 ): Promise<void> {
   await emulateMacApp(page, { windowControls });
-  await page.addInitScript((launchFullScreen) => {
+  await page.addInitScript(
+    ({ launchFullScreen, hold }) => {
+      const state = window as unknown as FakeWindowState;
+      state.__fakeFullScreen = launchFullScreen;
+      state.__windowCalls = [];
+      state.__heldFullScreenAnswers = hold ? [] : undefined;
+      const answerFullScreen = () =>
+        new Promise<boolean>((resolve) => {
+          const answer = () => resolve(state.__fakeFullScreen);
+          if (state.__heldFullScreenAnswers === undefined) answer();
+          else state.__heldFullScreenAnswers.push(answer);
+        });
+      Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
+        value: Object.freeze({
+          invoke: (command: string, args?: { value?: unknown }) => {
+            state.__windowCalls.push({ command, value: args?.value });
+            return command === "plugin:window|is_fullscreen"
+              ? answerFullScreen()
+              : Promise.resolve(null);
+          },
+        }),
+      });
+    },
+    { launchFullScreen: fullScreen, hold: holdFullScreenAnswers },
+  );
+}
+
+export async function releaseFullScreenAnswers(page: Page): Promise<void> {
+  await page.evaluate(() => {
     const state = window as unknown as FakeWindowState;
-    state.__fakeFullScreen = launchFullScreen;
-    state.__windowCalls = [];
-    Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
-      value: Object.freeze({
-        invoke: (command: string, args?: { value?: unknown }) => {
-          state.__windowCalls.push({ command, value: args?.value });
-          return Promise.resolve(
-            command === "plugin:window|is_fullscreen"
-              ? state.__fakeFullScreen
-              : null,
-          );
-        },
-      }),
-    });
-  }, fullScreen);
+    const held = state.__heldFullScreenAnswers ?? [];
+    state.__heldFullScreenAnswers = undefined;
+    for (const answer of held) answer();
+  });
 }
 
 export async function setFakeFullScreen(

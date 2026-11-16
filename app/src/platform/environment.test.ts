@@ -142,7 +142,7 @@ describe("platform environment", () => {
     const app = installPlatformEnvironment(root, window);
 
     expect(app.windowControls()).toBe("overlay");
-    expect(root.dataset.windowControls).toBe("overlay");
+    expect(root.dataset.windowControls).toBe("pending");
     app.applyWindowTheme(themes[0] as ThemeDefinition);
     expect(commands).toContain("plugin:window|set_theme");
     app.dispose();

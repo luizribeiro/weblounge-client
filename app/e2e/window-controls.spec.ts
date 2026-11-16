@@ -8,6 +8,7 @@ import {
 import { expectSettled } from "./settled";
 import {
   emulateSeamlessMacApp,
+  releaseFullScreenAnswers,
   setFakeFullScreen,
   windowCalls,
   windowControls,
@@ -59,7 +60,7 @@ async function openSeamless(
   page: Page,
   url: string,
   conversation: string,
-  options: { readonly fullScreen?: boolean } = {},
+  options: Parameters<typeof emulateSeamlessMacApp>[1] = {},
 ): Promise<void> {
   await installNativeFeelInstrumentation(page);
   await emulateSeamlessMacApp(page, options);
@@ -209,6 +210,28 @@ test.describe("seamless macOS title bar against local Ergo", () => {
       "data-window-controls",
       "hidden",
     );
+    await expectNoWindowControls(page);
+  });
+
+  test("paints nothing until the window says whether it is in full screen", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await emulateSeamlessMacApp(page, {
+      fullScreen: true,
+      holdFullScreenAnswers: true,
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(irc.url());
+    const { root } = chrome(page);
+    await expect(root).toHaveAttribute("data-window-controls", "pending");
+    await expect(root).toHaveCSS("opacity", "0");
+
+    await releaseFullScreenAnswers(page);
+    await expect(root).toHaveAttribute("data-window-controls", "hidden");
+    await expect(root).toHaveCSS("opacity", "1");
+    await expectSettled(page, { conversation: irc.channel });
     await expectNoWindowControls(page);
   });
 
