@@ -29,8 +29,14 @@ export default defineConfig({
         "**/redaction-phone.spec.ts",
         "**/settings-phone.spec.ts",
         "**/mobile-push-budget.spec.ts",
+        "**/ios-app.spec.ts",
       ],
       use: { browserName: "chromium" },
+    },
+    {
+      name: "webkit-ios-app",
+      testMatch: "**/ios-app.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
       name: "webkit-close-phone",

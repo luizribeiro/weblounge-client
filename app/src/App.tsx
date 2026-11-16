@@ -72,6 +72,7 @@ import {
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
+import { startHostIntegration } from "./platform/native-bridge/native-host";
 import { hostNotificationCenter } from "./platform/native-bridge/native-notification-center";
 import { supportsPageNotifications } from "./platform/page-notifications/page-notification-capability";
 import {
@@ -557,8 +558,7 @@ export function App(props: AppProps) {
       shownBufferIds,
       openRoute: (route) => {
         window.focus();
-        const message = decodeOpenRouteMessage({ kind: "open-route", route });
-        if (message !== undefined) applyOpenRoute(message);
+        openRoutePath(route);
       },
     });
     pageNotifications = notifications;
@@ -569,6 +569,10 @@ export function App(props: AppProps) {
         handledOpenRouteIntents.add(message.intentId);
       }
       setPendingOpenRoute(message);
+    };
+    const openRoutePath = (route: string) => {
+      const message = decodeOpenRouteMessage({ kind: "open-route", route });
+      if (message !== undefined) applyOpenRoute(message);
     };
     const consumeOpenRoute = async (): Promise<boolean> => {
       try {
@@ -996,6 +1000,14 @@ export function App(props: AppProps) {
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
     void consumeOpenRoute();
+    const stopHostIntegration = startHostIntegration(
+      {
+        openRoute: openRoutePath,
+        background: suspendPushOwnership,
+        foreground: updateVisibility,
+      },
+      window.location.pathname,
+    );
     updateVisibility();
     void startEngine(
       mountedClient,
@@ -1033,6 +1045,7 @@ export function App(props: AppProps) {
       unregisterContextSurface();
       removeContextMenuHandler();
       stopForegroundRecorder();
+      stopHostIntegration();
       document.removeEventListener("visibilitychange", updateVisibility);
       window.removeEventListener("focus", updateVisibility);
       window.removeEventListener("blur", updateVisibility);
