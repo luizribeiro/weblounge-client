@@ -13,6 +13,7 @@
 		15D23281A3824B2D9EFC493E /* StoredTestRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C0EFA1CF7B57745173946B /* StoredTestRoute.swift */; };
 		180037152BE5084606C99DAF /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		18736F73E1D39F3C50757A75 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F971CFB6BA1EF47406D9322 /* Security.framework */; };
+		1909759C60B554DAEE3135E2 /* PushPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAF868336BF5DA82A3676AB /* PushPresenter.swift */; };
 		219B79C4E403BCB1409A3CA0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */; };
 		3148A4E83FAB5B3988D0267D /* WebPushSealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37C37D85771472B92D8AB7A /* WebPushSealer.swift */; };
 		3206618EFAB2B5CA4009EBD1 /* PreparedPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC986C23E43C783D5E379C1 /* PreparedPush.swift */; };
@@ -26,6 +27,7 @@
 		5B3D42E43DD9A13901C88DE4 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F9084A4E509617E31B9C7526 /* MetalKit.framework */; };
 		5BECB97E529B3C1A88AB6E15 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83E9585FBD3000C2A629FA71 /* WebKit.framework */; };
 		71AFB710E266E86B7947F7E5 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6559F866E46AE0486D582987 /* libapp.a */; };
+		83209F9E9536BBD9A837867F /* PushPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAF868336BF5DA82A3676AB /* PushPresenter.swift */; };
 		929C6EA0C4A8697A7041BE72 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A33FC9CE31FFAF43D0748A9 /* CoreGraphics.framework */; };
 		95481999CA85004324D6B0B5 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = EDD9D4EC3ED24AA420595F93 /* main.mm */; };
 		9966DF30BE9CBCAF46341F19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */; };
@@ -37,6 +39,7 @@
 		E45D01FB0A5717392B5054F7 /* RelayPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9CB8B4A79B56A4288E5B89 /* RelayPush.swift */; };
 		E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
 		EA22FE2B062623BB294ABC81 /* PreparedPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */; };
+		EB026FB2FFE6C1FA1CC4D604 /* PushPresenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8391BA0135225869789B0BC4 /* PushPresenterTests.swift */; };
 		F14596EC45FA786F76B688C5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */; };
 		F3F2D3BDFD5B1E3335997690 /* RelayPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9CB8B4A79B56A4288E5B89 /* RelayPush.swift */; };
 /* End PBXBuildFile section */
@@ -81,6 +84,7 @@
 		14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayloadTests.swift; sourceTree = "<group>"; };
 		167A6DF2F79F47A9D8F152E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1BA2D91AC253ADF4051E323C /* failure.rs */ = {isa = PBXFileReference; path = failure.rs; sourceTree = "<group>"; };
+		1CAF868336BF5DA82A3676AB /* PushPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPresenter.swift; sourceTree = "<group>"; };
 		1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStorage.swift; sourceTree = "<group>"; };
 		28B434B02CAA7C6AB11E5862 /* PushPayload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PushPayload.h; sourceTree = "<group>"; };
 		2AC85EA6AFF42A6EB8CF135A /* Base64URL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Base64URL.swift; sourceTree = "<group>"; };
@@ -108,6 +112,7 @@
 		7FDA4D6732F335F1E01616CE /* menu.rs */ = {isa = PBXFileReference; path = menu.rs; sourceTree = "<group>"; };
 		80885CB4C4912DF2F902B153 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		81B5FBACE96E687CBEA41126 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		8391BA0135225869789B0BC4 /* PushPresenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPresenterTests.swift; sourceTree = "<group>"; };
 		83E9585FBD3000C2A629FA71 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		8A33FC9CE31FFAF43D0748A9 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -180,6 +185,7 @@
 			children = (
 				333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */,
 				14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */,
+				8391BA0135225869789B0BC4 /* PushPresenterTests.swift */,
 				ACA0BF69FD89981B403B18EA /* RelayPushTests.swift */,
 				F4C0EFA1CF7B57745173946B /* StoredTestRoute.swift */,
 				D37C37D85771472B92D8AB7A /* WebPushSealer.swift */,
@@ -333,6 +339,7 @@
 				7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */,
 				28B434B02CAA7C6AB11E5862 /* PushPayload.h */,
 				C50D4220499B5323D07B1C26 /* PushPayload.swift */,
+				1CAF868336BF5DA82A3676AB /* PushPresenter.swift */,
 				3B9CB8B4A79B56A4288E5B89 /* RelayPush.swift */,
 			);
 			path = NotificationService;
@@ -515,6 +522,8 @@
 				EA22FE2B062623BB294ABC81 /* PreparedPushTests.swift in Sources */,
 				40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */,
 				594A95AE26B163BB5A15C8AE /* PushPayloadTests.swift in Sources */,
+				83209F9E9536BBD9A837867F /* PushPresenter.swift in Sources */,
+				EB026FB2FFE6C1FA1CC4D604 /* PushPresenterTests.swift in Sources */,
 				F3F2D3BDFD5B1E3335997690 /* RelayPush.swift in Sources */,
 				B20A8BA7E685982D0ECAF48D /* RelayPushTests.swift in Sources */,
 				E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */,
@@ -539,6 +548,7 @@
 				A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */,
 				3206618EFAB2B5CA4009EBD1 /* PreparedPush.swift in Sources */,
 				180037152BE5084606C99DAF /* PushPayload.swift in Sources */,
+				1909759C60B554DAEE3135E2 /* PushPresenter.swift in Sources */,
 				E45D01FB0A5717392B5054F7 /* RelayPush.swift in Sources */,
 				156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */,
 			);
