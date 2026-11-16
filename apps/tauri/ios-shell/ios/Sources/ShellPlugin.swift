@@ -3,6 +3,11 @@ import Tauri
 import UserNotifications
 
 struct WatchEventsArgs: Decodable { let handler: Channel }
+struct CreateRouteKeysArgs: Decodable {
+  let routeId: String
+  let route: RouteMeta
+}
+struct RouteIdArgs: Decodable { let routeId: String }
 
 /// The iOS shell's Apple API calls. Each command answers in the bridge's JSON shapes; the Rust
 /// side validates every answer into the bridge's types before the page sees it.
@@ -54,6 +59,29 @@ final class ShellPlugin: Plugin {
     case .unknown: invoke.resolve(Optional<String>.none)
     case .failed(let failure): invoke.reject(failure)
     case .token(let token): invoke.resolve(registrationAnswer(token))
+    }
+  }
+
+  @objc func createRouteKeys(_ invoke: Invoke) {
+    invoke.settle(.keychain) {
+      let args = try invoke.parseArgs(CreateRouteKeysArgs.self)
+      return try RouteKeyMaker(storage: try storage()).create(routeId: args.routeId, meta: args.route)
+    }
+  }
+
+  @objc func dropRouteKeys(_ invoke: Invoke) {
+    invoke.settle(.keychain) {
+      let args = try invoke.parseArgs(RouteIdArgs.self)
+      try RouteKeyMaker(storage: try storage()).drop(routeId: args.routeId)
+      return nil
+    }
+  }
+
+  private func storage() throws -> SharedStorage {
+    do {
+      return try SharedStorage.fromInfoPlist()
+    } catch {
+      throw BridgeFailure(.appGroup, error)
     }
   }
 }

@@ -17,6 +17,13 @@ struct BridgeFailure: Error {
     self.kind = kind
     self.message = String(describing: error)
   }
+
+  static func storage(_ error: Error) -> BridgeFailure {
+    if case SharedStorageError.keychain = error {
+      return BridgeFailure(.keychain, error)
+    }
+    return BridgeFailure(.appGroup, error)
+  }
 }
 
 extension Invoke {

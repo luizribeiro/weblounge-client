@@ -50,6 +50,10 @@ pub fn run() -> tauri::Result<()> {
             native::commands::request_push_permission,
             #[cfg(target_os = "ios")]
             native::commands::push_target,
+            #[cfg(target_os = "ios")]
+            native::commands::create_route_keys,
+            #[cfg(target_os = "ios")]
+            native::commands::drop_route_keys,
         ])
         .setup(setup);
     #[cfg(target_os = "ios")]

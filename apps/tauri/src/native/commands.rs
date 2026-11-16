@@ -4,11 +4,14 @@
 use serde::{Serialize, de::DeserializeOwned};
 use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
-use weblounge_native_bridge::{NativeBridgeError, PushPermission, PushTarget};
+use weblounge_native_bridge::{
+    CreateRouteKeysRequest, DropRouteKeysRequest, NativeBridgeError, PushPermission, PushTarget,
+    RouteKeys,
+};
 
 use super::{
     answers::Registration,
-    failure::{self, Fallback, apns_registration, notification_center},
+    failure::{self, Fallback, apns_registration, keychain, notification_center},
 };
 
 pub(super) async fn call<T: DeserializeOwned>(
@@ -47,4 +50,20 @@ pub async fn push_target(app: AppHandle) -> Result<Option<PushTarget>, NativeBri
     let registration: Option<Registration> =
         call(&app, "pushTarget", (), apns_registration).await?;
     Ok(registration.map(Registration::into_target))
+}
+
+#[tauri::command]
+pub async fn create_route_keys(
+    app: AppHandle,
+    request: CreateRouteKeysRequest,
+) -> Result<RouteKeys, NativeBridgeError> {
+    call(&app, "createRouteKeys", request, keychain).await
+}
+
+#[tauri::command]
+pub async fn drop_route_keys(
+    app: AppHandle,
+    request: DropRouteKeysRequest,
+) -> Result<(), NativeBridgeError> {
+    call(&app, "dropRouteKeys", request, keychain).await
 }
