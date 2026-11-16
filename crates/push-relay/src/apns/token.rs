@@ -1,4 +1,7 @@
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::{Mutex, PoisonError},
+    time::Duration,
+};
 
 use p256::ecdsa::SigningKey;
 use serde::Serialize;
@@ -52,7 +55,12 @@ impl ProviderTokens {
         self.at(Instant::now(), unix_seconds()?)
     }
 
-    fn at(&self, now: Instant, unix_now: u64) -> Result<String> {
+    /// Forgets the cached token, so the next delivery signs a fresh one.
+    pub(super) fn invalidate(&self) {
+        *self.cached.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    pub(super) fn at(&self, now: Instant, unix_now: u64) -> Result<String> {
         let mut cached = self
             .cached
             .lock()
@@ -145,5 +153,17 @@ mod tests {
             .at(start + Duration::from_mins(41), ISSUED + 2_460)
             .expect("new cached token");
         assert_eq!(reused_again, refreshed);
+    }
+
+    #[test]
+    fn an_invalidated_token_is_reissued_at_once() {
+        let tokens = tokens();
+        let start = Instant::now();
+        tokens.at(start, ISSUED).expect("first token");
+        tokens.invalidate();
+        let reissued = tokens
+            .at(start + Duration::from_secs(1), ISSUED + 1)
+            .expect("token after invalidation");
+        assert_eq!(part(&reissued, 1)["iat"], ISSUED + 1);
     }
 }

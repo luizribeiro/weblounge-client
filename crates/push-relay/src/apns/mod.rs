@@ -198,6 +198,14 @@ fn payload(delivery: &Delivery) -> Result<Vec<u8>> {
     .map_err(|error| Error::BadRequest(error.to_string()))
 }
 
+fn rejects_provider_token(status: StatusCode, reason: Option<&str>) -> bool {
+    status == StatusCode::FORBIDDEN
+        && matches!(
+            reason,
+            Some("ExpiredProviderToken" | "InvalidProviderToken")
+        )
+}
+
 fn outcome(status: StatusCode, reason: Option<&str>) -> Result<PushOutcome> {
     match (status, reason) {
         (status, _) if status.is_success() => Ok(PushOutcome::Accepted),
@@ -223,6 +231,9 @@ impl PushSender for ApnsSender {
         } else {
             rejection_reason(response).await
         };
+        if rejects_provider_token(status, reason.as_deref()) {
+            self.tokens.invalidate();
+        }
         let outcome = outcome(status, reason.as_deref());
         log_upstream_delivery(&target_host, status, reason.as_deref(), &outcome);
         outcome

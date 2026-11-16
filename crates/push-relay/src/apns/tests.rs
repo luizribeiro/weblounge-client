@@ -200,6 +200,86 @@ async fn unregistered_and_bad_device_tokens_are_dead_targets() {
     }
 }
 
+fn issued_at(request: &ApnsRequest) -> u64 {
+    let jwt = header(request, "authorization")
+        .strip_prefix("bearer ")
+        .expect("bearer token");
+    jwt_part(jwt, 1)["iat"].as_u64().expect("iat")
+}
+
+const CACHED_ISSUED_AT: u64 = 1_762_000_000;
+
+async fn fixture_with_cached_token() -> Fixture {
+    let fixture = fixture().await;
+    fixture
+        .sender
+        .tokens
+        .at(tokio::time::Instant::now(), CACHED_ISSUED_AT)
+        .expect("cached token");
+    fixture
+}
+
+async fn send_once(fixture: &Fixture) -> crate::Result<PushOutcome> {
+    fixture
+        .sender
+        .send(delivery(
+            ApnsEnvironment::Production,
+            b"ciphertext".to_vec(),
+        ))
+        .await
+}
+
+#[tokio::test]
+async fn a_rejected_provider_token_is_replaced_on_the_next_delivery() {
+    for reason in ["ExpiredProviderToken", "InvalidProviderToken"] {
+        let fixture = fixture_with_cached_token().await;
+        let body = format!(r#"{{"reason":"{reason}"}}"#);
+        fixture
+            .apns
+            .reply(StatusCode::FORBIDDEN, Box::leak(body.into_boxed_str()));
+        let rejected = send_once(&fixture).await;
+        assert!(
+            matches!(rejected, Err(Error::PushServiceUnavailable)),
+            "{reason}: {rejected:?}"
+        );
+        let before = unix_seconds().expect("clock");
+        send_once(&fixture)
+            .await
+            .expect("accepted with a fresh token");
+
+        let requests = fixture.apns.requests();
+        assert_eq!(requests.len(), 2, "{reason}: no retry");
+        assert_eq!(issued_at(&requests[0]), CACHED_ISSUED_AT);
+        assert!(issued_at(&requests[1]) >= before, "{reason}");
+    }
+}
+
+#[tokio::test]
+async fn other_forbidden_answers_keep_the_cached_provider_token() {
+    let fixture = fixture_with_cached_token().await;
+    fixture.apns.reply(
+        StatusCode::FORBIDDEN,
+        r#"{"reason":"BadCertificateEnvironment"}"#,
+    );
+    fixture.apns.reply(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        r#"{"reason":"InternalServerError"}"#,
+    );
+    for _ in 0..2 {
+        assert!(matches!(
+            send_once(&fixture).await,
+            Err(Error::PushServiceUnavailable)
+        ));
+    }
+    send_once(&fixture).await.expect("accepted");
+    let requests = fixture.apns.requests();
+    assert!(
+        requests
+            .iter()
+            .all(|request| issued_at(request) == CACHED_ISSUED_AT)
+    );
+}
+
 #[tokio::test]
 async fn other_rejections_are_ordinary_failures() {
     let fixture = fixture().await;
