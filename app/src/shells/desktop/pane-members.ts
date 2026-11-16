@@ -47,6 +47,9 @@ export function createPaneMembers(options: PaneMembersOptions) {
     available() && presentation() === "drawer" && drawer() !== "closed";
   const drawerClosing = () => drawerShown() && drawer() === "closing";
   const dismissDrawer = () => setDrawer("closed");
+  const slideDrawerClosed = () => {
+    if (drawer() === "open") setDrawer("closing");
+  };
   const closeDrawer = () => {
     dismissDrawer();
     options.focusComposer();
@@ -63,7 +66,7 @@ export function createPaneMembers(options: PaneMembersOptions) {
       options.onDrawerOpen();
       setDrawer("open");
     } else {
-      setDrawer("closing");
+      slideDrawerClosed();
     }
   };
   return {
@@ -74,6 +77,7 @@ export function createPaneMembers(options: PaneMembersOptions) {
     inlineShown,
     pressed: () => inlineShown() || (drawerShown() && !drawerClosing()),
     setWidth,
+    slideDrawerClosed,
   };
 }
 

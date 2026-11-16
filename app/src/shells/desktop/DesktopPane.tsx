@@ -169,7 +169,13 @@ function PaneConversation(props: DesktopPaneProps) {
         class={styles.paneBody}
         data-members-inline={members.inlineShown() ? "true" : undefined}
       >
-        <div class={styles.conversationBody}>
+        <div
+          class={styles.conversationBody}
+          onInput={(event) => {
+            if (event.target.closest("[data-composer]") !== null)
+              members.slideDrawerClosed();
+          }}
+        >
           {buffer().available === false && (
             <p role="status">{t("shell.conversation_unavailable")}</p>
           )}

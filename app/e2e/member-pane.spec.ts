@@ -213,6 +213,50 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("typing in the docked list closes it into the composer", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const drawer = page.getByRole("dialog", { name: "Members" });
+
+    await openDockedDrawer(page);
+    await expect(page.locator("[data-overlay-drawer] :focus")).toHaveCount(1);
+    await page.keyboard.type("hello");
+    await expect(drawer).toHaveCount(0);
+    const composer = composerOf(page, irc.channel);
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue("hello");
+    await nativeFeelAudit(page);
+  });
+
+  test("typing in the composer closes the docked list", async ({
+    page,
+    irc,
+  }) => {
+    const second = irc.channelNamed("second");
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 900, height: 700 });
+    await launch(page, irc, [irc.channel, second]);
+    await openBuffer(page, irc.channel);
+    const drawer = page.getByRole("dialog", { name: "Members" });
+
+    await openDockedDrawer(page);
+    await page.keyboard.press("Alt+ArrowDown");
+    await expectSettled(page, { conversation: second });
+    const composer = composerOf(page, second);
+    await expect(composer).toBeFocused();
+    await expect(drawer).toBeVisible();
+    await page.keyboard.type("hi");
+    await expect(drawer).toHaveCount(0);
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue("hi");
+    await nativeFeelAudit(page);
+  });
+
   test("a confirmation over the docked list still swallows typing", async ({
     page,
     irc,
