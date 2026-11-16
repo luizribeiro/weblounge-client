@@ -134,6 +134,25 @@ describe("platform environment", () => {
     app.dispose();
   });
 
+  it("lets the iPhone app's identity pick the mobile target over mouse input", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        new FakeMediaQuery(query, false) as unknown as MediaQueryList,
+    );
+    vi.stubGlobal("__WEBLOUNGE_SHELL__", { kind: "ios-app", version: "0.1.3" });
+    const root = document.createElement("div");
+    const app = installPlatformEnvironment(root, window);
+
+    expect(app.environment()).toMatchObject({
+      input: "touch",
+      display: "tauri",
+      shell: "mobile",
+    });
+    expect(app.shortcutShell).toBe("native");
+    app.dispose();
+  });
+
   it("has no window controls in a plain browser", () => {
     const root = document.createElement("div");
     const browser = installPlatformEnvironment(root, window);

@@ -57,6 +57,7 @@ let installed: PlatformController | undefined;
 
 const platformTargetForHost: Readonly<Record<HostShell, PlatformTarget>> = {
   "macos-app": "tauri-desktop",
+  "ios-app": "tauri-mobile",
   web: "web",
 };
 

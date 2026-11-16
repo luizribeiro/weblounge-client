@@ -24,12 +24,24 @@ describe("host shell", () => {
     expect(hostShell(scope)).toBe("macos-app");
   });
 
+  it("recognises the iPhone app's injected identity", () => {
+    const scope = injected(
+      Object.freeze({ kind: "ios-app", version: "0.1.3" }),
+    );
+
+    expect(hostShellIdentity(scope)).toEqual({
+      kind: "ios-app",
+      version: "0.1.3",
+    });
+    expect(hostShell(scope)).toBe("ios-app");
+  });
+
   it("treats a missing, unknown or malformed identity as a plain browser", () => {
     for (const value of [
       undefined,
       null,
       "macos-app",
-      { kind: "ios-app", version: "0.1.0" },
+      { kind: "android-app", version: "0.1.0" },
       { kind: "macos-app" },
       { kind: "macos-app", version: 1 },
     ]) {

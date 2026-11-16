@@ -1,4 +1,4 @@
-export type HostShellKind = "macos-app";
+export type HostShellKind = "macos-app" | "ios-app";
 export type HostShell = HostShellKind | "web";
 
 export interface WindowControls {
@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-const hostShellKinds: readonly HostShellKind[] = ["macos-app"];
+const hostShellKinds: readonly HostShellKind[] = ["macos-app", "ios-app"];
 
 // Presentation only: any page script can set this global, so it must never gate a security decision.
 export function hostShellIdentity(
