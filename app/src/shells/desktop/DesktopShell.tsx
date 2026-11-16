@@ -64,6 +64,7 @@ import {
   writeMemberVisibility,
 } from "../../navigation/member-visibility-storage";
 import { platformEnvironment } from "../../platform/environment";
+import { windowDragRegion } from "../../platform/window-controls";
 import { translate } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
@@ -241,6 +242,7 @@ export function DesktopShell(props: DesktopShellProps) {
   };
   const memberWindow = () => props.memberWindows?.get(memberViewId());
   const sidebarInline = () => platform.environment().desktopPanels === "inline";
+  const sidebarDocked = () => sidebarShown() && sidebarInline();
   const focusComposer = () => focusComposerIn(() => shellElement);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   let settingsInvoker: Element | null = null;
@@ -273,7 +275,7 @@ export function DesktopShell(props: DesktopShellProps) {
           network.state === "online",
       ),
       ...(currentBufferKind === undefined ? {} : { currentBufferKind }),
-      listActive: (sidebarShown() && sidebarInline()) || drawer() === "sidebar",
+      listActive: sidebarDocked() || drawer() === "sidebar",
     };
   };
   const showBuffer = (bufferId: number | undefined) => {
@@ -513,10 +515,10 @@ export function DesktopShell(props: DesktopShellProps) {
 
   return (
     <div class={styles.shell} data-desktop-shell="true" ref={shellElement}>
-      {sidebarShown() && sidebarInline() && sidebarView()}
+      {sidebarDocked() && sidebarView()}
       <main
         class={styles.main}
-        data-chromeless={sidebarShown() && sidebarInline() ? "false" : "true"}
+        data-chromeless={sidebarDocked() ? "false" : "true"}
       >
         <DesktopPane
           buffer={activeBuffer()}
@@ -524,6 +526,10 @@ export function DesktopShell(props: DesktopShellProps) {
           completion={props.completion}
           composerNotice={props.composerNotice}
           focusComposerOnMount={!retainSidebarFocus()}
+          headerDragRegion={windowDragRegion(platform.windowControls())}
+          headerWindowControlsInset={
+            platform.windowControls() === "overlay" && !sidebarDocked()
+          }
           foreground={props.foreground}
           foregroundExitEpoch={props.foregroundExitEpoch}
           historyStates={props.historyStates}

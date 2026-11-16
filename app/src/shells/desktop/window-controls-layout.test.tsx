@@ -1,4 +1,4 @@
-import { render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import {
@@ -24,7 +24,7 @@ let platform: PlatformController | undefined;
 
 afterEach(() => platform?.dispose());
 
-function installMacApp(fullScreen: boolean): void {
+function installMacApp(fullScreen: boolean, width = 1024): void {
   vi.stubGlobal("__WEBLOUNGE_SHELL__", {
     kind: "macos-app",
     version: "0.2.0",
@@ -36,7 +36,12 @@ function installMacApp(fullScreen: boolean): void {
         command === "plugin:window|is_fullscreen" ? fullScreen : null,
       ),
   });
-  platform = installPlatformEnvironment(document.body, window);
+  platform = installPlatformEnvironment(document.body, window, {
+    observeWidth: (_element, onWidth) => {
+      onWidth(width);
+      return () => {};
+    },
+  });
 }
 
 function renderShell(): void {
@@ -64,6 +69,14 @@ function lightsRow(): HTMLElement | null {
   return document.querySelector("[data-sidebar-lights-row]");
 }
 
+function header(): HTMLElement | null {
+  return document.querySelector("[data-main-header]");
+}
+
+function toggleSidebar(): void {
+  fireEvent.click(screen.getByRole("button", { name: "Toggle channel list" }));
+}
+
 function brandButtons(): number {
   return (
     document
@@ -81,6 +94,30 @@ it("moves search and settings into a draggable lights row", () => {
   expect(row?.querySelector('[aria-label="Settings"]')).not.toBeNull();
   expect(row?.querySelector("[data-switcher-launcher]")).not.toBeNull();
   expect(brandButtons()).toBe(0);
+  expect(header()).toHaveAttribute("data-tauri-drag-region", "deep");
+  expect(header()).not.toHaveAttribute("data-window-controls-inset");
+});
+
+it("insets the header for the lights while the sidebar is hidden", () => {
+  installMacApp(false);
+  renderShell();
+
+  toggleSidebar();
+  expect(header()).toHaveAttribute("data-window-controls-inset");
+  expect(header()).toHaveAttribute("data-tauri-drag-region", "deep");
+  toggleSidebar();
+  expect(header()).not.toHaveAttribute("data-window-controls-inset");
+});
+
+it("insets the header and opens the drawer under the lights when narrow", () => {
+  installMacApp(false, 400);
+  renderShell();
+
+  expect(header()).toHaveAttribute("data-window-controls-inset");
+  expect(header()).toHaveAttribute("data-tauri-drag-region", "deep");
+  toggleSidebar();
+  const drawer = screen.getByRole("dialog", { name: "Channels" });
+  expect(drawer.querySelector("[data-sidebar-lights-row]")).not.toBeNull();
 });
 
 it("gives the brand row its buttons back in full screen", async () => {
@@ -89,6 +126,9 @@ it("gives the brand row its buttons back in full screen", async () => {
 
   await waitFor(() => expect(lightsRow()).toBeNull());
   expect(brandButtons()).toBe(2);
+  toggleSidebar();
+  expect(header()).not.toHaveAttribute("data-tauri-drag-region");
+  expect(header()).not.toHaveAttribute("data-window-controls-inset");
 });
 
 it("keeps the brand row's buttons in a plain browser", () => {
@@ -96,4 +136,7 @@ it("keeps the brand row's buttons in a plain browser", () => {
 
   expect(lightsRow()).toBeNull();
   expect(brandButtons()).toBe(2);
+  toggleSidebar();
+  expect(header()).not.toHaveAttribute("data-tauri-drag-region");
+  expect(header()).not.toHaveAttribute("data-window-controls-inset");
 });

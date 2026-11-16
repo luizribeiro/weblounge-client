@@ -10,6 +10,10 @@
   padding-inline: 10px;
 }
 
+.header[data-window-controls-inset] {
+  padding-inline-start: var(--wl-window-controls-inline);
+}
+
 .identity {
   align-items: baseline;
   display: flex;

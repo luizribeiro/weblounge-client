@@ -14,13 +14,20 @@ interface ConversationHeaderProps {
   readonly membersTooltip: string;
   readonly memberCount?: number | undefined;
   readonly membersPressed?: boolean | undefined;
+  readonly dragRegion?: "deep" | undefined;
+  readonly windowControlsInset?: boolean | undefined;
   readonly onToggleSidebar: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onToggleMembers: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
 }
 
 export function ConversationHeader(props: ConversationHeaderProps) {
   return (
-    <header class={styles.header} data-main-header="true">
+    <header
+      class={styles.header}
+      data-main-header="true"
+      data-tauri-drag-region={props.dragRegion}
+      data-window-controls-inset={props.windowControlsInset || undefined}
+    >
       <button
         aria-label={t("conversation.toggle_sidebar")}
         class={styles.iconButton}

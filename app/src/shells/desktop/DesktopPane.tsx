@@ -59,6 +59,8 @@ export interface DesktopPaneProps extends SharedShellProps {
   readonly buffer: BufferProjection | undefined;
   readonly network: NetworkProjection | undefined;
   readonly focusComposerOnMount: boolean;
+  readonly headerDragRegion: "deep" | undefined;
+  readonly headerWindowControlsInset: boolean;
   readonly memberWindow: MemberWindow | undefined;
   readonly membersShown: boolean;
   readonly membersTooltip: string;
@@ -153,6 +155,7 @@ function PaneConversation(props: DesktopPaneProps) {
       }}
     >
       <ConversationHeader
+        dragRegion={props.headerDragRegion}
         memberCount={
           buffer().kind === "channel" ? (buffer().member_count ?? 0) : undefined
         }
@@ -164,6 +167,7 @@ function PaneConversation(props: DesktopPaneProps) {
         sync={sync}
         title={buffer().title}
         topic={buffer().topic ?? undefined}
+        windowControlsInset={props.headerWindowControlsInset}
       />
       <div
         class={styles.paneBody}
