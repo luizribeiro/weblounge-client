@@ -270,13 +270,16 @@ impl HttpTransport for ReqwestTransport {
             .send()
             .await
             .map(|response| response.status())
-            .map_err(|error| {
-                if error.is_connect() {
-                    Error::DeliveryUnavailable
-                } else {
-                    Error::Http(error)
-                }
-            })
+            .map_err(upstream_error)
+    }
+}
+
+/// An unreachable push service is the target's problem; any other failure is the request's.
+pub(crate) fn upstream_error(error: reqwest::Error) -> Error {
+    if error.is_connect() {
+        Error::DeliveryUnavailable
+    } else {
+        Error::Http(error)
     }
 }
 
@@ -596,25 +599,34 @@ impl PushSender for WebPushSender {
         })
         .await
         .map_err(|_| Error::DeliveryUnavailable)??;
-        let outcome = if status.is_success() {
-            "accepted"
-        } else if matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE) {
-            "dead"
-        } else {
-            "rejected"
-        };
-        tracing::info!(
-            target_host,
-            status = status.as_u16(),
-            outcome,
-            "upstream delivery"
-        );
-        match status {
+        let outcome = match status {
             status if status.is_success() => Ok(PushOutcome::Accepted),
             StatusCode::NOT_FOUND | StatusCode::GONE => Ok(PushOutcome::Dead),
             _ => Err(Error::PushServiceUnavailable),
-        }
+        };
+        log_upstream_delivery(&target_host, status, None, &outcome);
+        outcome
     }
+}
+
+/// Logs a push service's answer with only its host, never the target address or payload.
+pub(crate) fn log_upstream_delivery(
+    target_host: &str,
+    status: StatusCode,
+    reason: Option<&str>,
+    outcome: &Result<PushOutcome>,
+) {
+    tracing::info!(
+        target_host,
+        status = status.as_u16(),
+        reason,
+        outcome = match outcome {
+            Ok(PushOutcome::Accepted) => "accepted",
+            Ok(PushOutcome::Dead) => "dead",
+            Err(_) => "rejected",
+        },
+        "upstream delivery"
+    );
 }
 
 fn encrypt_payload(content: &[u8], p256dh: &str, auth: &str) -> Result<Vec<u8>> {
