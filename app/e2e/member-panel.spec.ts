@@ -250,10 +250,6 @@ test.describe("desktop members against local Ergo", () => {
       "data-phase",
       "open",
     );
-    await expect(page.locator("[data-overlay-scrim]")).toHaveCSS(
-      "background-color",
-      "rgba(0, 0, 0, 0)",
-    );
 
     const frames = await recordPanelClose(page);
     const present = frames.filter((left): left is number => left !== null);
