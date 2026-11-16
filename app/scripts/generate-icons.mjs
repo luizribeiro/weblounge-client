@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const appDirectory = resolve(import.meta.dirname, "..");
@@ -17,6 +17,16 @@ const mark = favicon.slice(
 );
 
 export const brandColors = { felt: "#1B2A22", paper: "#EFE8D8" };
+const loungeTheme = JSON.parse(
+  await readFile(resolve(appDirectory, "themes/lounge.json"), "utf8"),
+);
+const disconnectedTile = "#8C8F87";
+// tab-indicator-writer.ts names these files by suffix (design 23, Badging).
+const faviconVariants = [
+  { suffix: "", tile: brandColors.felt },
+  { suffix: "-unread", tile: loungeTheme.colors.mentionBadge },
+  { suffix: "-disconnected", tile: disconnectedTile },
+];
 // Local desktop builds wear a yellow tile so they are never mistaken for the installed release.
 const devColors = { tile: "#E8B530", mark: brandColors.felt };
 
@@ -32,8 +42,13 @@ await Promise.all(
   ),
 );
 await Promise.all([
-  copyFile(faviconPath, resolve(iconDirectory, "favicon.svg")),
-  renderPng("favicon-32.png", 32, favicon),
+  ...faviconVariants.flatMap(({ suffix, tile }) => {
+    const svg = retiledFavicon(tile);
+    return [
+      writeFile(resolve(iconDirectory, `favicon${suffix}.svg`), svg),
+      renderPng(`favicon-32${suffix}.png`, 32, svg),
+    ];
+  }),
   renderPng("apple-touch-icon.png", 180, appIconSvg(180, { markScale: 0.78 })),
   renderPng("icon-192.png", 192, appIconSvg(192, { markScale: 0.78 })),
   renderPng("icon-512.png", 512, appIconSvg(512, { markScale: 0.78 })),
@@ -52,6 +67,13 @@ await Promise.all([
     desktopDevIconDirectory,
   ),
 ]);
+
+function retiledFavicon(tile) {
+  const brandTile = `fill="${brandColors.felt}"`;
+  if (!favicon.includes(brandTile))
+    throw new Error("favicon.svg no longer draws the brand felt tile");
+  return favicon.replace(brandTile, `fill="${tile}"`);
+}
 
 function appIconSvg(
   size,

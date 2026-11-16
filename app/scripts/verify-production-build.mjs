@@ -116,8 +116,9 @@ async function verifyCspAssets(directory) {
 }
 
 async function verifyIcons(directory) {
+  const faviconSuffixes = ["", "-unread", "-disconnected"];
   const expected = new Map([
-    ["favicon-32.png", 32],
+    ...faviconSuffixes.map((suffix) => [`favicon-32${suffix}.png`, 32]),
     ["apple-touch-icon.png", 180],
     ["icon-192.png", 192],
     ["icon-512.png", 512],
@@ -135,13 +136,14 @@ async function verifyIcons(directory) {
     if (filename === "apple-touch-icon.png" && !image.opaque) {
       throw new Error("apple-touch-icon.png contains transparent pixels");
     }
-    if (filename !== "favicon-32.png" && image.firstPixel !== "1b2a22") {
+    if (!filename.startsWith("favicon-32") && image.firstPixel !== "1b2a22") {
       throw new Error(
         `${filename} background is #${image.firstPixel}, expected the brand felt green #1b2a22`,
       );
     }
   }
-  await readFile(resolve(directory, "icons/favicon.svg"), "utf8");
+  for (const suffix of faviconSuffixes)
+    await readFile(resolve(directory, "icons", `favicon${suffix}.svg`), "utf8");
 }
 
 async function verifyStartupImages(directory) {
