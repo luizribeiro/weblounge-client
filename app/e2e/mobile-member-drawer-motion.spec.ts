@@ -52,6 +52,23 @@ test("opens with a fast start, anchored right, over a painted chat", {
   expectChatStill(before, frames);
 });
 
+test("keeps the phone drawer floating with its title, shadow and scrim", async ({
+  page,
+}) => {
+  await openDrawer(page);
+  const drawer = page.getByRole("dialog", { name: "Members" });
+  await expect(drawer).toHaveAttribute("aria-modal", "true");
+  await expect(
+    drawer.getByRole("button", { name: "Close member list" }),
+  ).toBeVisible();
+  await expect(drawer.locator("header")).toContainText("Members");
+  await expect(drawer).not.toHaveCSS("box-shadow", "none");
+  await expect(page.locator("[data-overlay-scrim]")).not.toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+});
+
 for (const kind of ["close-button", "scrim", "escape"] as const) {
   test(`closes via ${kind} by sliding fully off-screen`, {
     tag: "@serial",
