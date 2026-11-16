@@ -1,6 +1,7 @@
 # 33 — iOS app through TestFlight
 
-Status: draft for Luiz's review (inputs 2026-11-15). Nothing here is built. Backlog F36; extends
+Status: approved by Luiz (2026-11-16), every decision as recommended. The one-crate split and the
+darwin dev shell are built; the rest is not. Backlog F36; extends
 design 27 (wrapper) and 28 (release) to iOS, and fills in design 23's "Later: Tauri native" for
 iOS.
 
@@ -337,21 +338,21 @@ Universal Links and a custom URL scheme; share extension, Live Activities and wi
   10 minutes and return (no blank view); keyboard, safe areas and status bar against PWA
   screenshots; the S3 frame-rate measurement.
 
-## Decisions for Luiz
+## Decisions
 
-1. Bundle ID `org.weblounge.ios` (dev `org.weblounge.ios.dev`)? **Yes.**
-2. Load the hosted `beta.weblounge.org`, as the Mac wrapper does, rather than bundling the UI? **Yes.**
+1. Bundle ID `org.weblounge.ios` (dev `org.weblounge.ios.dev`)? **Agreed.**
+2. Load the hosted `beta.weblounge.org`, as the Mac wrapper does, rather than bundling the UI? **Agreed.**
 3. Ship the Notification Service Extension (detailed text) in the first build rather than generic
-   "New message" pushes? **Yes.**
+   "New message" pushes? **Agreed.**
 4. Move decrypt and notification formatting into `push-payload` (Rust), shared by the service
-   worker and the NSE? **Yes**, so the two can't drift.
-5. One `apps/tauri` crate for macOS and iOS? **Yes.**
+   worker and the NSE? **Agreed**, so the two can't drift.
+5. One `apps/tauri` crate for macOS and iOS? **Agreed.**
 6. Should the iOS app take part in the relay's foreground lease (a phone in use quiets the laptop
-   and the reverse), overriding design 23's "native needs no lease"? **Yes.**
+   and the reverse), overriding design 23's "native needs no lease"? **Agreed.**
 7. Internal TestFlight (you) first, then an external group with a public link for friends, which
-   needs Beta App Review and a reviewer demo account? **Yes.** Who creates the demo account? **You.**
-8. Declare the export-compliance exemption (`ITSAppUsesNonExemptEncryption = false`)? **Yes.**
-9. Share the desktop's version number and use the commit count as the build number? **Yes.**
-10. iPhone only, iOS 17 minimum? **Yes.**
-11. Ship the app even if S3 shows WKWebView stays at 60 Hz for page rendering? **Yes**, push alone
+   needs Beta App Review and a reviewer demo account? **Agreed.** Luiz creates the demo account.
+8. Declare the export-compliance exemption (`ITSAppUsesNonExemptEncryption = false`)? **Agreed.**
+9. Share the desktop's version number and use the commit count as the build number? **Agreed.**
+10. iPhone only, iOS 17 minimum? **Agreed.**
+11. Ship the app even if S3 shows WKWebView stays at 60 Hz for page rendering? **Agreed**, push alone
     justifies it.
