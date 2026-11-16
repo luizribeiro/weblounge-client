@@ -14,3 +14,13 @@ export function commandForInput(
       command.aliases.some((alias) => alias.toLowerCase() === name),
   );
 }
+
+/** The command when the input is the command alone, such as `/file`. */
+export function bareCommandForInput(
+  input: string,
+  commands: readonly CommandSpec[],
+): CommandSpec | undefined {
+  return /^\/\s*\S+$/u.test(input.trim())
+    ? commandForInput(input, commands)
+    : undefined;
+}
