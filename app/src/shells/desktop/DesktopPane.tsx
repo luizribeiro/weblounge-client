@@ -241,6 +241,7 @@ function PaneConversation(props: DesktopPaneProps) {
           edge="right"
           label={t("members.label")}
           onClose={() => members.closeDrawer()}
+          scrim="clear"
           width={memberColumnWidthToken}
         >
           {(requestClose) => (

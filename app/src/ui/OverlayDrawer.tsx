@@ -24,6 +24,7 @@ interface OverlayDrawerProps {
   readonly dragProgress?: number | undefined;
   readonly dragReturning?: boolean | undefined;
   readonly onDragReturnEnd?: (() => void) | undefined;
+  readonly scrim?: "dimmed" | "clear" | undefined;
   readonly width: string;
 }
 
@@ -126,6 +127,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
       data-moving={phase() !== "open" || following() ? "true" : undefined}
       data-overlay-drawer={props.edge}
       data-phase={phase()}
+      data-scrim={props.scrim ?? "dimmed"}
       style={{
         "--wl-overlay-drawer-offset": following()
           ? props.dragProgress

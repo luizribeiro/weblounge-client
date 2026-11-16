@@ -26,6 +26,10 @@
   width: 100%;
 }
 
+.overlay[data-scrim="clear"] .backdrop {
+  background: transparent;
+}
+
 .drawer {
   bottom: 0;
   box-shadow: var(--wl-effect-overlay-shadow);
