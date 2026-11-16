@@ -15,6 +15,8 @@ pub enum NativeCommand {
     CreateRouteKeys,
     /// Forgets one route's keys and metadata.
     DropRouteKeys,
+    /// Lists the routes whose pushes the extension could no longer decrypt.
+    RoutesNeedingReregistration,
     /// Drains the messages the extension queued for the timeline.
     TakePushedMessages,
     /// Sets the app icon badge.
@@ -42,6 +44,10 @@ mod tests {
             (NativeCommand::PushTarget, "push_target"),
             (NativeCommand::CreateRouteKeys, "create_route_keys"),
             (NativeCommand::DropRouteKeys, "drop_route_keys"),
+            (
+                NativeCommand::RoutesNeedingReregistration,
+                "routes_needing_reregistration",
+            ),
             (NativeCommand::TakePushedMessages, "take_pushed_messages"),
             (NativeCommand::SetBadge, "set_badge"),
             (

@@ -8,6 +8,7 @@ import type { PushedMessage } from "./generated/PushedMessage";
 import type { PushPermission } from "./generated/PushPermission";
 import type { PushTarget } from "./generated/PushTarget";
 import type { RemoveDeliveredNotificationsRequest } from "./generated/RemoveDeliveredNotificationsRequest";
+import type { RouteId } from "./generated/RouteId";
 import type { RouteKeys } from "./generated/RouteKeys";
 import type { SetBadgeRequest } from "./generated/SetBadgeRequest";
 import type { WriteNotificationCountsRequest } from "./generated/WriteNotificationCountsRequest";
@@ -26,6 +27,10 @@ interface NativeCommandSignatures
   readonly push_target: Signature<NoRequest, PushTarget | null>;
   readonly create_route_keys: Signature<CreateRouteKeysRequest, RouteKeys>;
   readonly drop_route_keys: Signature<DropRouteKeysRequest, null>;
+  readonly routes_needing_reregistration: Signature<
+    NoRequest,
+    readonly RouteId[]
+  >;
   readonly take_pushed_messages: Signature<NoRequest, readonly PushedMessage[]>;
   readonly set_badge: Signature<SetBadgeRequest, null>;
   readonly write_notification_counts: Signature<

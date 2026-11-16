@@ -22,6 +22,11 @@
 //! - route keys: `create_route_keys` and `drop_route_keys`. Creating also stores the route's
 //!   network label and nickname, the route metadata the extension formats a push with,
 //!   because they are needed exactly as long as the keys;
+//! - re-registration (design 23 step 7): `routes_needing_reregistration` answers the
+//!   [`RouteId`]s whose pushes the extension could no longer decrypt. The extension can't reach
+//!   the page's route records, so it flags the route in the App Group for the page to read at
+//!   launch and on foreground and register again with new keys. Creating or dropping a route's
+//!   keys clears its flag, so the list needs no acknowledgement;
 //! - tap before history: `take_pushed_messages`;
 //! - `BadgeNavigator`: one `set_badge`, because `setBadgeCount(0)` is how iOS clears it;
 //! - `writeNotificationCounts`: `write_notification_counts`, which writes the
