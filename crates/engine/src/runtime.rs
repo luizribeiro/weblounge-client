@@ -964,6 +964,7 @@ impl Runtime {
                 EngineToUi::CommandResult { id },
             ],
             Ok(Command::Version {}) => self.show_version(id, buffer_id),
+            Ok(Command::File {}) => rejected_command(id, EngineMessageKey::ComposerFileNeedsPicker),
             Ok(Command::Identify { password }) => self.identify(id, &password.0),
             Err(error) => rejected_command(id, error.message_key()),
         }
@@ -2351,6 +2352,7 @@ fn server_command(command: &Command) -> bool {
             | Command::Me { .. }
             | Command::Help { .. }
             | Command::Version { .. }
+            | Command::File { .. }
             | Command::Quit { .. }
     )
 }
@@ -7782,6 +7784,33 @@ async fn delay(duration: Duration) {
                     id: "help-1".into(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn file_is_refused_because_only_the_composer_can_open_the_picker() {
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+        let submit = |input: &str| {
+            runtime.request(EngineRequestEnvelope {
+                id: "file-1".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id: BufferId(1),
+                    input: input.into(),
+                },
+            })
+        };
+
+        assert_eq!(
+            submit("/file "),
+            super::rejected_command("file-1".into(), EngineMessageKey::ComposerFileNeedsPicker)
+        );
+        assert_eq!(
+            submit("/FILE holiday.png"),
+            super::rejected_command(
+                "file-1".into(),
+                EngineMessageKey::ComposerUnexpectedArgument
+            )
         );
     }
 

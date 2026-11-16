@@ -4,6 +4,7 @@ export const ENGINE_MESSAGE_KEYS = [
   "composer.missing_argument",
   "composer.unexpected_argument",
   "composer.unknown_command",
+  "composer.file_needs_picker",
   "engine.bouncer_network_limit_reached",
   "engine.buffer_not_sendable",
   "engine.cached_target_gone",

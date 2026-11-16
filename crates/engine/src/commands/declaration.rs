@@ -96,6 +96,11 @@ pub(crate) enum Command {
     )]
     Version {},
     #[command(
+        name = "file", aliases = [], usage = "cmd.file.usage", description = "cmd.file.description",
+        surfaces = ["Slash"]
+    )]
+    File {},
+    #[command(
         name = "identify", aliases = ["id"], usage = "cmd.identify.usage",
         description = "cmd.identify.description", surfaces = ["Slash"], secret
     )]
@@ -111,7 +116,7 @@ mod tests {
     };
 
     use super::Command;
-    use crate::commands::{self, CommandArgumentKind};
+    use crate::commands::{self, CommandArgumentKind, CommandSurface};
 
     #[test]
     fn derive_generates_alias_parser_and_typed_specs() {
@@ -127,7 +132,13 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 15);
+        assert_eq!(specs.len(), 16);
+        assert!(
+            specs
+                .iter()
+                .find(|spec| spec.name == "file")
+                .is_some_and(|spec| spec.surfaces == [CommandSurface::Slash])
+        );
         assert!(
             specs
                 .iter()

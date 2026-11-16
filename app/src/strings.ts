@@ -38,6 +38,8 @@ export const messages = {
   "cmd.cycle.usage": "/cycle [channel] [reason]",
   "cmd.debug.description": "Show or hide app diagnostics",
   "cmd.debug.usage": "/debug <viewport|gestures|keyboard|push|off>",
+  "cmd.file.description": "Upload an image",
+  "cmd.file.usage": "/file",
   "cmd.help.description": "Show available commands or command help",
   "cmd.help.usage": "/help [command]",
   "cmd.identify.description": "Identify with NickServ",
@@ -74,6 +76,8 @@ export const messages = {
   "composer.missing_argument": "That command needs more information.",
   "composer.unexpected_argument": "That command has an unexpected argument.",
   "composer.unknown_command": "Unknown command {input}.",
+  "composer.file_needs_picker":
+    "Images can only be chosen from the message box.",
   "composer.confirm": "Confirm /{command}",
   "composer.input": "Message {target}",
   "composer.suggestions": "Suggestions for {target}",

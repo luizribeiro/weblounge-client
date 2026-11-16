@@ -217,7 +217,7 @@ These commands are visible only on a soju connection (`Feature::Bouncer`, **unst
 | (reply privately) | — | MessageRef, Text | DM to the author with `+draft/channel-context`. | `SendMessage::channel_context` (`Fallback::ContextTagDropped`) | Later | M ("Reply privately") | anyone | no |
 | (copy text) | — | MessageRef | Copies the message text. | client-only | M5 | M | anyone | no |
 | (copy link) | — | MessageRef | Copies a message permalink. Waits until a weblounge msgid URL format is defined, because IRC has no standard message URL. | client-only | Later | M | anyone | no |
-| upload | — | — (file picker) | Uploads a file and posts the link. Needs a filehost. | gap: no filehost API in papo (`soju.im/FILEHOST`); Ergo has none | Later | S, composer button | anyone | no |
+| file | — | — (image picker) | Opens the system picker for one image and attaches it like a paste; Enter uploads it and posts the link. Run by the composer inside the gesture, never through the engine (design 31). No file host: the "no uploads" note instead. | `State::filehost()` (`draft/FILEHOST`, `soju.im/FILEHOST`) | M5 | S (composer Attach button later, F9) | anyone | no |
 | metadata | — | Target, Text | Avatar, display name, pronouns. Mostly through Profile settings. | `Client::metadata` (`Feature::Metadata`); confirm Ergo 2.19 support | Later | S, Settings | anyone | no |
 | (jump to date) | — | Text (date) | Scrolls to a point in time with CHATHISTORY AROUND. | `History::around` | Later | P, C | anyone | no |
 

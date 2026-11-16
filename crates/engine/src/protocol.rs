@@ -38,6 +38,7 @@ engine_message_keys! {
     ComposerMissingArgument => "composer.missing_argument",
     ComposerUnexpectedArgument => "composer.unexpected_argument",
     ComposerUnknownCommand => "composer.unknown_command",
+    ComposerFileNeedsPicker => "composer.file_needs_picker",
     BouncerNetworkLimitReached => "engine.bouncer_network_limit_reached",
     BufferNotSendable => "engine.buffer_not_sendable",
     CachedTargetGone => "engine.cached_target_gone",
