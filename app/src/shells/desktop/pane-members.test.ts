@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createRoot, createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type { BufferKind } from "../../engine/generated/BufferKind";
@@ -5,12 +6,22 @@ import type { MemberWindow } from "../../features/members/MemberPanel";
 import {
   createPaneMembers,
   memberColumnWidth,
+  memberColumnWidthToken,
   membersPresentation,
   memberWindowFor,
   minConversationBesideMembers,
 } from "./pane-members";
 
 const threshold = memberColumnWidth + minConversationBesideMembers;
+
+it("matches the token that sizes the member column and its drawer", () => {
+  const css = readFileSync("src/styles/base.css", "utf8");
+  const declarations = [...css.matchAll(/--wl-size-members:\s*(\d+)px;/gu)];
+  expect(declarations.map((match) => Number(match[1]))).toEqual([
+    memberColumnWidth,
+  ]);
+  expect(memberColumnWidthToken).toBe("var(--wl-size-members)");
+});
 
 it("shows members inline once the conversation keeps its minimum width", () => {
   expect(membersPresentation(threshold)).toBe("inline");

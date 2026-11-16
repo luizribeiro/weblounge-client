@@ -24,6 +24,7 @@ import { focusComposerIn } from "./focus-composer";
 import { PaneComposer } from "./PaneComposer";
 import {
   createPaneMembers,
+  memberColumnWidthToken,
   memberWindowFor,
   observePaneWidth,
   type PaneMembersController,
@@ -240,7 +241,7 @@ function PaneConversation(props: DesktopPaneProps) {
           edge="right"
           label={t("members.label")}
           onClose={() => members.closeDrawer()}
-          width="232px"
+          width={memberColumnWidthToken}
         >
           {(requestClose) => (
             <div class={styles.drawerContent}>

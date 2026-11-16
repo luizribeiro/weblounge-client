@@ -2,10 +2,10 @@
   background: var(--wl-color-panel-alt);
   border-left: 1px solid var(--wl-color-border);
   display: flex;
-  flex: 0 0 232px;
+  flex: 0 0 var(--wl-size-members);
   flex-direction: column;
   min-height: 0;
-  width: 232px;
+  width: var(--wl-size-members);
 }
 
 .header {
