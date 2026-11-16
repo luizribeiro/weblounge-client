@@ -18,7 +18,7 @@
     };
     crane.url = "github:ipetkov/crane";
     weblounge-client-previous = {
-      url = "github:luizribeiro/weblounge-client/9574f40fcdea07c99ab0bbed81d7616d1fb578f8";
+      url = "github:luizribeiro/weblounge-client/810ece49c3b159111d1ca9aaba361bbe39eee27e";
       # Only its app is used; its own previous pin feeds checks we never build.
       inputs.weblounge-client-previous.follows = "";
     };
