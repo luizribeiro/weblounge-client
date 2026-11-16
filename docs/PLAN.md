@@ -120,10 +120,6 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   arrives, like reactions (TD8). With papo's approved confirmation change, `redact` returns the
   confirming REDACT; switch to it with the papo bump and delete every
   `TODO(papo-0.1 reaction-confirm)` on the redaction path. Design 32.
-- TD11: the desktop redaction stability journeys read history away from the live edge, where the
-  list's scroll reconcile and read dwell keep frames and timers busy, so they check the layout-shift
-  budget instead of the idle audit (the peer-deletion journeys run the full audit at rest).
-  `app/e2e/redaction.spec.ts`.
 
 #### Server-side asks
 - SV1: upload-scoped tokens from concierge instead of login tokens; the file host receives login-capable tokens today. Design 31.
@@ -147,6 +143,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: TD11, the desktop redaction stability journeys run the idle audit. The older-page
+  anchor correction requested a frame forever when its remainder was below a whole scroll pixel;
+  it now stops once the scroller cannot move and the virtualizer has stopped scrolling. The message
+  list marks `data-scrolling` while TanStack's scroll reset is pending, and `expectSettled` waits it out.
 - 2026-11-15: typing an exact member nick after `@` and then a space or `, : ; . ! ? )` accepts the mention as if picked (`nick: ` at message start, the terminator kept), on desktop and phone; Tab and IME composition are unaffected. Local-Ergo journey `app/e2e/mention-terminator.spec.ts`.
 - 2026-11-15: the phone transcript keeps its latest message above a composer that wraps to
   several lines. Each keystroke's textarea measurement had briefly collapsed the composer, which
