@@ -46,6 +46,8 @@ targets:
       path: weblounge-desktop_iOS/Info.plist
       properties:
         LSRequiresIPhoneOS: true
+        CADisableMinimumFrameDurationOnPhone: true
+        ITSAppUsesNonExemptEncryption: false
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
