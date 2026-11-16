@@ -43,7 +43,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F6: image viewer later: move between a conversation's images, Android back closes it, Copy link and Save in Tauri, Open original; close when the image's row is virtualised away fades instead of shrinking. Design 30 §Later.
 - F7: natural-size cache in the engine's `Space::Cache` (needs a protocol request and records) and `filehost_origin` persisted in the chat-list snapshot. Design 30 §Later.
 - F8: UI to forget remembered upload hosts (`ForgetUploadApprovals` exists, nothing calls it), in Networks settings. Design 31.
-- F9: uploads beyond v1: Attach button and picker, drag and drop, several images, arbitrary files, offline outbox, native Tauri uploader. Design 31 §Later, design 13.
+- F9: uploads beyond v1: Attach button (the `/file` picker is done), drag and drop, several images, arbitrary files, offline outbox, native Tauri uploader, `NSCameraUsageDescription` for the iOS app's picker (design 33). Design 31 §Out of scope, design 13.
 - F10: Settings beyond slice 1: Networks, Notifications, keyboard rebinding, quiet hours and per-sender rules, per-network overrides, search, import/export, cross-device sync, onboarding, native macOS Settings window, push-permission toggle. Design 29 §Out of scope.
 - F11: link previews (cards, proxy, per-channel toggle, Tauri direct fetch, link shimming of outbound clicks, IRCv3 previews extension); paused, and the "images from other sites" switch is left out of Settings. Memory, design 30, design 29.
 - F12: animate phone chat-list reorders (row slides to top); parked as finicky. If revisited: moved row, new row, off-screen row, bursts, reduced motion. Memory.
@@ -139,6 +139,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: `/file` (part of F9, design 31 "The `/file` command"), asked for by a friend of
+  Luiz's. A bare `/file` on Enter or Send opens the system picker for one image inside the gesture,
+  clears the text, and the pick becomes the paste chip; a network without a file host shows the
+  "no uploads" note instead. It completes and lists in `/help` from the engine's command table,
+  which refuses a `/file` that reaches it. Local-Ergo journeys in `e2e/file-command.spec.ts`
+  (Chromium, WebKit, iPhone and Pixel). Not yet tried in the macOS app or on a real iPhone.
 - 2026-11-15: hidden-mount transcript remeasure. A row that mounted while the page was hidden
   spent MessageList's one-shot foreground remeasure, so catch-up rows arriving on return painted
   with estimated heights (gaps on the first foreground frame). Hidden mounts no longer measure or
