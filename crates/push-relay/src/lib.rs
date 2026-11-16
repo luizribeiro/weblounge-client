@@ -8,6 +8,7 @@ mod db;
 mod error;
 mod jwt;
 mod outbound;
+mod platform_sender;
 mod target;
 #[cfg(test)]
 mod test_apns;
@@ -24,4 +25,5 @@ pub use outbound::{
     Delivery, DnsResolver, EndpointValidator, HttpTransport, OutboundRequest, PushOutcome,
     PushSender, Urgency, WebPushSender,
 };
+pub use platform_sender::PlatformSender;
 pub use target::ApnsEnvironment;
