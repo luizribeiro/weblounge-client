@@ -7,6 +7,9 @@ export const imageMimeTypes: Readonly<Record<SendableImageType, string>> = {
   webp: "image/webp",
 };
 
+/** How many leading bytes `sniffImageType` reads at most (WebP's `RIFF····WEBP`). */
+export const imageSignatureLength = 12;
+
 export function sniffImageType(
   bytes: Uint8Array,
 ): SendableImageType | undefined {
