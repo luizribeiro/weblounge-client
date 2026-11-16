@@ -1,13 +1,13 @@
 import { createSignal, type JSX, onCleanup } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
-import { BotIcon } from "../../ui/BotIcon";
 import {
   type ContextMenuRequest,
   contextMenuRegistry,
 } from "../../ui/context-menu";
 import { Line } from "../../ui/Line";
 import { unreadBadge } from "../unread/unread-badge";
+import { BufferPrefix } from "./BufferPrefix";
 import styles from "./SidebarRow.module.css";
 import { trailingSlot } from "./trailing-slot";
 
@@ -54,9 +54,6 @@ export function SidebarRow(props: SidebarRowProps) {
     });
   const visibleUnread = () => (showBadges() ? props.buffer.unread : 0);
   const visibleMentions = () => (showBadges() ? props.buffer.mentions : 0);
-  const prefix = () =>
-    props.buffer.kind === "channel" ? props.buffer.title.slice(0, 1) : "";
-  const presence = () => props.buffer.peer_presence;
   const name = () =>
     props.buffer.kind === "channel"
       ? props.buffer.title.slice(1)
@@ -103,28 +100,11 @@ export function SidebarRow(props: SidebarRowProps) {
         tabIndex={props.tabIndex}
         type="button"
       >
-        <span
-          aria-hidden="true"
+        <BufferPrefix
+          buffer={props.buffer}
           class={styles.prefix}
           data-sidebar-prefix="true"
-        >
-          {prefix() !== "" && <span data-channel-sign="true">{prefix()}</span>}
-          {props.buffer.peer_bot === true ? (
-            <BotIcon
-              class={styles.peerBot}
-              data-peer-bot="true"
-              data-presence={presence()}
-            />
-          ) : (
-            presence() !== undefined && (
-              <span
-                class={styles.presence}
-                data-presence={presence()}
-                data-presence-dot="true"
-              />
-            )
-          )}
-        </span>
+        />
         <Line
           class={styles.title}
           data-sidebar-name="true"

@@ -29,40 +29,9 @@
 }
 
 .prefix {
-  color: var(--wl-color-panel-muted);
-  text-align: center;
-}
-
-.presence {
-  border: var(--wl-size-presence-ring) solid var(--wl-color-online);
-  border-radius: 50%;
-  display: inline-block;
-  height: var(--wl-size-presence-dot);
-  vertical-align: middle;
-  width: var(--wl-size-presence-dot);
-}
-
-.presence[data-presence="online"] {
-  background: var(--wl-color-online);
-}
-
-.presence[data-presence="away"] {
-  border-color: var(--wl-color-panel-muted);
-}
-
-.prefix > .peerBot {
   --wl-size-bot-icon: var(--wl-sidebar-prefix-width);
 
   color: var(--wl-color-panel-muted);
-  vertical-align: middle;
-}
-
-.prefix > .peerBot[data-presence="online"] {
-  color: var(--wl-color-online);
-}
-
-.prefix > .peerBot[data-presence="away"] {
-  opacity: 0.5;
 }
 
 .row:hover {
