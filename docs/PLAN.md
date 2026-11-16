@@ -139,6 +139,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-15: hidden-tab unread badge fix. While the page was hidden the engine client held every
+  buffer update, so a DM or mention in the open conversation never reached the tab indicator or
+  app badge until the tab was shown again. Buffer-list events now apply at once while hidden, in
+  engine order (design 02); timeline and member patches still wait, and the dwell still marks read
+  only once the page is foreground again. System lines no longer rebuild on every buffer update.
 - 2026-11-15: Settings → Notifications, the second Settings section (bell icon from the
   prototype). The "Browser tab" group ("Show unread in the tab") moved there from Appearance; the
   section shows only where a row applies, so the PWA and the Tauri apps list Appearance alone. One
