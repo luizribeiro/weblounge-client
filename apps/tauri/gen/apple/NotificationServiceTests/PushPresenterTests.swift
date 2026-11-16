@@ -77,6 +77,29 @@ final class PushPresenterTests: XCTestCase {
       try route.storage.readNotificationCounts().first { $0.tag == "Libera/#weblounge" }?.count, 2)
   }
 
+  func testReplacesARedeliveredMessageWithoutCountingItAgain() async throws {
+    let route = try StoredTestRoute(self)
+    try route.storage.writeNotificationCounts([
+      NotificationCount(tag: "Libera/#weblounge", count: 1, readAtMs: nil)
+    ])
+    let center = DeliveredNotifications(self)
+    let earlier = try await center.post(
+      conversation: "Libera/#weblounge", at: "2026-11-16T22:41:07.512Z", messageId: "m3-again")
+    let unrelated = try await center.post(
+      conversation: "Libera/#weblounge", at: "2026-11-16T22:41:00.000Z")
+
+    let offered = await present(
+      try route.relayPayload(
+        "@time=2026-11-16T22:41:07.512Z;msgid=m3-again :mel!m@example.test PRIVMSG #weblounge :lunch?"),
+      storage: route.storage)
+
+    let identifiers = await center.identifiers()
+    XCTAssertFalse(identifiers.contains(earlier))
+    XCTAssertTrue(identifiers.contains(unrelated))
+    XCTAssertEqual(offered.last?.body, "lunch?")
+    XCTAssertEqual(try route.storage.readNotificationCounts().map(\.count), [1])
+  }
+
   func testLeavesAnInviteOutOfTheCounts() async throws {
     let route = try StoredTestRoute(self)
     try route.storage.writeNotificationCounts([

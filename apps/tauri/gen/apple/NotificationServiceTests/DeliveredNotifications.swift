@@ -12,13 +12,15 @@ struct DeliveredNotifications {
 
   /// Posts a message notification shaped like the extension's and returns once it is delivered;
   /// the dev app must be allowed to notify, or this waits until the test times out.
-  func post(conversation tag: String, at time: String) async throws -> String {
+  func post(conversation tag: String, at time: String, messageId: String? = nil) async throws
+    -> String
+  {
     let identifier = "test-\(UUID().uuidString)"
     let content = UNMutableNotificationContent()
     content.title = "mel"
     content.body = "posted by a test"
     content.userInfo = [
-      "route": "/Libera/weblounge", "conversationTag": tag, "messageId": identifier,
+      "route": "/Libera/weblounge", "conversationTag": tag, "messageId": messageId ?? identifier,
       "messageTime": time,
     ]
     test.addTeardownBlock { [center] in

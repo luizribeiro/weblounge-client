@@ -13,7 +13,7 @@ struct PushPresenter {
     }
     switch prepared.outcome {
     case .prepared(.visible(let visible)):
-      show(visible, over: placeholder)
+      await show(visible, over: placeholder)
       // Best effort: the notification is already shown, and the page still loads history.
       if let pushed = pushedRecord(in: prepared.json) {
         try? storage.appendPushedMessage(pushed)
@@ -27,7 +27,7 @@ struct PushPresenter {
     }
   }
 
-  private func show(_ visible: VisibleNotification, over placeholder: UNNotificationContent) {
+  private func show(_ visible: VisibleNotification, over placeholder: UNNotificationContent) async {
     let content = UNMutableNotificationContent()
     content.sound = placeholder.sound
     content.title = visible.title
@@ -35,10 +35,22 @@ struct PushPresenter {
     content.threadIdentifier = visible.threadId
     content.userInfo = visible.userInfo
     offer(content)
-    if let tag = visible.conversationTag {
+    let redelivered = await withdrawEarlierCopies(of: visible)
+    if let tag = visible.conversationTag, !redelivered {
       count(visible, tag: tag, into: content)
       offer(content)
     }
+  }
+
+  /// APNs picks the request identifier, so a re-delivery is matched by its msgid: the earlier
+  /// copy is withdrawn, and whether there was one decides that the message isn't counted again.
+  private func withdrawEarlierCopies(of visible: VisibleNotification) async -> Bool {
+    guard let messageId = visible.messageId else { return false }
+    let copies = await center.deliveredNotifications()
+      .filter { $0.request.content.userInfo["messageId"] as? String == messageId }
+      .map(\.request.identifier)
+    center.removeDeliveredNotifications(withIdentifiers: copies)
+    return !copies.isEmpty
   }
 
   /// iOS still shows the relay's placeholder, since hiding a push needs Apple's filtering
