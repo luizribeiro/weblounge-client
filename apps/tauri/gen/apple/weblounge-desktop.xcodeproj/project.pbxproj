@@ -11,6 +11,7 @@
 		0BCEC72F0F570FA37516B5F9 /* Base64URL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC85EA6AFF42A6EB8CF135A /* Base64URL.swift */; };
 		156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
 		15D23281A3824B2D9EFC493E /* StoredTestRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C0EFA1CF7B57745173946B /* StoredTestRoute.swift */; };
+		17C80C36595C70A415E5F5E1 /* NotificationLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E83573F05E8627A43FCDC0F5 /* NotificationLedger.swift */; };
 		180037152BE5084606C99DAF /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		18736F73E1D39F3C50757A75 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F971CFB6BA1EF47406D9322 /* Security.framework */; };
 		1909759C60B554DAEE3135E2 /* PushPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAF868336BF5DA82A3676AB /* PushPresenter.swift */; };
@@ -27,6 +28,7 @@
 		5B3D42E43DD9A13901C88DE4 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F9084A4E509617E31B9C7526 /* MetalKit.framework */; };
 		5BECB97E529B3C1A88AB6E15 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83E9585FBD3000C2A629FA71 /* WebKit.framework */; };
 		71AFB710E266E86B7947F7E5 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6559F866E46AE0486D582987 /* libapp.a */; };
+		7E33099F49AE8A47D3378A52 /* NotificationLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E83573F05E8627A43FCDC0F5 /* NotificationLedger.swift */; };
 		83209F9E9536BBD9A837867F /* PushPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAF868336BF5DA82A3676AB /* PushPresenter.swift */; };
 		929C6EA0C4A8697A7041BE72 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A33FC9CE31FFAF43D0748A9 /* CoreGraphics.framework */; };
 		95481999CA85004324D6B0B5 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = EDD9D4EC3ED24AA420595F93 /* main.mm */; };
@@ -35,6 +37,7 @@
 		AE182E69546D4A69BE2CC95D /* weblounge-notifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AE8C759D8AE7F5C7D983ED58 /* NotificationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACA34ED9A95E820048096C4 /* NotificationServiceTests.swift */; };
 		B20A8BA7E685982D0ECAF48D /* RelayPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0BF69FD89981B403B18EA /* RelayPushTests.swift */; };
+		C17827DE3B593EC50DE15081 /* NotificationLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC03B960375D3FC0655AD28 /* NotificationLedgerTests.swift */; };
 		C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */; };
 		E45D01FB0A5717392B5054F7 /* RelayPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9CB8B4A79B56A4288E5B89 /* RelayPush.swift */; };
@@ -99,6 +102,7 @@
 		440C7C437D1B2E95A8247798 /* badge.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = badge.js; sourceTree = "<group>"; };
 		46A2A8073499D13EB1325888 /* security.rs */ = {isa = PBXFileReference; path = security.rs; sourceTree = "<group>"; };
 		47935D9A9BC127CD5CDF3424 /* weblounge-desktop_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "weblounge-desktop_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4AC03B960375D3FC0655AD28 /* NotificationLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationLedgerTests.swift; sourceTree = "<group>"; };
 		4D5AE401A83F98461B91ADD0 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		4D71C1325039A56A88496E06 /* desktop.rs */ = {isa = PBXFileReference; path = desktop.rs; sourceTree = "<group>"; };
 		4F971CFB6BA1EF47406D9322 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -133,6 +137,7 @@
 		D37C37D85771472B92D8AB7A /* WebPushSealer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPushSealer.swift; sourceTree = "<group>"; };
 		DCC986C23E43C783D5E379C1 /* PreparedPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparedPush.swift; sourceTree = "<group>"; };
 		E15EC80151E2A23B84CCE80A /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		E83573F05E8627A43FCDC0F5 /* NotificationLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationLedger.swift; sourceTree = "<group>"; };
 		EA050F391D3DFFB7D4CCA743 /* shell.rs */ = {isa = PBXFileReference; path = shell.rs; sourceTree = "<group>"; };
 		EB718DCE48602B3344F5103B /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		EDD9D4EC3ED24AA420595F93 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
@@ -185,6 +190,7 @@
 		3ACEAA5FDBBEA0B15C35D971 /* NotificationServiceTests */ = {
 			isa = PBXGroup;
 			children = (
+				4AC03B960375D3FC0655AD28 /* NotificationLedgerTests.swift */,
 				5ACA34ED9A95E820048096C4 /* NotificationServiceTests.swift */,
 				333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */,
 				14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */,
@@ -336,6 +342,7 @@
 			children = (
 				2AC85EA6AFF42A6EB8CF135A /* Base64URL.swift */,
 				167A6DF2F79F47A9D8F152E4 /* Info.plist */,
+				E83573F05E8627A43FCDC0F5 /* NotificationLedger.swift */,
 				588AA8C84FC4CE6699448C62 /* NotificationService.entitlements */,
 				E15EC80151E2A23B84CCE80A /* NotificationService.swift */,
 				DCC986C23E43C783D5E379C1 /* PreparedPush.swift */,
@@ -520,6 +527,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0BCEC72F0F570FA37516B5F9 /* Base64URL.swift in Sources */,
+				7E33099F49AE8A47D3378A52 /* NotificationLedger.swift in Sources */,
+				C17827DE3B593EC50DE15081 /* NotificationLedgerTests.swift in Sources */,
 				C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */,
 				AE8C759D8AE7F5C7D983ED58 /* NotificationServiceTests.swift in Sources */,
 				00B8FDFE01EEB40A3BB4DDF6 /* PreparedPush.swift in Sources */,
@@ -549,6 +558,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3B7EA2AB1D731191F65C68A8 /* Base64URL.swift in Sources */,
+				17C80C36595C70A415E5F5E1 /* NotificationLedger.swift in Sources */,
 				A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */,
 				3206618EFAB2B5CA4009EBD1 /* PreparedPush.swift in Sources */,
 				180037152BE5084606C99DAF /* PushPayload.swift in Sources */,
