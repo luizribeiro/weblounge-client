@@ -23,6 +23,15 @@ struct NotificationLedger {
     replace(NotificationCount(tag: tag, count: (current?.count ?? 0) + 1, readAtMs: nil))
   }
 
+  /// The conversation was read up to `untilMs` elsewhere. A later marker never moves back, so
+  /// the marker in effect is returned for matching delivered notifications.
+  @discardableResult
+  mutating func markRead(tag: String, untilMs: UInt64) -> UInt64 {
+    let marker = max(entry(tag)?.readAtMs ?? 0, untilMs)
+    replace(NotificationCount(tag: tag, count: 0, readAtMs: marker))
+    return marker
+  }
+
   private func entry(_ tag: String) -> NotificationCount? {
     counts.first { $0.tag == tag }
   }
@@ -42,6 +51,21 @@ private let fractionalTime: ISO8601DateFormatter = {
   return formatter
 }()
 private let wholeSecondTime = ISO8601DateFormatter()
+
+/// Milliseconds for a `MARKREAD` reference such as `timestamp=2026-11-16T22:45:00.000Z`.
+func readMarkerMs(_ reference: String) -> UInt64? {
+  let prefix = "timestamp="
+  return serverTimeMs(
+    reference.hasPrefix(prefix) ? String(reference.dropFirst(prefix.count)) : reference)
+}
+
+/// Whether a delivered notification's `userInfo` is a message the marker has read.
+func isRead(_ userInfo: [AnyHashable: Any], tag: String, untilMs: UInt64) -> Bool {
+  guard userInfo["conversationTag"] as? String == tag,
+    let time = (userInfo["messageTime"] as? String).flatMap(serverTimeMs)
+  else { return false }
+  return time <= untilMs
+}
 
 /// Nil for times before 1970 too, which the App Group's unsigned read markers can't hold.
 func serverTimeMs(_ iso8601: String) -> UInt64? {
