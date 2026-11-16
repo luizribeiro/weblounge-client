@@ -116,9 +116,16 @@ async function verifyCspAssets(directory) {
 }
 
 async function verifyIcons(directory) {
-  const faviconSuffixes = ["", "-unread", "-disconnected"];
+  const faviconVariants = Object.values(
+    JSON.parse(
+      await readFile(
+        resolve(import.meta.dirname, "../assets/favicon-variants.json"),
+        "utf8",
+      ),
+    ),
+  );
   const expected = new Map([
-    ...faviconSuffixes.map((suffix) => [`favicon-32${suffix}.png`, 32]),
+    ...faviconVariants.map(({ png }) => [png, 32]),
     ["apple-touch-icon.png", 180],
     ["icon-192.png", 192],
     ["icon-512.png", 512],
@@ -142,8 +149,8 @@ async function verifyIcons(directory) {
       );
     }
   }
-  for (const suffix of faviconSuffixes)
-    await readFile(resolve(directory, "icons", `favicon${suffix}.svg`), "utf8");
+  for (const { svg } of faviconVariants)
+    await readFile(resolve(directory, "icons", svg), "utf8");
 }
 
 async function verifyStartupImages(directory) {

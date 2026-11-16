@@ -1,16 +1,16 @@
+import faviconVariants from "../../assets/favicon-variants.json" with {
+  type: "json",
+};
 import type { TabIcon, TabIndicator } from "../features/unread/tab-indicator";
 
-// scripts/generate-icons.mjs writes one SVG and one PNG favicon per suffix.
-const iconSuffixes: Readonly<Record<TabIcon, string>> = {
-  connected: "",
-  unread: "-unread",
-  disconnected: "-disconnected",
-};
+const iconFiles: Readonly<
+  Record<TabIcon, { readonly svg: string; readonly png: string }>
+> = faviconVariants;
 
-function tabIconHref(type: string, icon: TabIcon): string | undefined {
-  const suffix = iconSuffixes[icon];
-  if (type === "image/svg+xml") return `/icons/favicon${suffix}.svg`;
-  if (type === "image/png") return `/icons/favicon-32${suffix}.png`;
+export function tabIconHref(type: string, icon: TabIcon): string | undefined {
+  const files = iconFiles[icon];
+  if (type === "image/svg+xml") return `/icons/${files.svg}`;
+  if (type === "image/png") return `/icons/${files.png}`;
   return undefined;
 }
 

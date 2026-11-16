@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { BrowserContext, Page } from "@playwright/test";
+import type { TabIcon } from "../src/features/unread/tab-indicator";
+import { tabIconHref } from "../src/platform/tab-indicator-writer";
 import type { IrcClient } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
@@ -11,13 +13,6 @@ import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { settingsScreenshot } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
-type TabIcon = "connected" | "unread" | "disconnected";
-
-const iconSuffixes: Record<TabIcon, string> = {
-  connected: "",
-  unread: "-unread",
-  disconnected: "-disconnected",
-};
 const screenshots = path.join(
   process.cwd(),
   "e2e",
@@ -139,11 +134,13 @@ async function expectTab(
   icon: TabIcon,
   title: string,
 ): Promise<void> {
-  const suffix = iconSuffixes[icon];
   await expect
     .poll(() => tabState(page), { message: `the tab shows ${icon}` })
     .toEqual({
-      icons: [`/icons/favicon${suffix}.svg`, `/icons/favicon-32${suffix}.png`],
+      icons: [
+        tabIconHref("image/svg+xml", icon),
+        tabIconHref("image/png", icon),
+      ],
       title,
     });
 }

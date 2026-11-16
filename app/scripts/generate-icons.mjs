@@ -20,13 +20,14 @@ export const brandColors = { felt: "#1B2A22", paper: "#EFE8D8" };
 const loungeTheme = JSON.parse(
   await readFile(resolve(appDirectory, "themes/lounge.json"), "utf8"),
 );
-const disconnectedTile = "#8C8F87";
-// tab-indicator-writer.ts names these files by suffix (design 23, Badging).
-const faviconVariants = [
-  { suffix: "", tile: brandColors.felt },
-  { suffix: "-unread", tile: loungeTheme.colors.mentionBadge },
-  { suffix: "-disconnected", tile: disconnectedTile },
-];
+const faviconVariants = JSON.parse(
+  await readFile(resolve(appDirectory, "assets/favicon-variants.json"), "utf8"),
+);
+const faviconTiles = {
+  connected: brandColors.felt,
+  unread: loungeTheme.colors.mentionBadge,
+  disconnected: "#8C8F87",
+};
 // Local desktop builds wear a yellow tile so they are never mistaken for the installed release.
 const devColors = { tile: "#E8B530", mark: brandColors.felt };
 
@@ -42,11 +43,11 @@ await Promise.all(
   ),
 );
 await Promise.all([
-  ...faviconVariants.flatMap(({ suffix, tile }) => {
-    const svg = retiledFavicon(tile);
+  ...Object.entries(faviconVariants).flatMap(([state, files]) => {
+    const svg = retiledFavicon(faviconTiles[state]);
     return [
-      writeFile(resolve(iconDirectory, `favicon${suffix}.svg`), svg),
-      renderPng(`favicon-32${suffix}.png`, 32, svg),
+      writeFile(resolve(iconDirectory, files.svg), svg),
+      renderPng(files.png, 32, svg),
     ];
   }),
   renderPng("apple-touch-icon.png", 180, appIconSvg(180, { markScale: 0.78 })),
