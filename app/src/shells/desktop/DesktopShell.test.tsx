@@ -380,6 +380,54 @@ it("shows the projected member total while the panel is closed", () => {
   ).toBeNull();
 });
 
+it("remembers member visibility per channel across launches", () => {
+  const launch = () =>
+    render(() => (
+      <DesktopShell
+        activeBufferId={2}
+        buffers={[channel, otherChannel, direct]}
+        composerNotice={undefined}
+        completion={undefined}
+        focusRequest={undefined}
+        memberships={new Map()}
+        messages={new Map()}
+        networks={[
+          { id: 1, label: "Local Ergo", nickname: "me", state: "online" },
+        ]}
+        onLoadHistory={() => {}}
+        onMarkRead={() => {}}
+        onRequestCompletion={() => {}}
+        onSend={async () => true}
+      />
+    ));
+  const panel = (title: string) =>
+    screen.queryByRole("complementary", { name: `Members of ${title}` });
+  const toggle = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
+  const open = (title: string) =>
+    fireEvent.click(screen.getByRole("button", { name: title }));
+
+  const first = launch();
+  toggle();
+  expect(panel("#room")).toBeVisible();
+  open("#other");
+  expect(panel("#other")).toBeVisible();
+  toggle();
+  expect(panel("#other")).toBeNull();
+  open("mel");
+  expect(
+    screen.queryByRole("button", { name: "Toggle member list" }),
+  ).toBeNull();
+  open("#room");
+  expect(panel("#room")).toBeVisible();
+  first.unmount();
+
+  launch();
+  expect(panel("#room")).toBeVisible();
+  open("#other");
+  expect(panel("#other")).toBeNull();
+});
+
 it("keeps the desktop shell and opens narrow panels as one drawer", async () => {
   const innerWidth = vi.spyOn(window, "innerWidth", "get").mockReturnValue(400);
   let resize: ((width: number) => void) | undefined;

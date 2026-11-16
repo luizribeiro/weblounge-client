@@ -54,6 +54,15 @@ import {
   newestCommittedTimelineMessageId,
 } from "../../features/unread/createReadDwell";
 import type { NetworkUploads } from "../../features/uploads/types";
+import {
+  channelKey,
+  membersShown,
+  toggleMembers,
+} from "../../navigation/member-visibility";
+import {
+  readMemberVisibility,
+  writeMemberVisibility,
+} from "../../navigation/member-visibility-storage";
 import { platformEnvironment } from "../../platform/environment";
 import { translate } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
@@ -146,7 +155,9 @@ export function DesktopShell(props: DesktopShellProps) {
     createSinglePane(props.activeBufferId),
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
-  const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
+  const [memberVisibility, setMemberVisibility] = createSignal(
+    readMemberVisibility(),
+  );
   const [omnibarMode, setOmnibarMode] = createSignal<
     "buffers" | "commands" | null
   >(null);
@@ -213,6 +224,21 @@ export function DesktopShell(props: DesktopShellProps) {
     return new Set(buffer === undefined ? [] : [buffer.id]);
   });
   const memberViewId = () => `${memberViewScope}:desktop:${layout().root.id}`;
+  const activeChannelKey = () => {
+    const buffer = activeBuffer();
+    return buffer === undefined ? undefined : channelKey(buffer);
+  };
+  const activeMembersShown = () => {
+    const key = activeChannelKey();
+    return key !== undefined && membersShown(memberVisibility(), key);
+  };
+  const toggleActiveMembers = () => {
+    const key = activeChannelKey();
+    if (key === undefined) return;
+    const next = toggleMembers(memberVisibility(), key);
+    setMemberVisibility(next);
+    writeMemberVisibility(next);
+  };
   const memberWindow = () => props.memberWindows?.get(memberViewId());
   const sidebarInline = () => platform.environment().desktopPanels === "inline";
   const focusComposer = () => focusComposerIn(() => shellElement);
@@ -503,7 +529,7 @@ export function DesktopShell(props: DesktopShellProps) {
           historyStates={props.historyStates}
           memberships={props.memberships}
           memberWindow={memberWindow()}
-          membersShown={memberPanelOpen()}
+          membersShown={activeMembersShown()}
           membersTooltip={tooltip(registry, "members.toggle")}
           messageFailureNotices={props.messageFailureNotices}
           messages={props.messages}
@@ -527,7 +553,7 @@ export function DesktopShell(props: DesktopShellProps) {
             props.onRequestMembers?.(memberViewId(), bufferId, offset)
           }
           onToggleMembers={() => run("members.toggle")}
-          onToggleMembersShown={() => setMemberPanelOpen((open) => !open)}
+          onToggleMembersShown={toggleActiveMembers}
           onToggleReaction={props.onToggleReaction}
           onToggleSidebar={() => run("sidebar.toggle")}
           onTrustDirectIdentity={props.onTrustDirectIdentity}
