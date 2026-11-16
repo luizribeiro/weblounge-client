@@ -90,6 +90,51 @@ test.describe("omnibar rows against local Ergo", () => {
     await nativeFeelAudit(page);
     await captureEachLook(page, "Command palette", "palette");
   });
+
+  test("marks presence, bots and unread like the sidebar", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("concierge", []);
+    const human = await irc.peer("ana", []);
+    try {
+      await bot.mode(bot.nickname, "+B");
+      await installNativeFeelInstrumentation(page);
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
+      await bot.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+      await human.privmsgConfirmed(irc.account, `hello ${irc.id}`);
+      await expect(
+        page.getByRole("button", {
+          name: `${human.nickname}, 1 unread, including mentions, online`,
+        }),
+      ).toBeVisible();
+
+      await page.keyboard.press("Control+K");
+      const results = page.getByRole("listbox", { name: "Conversations" });
+      const row = (name: string) =>
+        results.getByRole("option", { name: new RegExp(`^${name}`, "u") });
+      await expect(
+        row(human.nickname).locator("[data-presence-dot]"),
+      ).toHaveAttribute("data-presence", "online");
+      await expect(row(bot.nickname).locator("[data-peer-bot]")).toBeVisible();
+      await expect(row(irc.channel).locator("[data-channel-sign]")).toHaveText(
+        "#",
+      );
+      await expect(
+        row(human.nickname).locator("[data-omnibar-name]"),
+      ).toHaveCSS("font-weight", "650");
+      await expect(row(irc.channel).locator("[data-omnibar-name]")).toHaveCSS(
+        "font-weight",
+        "400",
+      );
+      await nativeFeelAudit(page);
+      await captureEachLook(page, "Quick switcher", "switcher-people");
+    } finally {
+      bot.close();
+      human.close();
+    }
+  });
 });
 
 async function truncated(row: Locator): Promise<boolean> {

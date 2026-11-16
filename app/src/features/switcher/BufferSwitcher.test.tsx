@@ -93,6 +93,39 @@ it("switches to commands with a leading greater-than and back on deletion", () =
   expect(screen.getByRole("combobox", { name: "Jump to" })).toBeInTheDocument();
 });
 
+it("leads with the sidebar's prefix and bolds unread names", () => {
+  render(() => (
+    <BufferSwitcher
+      actions={[]}
+      buffers={[
+        ...buffers,
+        { ...buffer(4, "Bea", 1, "direct"), peer_presence: "away" },
+        { ...buffer(5, "deploybot", 2, "direct"), peer_bot: true },
+      ]}
+      networks={networks}
+      onDismiss={() => {}}
+      onOpen={() => {}}
+      onRunAction={() => false}
+      recentActionIds={[]}
+      recentBufferIds={[]}
+    />
+  ));
+  const row = (name: RegExp) => screen.getByRole("option", { name });
+
+  expect(
+    row(/^#general/u).querySelector("[data-channel-sign]"),
+  ).toHaveTextContent("#");
+  expect(row(/^Bea/u).querySelector("[data-presence-dot]")).toHaveAttribute(
+    "data-presence",
+    "away",
+  );
+  expect(row(/^deploybot/u).querySelector("[data-peer-bot]")).not.toBeNull();
+  const emphasized = (name: RegExp) =>
+    row(name).querySelector("[data-omnibar-name]")?.className ?? "";
+  expect(emphasized(/^Alice/u)).not.toBe(emphasized(/^Bea/u));
+  expect(emphasized(/^Bea/u)).toBe(emphasized(/^#general/u));
+});
+
 it("shows only an action's primary chord and keeps the rest in its tooltip", () => {
   render(() => (
     <BufferSwitcher

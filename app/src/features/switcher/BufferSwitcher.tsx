@@ -7,6 +7,7 @@ import type {
 import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import { OmnibarOverlay } from "../../ui/OmnibarOverlay";
+import { BufferPrefix } from "../sidebar/BufferPrefix";
 import { unreadBadge } from "../unread/unread-badge";
 import styles from "./BufferSwitcher.module.css";
 import {
@@ -159,8 +160,11 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
                   aria-selected={index() === selected()}
                   data-buffer-id={item.buffer.id}
                   id={optionId(item.buffer.id)}
+                  emphasized={item.buffer.unread > 0}
                   label={displayTitle(item.buffer)}
-                  leading={item.buffer.kind === "channel" ? "#" : "@"}
+                  leading={
+                    <BufferPrefix buffer={item.buffer} class={styles.prefix} />
+                  }
                   onClick={() => open(item)}
                   trailing={
                     <Show when={badge()} keyed>
