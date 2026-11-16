@@ -91,7 +91,8 @@ The relay already accepts `PlatformTarget::Apns { token }` and answers `NotImple
   validation is needed;
 - an `ApnsSender` beside `WebPushSender`. It speaks HTTP/2 with an ES256 provider token (team id,
   key id, `.p8` key) cached for about 40 minutes, since Apple rejects tokens older than an hour and
-  refreshes more often than every 20 minutes. Headers: `apns-topic` = the bundle id,
+  refreshes more often than every 20 minutes. Headers: `apns-topic` = the bundle id for the target's
+  environment (sandbox tokens come from the dev app, production ones from TestFlight),
   `apns-push-type: alert`, `apns-priority: 10`, and `apns-expiration` = now + the home's TTL;
 - the payload
   `{"aps":{"alert":{"title":"weblounge","body":"New message"},"mutable-content":1,"sound":"default"},"r":<route id>,"c":<inner b64url>}`.
@@ -291,8 +292,9 @@ iOS builds run from the dev shell, with three differences from the macOS build:
 
 **Server (`~/weblounge`, deployed by Luiz)**
 
-- sops secret `push-relay-apns-key` (the `.p8`), plus team id, key id and topic in
-  `services/push-relay.nix`'s environment. Egress is already 443 to the internet.
+- sops secret `push-relay-apns-key` (the `.p8`), plus team id, key id and both topics in
+  `services/push-relay.nix`'s environment (`PUSH_RELAY_APNS_TOPIC_SANDBOX=org.weblounge.ios.dev`,
+  `PUSH_RELAY_APNS_TOPIC_PRODUCTION=org.weblounge.ios`). Egress is already 443 to the internet.
 - Nothing for concierge, nginx, CSP or CORS: the page origin is still `beta.weblounge.org`.
   `webpush.max-subscriptions` is already 10, and the app takes one slot per phone.
 - Optional, before external testing: the reviewer demo account.
