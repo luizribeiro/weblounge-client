@@ -7,12 +7,16 @@ export interface UnreadBadge {
   readonly label: string;
 }
 
+export function badgeCountLabel(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
 export function unreadBadge(
   buffer: Pick<BufferProjection, "mentions" | "unread">,
 ): UnreadBadge | undefined {
   if (buffer.unread === 0) return undefined;
   const includesMentions = buffer.mentions > 0;
-  const count = buffer.unread > 99 ? "99+" : String(buffer.unread);
+  const count = badgeCountLabel(buffer.unread);
   return {
     count,
     kind: includesMentions ? "mention" : "unread",

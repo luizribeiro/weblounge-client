@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unreadBadge } from "./unread-badge";
+import { badgeCountLabel, unreadBadge } from "./unread-badge";
 
 describe("unreadBadge", () => {
   it.each([
@@ -38,5 +38,15 @@ describe("unreadBadge", () => {
     ],
   ] as const)("derives %s", (_name, unread, mentions, expected) => {
     expect(unreadBadge({ mentions, unread })).toEqual(expected);
+  });
+});
+
+describe("badgeCountLabel", () => {
+  it.each([
+    [1, "1"],
+    [99, "99"],
+    [100, "99+"],
+  ])("labels %i as %s", (count, label) => {
+    expect(badgeCountLabel(count)).toBe(label);
   });
 });
