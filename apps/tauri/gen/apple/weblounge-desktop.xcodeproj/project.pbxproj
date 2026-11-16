@@ -19,6 +19,7 @@
 		95481999CA85004324D6B0B5 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = EDD9D4EC3ED24AA420595F93 /* main.mm */; };
 		9966DF30BE9CBCAF46341F19 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7AEEDAAE1D0A9C409027CF00 /* UIKit.framework */; };
 		C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */; };
+		F14596EC45FA786F76B688C5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		83E9585FBD3000C2A629FA71 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		8A33FC9CE31FFAF43D0748A9 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9EAC8242C1F4DC30062DA06E /* window.rs */ = {isa = PBXFileReference; path = window.rs; sourceTree = "<group>"; };
 		A9659339765BE29D9C4EB503 /* weblounge-desktop_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "weblounge-desktop_iOS.entitlements"; sourceTree = "<group>"; };
 		AF7D101E062C9511E265F2D7 /* center.rs */ = {isa = PBXFileReference; path = center.rs; sourceTree = "<group>"; };
@@ -190,6 +192,7 @@
 			isa = PBXGroup;
 			children = (
 				80885CB4C4912DF2F902B153 /* Info.plist */,
+				8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */,
 				A9659339765BE29D9C4EB503 /* weblounge-desktop_iOS.entitlements */,
 			);
 			path = "weblounge-desktop_iOS";
@@ -265,6 +268,7 @@
 			files = (
 				219B79C4E403BCB1409A3CA0 /* Assets.xcassets in Resources */,
 				C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */,
+				F14596EC45FA786F76B688C5 /* PrivacyInfo.xcprivacy in Resources */,
 				4679C7106E6CDB4B7932261A /* assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
