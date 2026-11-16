@@ -331,10 +331,13 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   });
 }
 
+// Emulated phones have no virtual keyboard, so a tapped composer's pan guard ends only by its
+// one-second fallback.
 export async function waitForKeyboardGeometrySettle(page: Page): Promise<void> {
   await expect(page.locator("#root")).not.toHaveAttribute(
     "data-keyboard-watch",
   );
+  await expect(page.locator("[data-viewport-pan-guard]")).toHaveCount(0);
 }
 
 export async function resetNativeFeelLayoutShift(page: Page): Promise<void> {

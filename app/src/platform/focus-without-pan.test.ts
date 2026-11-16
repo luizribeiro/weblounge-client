@@ -1,5 +1,9 @@
 import { expect, it, vi } from "vitest";
-import { focusWithoutViewportPan, TouchTapGesture } from "./focus-without-pan";
+import {
+  focusWithoutViewportPan,
+  TouchTapGesture,
+  viewportPanGuardAttribute,
+} from "./focus-without-pan";
 import { keyboardGeometryMeasuredEvent } from "./viewport-geometry";
 
 it("focuses above the viewport until measured keyboard geometry arrives", () => {
@@ -12,8 +16,27 @@ it("focuses above the viewport until measured keyboard geometry arrives", () => 
 
   expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(field.style.transform).toBe("translateY(-2000px)");
+  expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(true);
   window.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
   expect(field.style.transform).toBe("scale(1)");
+  expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(false);
+});
+
+it("restores the field after a second when no keyboard geometry arrives", () => {
+  vi.useFakeTimers();
+  try {
+    const field = document.createElement("textarea");
+    document.body.append(field);
+
+    expect(focusWithoutViewportPan(field, window)).toBe(true);
+    vi.advanceTimersByTime(999);
+    expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(field.style.transform).toBe("");
+    expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("restores the field immediately when WebKit refuses focus", () => {
@@ -25,6 +48,19 @@ it("restores the field immediately when WebKit refuses focus", () => {
 
   expect(document.activeElement).not.toBe(field);
   expect(field.style.transform).toBe("scale(1)");
+  expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(false);
+});
+
+it("restores the field when focusing throws", () => {
+  const field = document.createElement("textarea");
+  vi.spyOn(field, "focus").mockImplementation(() => {
+    throw new Error("focus failed");
+  });
+
+  expect(() => focusWithoutViewportPan(field, window)).toThrow("focus failed");
+
+  expect(field.style.transform).toBe("");
+  expect(field.hasAttribute(viewportPanGuardAttribute)).toBe(false);
 });
 
 it("recognizes a short touch within tap slop", () => {

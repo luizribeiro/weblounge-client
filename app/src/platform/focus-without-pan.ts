@@ -1,5 +1,8 @@
 import { keyboardGeometryMeasuredEvent } from "./viewport-geometry";
 
+/** Marks a field held off-screen until keyboard geometry arrives or the fallback restores it. */
+export const viewportPanGuardAttribute = "data-viewport-pan-guard";
+
 export function focusWithoutViewportPan(
   field: HTMLElement,
   browserWindow: Window = window,
@@ -13,6 +16,7 @@ export function focusWithoutViewportPan(
     browserWindow.clearTimeout(fallback);
     browserWindow.removeEventListener(keyboardGeometryMeasuredEvent, restore);
     field.style.transform = previousTransform;
+    field.removeAttribute(viewportPanGuardAttribute);
   };
 
   // Safari can decide where to pan several frames after honoring preventScroll.
@@ -21,6 +25,7 @@ export function focusWithoutViewportPan(
   // This follows React Aria's iOS workaround:
   // https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154
   field.style.transform = "translateY(-2000px)";
+  field.setAttribute(viewportPanGuardAttribute, "true");
   browserWindow.addEventListener(keyboardGeometryMeasuredEvent, restore);
   fallback = browserWindow.setTimeout(restore, 1000);
   try {
