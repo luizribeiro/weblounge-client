@@ -29,6 +29,7 @@ interface NativeFeelMetrics extends WasteCounters {
   enginePatches: number;
   intervalRegistrations: IntervalRegistration[];
   layoutShift: number;
+  timeoutSites: string[];
   trackingWaste: boolean;
 }
 
@@ -44,6 +45,7 @@ export async function installNativeFeelInstrumentation(
       intervals: 0,
       layoutShift: 0,
       timeouts: 0,
+      timeoutSites: [],
       trackingWaste: false,
     };
     const state = window as Window & {
@@ -111,11 +113,16 @@ export async function installNativeFeelInstrumentation(
       handler: TimerHandler,
       timeout?: number,
       ...args: unknown[]
-    ) =>
-      setTimeout(() => {
-        if (metrics.trackingWaste) metrics.timeouts += 1;
+    ) => {
+      const site = new Error().stack ?? "unknown call site";
+      return setTimeout(() => {
+        if (metrics.trackingWaste) {
+          metrics.timeouts += 1;
+          metrics.timeoutSites.push(`${timeout ?? 0}ms ${site}`);
+        }
         if (typeof handler === "function") handler(...args);
-      }, timeout)) as typeof window.setTimeout;
+      }, timeout);
+    }) as typeof window.setTimeout;
 
     const setInterval = window.setInterval.bind(window);
     window.setInterval = ((
@@ -262,6 +269,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
           engineEvents: string[];
           intervals: number;
           timeouts: number;
+          timeoutSites: string[];
           trackingWaste: boolean;
         };
       }
@@ -272,6 +280,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     metrics.engineEvents = [];
     metrics.intervals = 0;
     metrics.timeouts = 0;
+    metrics.timeoutSites = [];
     metrics.trackingWaste = true;
   });
   await page.waitForTimeout(idleObservationMilliseconds); // wait-ok: measures the fixed idle-waste window.
@@ -281,6 +290,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
         __nativeFeelMetrics?: WasteCounters & {
           engineEvents: string[];
           intervalRegistrations: IntervalRegistration[];
+          timeoutSites: string[];
           trackingWaste: boolean;
         };
       }
@@ -291,6 +301,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     return {
       registrations: metrics.intervalRegistrations,
       engineEvents: metrics.engineEvents,
+      timeoutSites: metrics.timeoutSites,
       waste: {
         animationFrames: metrics.animationFrames,
         intervals: metrics.intervals,
@@ -312,7 +323,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   );
   expect(
     result.waste,
-    `engine events: ${result.engineEvents.join(", ")}`,
+    `engine events: ${result.engineEvents.join(", ")}; timeouts fired from:\n${result.timeoutSites.join("\n")}`,
   ).toEqual({
     animationFrames: 0,
     intervals: 0,
