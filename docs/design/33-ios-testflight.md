@@ -247,6 +247,23 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
   with `xcrun altool --upload-app` and the API key, then tags. The first build may simply go through
   Xcode's Organizer.
 
+## Building on the Mac
+
+iOS builds run from the dev shell, with three differences from the macOS build:
+
+- **Xcode's SDKs, not Nix's.** The dev shell points `DEVELOPER_DIR` and `SDKROOT` at Nix's macOS
+  SDK and puts xcbuild's `xcrun` first on `PATH`; neither knows `iphoneos` or `iphonesimulator`,
+  so `cc` build scripts (e.g. `objc2-exception-helper`) fail. iOS commands therefore run under
+  `env -u DEVELOPER_DIR -u SDKROOT PATH="/usr/bin:$PATH"`, which puts Apple's `xcrun` first. A
+  wrapper script for local builds and the release script will own this (neither exists yet).
+- **No `rustup`.** `cargo tauri ios init` runs `rustup target add` for every iOS target and fails
+  without it. The dev shell already provides `aarch64-apple-ios` and `aarch64-apple-ios-sim`, so
+  the planned wrapper puts a `rustup` stand-in on `PATH` that answers `target list --installed`
+  from the sysroot and accepts `target add`. `x86_64-apple-ios` (Intel simulators) isn't needed.
+- **Tools on `PATH`.** `tauri ios init` needs `xcodegen` and `cocoapods`, and installs missing ones
+  through Homebrew or `sudo gem`; the darwin dev shell provides both. `libimobiledevice` is only
+  needed to deploy to a device from the CLI, which Xcode does without it.
+
 ## Boundaries
 
 **Client (this repo)**
@@ -259,7 +276,7 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
 | `crates/push-payload` | decrypt + format moved here; `staticlib` C ABI for iOS; the service worker switches to the wasm formatter |
 | `crates/push-relay` | APNs target, `ApnsSender`, DB target enum (migration), urgency and failure mapping |
 | `app/src/platform/` | `HostShellKind` gains `"ios-app"`; an IPC `PushRegistrar`, `BadgeNavigator` and `RegistrationProvider`; the `weblounge:open-route` and `weblounge:lifecycle` listeners; pushed-message drain |
-| `nix/`, flake | the dev shell gains the `aarch64-apple-ios` Rust target and the Tauri CLI on darwin; no Nix package for iOS (Xcode signing can't run in the sandbox) |
+| `nix/`, flake | the darwin dev shell has the iOS Rust targets, the Tauri CLI, `xcodegen` and `cocoapods` (see "Building on the Mac"); no Nix package for iOS (Xcode signing can't run in the sandbox) |
 
 **Server (`~/weblounge`, deployed by Luiz)**
 
