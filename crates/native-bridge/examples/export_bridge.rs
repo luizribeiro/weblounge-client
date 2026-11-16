@@ -3,7 +3,10 @@
 use std::{env, error::Error, path::Path};
 
 use ts_rs::TS;
-use weblounge_native_bridge::{NativeCommand, PageEvent, PushPermission, PushTarget};
+use weblounge_native_bridge::{
+    CreateRouteKeysRequest, DropRouteKeysRequest, NativeCommand, PageEvent, PushPermission,
+    PushTarget, RouteKeys,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let output = env::args_os()
@@ -14,6 +17,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     PushPermission::export_all_to(&output)?;
     PushTarget::export_all_to(&output)?;
     PageEvent::export_all_to(&output)?;
+    CreateRouteKeysRequest::export_all_to(&output)?;
+    DropRouteKeysRequest::export_all_to(&output)?;
+    RouteKeys::export_all_to(&output)?;
     weblounge_ts_export::trim_trailing_whitespace(Path::new(&output))?;
     Ok(())
 }

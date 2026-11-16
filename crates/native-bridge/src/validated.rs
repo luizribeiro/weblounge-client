@@ -7,6 +7,15 @@ pub enum InvalidValue {
     /// Not a same-origin buffer path in the page's route form.
     #[error("route must be a buffer path such as /Libera/@mel")]
     BufferRoutePath,
+    /// Not 1 to 64 URL-safe Base64 characters.
+    #[error("route id must be 1 to 64 URL-safe Base64 characters")]
+    RouteId,
+    /// Not an uncompressed P-256 point in unpadded URL-safe Base64.
+    #[error("p256dh must be an uncompressed P-256 key in URL-safe Base64")]
+    P256dhKey,
+    /// Not 16 bytes in unpadded URL-safe Base64.
+    #[error("auth must be a 16-byte secret in URL-safe Base64")]
+    AuthSecret,
 }
 
 /// Declares a string newtype whose only constructor checks `$valid`, including when serde

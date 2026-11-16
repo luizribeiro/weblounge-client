@@ -30,10 +30,15 @@ mod buffer_route;
 mod command;
 mod page_event;
 mod push;
+mod route_keys;
 mod validated;
 
 pub use buffer_route::BufferRoutePath;
 pub use command::NativeCommand;
 pub use page_event::{AppLifecycle, PageEvent};
 pub use push::{ApnsEnvironment, ApnsToken, PushPermission, PushTarget};
+pub use route_keys::{
+    AuthSecret, CreateRouteKeysRequest, DropRouteKeysRequest, P256dhKey, RouteId, RouteKeys,
+    RouteMeta,
+};
 pub use validated::InvalidValue;
