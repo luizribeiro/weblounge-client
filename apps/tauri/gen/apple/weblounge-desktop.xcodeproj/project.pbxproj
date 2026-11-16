@@ -7,10 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00B8FDFE01EEB40A3BB4DDF6 /* PreparedPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC986C23E43C783D5E379C1 /* PreparedPush.swift */; };
 		156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
 		180037152BE5084606C99DAF /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		18736F73E1D39F3C50757A75 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F971CFB6BA1EF47406D9322 /* Security.framework */; };
 		219B79C4E403BCB1409A3CA0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */; };
+		3148A4E83FAB5B3988D0267D /* WebPushSealer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37C37D85771472B92D8AB7A /* WebPushSealer.swift */; };
+		3206618EFAB2B5CA4009EBD1 /* PreparedPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC986C23E43C783D5E379C1 /* PreparedPush.swift */; };
 		40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50D4220499B5323D07B1C26 /* PushPayload.swift */; };
 		4679C7106E6CDB4B7932261A /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 4D5AE401A83F98461B91ADD0 /* assets */; };
 		46B437F58B4C1DBC82B4C653 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */; };
@@ -28,6 +31,7 @@
 		C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15EC80151E2A23B84CCE80A /* NotificationService.swift */; };
 		C5BFA8C5AF890FA4C09B22C5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 8CA4F0D86B4090753A799EC6 /* LaunchScreen.storyboard */; };
 		E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBEE72F849F4CD74D6AC23 /* SharedStorage.swift */; };
+		EA22FE2B062623BB294ABC81 /* PreparedPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */; };
 		F14596EC45FA786F76B688C5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8EFDD7EF568762ADB0CD47F7 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
@@ -75,6 +79,7 @@
 		28B434B02CAA7C6AB11E5862 /* PushPayload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PushPayload.h; sourceTree = "<group>"; };
 		2CB9C6D2C43F566C2269BD4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		30F26D139D1475DE27D32600 /* service.rs */ = {isa = PBXFileReference; path = service.rs; sourceTree = "<group>"; };
+		333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparedPushTests.swift; sourceTree = "<group>"; };
 		379EC6F978B5452852A00DA1 /* weblounge-notifications.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "weblounge-notifications.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		38A0CE34C4BB5112FC275B55 /* answers.rs */ = {isa = PBXFileReference; path = answers.rs; sourceTree = "<group>"; };
 		3DFE5B4B563A5AFFDA366377 /* launch.rs */ = {isa = PBXFileReference; path = launch.rs; sourceTree = "<group>"; };
@@ -109,6 +114,8 @@
 		C530C63D1CC9557790FE43AD /* events.rs */ = {isa = PBXFileReference; path = events.rs; sourceTree = "<group>"; };
 		C90ABEE746BF9B949B45394B /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		D179A914815A8FC4D090F766 /* model.rs */ = {isa = PBXFileReference; path = model.rs; sourceTree = "<group>"; };
+		D37C37D85771472B92D8AB7A /* WebPushSealer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPushSealer.swift; sourceTree = "<group>"; };
+		DCC986C23E43C783D5E379C1 /* PreparedPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparedPush.swift; sourceTree = "<group>"; };
 		E15EC80151E2A23B84CCE80A /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		EA050F391D3DFFB7D4CCA743 /* shell.rs */ = {isa = PBXFileReference; path = shell.rs; sourceTree = "<group>"; };
 		EB718DCE48602B3344F5103B /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
@@ -161,7 +168,9 @@
 		3ACEAA5FDBBEA0B15C35D971 /* NotificationServiceTests */ = {
 			isa = PBXGroup;
 			children = (
+				333EC00E4BE54D5918CD0E56 /* PreparedPushTests.swift */,
 				14D68EF68076D36DCFD2716F /* PushPayloadTests.swift */,
+				D37C37D85771472B92D8AB7A /* WebPushSealer.swift */,
 			);
 			path = NotificationServiceTests;
 			sourceTree = "<group>";
@@ -307,6 +316,7 @@
 				167A6DF2F79F47A9D8F152E4 /* Info.plist */,
 				588AA8C84FC4CE6699448C62 /* NotificationService.entitlements */,
 				E15EC80151E2A23B84CCE80A /* NotificationService.swift */,
+				DCC986C23E43C783D5E379C1 /* PreparedPush.swift */,
 				7083E0ECC448481E4357E2C8 /* PrivacyInfo.xcprivacy */,
 				28B434B02CAA7C6AB11E5862 /* PushPayload.h */,
 				C50D4220499B5323D07B1C26 /* PushPayload.swift */,
@@ -486,9 +496,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				C4481F4DEF2CAFFC33526A60 /* NotificationService.swift in Sources */,
+				00B8FDFE01EEB40A3BB4DDF6 /* PreparedPush.swift in Sources */,
+				EA22FE2B062623BB294ABC81 /* PreparedPushTests.swift in Sources */,
 				40F6916ADCF521F28ADEFAFE /* PushPayload.swift in Sources */,
 				594A95AE26B163BB5A15C8AE /* PushPayloadTests.swift in Sources */,
 				E64D51C06796CA14503944B0 /* SharedStorage.swift in Sources */,
+				3148A4E83FAB5B3988D0267D /* WebPushSealer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -505,6 +518,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A87EB658FCAAFFAD2854159C /* NotificationService.swift in Sources */,
+				3206618EFAB2B5CA4009EBD1 /* PreparedPush.swift in Sources */,
 				180037152BE5084606C99DAF /* PushPayload.swift in Sources */,
 				156CECB7654217C738D9F48D /* SharedStorage.swift in Sources */,
 			);
