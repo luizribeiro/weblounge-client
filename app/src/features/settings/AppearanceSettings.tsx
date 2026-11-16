@@ -6,10 +6,10 @@ import type { Density } from "../../engine/generated/Density";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
-import styles from "./AppearanceSettings.module.css";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { SettingRow } from "./SettingRow";
 import { SettingSwitch } from "./SettingSwitch";
+import styles from "./SettingsHeading.module.css";
 import { ThemeCards } from "./ThemeCards";
 
 interface AppearanceSettingsProps {
