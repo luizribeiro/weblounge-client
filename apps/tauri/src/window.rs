@@ -77,13 +77,6 @@ fn open_externally(app: &AppHandle, url: &Url) {
     }
 }
 
-#[cfg_attr(
-    mobile,
-    expect(
-        dead_code,
-        reason = "iOS dispatches page events once notification taps exist"
-    )
-)]
 pub fn eval_in_page(app: &AppHandle, script: &str) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         log_failure("run a script in the page", window.eval(script));

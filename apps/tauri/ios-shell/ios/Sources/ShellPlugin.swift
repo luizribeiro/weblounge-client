@@ -8,7 +8,9 @@ struct WatchEventsArgs: Decodable { let handler: Channel }
 /// side validates every answer into the bridge's types before the page sees it.
 final class ShellPlugin: Plugin {
   private let events = ShellEvents()
-  private let registration = RemoteNotificationRegistration()
+  private lazy var registration = RemoteNotificationRegistration { [events] token in
+    events.send(registrationAnswer(token).merging(["kind": "token"]) { current, _ in current })
+  }
   private lazy var routing = NotificationRouting(events: events)
   private var center: UNUserNotificationCenter { .current() }
 

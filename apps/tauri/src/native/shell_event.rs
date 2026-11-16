@@ -5,6 +5,7 @@ use serde_json::Value;
 use tauri::{Url, webview::PageLoadEvent};
 use weblounge_native_bridge::{BufferRoutePath, PageEvent, RouteNotificationData};
 
+use super::answers::Registration;
 use crate::{page_event::dispatch_script, window::APP_URL};
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -16,6 +17,8 @@ use crate::{page_event::dispatch_script, window::APP_URL};
 pub enum ShellEvent {
     /// The user opened a notification.
     Tap { user_info: Value },
+    /// APNs issued a device token, or a different one.
+    Token(Registration),
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,6 +51,11 @@ pub fn tap_action(user_info: Value, page_loaded: bool) -> Result<TapAction, TapE
     }
 }
 
+/// Announces a new device token to the page.
+pub fn token_script(registration: Registration) -> Result<String, serde_json::Error> {
+    dispatch_script(&PageEvent::PushTarget(registration.into_target()))
+}
+
 /// Only the hosted app listens for taps; the concierge's sign-in pages don't.
 pub fn app_page_loaded(event: PageLoadEvent, url: &Url) -> bool {
     event == PageLoadEvent::Finished && url.as_str().starts_with(&format!("{APP_URL}/"))
@@ -71,6 +79,27 @@ mod tests {
             ShellEvent::Tap {
                 user_info: json!({ "route": "/Libera/@mel" })
             }
+        );
+    }
+
+    #[test]
+    fn a_token_event_announces_the_push_target() {
+        let token = json!({
+            "kind": "token",
+            "token": "740f4707bebcf74f9b7c25d48e3358945f6aa01da5ddb387462c7eaf61bb78ad",
+            "simulator": true,
+            "profileApsEnvironment": null,
+        });
+        let ShellEvent::Token(registration) =
+            serde_json::from_value::<ShellEvent>(token).expect("parses")
+        else {
+            panic!("not a token event");
+        };
+        assert_eq!(
+            token_script(registration).expect("script builds"),
+            "window.dispatchEvent(new CustomEvent(\"weblounge:push-target\", { detail: \
+             {\"environment\":\"sandbox\",\"platform\":\"apns\",\"token\":\
+             \"740f4707bebcf74f9b7c25d48e3358945f6aa01da5ddb387462c7eaf61bb78ad\"} }));"
         );
     }
 

@@ -1,4 +1,4 @@
-//! Carries the Swift side's taps into the page.
+//! Carries the Swift side's taps and device tokens into the page.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -12,9 +12,9 @@ use tauri::{
 use super::{
     commands::call,
     failure::notification_center,
-    shell_event::{ShellEvent, TapAction, app_page_loaded, tap_action},
+    shell_event::{ShellEvent, TapAction, app_page_loaded, tap_action, token_script},
 };
-use crate::window::{MAIN_LABEL, log_failure};
+use crate::window::{self, MAIN_LABEL, log_failure};
 
 /// Whether the hosted page has finished loading, so a tap can be handed to it.
 #[derive(Default)]
@@ -51,6 +51,10 @@ pub fn watch(app: &AppHandle) {
 fn handle(app: &AppHandle, json: &str) {
     match serde_json::from_str(json) {
         Ok(ShellEvent::Tap { user_info }) => open_route(app, user_info),
+        Ok(ShellEvent::Token(registration)) => match token_script(registration) {
+            Ok(script) => window::eval_in_page(app, &script),
+            Err(error) => eprintln!("could not announce the push target: {error}"),
+        },
         Err(error) => eprintln!("could not read a shell event: {error}"),
     }
 }

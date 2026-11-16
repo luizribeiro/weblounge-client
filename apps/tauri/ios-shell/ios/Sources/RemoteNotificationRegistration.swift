@@ -14,6 +14,11 @@ final class RemoteNotificationRegistration {
 
   private let lock = NSLock()
   private var state = State.unknown
+  private let tokenChanged: (Data) -> Void
+
+  init(tokenChanged: @escaping (Data) -> Void) {
+    self.tokenChanged = tokenChanged
+  }
 
   func install() {
     guard let delegate = NSClassFromString("AppDelegate") else {
@@ -21,7 +26,7 @@ final class RemoteNotificationRegistration {
       return
     }
     let registered: @convention(block) (AnyObject, UIApplication, Data) -> Void = {
-      [weak self] _, _, token in self?.update(.token(token))
+      [weak self] _, _, token in self?.received(token)
     }
     let failed: @convention(block) (AnyObject, UIApplication, NSError) -> Void = {
       [weak self] _, _, error in
@@ -53,6 +58,12 @@ final class RemoteNotificationRegistration {
 
   func register() {
     DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+  }
+
+  private func received(_ token: Data) {
+    let previous = update(.token(token))
+    if case .token(token) = previous { return }
+    tokenChanged(token)
   }
 
   @discardableResult
