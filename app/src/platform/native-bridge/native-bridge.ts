@@ -21,6 +21,7 @@ type NoRequest = undefined;
 
 interface NativeCommandSignatures
   extends Record<NativeCommand, Signature<unknown, unknown>> {
+  readonly push_permission: Signature<NoRequest, PushPermission>;
   readonly request_push_permission: Signature<NoRequest, PushPermission>;
   readonly push_target: Signature<NoRequest, PushTarget | null>;
   readonly create_route_keys: Signature<CreateRouteKeysRequest, RouteKeys>;

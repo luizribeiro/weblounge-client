@@ -5,6 +5,8 @@ use ts_rs::TS;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeCommand {
+    /// Reads the notification authorization without prompting.
+    PushPermission,
     /// Asks for alert, sound and badge authorization, then registers with APNs.
     RequestPushPermission,
     /// Reads the APNs target once the app delegate has a device token.
@@ -32,6 +34,7 @@ mod tests {
     #[test]
     fn commands_serialize_as_the_names_the_shell_registers() {
         for (command, name) in [
+            (NativeCommand::PushPermission, "push_permission"),
             (
                 NativeCommand::RequestPushPermission,
                 "request_push_permission",

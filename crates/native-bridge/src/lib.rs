@@ -14,8 +14,10 @@
 //! first five; the badge and delivered-notification commands are this crate's reading of its
 //! "Read state, badge and cleanup" seams:
 //!
-//! - permission and token: `request_push_permission` and `push_target`. The token arrives
-//!   asynchronously from the app delegate, so it is read separately from the request;
+//! - permission and token: `push_permission`, `request_push_permission` and `push_target`. The
+//!   page reads the permission at launch to choose between the prompt and a silent
+//!   re-registration, and only `request_push_permission` can show the system prompt. The token
+//!   arrives asynchronously from the app delegate, so it is read separately from the request;
 //! - route keys: `create_route_keys` and `drop_route_keys`. Creating also stores the route's
 //!   network label and nickname, the route metadata the extension formats a push with,
 //!   because they are needed exactly as long as the keys;
