@@ -38,6 +38,16 @@ export function SettingsSectionNav<Id extends string>(
     if (props.rail) props.onExpandedChange(false);
   };
   const expandedRail = () => props.rail && props.expanded;
+  const moveWithKey = (event: KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const index = props.sections.findIndex(({ id }) => id === props.current);
+    const target = sectionIndexForKey(event.key, index, props.sections.length);
+    const next = target === undefined ? undefined : props.sections[target];
+    if (next === undefined) return;
+    event.preventDefault();
+    props.onSelect(next.id);
+    nav?.querySelector<HTMLElement>(`[data-section="${next.id}"]`)?.focus();
+  };
   onCleanup(cancelHoverIntent);
   return (
     <nav
@@ -69,6 +79,8 @@ export function SettingsSectionNav<Id extends string>(
                 props.onSelect(section.id);
                 collapse();
               }}
+              onKeyDown={moveWithKey}
+              tabIndex={section.id === props.current ? 0 : -1}
               title={props.rail && !expandedRail() ? section.label : undefined}
               type="button"
             >
@@ -82,4 +94,23 @@ export function SettingsSectionNav<Id extends string>(
       </div>
     </nav>
   );
+}
+
+function sectionIndexForKey(
+  key: string,
+  index: number,
+  count: number,
+): number | undefined {
+  switch (key) {
+    case "ArrowDown":
+      return (index + 1) % count;
+    case "ArrowUp":
+      return (index - 1 + count) % count;
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return undefined;
+  }
 }

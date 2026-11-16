@@ -72,6 +72,61 @@ test.describe("desktop Settings against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("switches to Notifications by click and arrow keys and keeps the tab switch", async ({
+    irc,
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    await openHome(page, irc);
+    await settingsButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    const appearance = dialog.getByRole("button", { name: "Appearance" });
+    const notifications = dialog.getByRole("button", { name: "Notifications" });
+    const tabSwitch = dialog.getByRole("switch", {
+      name: "Show unread in the tab",
+    });
+    await expect(tabSwitch).toHaveCount(0);
+
+    await notifications.click();
+    await expect(notifications).toHaveAttribute("aria-current", "page");
+    await expect(
+      dialog.getByRole("region", { name: "Notifications" }),
+    ).toContainText("Browser tab");
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "true");
+    await tabSwitch.click();
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
+    await nativeFeelAudit(page);
+    await settingsScreenshot(dialog, "desktop-notifications-light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectTheme(page, "lounge-night");
+    await settingsScreenshot(dialog, "desktop-notifications-dark");
+
+    await appearance.click();
+    await expect(
+      dialog.getByRole("radiogroup", { name: "Theme" }),
+    ).toBeVisible();
+    await page.keyboard.press("ArrowDown");
+    await expect(notifications).toBeFocused();
+    await expect(notifications).toHaveAttribute("aria-current", "page");
+    await page.keyboard.press("ArrowDown");
+    await expect(appearance).toBeFocused();
+    await expect(appearance).toHaveAttribute("aria-current", "page");
+    await page.keyboard.press("End");
+    await expect(notifications).toBeFocused();
+
+    await page.reload();
+    await settingsButton(page).click();
+    await appearance.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
+    await tabSwitch.click();
+    await expect(tabSwitch).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
+
   test("follows a change made in another tab", async ({
     irc,
     context,

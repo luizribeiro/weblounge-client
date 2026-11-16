@@ -84,6 +84,46 @@ test.describe("Settings section rail in a narrow desktop window", () => {
     ).toBeVisible();
   });
 
+  test("shows another section's page from the folded rail", async ({
+    irc,
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize(narrow);
+    await page.emulateMedia({ colorScheme: "light" });
+    const { nav } = await openSettings(page, irc);
+    const appearance = page.getByRole("button", { name: "Appearance" });
+    const notifications = page.getByRole("button", { name: "Notifications" });
+    await expect(notifications).toHaveAttribute("title", "Notifications");
+
+    await notifications.click();
+    await expect(notifications).toHaveAttribute("aria-current", "page");
+    await expect(nav).not.toHaveAttribute("data-expanded");
+    const pane = page.getByRole("region", { name: "Notifications" });
+    await expect(
+      pane.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Appearance" })).toHaveCount(
+      0,
+    );
+    await nativeFeelAudit(page);
+    await settingsScreenshot(pane, "rail-narrow-notifications-light");
+
+    await page.getByRole("button", { name: "Close settings" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(notifications).toBeFocused();
+    await expect(nav).toHaveAttribute("data-expanded", "true");
+    await page.keyboard.press("ArrowUp");
+    await expect(appearance).toBeFocused();
+    await expect(appearance).toHaveAttribute("aria-current", "page");
+    await expect(nav).toHaveAttribute("data-expanded", "true");
+    await expect(
+      page.getByRole("region", { name: "Appearance" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(nav).not.toHaveAttribute("data-expanded");
+  });
+
   test("shows the labelled list in a wide window", async ({ irc, page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ colorScheme: "light" });

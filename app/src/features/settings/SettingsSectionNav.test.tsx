@@ -113,6 +113,57 @@ describe("SettingsSectionNav", () => {
     expect(expanded()).toBe(false);
   });
 
+  it("moves between sections with the arrow keys, Home and End", () => {
+    const { onSelect } = setup(false);
+    const appearance = screen.getByRole("button", { name: "Appearance" });
+    const notifications = screen.getByRole("button", { name: "Notifications" });
+    appearance.focus();
+
+    fireEvent.keyDown(appearance, { key: "ArrowDown" });
+    expect(onSelect).toHaveBeenLastCalledWith("notifications");
+    expect(notifications).toHaveFocus();
+    expect(notifications).toHaveAttribute("aria-current", "page");
+
+    fireEvent.keyDown(notifications, { key: "ArrowDown" });
+    expect(appearance).toHaveFocus();
+    fireEvent.keyDown(appearance, { key: "ArrowUp" });
+    expect(notifications).toHaveFocus();
+    fireEvent.keyDown(notifications, { key: "Home" });
+    expect(appearance).toHaveFocus();
+    fireEvent.keyDown(appearance, { key: "End" });
+    expect(notifications).toHaveFocus();
+    expect(onSelect).toHaveBeenCalledTimes(5);
+
+    fireEvent.keyDown(notifications, { key: "ArrowRight" });
+    fireEvent.keyDown(notifications, { key: "ArrowUp", altKey: true });
+    fireEvent.keyDown(notifications, { key: "Home", metaKey: true });
+    expect(onSelect).toHaveBeenCalledTimes(5);
+    expect(notifications).toHaveFocus();
+  });
+
+  it("keeps only the current section in the Tab order", () => {
+    setup(false);
+
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(
+      screen.getByRole("button", { name: "Notifications" }),
+    ).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("stays expanded while the arrow keys move through the rail", () => {
+    const { expanded } = setup(true);
+    const appearance = screen.getByRole("button", { name: "Appearance" });
+    appearance.focus();
+
+    fireEvent.keyDown(appearance, { key: "ArrowDown" });
+
+    expect(screen.getByRole("button", { name: "Notifications" })).toHaveFocus();
+    expect(expanded()).toBe(true);
+  });
+
   it("stays a plain labelled list in a wide window", () => {
     vi.useFakeTimers();
     const { nav, onExpandedChange, onSelect } = setup(false);
