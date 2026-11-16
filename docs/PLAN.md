@@ -140,6 +140,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-16: one row grid for the ⌘K switcher and the command palette (option C of the omnibar
+  column audit, design 14 §Omnibar rows): the sidebar's prefix (sign, presence dot, bot icon) and
+  bold unread names, a muted network suffix only with more than one network, the palette group as
+  suffix except "Commands", and one fixed trailing slot holding the badge or the primary chord
+  (all bindings stay in the tooltip and `aria-keyshortcuts`). `omnibar-rows.spec.ts`. Bold
+  matches are F38.
 - 2026-11-16: an Earthsong theme, asked for by a friend of Luiz's: the Earthsong terminal scheme from
   mbadolato/iTerm2-Color-Schemes (MIT) on warm brown `#292520`, green accent, orange unread and
   mention badge, set in Monokai's Hack. Design 08.
