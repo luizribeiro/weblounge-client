@@ -1,7 +1,3 @@
-import {
-  ENGINE_DATABASE_NAME,
-  ENGINE_DATABASE_VERSION,
-} from "./engine/generated/EngineDatabaseSchema";
 import { decodeBase64Url } from "./platform/push/base64url";
 import {
   type NotificationClients,
@@ -9,7 +5,6 @@ import {
 } from "./platform/push/notification-routing";
 import {
   DatabaseTimeoutError,
-  databaseDeadlineMs,
   notificationCountsKey,
   openPushDatabase,
   pushRouteIdIndex,
@@ -59,6 +54,7 @@ import {
   PushParserLoader,
   type PushPayloadParser,
 } from "./platform/push/push-parser-loader";
+import { storePushedMessage } from "./platform/push/pushed-message-store";
 
 declare const SHELL_VERSION: string;
 declare const PRECACHE_URLS: readonly string[];
@@ -134,8 +130,6 @@ const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const pushFallbackDeadlineMs = 1_500;
 const notificationScanDeadlineMs = 500;
-const engineCacheStore = "cache";
-const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
@@ -1094,26 +1088,6 @@ async function markForReregistration(routeId: string): Promise<void> {
   }
 }
 
-async function storePushedMessage(message: PushedMessage): Promise<boolean> {
-  const database = await openCurrentEngineDatabase();
-  try {
-    if (!database.objectStoreNames.contains(engineCacheStore)) return true;
-    const transaction = database.transaction(engineCacheStore, "readwrite");
-    const completed = transactionDone(transaction);
-    const store = transaction.objectStore(engineCacheStore);
-    const key = textEncoder.encode(
-      `pushed-message\0${message.network_label}\0${message.msgid}`,
-    );
-    const value = textEncoder.encode(JSON.stringify(message));
-    const existing = await requestResult(store.get(key));
-    store.put(value, key);
-    await completed;
-    return existing === undefined;
-  } finally {
-    database.close();
-  }
-}
-
 function decodeStoredRoute(value: unknown): StoredRoute {
   if (
     typeof value !== "object" ||
@@ -1139,42 +1113,4 @@ function decodeStoredRoute(value: unknown): StoredRoute {
     throw new Error("invalid stored push route");
   }
   return value as unknown as StoredRoute;
-}
-
-function openCurrentEngineDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const request = indexedDB.open(
-      ENGINE_DATABASE_NAME,
-      ENGINE_DATABASE_VERSION,
-    );
-    const deadline = setTimeout(() => {
-      settled = true;
-      reject(new Error("engine database open timed out"));
-    }, databaseDeadlineMs);
-    request.onupgradeneeded = () => request.transaction?.abort();
-    request.onsuccess = () => {
-      const database = request.result;
-      clearTimeout(deadline);
-      if (settled) {
-        database.close();
-        return;
-      }
-      settled = true;
-      database.onversionchange = () => database.close();
-      resolve(database);
-    };
-    request.onblocked = () => {
-      clearTimeout(deadline);
-      if (settled) return;
-      settled = true;
-      reject(new Error("engine database open was blocked"));
-    };
-    request.onerror = () => {
-      clearTimeout(deadline);
-      if (settled) return;
-      settled = true;
-      reject(request.error ?? new Error("engine database failed to open"));
-    };
-  });
 }
