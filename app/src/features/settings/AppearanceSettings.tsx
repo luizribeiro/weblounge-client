@@ -1,23 +1,17 @@
 import { createUniqueId, Show } from "solid-js";
 import { densities } from "../../engine/decodeSettings";
 import type { AppSetting } from "../../engine/generated/AppSetting";
-import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { Density } from "../../engine/generated/Density";
-import type { SettingChange } from "../../engine/generated/SettingChange";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { SettingRow } from "./SettingRow";
 import { SettingSwitch } from "./SettingSwitch";
 import styles from "./SettingsHeading.module.css";
+import type { SettingsPageProps } from "./settings-page-props";
 import { ThemeCards } from "./ThemeCards";
 
-interface AppearanceSettingsProps {
-  readonly settings: AppSettings | undefined;
-  readonly onChange: (change: SettingChange) => void;
-}
-
-export function AppearanceSettings(props: AppearanceSettingsProps) {
+export function AppearanceSettings(props: SettingsPageProps) {
   const themeId = createUniqueId();
   const inBrowserTab = () =>
     platformEnvironment().environment().display === "browser";

@@ -1,12 +1,21 @@
-import { createEffect, createSignal, createUniqueId, onMount } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  onMount,
+  Show,
+} from "solid-js";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import { trapTab } from "../../ui/focus-trap";
-import { AppearanceIcon } from "./AppearanceIcon";
-import { AppearanceSettings } from "./AppearanceSettings";
 import styles from "./SettingsModal.module.css";
 import { SettingsSectionNav } from "./SettingsSectionNav";
+import {
+  type SettingsSectionId,
+  shownSettingsSections,
+} from "./settings-sections";
 
 interface SettingsModalProps {
   readonly settings: AppSettings | undefined;
@@ -17,23 +26,24 @@ interface SettingsModalProps {
 
 export function SettingsModal(props: SettingsModalProps) {
   const titleId = createUniqueId();
-  const sectionId = createUniqueId();
-  const sections = [
-    {
-      id: "appearance",
-      label: t("settings.appearance"),
-      labelId: sectionId,
-      icon: () => <AppearanceIcon />,
-    },
-  ] as const;
-  const [section, setSection] =
-    createSignal<(typeof sections)[number]["id"]>("appearance");
+  const labelIdFor = (id: SettingsSectionId) => `${titleId}-${id}`;
+  const shown = createMemo(shownSettingsSections);
+  const sections = createMemo(() =>
+    shown().map((section) => ({
+      id: section.id,
+      label: t(section.label),
+      labelId: labelIdFor(section.id),
+      icon: () => <section.Icon />,
+    })),
+  );
+  const [chosen, setChosen] = createSignal<SettingsSectionId>("appearance");
+  const current = createMemo(
+    () => shown().find(({ id }) => id === chosen()) ?? shown()[0],
+  );
   const [railExpanded, setRailExpanded] = createSignal(false);
   createEffect(() => {
     if (props.rail !== true) setRailExpanded(false);
   });
-  const currentLabelId = () =>
-    sections.find(({ id }) => id === section())?.labelId;
   let dialog: HTMLDivElement | undefined;
   onMount(() => dialog?.focus({ preventScroll: true }));
   const keydown = (event: KeyboardEvent) => {
@@ -82,19 +92,26 @@ export function SettingsModal(props: SettingsModalProps) {
         </header>
         <div class={styles.body}>
           <SettingsSectionNav
-            current={section()}
+            current={current()?.id ?? chosen()}
             expanded={railExpanded()}
             onExpandedChange={setRailExpanded}
-            onSelect={setSection}
+            onSelect={setChosen}
             rail={props.rail === true}
-            sections={sections}
+            sections={sections()}
           />
-          <section aria-labelledby={currentLabelId()} class={styles.pane}>
-            <AppearanceSettings
-              onChange={props.onChange}
-              settings={props.settings}
-            />
-          </section>
+          <Show when={current()} keyed>
+            {(section) => (
+              <section
+                aria-labelledby={labelIdFor(section.id)}
+                class={styles.pane}
+              >
+                <section.Page
+                  onChange={props.onChange}
+                  settings={props.settings}
+                />
+              </section>
+            )}
+          </Show>
         </div>
       </div>
     </div>
