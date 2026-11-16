@@ -1,0 +1,9 @@
+{
+  "identifier": "org.weblounge.ios.dev",
+  "bundle": {
+    "iOS": {
+      "developmentTeam": "JR4C2QJKWJ",
+      "minimumSystemVersion": "17.0"
+    }
+  }
+}

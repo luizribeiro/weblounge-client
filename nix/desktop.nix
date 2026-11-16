@@ -27,11 +27,14 @@ rustPlatform.buildRustPackage {
       (root + "/build.rs")
       (root + "/tauri.conf.json")
       (root + "/tauri.release.conf.json")
+      (root + "/tauri.ios.conf.json")
+      (root + "/tauri.ios.release.conf.json")
       (root + "/icons")
       (root + "/icons-dev")
       (root + "/src")
       (root + "/release/plan.mjs")
       (root + "/release/plan.test.mjs")
+      (root + "/release/identities.test.mjs")
     ];
   };
   cargoLock.lockFile = root + "/Cargo.lock";
