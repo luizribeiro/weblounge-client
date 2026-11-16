@@ -113,6 +113,8 @@ over an old page would draw the lights over the sidebar logo. The wrapper releas
 4. The lights match the in-app theme, not the system appearance. **Agreed.**
 5. Full screen collapses the sidebar's lights row. **Agreed.**
 6. The sidebar toggle stays in the conversation header. **Agreed.**
+7. The header's topic stays inside the drag region: in the app a press on the topic drags the
+   window rather than selecting its text. **Agreed** (Luiz, 2026-11-16).
 
 ## Out of scope
 
