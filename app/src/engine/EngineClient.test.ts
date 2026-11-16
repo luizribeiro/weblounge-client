@@ -1213,6 +1213,78 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("keeps unread counts current while hidden but holds their timeline", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    client.setVisibility("hidden");
+
+    port.emit(timelineChange(4, "ping while you are away"));
+    port.emit(directBufferUpdate({ unread: 1, mentions: 1 }));
+
+    expect(frames).toHaveLength(0);
+    expect(publishedTypes(listener)).toEqual(["buffer_updated"]);
+
+    client.setVisibility("visible");
+    expect(publishedTypes(listener)).toEqual([
+      "buffer_updated",
+      "timeline_changed",
+    ]);
+  });
+
+  it.each([
+    {
+      type: "buffer_added",
+      buffer: directBufferUpdate({ unread: 1, mentions: 1 }).buffer,
+    },
+    {
+      type: "buffers_changed",
+      network_id: 1,
+      buffers: [directBufferUpdate({ unread: 1, mentions: 1 }).buffer],
+    },
+    { type: "draft_key_changed", previous: "4:alice", current: "4:alicia" },
+  ])("publishes $type to a hidden page without a frame", (event) => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    client.setVisibility("hidden");
+
+    port.emit(event);
+
+    expect(frames).toHaveLength(0);
+    expect(publishedTypes(listener)).toEqual([event.type]);
+  });
+
+  it("drops a hidden buffer's held patches once it is removed", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    client.setVisibility("hidden");
+
+    port.emit(timelineChange(4, "ping while you are away"));
+    port.emit(notice("kept"));
+    port.emit({ type: "buffer_removed", buffer_id: 4 });
+    client.setVisibility("visible");
+
+    expect(publishedTypes(listener)).toEqual(["buffer_removed", "notice"]);
+    expect(client.timeline(4)).toBeUndefined();
+  });
+
+  it("publishes a count still waiting for its frame when the page hides", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit(directBufferUpdate({ unread: 0, mentions: 0 }));
+    client.setVisibility("hidden");
+    port.emit(directBufferUpdate({ unread: 1, mentions: 1 }));
+    client.setVisibility("visible");
+
+    expect(
+      listener.mock.calls.map(([message]) => message.buffer.mentions),
+    ).toEqual([0, 1]);
+  });
+
   it("flushes prior events before an optimistic row in the same frame", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
@@ -1337,6 +1409,55 @@ describe("WorkerEngineClient", () => {
     await expect(restarted).rejects.toThrow("closed");
   });
 });
+
+function publishedTypes(listener: ReturnType<typeof vi.fn>): string[] {
+  return listener.mock.calls.map(([message]) => message.type);
+}
+
+function directBufferUpdate(counts: {
+  readonly unread: number;
+  readonly mentions: number;
+}) {
+  return {
+    type: "buffer_updated",
+    buffer: {
+      id: 4,
+      network_id: 1,
+      sync_state: "synced",
+      kind: "direct",
+      title: "alice",
+      draft_key: "5:Local:rfc1459:nick=alice",
+      topic: null,
+      ...counts,
+    },
+  };
+}
+
+function timelineChange(bufferId: number, text: string) {
+  return {
+    type: "timeline_changed",
+    buffer_id: bufferId,
+    reset: false,
+    upserted: [
+      timelineMessage({
+        id: 12,
+        author: "alice",
+        text,
+        kind: "text",
+        bot: false,
+        authorship: "other",
+        nick_color_index: 3,
+        highlighted: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: ["msg-12"],
+        server_time_ms: 1_700_000_000_000,
+        received_at_ms: 1_700_000_000_010,
+      }),
+    ],
+    removed: [],
+  };
+}
 
 function timelineGap(id: number, time: number) {
   return {

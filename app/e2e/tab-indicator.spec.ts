@@ -9,7 +9,12 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
-import { dispatchPersistedPageShow } from "./page-lifecycle";
+import {
+  dispatchPersistedPageShow,
+  installFocusControl,
+  setPageFocused,
+  setPageHidden,
+} from "./page-lifecycle";
 import { settingsScreenshot } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
@@ -46,6 +51,52 @@ test.describe("browser tab indicator against local Ergo", () => {
     });
     await expectTab(page, "connected", "weblounge");
     await expectSettled(page, { conversation: peer.nickname });
+    await nativeFeelAudit(page);
+  });
+
+  test("counts a DM in the open conversation while the tab is hidden", async ({
+    irc,
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await openHome(page, irc);
+    const peer = await irc.peer("hidden-tab");
+    await peer.privmsgConfirmed(irc.account, "got a minute?");
+    await directRow(page, peer).click();
+    await expectSettled(page, { conversation: peer.nickname });
+    await expectTab(page, "connected", "weblounge");
+
+    await setPageHidden(page, true);
+    await peer.privmsgConfirmed(irc.account, "ping while you are away");
+    await expectTab(page, "unread", "(1) weblounge");
+
+    await setPageHidden(page, false);
+    await expect(
+      page
+        .locator("[data-message-row]")
+        .filter({ hasText: "ping while you are away" }),
+    ).toBeVisible();
+    await expectTab(page, "connected", "weblounge");
+    await expectSettled(page, { conversation: peer.nickname });
+    await nativeFeelAudit(page);
+  });
+
+  test("counts a mention in the open channel while the window is unfocused", async ({
+    irc,
+    page,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await installFocusControl(page);
+    const peer = await irc.peer("blur-tab", [irc.channel]);
+    await openHome(page, irc);
+
+    await setPageFocused(page, false);
+    await peer.privmsgConfirmed(irc.channel, `${irc.account}: look here`);
+    await expectTab(page, "unread", "(1) weblounge");
+
+    await setPageFocused(page, true);
+    await expectTab(page, "connected", "weblounge");
+    await expectSettled(page, { conversation: irc.channel });
     await nativeFeelAudit(page);
   });
 

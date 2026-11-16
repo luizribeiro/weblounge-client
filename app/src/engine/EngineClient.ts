@@ -175,6 +175,9 @@ export class WorkerEngineClient implements EngineClient {
 
   setVisibility(state: VisibilityState): void {
     const resumed = this.#visibility === "hidden" && state === "visible";
+    // Buffer-list events bypass the queue while hidden; an older one still queued would undo them.
+    if (this.#visibility === "visible" && state === "hidden")
+      this.#drainRenderQueue();
     this.#visibility = state;
     if (resumed) {
       this.#drainRenderQueue();
@@ -331,6 +334,12 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   #enqueueForFrame(message: EngineToUi): void {
+    if (this.#visibility === "hidden" && isBufferListEvent(message)) {
+      if (message.type === "buffer_removed")
+        this.#dropQueuedPatches(message.buffer_id);
+      this.#publish(message);
+      return;
+    }
     this.#renderQueue.push(message);
     if (this.#visibility === "hidden") return;
     if (containsOptimisticMessage(message)) {
@@ -338,6 +347,13 @@ export class WorkerEngineClient implements EngineClient {
       return;
     }
     this.#scheduleRenderFrame();
+  }
+
+  #dropQueuedPatches(bufferId: number): void {
+    const kept = this.#renderQueue.filter(
+      (queued) => !("buffer_id" in queued) || queued.buffer_id !== bufferId,
+    );
+    this.#renderQueue.splice(0, this.#renderQueue.length, ...kept);
   }
 
   #scheduleRenderFrame(): void {
@@ -370,6 +386,21 @@ export class WorkerEngineClient implements EngineClient {
     }
     for (const listener of this.#listeners) listener(message);
   }
+}
+
+/**
+ * The tab indicator and app badge count unread while the page is hidden, so the buffer list
+ * cannot wait for the next visible frame. Every event that edits the list, or the draft keys its
+ * rows carry, bypasses together so the page applies them in engine order.
+ */
+function isBufferListEvent(message: EngineToUi): boolean {
+  return (
+    message.type === "buffer_added" ||
+    message.type === "buffer_updated" ||
+    message.type === "buffer_removed" ||
+    message.type === "buffers_changed" ||
+    message.type === "draft_key_changed"
+  );
 }
 
 function containsOptimisticMessage(message: EngineToUi): boolean {

@@ -409,7 +409,7 @@ test.describe("connection resilience against local Ergo", () => {
         type: "load_pushed_messages",
         network_id: 1,
       });
-      await expect(channelRows).toHaveCount(1);
+      await expect(channelButton).toHaveCount(1);
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
       await page.bringToFront();
