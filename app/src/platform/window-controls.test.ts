@@ -88,6 +88,7 @@ afterEach(() => {
   controller?.dispose();
   controller = undefined;
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("window controls", () => {
@@ -107,6 +108,67 @@ describe("window controls", () => {
     );
     await vi.waitFor(() => expect(root.dataset.windowControls).toBe("overlay"));
     expect(controller?.state()).toBe("overlay");
+  });
+
+  it("reveals the windowed layout when full screen goes unanswered", async () => {
+    vi.useFakeTimers();
+    const answers: ((fullScreen: boolean) => void)[] = [];
+    observe(
+      macApp,
+      () => new Promise<boolean>((resolve) => answers.push(resolve)),
+    );
+
+    vi.advanceTimersByTime(999);
+    expect(root.dataset.windowControls).toBe("pending");
+    vi.advanceTimersByTime(1);
+    expect(root.dataset.windowControls).toBe("overlay");
+    expect(vi.getTimerCount()).toBe(0);
+
+    answers[0]?.(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller?.state()).toBe("hidden");
+    expect(root.dataset.windowControls).toBe("hidden");
+  });
+
+  it("drops the reveal deadline once full screen answers", async () => {
+    vi.useFakeTimers();
+    observe();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(root.dataset.windowControls).toBe("overlay");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ["answers nonsense", () => Promise.resolve("yes")],
+    ["rejects", () => Promise.reject(new Error("not allowed"))],
+  ])(
+    "reveals at once and drops the deadline when full screen %s",
+    async (_case, invoke: FakeInvoke) => {
+      vi.useFakeTimers();
+      observe(macApp, invoke);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(root.dataset.windowControls).toBe("overlay");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("drops the reveal deadline when disposed while pending", () => {
+    vi.useFakeTimers();
+    observe(macApp, () => new Promise(() => {}));
+
+    controller?.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(1000);
+    expect(root.dataset.windowControls).toBeUndefined();
+  });
+
+  it("sets no reveal deadline outside a wrapper with window controls", () => {
+    vi.useFakeTimers();
+    observe({ kind: "macos-app", version: "0.1.0" });
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("hides the controls when the window launches in full screen", async () => {

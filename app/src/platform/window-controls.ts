@@ -28,6 +28,9 @@ type WindowColor = string | readonly [number, number, number, number];
 const inlineProperty = "--wl-window-controls-inline";
 const blockProperty = "--wl-window-controls-block";
 
+// A wrapper that never answers is_fullscreen must not leave the page invisible.
+const unansweredRevealDelayMs = 1000;
+
 const absentControls: WindowControlsController = {
   state: () => undefined,
   applyTheme() {},
@@ -43,8 +46,10 @@ export function observeWindowControls(
   const invoke = tauriInvoke(scope);
   const [state, setState] = createSignal<WindowControlsState>("overlay");
   let disposed = false;
+  let revealUnanswered: ReturnType<typeof setTimeout> | undefined;
   const publish = (next: WindowControlsState) => {
     if (disposed) return;
+    clearTimeout(revealUnanswered);
     setState(next);
     root.dataset.windowControls = next;
   };
@@ -55,6 +60,10 @@ export function observeWindowControls(
 
   reserveInsets(root, controls);
   root.dataset.windowControls = "pending";
+  revealUnanswered = setTimeout(
+    () => publish("overlay"),
+    unansweredRevealDelayMs,
+  );
   checkFullScreen();
   scope.addEventListener("resize", checkFullScreen);
 
@@ -65,6 +74,7 @@ export function observeWindowControls(
     },
     dispose() {
       disposed = true;
+      clearTimeout(revealUnanswered);
       scope.removeEventListener("resize", checkFullScreen);
       delete root.dataset.windowControls;
       root.style.removeProperty(inlineProperty);
