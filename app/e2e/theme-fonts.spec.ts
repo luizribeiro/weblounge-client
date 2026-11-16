@@ -28,6 +28,11 @@ const lazyThemes = [
     families: ["Hack"],
     files: ["hack"],
   },
+  {
+    name: "Earthsong",
+    families: ["Hack"],
+    files: ["hack"],
+  },
 ] as const;
 
 test.describe("theme fonts against local Ergo", () => {

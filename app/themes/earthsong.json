@@ -1,0 +1,70 @@
+{
+  "id": "earthsong",
+  "name": "Earthsong",
+  "description": "Warm earth tones, after the terminal scheme",
+  "order": 8,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#292520",
+    "surface": "#292520",
+    "panel": "#211e1a",
+    "panelFg": "#e5c7a9",
+    "panelMuted": "#9a8f81",
+    "panelBorder": "#121418",
+    "panelAlt": "#25221d",
+    "fg": "#e5c7a9",
+    "muted": "#9a8f81",
+    "border": "#403830",
+    "accent": "#85c54c",
+    "accentFg": "#292520",
+    "selection": "#403830",
+    "selectionFg": "#f6f7ec",
+    "mentionBg": "#3a2f1f",
+    "mentionBadge": "#db6d46",
+    "mentionBadgeFg": "#292520",
+    "overlayScrim": "rgba(0,0,0,.6)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#f6f7ec",
+    "redactionBar": "#9a8f81",
+    "unread": "#db6d46",
+    "inputBg": "#121418",
+    "chip": "#3a342d",
+    "codeBg": "#121418",
+    "online": "#85c54c",
+    "selfNick": "#f5ae2e",
+    "error": "#e4664f",
+    "focusRing": "#85c54c"
+  },
+  "typography": {
+    "ui": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "mono": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "title": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "base": "13px",
+    "sectionFamily": "Hack, Hack Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "sectionSize": "12px",
+    "sectionTransform": "none",
+    "sectionTracking": "0"
+  },
+  "shape": {
+    "control": "3px",
+    "avatar": "3px",
+    "icon": "3px",
+    "composer": "3px",
+    "palette": "3px",
+    "pill": "3px",
+    "round": "3px"
+  },
+  "effects": {
+    "overlayShadow": "none",
+    "tooltipShadow": "none",
+    "iconRing": "inset 0 0 0 1px rgba(255,255,255,.14)"
+  },
+  "nickPalette": [
+    "#85c54c",
+    "#f5ae2e",
+    "#1398b9",
+    "#ff9269",
+    "#5fdaff",
+    "#e0d561"
+  ]
+}

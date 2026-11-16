@@ -13,6 +13,7 @@ const themes = [
   { name: "Terminal", id: "terminal", background: "rgb(16, 17, 18)" },
   { name: "Retro", id: "retro", background: "rgb(246, 239, 225)" },
   { name: "Monokai", id: "monokai", background: "rgb(28, 28, 28)" },
+  { name: "Earthsong", id: "earthsong", background: "rgb(41, 37, 32)" },
 ] as const;
 
 test.describe("themes against local Ergo", () => {
@@ -70,18 +71,20 @@ test.describe("themes against local Ergo", () => {
     );
   });
 
-  test("Monokai sets titles in Hack and rounds its overlays by 3px", async ({
-    irc,
-    page,
-  }) => {
-    const dialog = await settingsIn(page, irc, "Monokai");
+  for (const theme of ["Monokai", "Earthsong"]) {
+    test(`${theme} sets titles in Hack and rounds its overlays by 3px`, async ({
+      irc,
+      page,
+    }) => {
+      const dialog = await settingsIn(page, irc, theme);
 
-    await expect(dialog.getByRole("heading", { name: "Settings" })).toHaveCSS(
-      "font-family",
-      /^Hack,/u,
-    );
-    await expect(dialog).toHaveCSS("border-radius", "3px");
-  });
+      await expect(dialog.getByRole("heading", { name: "Settings" })).toHaveCSS(
+        "font-family",
+        /^Hack,/u,
+      );
+      await expect(dialog).toHaveCSS("border-radius", "3px");
+    });
+  }
 });
 
 async function settingsIn(

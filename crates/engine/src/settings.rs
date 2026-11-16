@@ -43,6 +43,10 @@ pub enum ThemePreference {
     #[serde(rename = "monokai")]
     #[ts(rename = "monokai")]
     Monokai,
+    /// The Earthsong theme.
+    #[serde(rename = "earthsong")]
+    #[ts(rename = "earthsong")]
+    Earthsong,
 }
 
 /// Spacing, text size and avatar size of a list.
@@ -391,6 +395,7 @@ mod tests {
             (ThemePreference::Terminal, "terminal"),
             (ThemePreference::Retro, "retro"),
             (ThemePreference::Monokai, "monokai"),
+            (ThemePreference::Earthsong, "earthsong"),
         ] {
             let storage = MemoryKv::default();
 
