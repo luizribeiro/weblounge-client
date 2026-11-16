@@ -393,6 +393,13 @@ the built-worker tag-less harness; device verification remains in the rollout ch
   page seeds the worker's per-tag counts and markers from engine DM unread, channel mention and read
   state so later closed-page recomputation has the same base. Linux, Firefox and Chrome Android have
   no badging API, but cleanup still runs.
+- **The browser tab** (F33, hosted web) shows the app-icon badge count too: the favicon's tile turns
+  the brand red (`mentionBadge`) and the title gains a "(3) " prefix, capped at "(99+)" like the
+  sidebar badge, whenever `appBadgeCount` is above zero. While the connection indicator shows
+  progress or an error (`connectionPresentation`), the tile turns grey instead; unread wins over
+  grey. Build time derives the three tiles from `assets/favicon.svg`; the page swaps the existing
+  `<link rel="icon">` and writes the DOM only when the state changes. A Settings switch (design 29)
+  turns the red tile and the count off; grey stays.
 
 ## Types
 

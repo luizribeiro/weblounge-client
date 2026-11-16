@@ -77,6 +77,8 @@ Additions to the prototype's content:
 - **Network card:** below Connect automatically, an "Uploads" row once the user has been asked:
   "Send your password to `<upload host>`" switch, revocable (D6). The card's button pair gains
   **Sign out** (D7).
+- **Appearance → Browser tab:** "Show unread in the tab" switch, on by default, only in a browser
+  tab (design 23, Badging).
 - **A fourth section, About** (D8): version and build, "Keyboard shortcuts" (desktop; dispatches
   `shortcuts.open`), "Copy diagnostics" (the `/debug` lines), and "Sign out of everything", which
   clears the device (design 22). On the phone its root row's value is the version.
