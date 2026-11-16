@@ -286,24 +286,19 @@ function isPushRouteRequired(event: unknown): boolean {
   return isRecord(event) && event.type === "push_route_required";
 }
 
-// Replies that may carry secrets or tab-local focus go only to the tab that asked. The
-// request's port mapping lives until its terminal result.
+// Replies may carry secrets or tab-local focus, so they go only to the tab that asked. Replies
+// from asynchronous engine tasks have no calling port, so every reply naming its request in
+// `command_id` is correlated. The mapping lives until the terminal result, which the engine
+// emits after the request's other replies.
 function requestCorrelation(
   event: unknown,
 ): { readonly requestId: unknown; readonly final: boolean } | undefined {
   if (!isRecord(event)) return undefined;
-  switch (event.type) {
-    case "command_result":
-    case "command_rejected":
-      return { requestId: event.id, final: true };
-    case "focus_buffer_requested":
-    case "push_device_loaded":
-    case "upload_resolved":
-    case "settings_loaded":
-      return { requestId: event.command_id, final: false };
-    default:
-      return undefined;
-  }
+  if (event.type === "command_result" || event.type === "command_rejected")
+    return { requestId: event.id, final: true };
+  if (typeof event.command_id === "string")
+    return { requestId: event.command_id, final: false };
+  return undefined;
 }
 
 function isHostDetach(message: unknown): boolean {

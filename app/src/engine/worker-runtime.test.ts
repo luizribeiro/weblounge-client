@@ -244,6 +244,51 @@ it("answers a settings load to its tab and broadcasts settings changes", async (
   ]);
 });
 
+it.each([
+  {
+    request: { type: "load_notification_prompt_dismissal" },
+    reply: { type: "notification_prompt_dismissal_loaded", dismissed: true },
+  },
+  {
+    request: { type: "complete", buffer_id: 2, prefix: "me" },
+    reply: { type: "completion_result", buffer_id: 2, candidates: [] },
+  },
+  {
+    request: { type: "diagnostic", message: "ping" },
+    reply: { type: "diagnostic", message: "pong" },
+  },
+])(
+  "answers an asynchronous $reply.type only to its tab",
+  async ({ request, reply }) => {
+    const first = new FakePort();
+    const second = new FakePort();
+    let emit: ((encoded: string) => void) | undefined;
+    let requestHandled = false;
+    const runtime = new EngineWorkerRuntime(async (onEvent) => {
+      emit = onEvent;
+      return {
+        handle: () => {
+          requestHandled = true;
+          return "[]";
+        },
+      };
+    });
+    runtime.attach(first);
+    runtime.attach(second);
+    second.receive({ type: "request", payload: { id: "asked", request } });
+    await vi.waitFor(() => expect(requestHandled).toBe(true));
+
+    emit?.(JSON.stringify({ ...reply, command_id: "asked" }));
+    emit?.(JSON.stringify({ type: "command_result", id: "asked" }));
+
+    expect(first.sent).toEqual([]);
+    expect(second.sent).toEqual([
+      { ...reply, command_id: "asked" },
+      { type: "command_result", id: "asked" },
+    ]);
+  },
+);
+
 it("routes activation to one tab while broadcasting push state", async () => {
   const first = new FakePort();
   const second = new FakePort();
