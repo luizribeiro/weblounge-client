@@ -124,8 +124,9 @@ pub struct PreparedNotification {
 }
 ```
 
-Decryption (RFC 8291 through `ece`, as design 23 already planned for native targets), parsing (the
-existing `parse_push_payload`) and the title/body/tag formatting all move into `push-payload`. The
+Decryption (RFC 8291 through the RustCrypto `p256`, `hkdf` and `aes-gcm` crates the relay already
+uses; `ece` only has an OpenSSL backend, which can't build for wasm), parsing (the existing
+`parse_push_payload`) and the title/body/tag formatting all move into `push-payload`. The
 service worker calls the same code through wasm instead of `push-notification.ts`'s formatter, so
 the two platforms can't drift (DRY). The NSE then:
 
