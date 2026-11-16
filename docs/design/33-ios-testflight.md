@@ -61,9 +61,14 @@ which in the app is native.
    design 27 requires). Tapping it calls the native `request_push_permission`, which runs
    `requestAuthorization([.alert, .sound, .badge])` and then `registerForRemoteNotifications()`.
 2. The APNs device token reaches the shell through the app delegate's
-   `didRegisterForRemoteNotificationsWithDeviceToken`. Tauri doesn't expose that callback to a
-   plugin; how to hook it (a delegate proxy in the iOS plugin, or a template `AppDelegate`) is
-   spike S1 **[unverified]**. `push_target()` returns
+   `didRegisterForRemoteNotificationsWithDeviceToken`. tao declares the `AppDelegate` class at
+   runtime without the remote-notification methods, and its declaration panics if a class of
+   that name already exists, so the app can't bring its own `AppDelegate`. A small Swift iOS
+   plugin adds the success and failure methods to tao's class with `class_addMethod` when it
+   loads; doing it in Rust would need `unsafe`, which the crate denies. Spike S1 confirmed this
+   in the iOS 26.5 simulator: the added method received an APNs token (a simulator token),
+   before the authorization prompt was even answered. The device checklist re-checks it.
+   `push_target()` returns
    `{ platform: "apns", token, environment }` and the page caches it like a `PushSubscription`.
 3. The page's existing device flow runs unchanged. It upserts the target at the relay
    (`POST /v1/devices`, `PUT /v1/devices/:id/target` when the token changes) on every launch and
@@ -178,9 +183,10 @@ the app.
 - **Suspension.** iOS suspends the app seconds after it backgrounds; the IRC socket drops and the
   engine reconnects on return, as the PWA does today. Nothing runs in the background except the
   NSE.
-- **Web content process killed** while backgrounded (memory pressure) leaves a blank web view
-  unless the shell reloads it in `webViewWebContentProcessDidTerminate`. Whether wry already does
-  this is spike S2 **[unverified]**.
+- **Web content process killed** while backgrounded (memory pressure): WebKit reloads the page
+  itself when the app returns to the foreground, and at once when it is killed in the foreground
+  (spike S2, simulator, with no terminate handler set). The shell sets none. A reload is a fresh
+  page load, so the engine reconnects as it does on launch. The device checklist re-checks it.
 - **Storage.** The app's WKWebView storage is separate from the PWA's: the user signs in once more
   and the app is a new relay device. No service worker means no offline launch, which design 19
   already treats as nonfatal. App-Bound Domains might enable service workers later (out of scope).
@@ -292,7 +298,7 @@ iOS builds run from the dev shell, with three differences from the macOS build:
 |---|---|
 | relay APNs support and its tests | `tauri ios init`, NSE target, first Xcode open |
 | `push-payload` decrypt/format, C ABI, `cargo check --target aarch64-apple-ios` | building the staticlib and linking the NSE |
-| page seams and Playwright journeys with a stubbed `__TAURI_INTERNALS__` | spikes S1 (token hook), S2 (content-process reload), S3 (120 Hz) |
+| page seams and Playwright journeys with a stubbed `__TAURI_INTERNALS__` | spike S3 (120 Hz) |
 | Rust and Swift sources for the shell (they compile only on the Mac) | signing, archive, upload, TestFlight groups |
 | `~/weblounge` secret wiring (after Luiz creates the APNs key in the browser) | the device checklist on the iPhone 16 Pro |
 
