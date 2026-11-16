@@ -28,6 +28,7 @@
 
 mod buffer_route;
 mod command;
+mod delivered;
 mod page_event;
 mod push;
 mod route_keys;
@@ -35,6 +36,10 @@ mod validated;
 
 pub use buffer_route::BufferRoutePath;
 pub use command::NativeCommand;
+pub use delivered::{
+    ChatNotificationData, DeliveredNotification, NotificationData,
+    RemoveDeliveredNotificationsRequest, RouteNotificationData,
+};
 pub use page_event::{AppLifecycle, PageEvent};
 pub use push::{ApnsEnvironment, ApnsToken, PushPermission, PushTarget};
 pub use route_keys::{

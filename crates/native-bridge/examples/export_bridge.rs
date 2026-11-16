@@ -4,8 +4,8 @@ use std::{env, error::Error, path::Path};
 
 use ts_rs::TS;
 use weblounge_native_bridge::{
-    CreateRouteKeysRequest, DropRouteKeysRequest, NativeCommand, PageEvent, PushPermission,
-    PushTarget, RouteKeys,
+    CreateRouteKeysRequest, DeliveredNotification, DropRouteKeysRequest, NativeCommand, PageEvent,
+    PushPermission, PushTarget, RemoveDeliveredNotificationsRequest, RouteKeys,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -20,6 +20,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     CreateRouteKeysRequest::export_all_to(&output)?;
     DropRouteKeysRequest::export_all_to(&output)?;
     RouteKeys::export_all_to(&output)?;
+    DeliveredNotification::export_all_to(&output)?;
+    RemoveDeliveredNotificationsRequest::export_all_to(&output)?;
     weblounge_ts_export::trim_trailing_whitespace(Path::new(&output))?;
     Ok(())
 }
