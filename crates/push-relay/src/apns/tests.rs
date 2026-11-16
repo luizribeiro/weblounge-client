@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 
 use super::{ApnsCredentials, ApnsHosts, ApnsSender, client_builder};
 use crate::{
-    Delivery, Error, PushOutcome, PushSender as _, Urgency,
+    ApnsSettings, Delivery, Error, PushOutcome, PushSender as _, Urgency,
     jwt::unix_seconds,
     target::{ApnsEnvironment, ApnsTarget, PushTarget},
     test_apns::{ApnsRequest, FakeApns},
@@ -306,4 +306,27 @@ fn the_provider_key_must_be_a_pkcs8_p256_key() {
         ));
     }
     ApnsSender::new(credentials(p8(&SecretKey::random(&mut OsRng)))).expect("valid .p8 key");
+}
+
+#[tokio::test]
+async fn settings_load_the_p8_key_file() {
+    let directory = tempfile::tempdir().expect("secrets directory");
+    let key_file = directory.path().join("push-relay-apns-key");
+    std::fs::write(&key_file, p8(&SecretKey::random(&mut OsRng))).expect("key file");
+    let settings = |key_file| ApnsSettings {
+        key_file,
+        key_id: "ABC123DEFG",
+        team_id: "DEF123GHIJ",
+        topic: "org.weblounge.ios",
+    };
+
+    let sender = ApnsSender::from_settings(settings(&key_file))
+        .await
+        .expect("sender");
+    assert!(sender.delivers_apns());
+    let missing = directory.path().join("missing");
+    assert!(matches!(
+        ApnsSender::from_settings(settings(&missing)).await,
+        Err(Error::Io(_))
+    ));
 }

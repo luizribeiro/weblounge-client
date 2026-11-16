@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
-    Delivery, Error, PushOutcome, PushSender, Result,
+    ApnsSettings, Delivery, Error, PushOutcome, PushSender, Result,
     jwt::unix_seconds,
     outbound::{log_upstream_delivery, upstream_error},
     target::{ApnsEnvironment, PushTarget},
@@ -87,6 +87,22 @@ impl ApnsSender {
             sandbox: apple_host("https://api.sandbox.push.apple.com/")?,
         };
         Self::with_client(credentials, hosts, client_builder())
+    }
+
+    /// Reads the configured `.p8` key and constructs the sender.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the key file is unreadable or not a P-256 PKCS #8 key.
+    pub async fn from_settings(settings: ApnsSettings<'_>) -> Result<Self> {
+        let sender = Self::new(ApnsCredentials {
+            key_pem: tokio::fs::read(settings.key_file).await?,
+            key_id: settings.key_id.to_owned(),
+            team_id: settings.team_id.to_owned(),
+            topic: settings.topic.to_owned(),
+        })?;
+        tracing::info!(topic = settings.topic, "APNs delivery enabled");
+        Ok(sender)
     }
 
     fn with_client(

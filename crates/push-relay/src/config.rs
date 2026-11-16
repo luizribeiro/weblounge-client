@@ -65,6 +65,22 @@ pub struct Config {
     #[arg(long, env = "PUSH_RELAY_CONCIERGE_SECRET_FILE")]
     pub concierge_secret_file: PathBuf,
 
+    /// `.p8` file of the APNs provider key.
+    #[arg(long, env = "PUSH_RELAY_APNS_KEY_FILE")]
+    pub apns_key_file: Option<PathBuf>,
+
+    /// Identifier of the APNs provider key.
+    #[arg(long, env = "PUSH_RELAY_APNS_KEY_ID")]
+    pub apns_key_id: Option<String>,
+
+    /// Apple developer team that owns the APNs provider key.
+    #[arg(long, env = "PUSH_RELAY_APNS_TEAM_ID")]
+    pub apns_team_id: Option<String>,
+
+    /// The iOS app's bundle identifier, sent as `apns-topic`.
+    #[arg(long, env = "PUSH_RELAY_APNS_TOPIC")]
+    pub apns_topic: Option<String>,
+
     /// TEST ONLY: push-service hostname allowed to resolve to TEST-NET-3.
     #[cfg(feature = "push-e2e")]
     #[arg(long, env = "PUSH_RELAY_TEST_TARGET_HOST", hide = true)]
@@ -76,7 +92,52 @@ pub struct Config {
     pub test_ca_file: Option<PathBuf>,
 }
 
+/// The APNs provider settings, present only when all of them are configured.
+#[derive(Clone, Copy, Debug)]
+pub struct ApnsSettings<'a> {
+    /// `.p8` file of the provider key.
+    pub key_file: &'a Path,
+    /// Identifier of the provider key.
+    pub key_id: &'a str,
+    /// Team that owns the provider key.
+    pub team_id: &'a str,
+    /// The app's bundle identifier.
+    pub topic: &'a str,
+}
+
 impl Config {
+    /// Returns the APNs settings, or `None` when APNs delivery is not configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when only some APNs settings are given, or one is empty.
+    pub fn apns(&self) -> Result<Option<ApnsSettings<'_>>> {
+        match (
+            &self.apns_key_file,
+            &self.apns_key_id,
+            &self.apns_team_id,
+            &self.apns_topic,
+        ) {
+            (None, None, None, None) => Ok(None),
+            (Some(key_file), Some(key_id), Some(team_id), Some(topic))
+                if [key_id, team_id, topic]
+                    .iter()
+                    .all(|value| !value.is_empty()) =>
+            {
+                Ok(Some(ApnsSettings {
+                    key_file,
+                    key_id,
+                    team_id,
+                    topic,
+                }))
+            }
+            _ => Err(Error::Config(
+                "--apns-key-file, --apns-key-id, --apns-team-id and --apns-topic go together"
+                    .to_owned(),
+            )),
+        }
+    }
+
     /// Returns the stable database path below [`Config::state_dir`].
     #[must_use]
     pub fn database_path(&self) -> PathBuf {
@@ -123,6 +184,7 @@ impl Config {
                 ));
             }
         }
+        self.apns()?;
         #[cfg(feature = "push-e2e")]
         if self.test_target_host.is_empty() != self.test_ca_file.is_none() {
             return Err(Error::Config(
@@ -202,6 +264,72 @@ mod tests {
         assert!(config.validate().is_err());
         config.allowed_origins = vec![Url::parse("ftp://beta.weblounge.org").expect("URL")];
         assert!(config.validate().is_err());
+    }
+
+    fn parse(extra: &[&str]) -> super::Config {
+        let mut arguments = vec![
+            "push-relay",
+            "--vapid-key-file",
+            "vapid.pem",
+            "--concierge-url",
+            "http://127.0.0.1/introspect",
+            "--concierge-secret-file",
+            "concierge.secret",
+        ];
+        arguments.extend_from_slice(extra);
+        super::Config::try_parse_from(arguments).expect("configuration")
+    }
+
+    const APNS: [&str; 8] = [
+        "--apns-key-file",
+        "/run/secrets/push-relay-apns-key",
+        "--apns-key-id",
+        "ABC123DEFG",
+        "--apns-team-id",
+        "DEF123GHIJ",
+        "--apns-topic",
+        "org.weblounge.ios",
+    ];
+
+    #[test]
+    fn apns_is_off_without_settings_and_on_with_all_of_them() {
+        let config = parse(&[]);
+        config.validate().expect("Web Push only");
+        assert!(config.apns().expect("no APNs").is_none());
+
+        let config = parse(&APNS);
+        config.validate().expect("APNs configured");
+        let apns = config.apns().expect("valid APNs").expect("APNs on");
+        assert_eq!(
+            apns.key_file,
+            std::path::Path::new("/run/secrets/push-relay-apns-key")
+        );
+        assert_eq!(
+            (apns.key_id, apns.team_id, apns.topic),
+            ("ABC123DEFG", "DEF123GHIJ", "org.weblounge.ios")
+        );
+    }
+
+    #[test]
+    fn partial_or_empty_apns_settings_are_rejected() {
+        for missing in (0..APNS.len()).step_by(2) {
+            let mut partial = APNS.to_vec();
+            partial.drain(missing..missing + 2);
+            assert!(
+                parse(&partial).validate().is_err(),
+                "without {}",
+                APNS[missing]
+            );
+        }
+        for value in (1..APNS.len()).step_by(2).skip(1) {
+            let mut empty = APNS;
+            empty[value] = "";
+            assert!(
+                parse(&empty).validate().is_err(),
+                "empty {}",
+                APNS[value - 1]
+            );
+        }
     }
 
     #[cfg(feature = "push-e2e")]

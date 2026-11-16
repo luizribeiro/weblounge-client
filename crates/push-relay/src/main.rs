@@ -4,8 +4,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use weblounge_push_relay::{
-    ConciergeClient, Config, Database, EndpointValidator, WebPushSender, app,
-    prepare_state_directory,
+    ApnsSender, ConciergeClient, Config, Database, EndpointValidator, PlatformSender,
+    WebPushSender, app, prepare_state_directory,
 };
 
 #[tokio::main]
@@ -59,6 +59,11 @@ async fn run() -> weblounge_push_relay::Result<()> {
         let sender = WebPushSender::new(&vapid_key, targets.clone())?;
         (targets, sender)
     };
+    let apns = match config.apns()? {
+        Some(settings) => Some(ApnsSender::from_settings(settings).await?),
+        None => None,
+    };
+    let sender = PlatformSender::new(sender, apns);
     let service = app(
         database,
         concierge,
