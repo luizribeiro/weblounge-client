@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::BufferRoutePath;
+use crate::{BufferRoutePath, PushTarget};
 
 /// Which side of the app lifecycle the shell just crossed.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]
@@ -24,6 +24,9 @@ pub enum PageEvent {
     /// The app moved between foreground and background.
     #[serde(rename = "weblounge:lifecycle")]
     Lifecycle(AppLifecycle),
+    /// APNs issued or changed the device token, which `push_target` reads as null until then.
+    #[serde(rename = "weblounge:push-target")]
+    PushTarget(PushTarget),
 }
 
 #[cfg(test)]
@@ -31,7 +34,9 @@ mod tests {
     use serde_json::json;
 
     use super::{AppLifecycle, PageEvent};
-    use crate::BufferRoutePath;
+    use crate::{ApnsEnvironment, ApnsToken, BufferRoutePath, PushTarget};
+
+    const TOKEN: &str = "5f0c3e8a9b1d2c4e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6";
 
     fn open_route() -> PageEvent {
         PageEvent::OpenRoute(
@@ -53,6 +58,16 @@ mod tests {
             (
                 PageEvent::Lifecycle(AppLifecycle::Foreground),
                 json!({ "name": "weblounge:lifecycle", "detail": "foreground" }),
+            ),
+            (
+                PageEvent::PushTarget(PushTarget::Apns {
+                    token: ApnsToken::try_from(TOKEN.to_owned()).expect("valid token"),
+                    environment: ApnsEnvironment::Sandbox,
+                }),
+                json!({
+                    "name": "weblounge:push-target",
+                    "detail": { "platform": "apns", "token": TOKEN, "environment": "sandbox" },
+                }),
             ),
         ] {
             assert_eq!(serde_json::to_value(&event).expect("serializes"), value);
