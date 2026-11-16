@@ -14,6 +14,7 @@ import { bufferReactionToggle } from "../../features/conversation/reaction-targe
 import { bufferRedaction } from "../../features/conversation/redact-target";
 import {
   MemberPanel,
+  type MemberPanelChrome,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
 import { t } from "../../strings";
@@ -127,15 +128,12 @@ function PaneConversation(props: DesktopPaneProps) {
   });
   const MembersOf = (list: {
     readonly bufferId: number;
-    readonly onClose?: () => void;
-    readonly onEscape?: () => void;
+    readonly chrome: MemberPanelChrome;
     readonly onOpenDirect: (nick: string) => void;
   }) => (
     <MemberPanel
+      {...list.chrome}
       bufferTitle={buffer().title}
-      header={list.onClose === undefined ? "none" : "titled"}
-      onClose={list.onClose}
-      onEscape={list.onEscape}
       onOpenDirect={list.onOpenDirect}
       onRequestRange={(offset) =>
         props.onRequestMemberRange(list.bufferId, offset)
@@ -235,7 +233,7 @@ function PaneConversation(props: DesktopPaneProps) {
           {(bufferId) => (
             <MembersOf
               bufferId={bufferId}
-              onEscape={focusComposer}
+              chrome={{ header: "none", onEscape: focusComposer }}
               onOpenDirect={props.onOpenDirect}
             />
           )}
@@ -254,7 +252,7 @@ function PaneConversation(props: DesktopPaneProps) {
             <div class={styles.drawerContent}>
               <MembersOf
                 bufferId={buffer().id}
-                onClose={requestClose}
+                chrome={{ onClose: requestClose }}
                 onOpenDirect={(nick) => {
                   props.onOpenDirect(nick);
                   members.closeDrawer();

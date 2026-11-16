@@ -238,8 +238,11 @@ it("toggles the channel member panel and routes direct messages", async () => {
   });
   member.focus();
   fireEvent.keyDown(member, { key: "Escape" });
-  await Promise.resolve();
-  expect(screen.getByRole("textbox", { name: "Message #room" })).toHaveFocus();
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #room" }),
+    ).toHaveFocus(),
+  );
   expect(
     screen.getByRole("complementary", { name: "Members of #room" }),
   ).toBeVisible();

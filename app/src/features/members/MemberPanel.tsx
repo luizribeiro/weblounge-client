@@ -23,21 +23,31 @@ export type MemberWindow = MemberWindowEvent & {
   readonly version: number;
   readonly window_size: number;
 };
-interface MemberPanelProps {
+export type MemberPanelChrome =
+  | {
+      readonly header?: "titled" | undefined;
+      readonly closeLabel?: string | undefined;
+      readonly onClose: () => void;
+      readonly onEscape?: undefined;
+    }
+  | {
+      readonly header: "none";
+      readonly closeLabel?: undefined;
+      readonly onClose?: undefined;
+      readonly onEscape?: (() => void) | undefined;
+    };
+
+type MemberPanelProps = MemberPanelChrome & {
   readonly autofocusFilter?: boolean | undefined;
   readonly bufferTitle: string;
-  readonly closeLabel?: string | undefined;
   readonly filter?: string | undefined;
-  readonly header?: "titled" | "none" | undefined;
   readonly window: MemberWindow | undefined;
-  readonly onClose?: (() => void) | undefined;
-  readonly onEscape?: (() => void) | undefined;
   readonly onFilter?: ((filter: string) => void) | undefined;
   readonly onOpenDirect: (nick: string) => void;
   readonly onRequestRange: (offset: number) => void;
   readonly showModeSymbols?: boolean | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
-}
+};
 
 export function MemberPanel(props: MemberPanelProps) {
   const metrics = memberPanelMetrics(props.presentation ?? "desktop");
@@ -128,7 +138,7 @@ export function MemberPanel(props: MemberPanelProps) {
           <button
             aria-label={props.closeLabel ?? t("members.hide")}
             class={styles.close}
-            onClick={() => props.onClose?.()}
+            onClick={() => props.onClose()}
             type="button"
           >
             ×

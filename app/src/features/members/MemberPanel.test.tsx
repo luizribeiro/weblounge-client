@@ -95,6 +95,22 @@ it("hands Escape to its host only when the host asks for it", () => {
   expect(onEscape).toHaveBeenCalledOnce();
 });
 
+it("leaves Escape to its container when it has a titled header", () => {
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      window={window}
+      onClose={() => {}}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+    />
+  ));
+  const member = screen.getByRole("button", {
+    name: "Open direct message with weblounge",
+  });
+  expect(fireEvent.keyDown(member, { key: "Escape" })).toBe(true);
+});
+
 it("passes the mode-symbol setting to member rows", () => {
   render(() => (
     <MemberPanel
