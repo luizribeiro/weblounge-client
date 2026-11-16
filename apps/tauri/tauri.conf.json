@@ -12,7 +12,7 @@
       "capabilities": [
         {
           "identifier": "remote-page",
-          "description": "Lets the hosted app set the Dock badge and use the system notification center, and nothing else.",
+          "description": "Lets the hosted app set the Dock badge, use the system notification center, drag and zoom the window from its chrome, read whether it is full screen, and match the window's theme and background to the page, and nothing else.",
           "windows": [
             "main"
           ],
@@ -26,7 +26,13 @@
             "allow-notification-permission",
             "allow-request-notification-permission",
             "allow-post-notification",
-            "allow-close-notification"
+            "allow-close-notification",
+            "core:window:allow-start-dragging",
+            "core:window:allow-internal-toggle-maximize",
+            "core:window:allow-is-fullscreen",
+            "core:window:allow-set-theme",
+            "core:window:allow-set-background-color",
+            "core:webview:allow-set-webview-background-color"
           ]
         }
       ]
