@@ -64,7 +64,8 @@ const snapshotAppleProject = () =>
       .map((file) => join(repo, file)),
   );
 
-// Tauri sets only the app's short version, while agvtool's build number reaches both bundles.
+// Tauri writes the config's version into the app's Info.plist only, so agvtool gives the
+// extension the same short version.
 const setMarketingVersion = (version, env) =>
   step("/usr/bin/xcrun", ["agvtool", "new-marketing-version", version], {
     cwd: appleProject,
@@ -76,7 +77,7 @@ function exportIpa({ version, build, env }) {
   rmSync(IPA, { force: true });
   try {
     setMarketingVersion(version, env);
-    step("cargo", iosBuildArgs(build), { cwd: crate, env });
+    step("cargo", iosBuildArgs({ version, build }), { cwd: crate, env });
   } finally {
     restore();
   }

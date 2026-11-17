@@ -32,7 +32,7 @@ export function iosBuildEnv(env, { toolDir, appIdentifier, display }) {
   };
 }
 
-export const iosBuildArgs = (build) => [
+export const iosBuildArgs = ({ version, build }) => [
   "tauri",
   "ios",
   "build",
@@ -40,7 +40,7 @@ export const iosBuildArgs = (build) => [
   "--config",
   "tauri.ios.release.conf.json",
   "--config",
-  JSON.stringify({ bundle: { iOS: { bundleVersion: build } } }),
+  JSON.stringify({ version, bundle: { iOS: { bundleVersion: build } } }),
   "--export-method",
   "app-store-connect",
 ];

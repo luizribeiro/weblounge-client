@@ -85,8 +85,8 @@ test("an environment without PATH still finds the stand-in and Apple's tools", (
   );
 });
 
-test("builds the release identity for App Store Connect with the build number", () => {
-  assert.deepEqual(iosBuildArgs("2620"), [
+test("builds the release identity for App Store Connect with the short version and build number", () => {
+  assert.deepEqual(iosBuildArgs({ version: "0.2.0", build: "2620" }), [
     "tauri",
     "ios",
     "build",
@@ -94,7 +94,7 @@ test("builds the release identity for App Store Connect with the build number", 
     "--config",
     "tauri.ios.release.conf.json",
     "--config",
-    '{"bundle":{"iOS":{"bundleVersion":"2620"}}}',
+    '{"version":"0.2.0","bundle":{"iOS":{"bundleVersion":"2620"}}}',
     "--export-method",
     "app-store-connect",
   ]);
