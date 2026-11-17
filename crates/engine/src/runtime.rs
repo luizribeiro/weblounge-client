@@ -2753,6 +2753,18 @@ async fn message_reference(
         SendTarget::Channel(channel) => (channel, msgid).into(),
         SendTarget::Direct {
             nick,
+            recipient: None,
+            pin: None,
+        } => (
+            client
+                .direct(&nick)
+                .await
+                .map_err(|error| classify_send_error(&error))?,
+            msgid,
+        )
+            .into(),
+        SendTarget::Direct {
+            nick,
             recipient,
             pin,
         } => (

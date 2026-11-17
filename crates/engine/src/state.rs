@@ -251,6 +251,15 @@ pub(crate) enum DirectAvailability {
     Failed,
 }
 
+impl DirectAvailability {
+    const fn is_unresolved(&self) -> bool {
+        match self {
+            Self::Pending | Self::Resolving => true,
+            Self::Guarded(_) | Self::MonitorFull | Self::Failed => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum HistoryState {
     Unrequested,
@@ -1380,7 +1389,7 @@ impl NetworkModel {
         message_id: MessageId,
         text: String,
     ) -> Option<OwnReactionChange> {
-        let target = self.send_target(buffer_id)?;
+        let target = self.action_target(buffer_id)?;
         let msgid = self
             .buffers
             .get(&buffer_id)?
@@ -1560,7 +1569,7 @@ impl NetworkModel {
         buffer_id: BufferId,
         message_id: MessageId,
     ) -> Option<OwnRedaction> {
-        let target = self.send_target(buffer_id)?;
+        let target = self.action_target(buffer_id)?;
         let message = self.chat_message_mut(buffer_id, message_id)?;
         let redactable = message.authorship == MessageAuthorship::Own
             && matches!(message.kind, MessageKind::Text | MessageKind::Action)
@@ -2908,6 +2917,27 @@ impl NetworkModel {
             buffer.direct_pin.as_ref(),
             buffer.direct_mismatch.is_some(),
         )
+    }
+
+    /// The target of a reaction or deletion. A reconnect drops every DM's peer handle and only
+    /// seeing the peer again restores it, so an unresolved DM resolves its peer when sent, as a
+    /// queued message does, where `send_target` has no target for it.
+    pub(crate) fn action_target(&self, buffer_id: BufferId) -> Option<SendTarget> {
+        self.send_target(buffer_id).or_else(|| {
+            let buffer = self.buffers.get(&buffer_id)?;
+            let Some(NameKey::Direct(nick)) = &buffer.key else {
+                return None;
+            };
+            let unresolved = buffer
+                .direct
+                .as_ref()
+                .is_none_or(DirectAvailability::is_unresolved);
+            (unresolved && buffer.direct_mismatch.is_none()).then(|| SendTarget::Direct {
+                nick: nick.clone(),
+                recipient: None,
+                pin: buffer.direct_pin.clone(),
+            })
+        })
     }
 
     pub(crate) fn remove_channel(&mut self, channel: &papo::ChannelName) -> Option<EngineToUi> {
@@ -9707,6 +9737,56 @@ mod tests {
         let target =
             SendTarget::from_buffer(channel.clone(), None, None, false).expect("channel target");
         assert_eq!(target.name_key(), channel);
+    }
+
+    #[test]
+    fn unresolved_direct_actions_resolve_their_peer_when_sent() {
+        let (mut model, state) = model(10);
+        let nick = nick_name(&state, "alice");
+        let (buffer_id, _) =
+            model.open_direct(nick.clone(), super::DirectAvailability::Pending, &state);
+        let pin: papo::PeerKey = "papo-pin:1;server=irc.example;casemap=rfc1459;account=alice"
+            .parse()
+            .expect("peer key");
+        let resolving = |model: &mut NetworkModel,
+                         direct: Option<super::DirectAvailability>,
+                         pin: Option<papo::PeerKey>| {
+            let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
+            buffer.direct = direct;
+            buffer.direct_pin = pin;
+            model.action_target(buffer_id)
+        };
+        assert!(model.send_target(buffer_id).is_none());
+
+        for direct in [
+            None,
+            Some(super::DirectAvailability::Pending),
+            Some(super::DirectAvailability::Resolving),
+        ] {
+            let target = resolving(&mut model, direct.clone(), None);
+            assert!(matches!(
+                target,
+                Some(SendTarget::Direct { nick: ref target, recipient: None, pin: None })
+                    if *target == nick
+            ));
+            let target = resolving(&mut model, direct, Some(pin.clone()));
+            assert!(matches!(
+                target,
+                Some(SendTarget::Direct { recipient: None, pin: Some(ref kept), .. })
+                    if kept.as_verified_str() == pin.as_verified_str()
+            ));
+        }
+        let failed = resolving(&mut model, Some(super::DirectAvailability::Failed), None);
+        assert!(failed.is_none());
+
+        let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
+        buffer.direct_mismatch = Some(super::DirectMismatch {
+            reason: papo::PeerKeyMismatch::DifferentAccount,
+            current: pin.clone(),
+            deferred: false,
+        });
+        let mismatched = resolving(&mut model, Some(super::DirectAvailability::Pending), None);
+        assert!(mismatched.is_none());
     }
 
     #[test]

@@ -6,6 +6,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { productionMessageRow } from "./production-ergo";
 import { expectSettled } from "./settled";
 import { isChromium, tap, touchDown } from "./touch";
@@ -189,6 +190,41 @@ test("the back swipe starting on a message never opens the sheet", async ({
   await finger.lift();
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expect(page.locator("[data-mobile-sheet]")).toHaveCount(0);
+});
+
+test("reacts from the sheet in a DM after a reconnect while its peer stays quiet", async ({
+  context,
+  page,
+  irc,
+}) => {
+  await installNativeFeelInstrumentation(page);
+  const keeper = await irc.self();
+  await keeper.setAlwaysOn(true);
+  const peer = await irc.peer("quiet-dm");
+  await peer.mode(peer.nickname, "+B");
+  const text = `see https://github.com/luizribeiro/weblounge-client/pull/1234 ${"and more words".repeat(14)}`;
+  await openChat(page, irc);
+  const id = messageId(await peer.privmsgConfirmed(irc.account, text));
+  await page.goto(irc.url({ path: `/Local%20Ergo/@${peer.nickname}` }));
+  const online = page.locator('[data-network-state="online"]');
+  await expect(online).toHaveCount(1);
+  const row = page.locator(`[data-message-row][data-message-text="${text}"]`);
+  await expect(row).toBeVisible();
+  await expectSettled(page, { conversation: peer.nickname });
+
+  await context.setOffline(true);
+  await expect(online).toHaveCount(0);
+  await context.setOffline(false);
+  await dispatchPersistedPageShow(page);
+  await expect(online).toHaveCount(1);
+  await expectSettled(page, { conversation: peer.nickname });
+
+  const sheet = await longPressMessage(page, row, peer.nickname);
+  await tap(page, sheet.getByRole("button", { name: "React with 😂" }));
+  await peer.waitForReaction(peer.nickname, id, "😂", irc.account);
+  await expectConfirmedOwn(row.locator('[data-reaction="😂"]'), "1");
+  await expectSettled(page, { conversation: peer.nickname });
+  await nativeFeelAudit(page);
 });
 
 /**

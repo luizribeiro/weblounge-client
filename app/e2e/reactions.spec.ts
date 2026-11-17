@@ -5,6 +5,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { productionMessageRow, useDedicatedWorker } from "./production-ergo";
 import { expectSettled } from "./settled";
 
@@ -196,6 +197,52 @@ test("picks any emoji from the searchable picker", async ({ page, irc }) => {
   await expectIdle(page);
   await nativeFeelAudit(page);
 });
+
+for (const cycle of ["reload", "reconnect"] as const) {
+  test(`reacts in a DM after a ${cycle} while its peer stays quiet`, async ({
+    context,
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    const keeper = await irc.self();
+    await keeper.setAlwaysOn(true);
+    const peer = await irc.peer("quiet-dm");
+    await peer.mode(peer.nickname, "+B");
+    const text = `see https://github.com/luizribeiro/weblounge-client/pull/1234 ${"and more words".repeat(14)}`;
+    await openOnline(page, irc);
+    const id = messageId(await peer.privmsgConfirmed(irc.account, text));
+    await page
+      .getByRole("button", { name: new RegExp(`^${peer.nickname}(?:,|$)`) })
+      .click();
+    const row = page.locator(`[data-message-row][data-message-text="${text}"]`);
+    await expect(row).toBeVisible();
+    await expectSettled(page, { conversation: peer.nickname });
+    if (cycle === "reload") {
+      await page.goto(irc.url({ path: `/Local%20Ergo/@${peer.nickname}` }));
+    } else {
+      await context.setOffline(true);
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        0,
+      );
+      await context.setOffline(false);
+      await dispatchPersistedPageShow(page);
+    }
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await expectSettled(page, { conversation: peer.nickname });
+
+    await row.hover();
+    const toolbar = row.getByRole("toolbar", { name: "Message actions" });
+    await toolbar.getByRole("button", { name: "React with 😂" }).click();
+    await peer.waitForReaction(peer.nickname, id, "😂", irc.account);
+    await expect(row.locator('[data-reaction="😂"]')).toHaveAttribute(
+      "data-reaction-own",
+      "true",
+    );
+    await expectIdle(page);
+    await nativeFeelAudit(page);
+  });
+}
 
 async function transcriptGeometry(page: Page) {
   return page.locator("[data-message-list]").evaluate((list) => ({
