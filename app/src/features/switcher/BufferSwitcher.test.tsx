@@ -187,8 +187,11 @@ it("shows only an action's primary chord and keeps the rest in its tooltip", () 
   ));
   const option = screen.getByRole("option", { name: /Previous buffer/u });
 
-  expect(option.querySelectorAll("kbd")).toHaveLength(1);
-  expect(option.querySelector("kbd")).toHaveTextContent(/^⌥↑$/u);
+  const chords = option.querySelectorAll("[data-omnibar-slot] > kbd");
+  expect(chords).toHaveLength(1);
+  expect(chords[0]?.querySelector(".visually-hidden")).toHaveTextContent(
+    /^⌥↑$/u,
+  );
   expect(option).toHaveAttribute("title", "⌥↑ / ⌃⇧Tab / ⇧⌘[");
   expect(option).toHaveAttribute(
     "aria-keyshortcuts",

@@ -11,12 +11,6 @@
   --wl-size-bot-icon: 14px;
 }
 
-.chord {
-  font-family: var(--wl-font-mono);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .badge {
   align-items: center;
   background: var(--wl-color-accent);

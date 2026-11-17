@@ -9,6 +9,24 @@ import {
 } from "./native-feel-audit";
 import { expectOmnibarColumnsAligned } from "./omnibar-geometry";
 import { expectSettled } from "./settled";
+import { emulatePlatform } from "./sidebar-rows";
+
+const paletteChordPlatforms = [
+  {
+    name: "Linux",
+    navigatorPlatform: undefined,
+    openPalette: "Control+Shift+.",
+    settingsCaps: ["Ctrl", "Shift", ","],
+    surface: "palette",
+  },
+  {
+    name: "macOS",
+    navigatorPlatform: "MacIntel",
+    openPalette: "Meta+Shift+.",
+    settingsCaps: ["⇧", "⌘", ","],
+    surface: "palette-macos",
+  },
+] as const;
 
 const screenshotDirectory = path.join(
   process.cwd(),
@@ -60,33 +78,50 @@ test.describe("omnibar rows against local Ergo", () => {
     }
   });
 
-  test("lines up palette rows with and without a chord", async ({
-    page,
-    irc,
-  }) => {
-    await installNativeFeelInstrumentation(page);
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.goto(irc.url());
-    await expectSettled(page, { conversation: irc.channel });
+  for (const platform of paletteChordPlatforms) {
+    test(`lines up palette rows with and without ${platform.name} chords`, async ({
+      page,
+      irc,
+    }) => {
+      if (platform.navigatorPlatform !== undefined)
+        await emulatePlatform(page, platform.navigatorPlatform);
+      await installNativeFeelInstrumentation(page);
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
 
-    await page.keyboard.press("Control+Shift+.");
-    const results = page.getByRole("listbox", { name: "Commands" });
-    const settings = results.getByRole("option", { name: /^Settings/u });
-    await expect(settings.locator("kbd")).toHaveText("Ctrl+Shift+,");
-    await expect(settings.locator("[data-omnibar-suffix]")).toHaveText("View");
-    const leave = results.getByRole("option", { name: /^Leave a channel/u });
-    await expect(leave.locator("kbd")).toHaveCount(0);
-    await expect(leave.locator("[data-omnibar-suffix]")).toHaveCount(0);
-    expect(
-      await results
-        .getByRole("option")
-        .evaluateAll((rows) =>
-          Math.max(...rows.map((row) => row.querySelectorAll("kbd").length)),
-        ),
-    ).toBe(1);
-    await nativeFeelAudit(page);
-    await captureEachLook(page, "Command palette", "palette");
-  });
+      await page.keyboard.press(platform.openPalette);
+      const results = page.getByRole("listbox", { name: "Commands" });
+      const settings = results.getByRole("option", { name: /^Settings/u });
+      await expect(
+        settings.locator("[data-omnibar-slot] > kbd kbd"),
+      ).toHaveText(platform.settingsCaps);
+      await expect(settings.locator("[data-omnibar-suffix]")).toHaveText(
+        "View",
+      );
+      const leave = results.getByRole("option", {
+        name: /^Leave a channel/u,
+      });
+      await expect(leave.locator("kbd")).toHaveCount(0);
+      await expect(leave.locator("[data-omnibar-suffix]")).toHaveCount(0);
+      expect(
+        await results
+          .getByRole("option")
+          .evaluateAll((rows) =>
+            Math.max(
+              ...rows.map(
+                (row) =>
+                  row.querySelectorAll("[data-omnibar-slot] > kbd").length,
+              ),
+            ),
+          ),
+      ).toBe(1);
+      for (const row of await expectOmnibarColumnsAligned(results))
+        expect(row.slotRight - row.slotLeft).toBeCloseTo(116, 0);
+      await nativeFeelAudit(page);
+      await captureEachLook(page, "Command palette", platform.surface);
+    });
+  }
 
   test("marks presence, bots and unread like the sidebar", async ({
     page,

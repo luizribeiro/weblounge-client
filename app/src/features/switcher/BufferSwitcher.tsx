@@ -16,6 +16,7 @@ import {
   switcherBuffers,
   switcherKeyIntent,
 } from "./buffer-switcher-model";
+import { ChordHint } from "./ChordHint";
 import {
   commandQuery,
   omnibarMode,
@@ -199,9 +200,7 @@ export function BufferSwitcher(props: BufferSwitcherProps) {
                 onClick={() => run(action)}
                 trailing={
                   <Show when={action.shortcut} keyed>
-                    {(shortcut) => (
-                      <kbd class={styles.chord}>{shortcut.labels[0]}</kbd>
-                    )}
+                    {(shortcut) => <ChordHint label={shortcut.labels[0]} />}
                   </Show>
                 }
                 suffix={paletteSuffix(action)}
