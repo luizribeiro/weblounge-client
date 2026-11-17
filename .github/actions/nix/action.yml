@@ -21,3 +21,4 @@ runs:
       with:
         name: weblounge
         authToken: ${{ inputs.auth-token }}
+        skipPush: true
