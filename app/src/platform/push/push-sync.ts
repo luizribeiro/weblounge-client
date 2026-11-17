@@ -1,6 +1,7 @@
 import type { EngineClient } from "../../engine/EngineClient";
 import type { PushDeviceCredentials } from "../../engine/generated/PushDeviceCredentials";
 import type { PushFailure } from "../../engine/generated/PushFailure";
+import type { PushUnsupportedReason } from "../../engine/generated/PushUnsupportedReason";
 import type { EngineClientMessage } from "../../engine/protocol";
 import { type DeviceTarget, sameDeviceTarget } from "./device-target";
 import type { PushDeviceStore } from "./engine-device-store";
@@ -182,6 +183,28 @@ export class PushSynchronizer {
       );
       return;
     }
+    if (pushState.status === "unsupported") {
+      this.#enqueue(async () =>
+        this.#registrationUnsupported(message.network_id, pushState.reason),
+      );
+    }
+  }
+
+  /** No timer: only a fresh route requirement from the engine can lift the missing prerequisite. */
+  #registrationUnsupported(
+    networkId: number,
+    reason: PushUnsupportedReason,
+  ): void {
+    const routeId = this.#currentRoutes.get(networkId);
+    if (routeId === undefined) return;
+    this.#cancelRetry(networkId);
+    this.#publish(
+      networkId,
+      "none",
+      routeId,
+      `engine: unsupported(${reason})`,
+      true,
+    );
   }
 
   dispose(): void {

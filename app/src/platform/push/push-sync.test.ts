@@ -739,6 +739,67 @@ describe("push state synchronization", () => {
     );
   });
 
+  it("fails visibly when the engine cannot register the ensured route", async () => {
+    const current = fixture();
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    const ensures = current.engine.requests.length;
+
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "unsupported", reason: "no_account" },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.diagnostics).toHaveBeenLastCalledWith({
+      networkId: 1,
+      state: "none",
+      routeIdPrefix: "route-1",
+      lastError: "engine: unsupported(no_account)",
+      failing: true,
+    });
+    expect(current.retries).toHaveLength(0);
+    expect(current.engine.requests).toHaveLength(ensures);
+  });
+
+  it("registers again once the engine announces the route after an unsupported reply", async () => {
+    const current = fixture();
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "unsupported", reason: "no_vapid" },
+    });
+    await current.synchronizer.settled();
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.engine.requests.at(-1)?.request).toEqual(
+      expect.objectContaining({
+        type: "ensure_push",
+        route: expect.objectContaining({ route_id: "route-1" }),
+      }),
+    );
+    expect(current.diagnostics).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: "probing", failing: false }),
+    );
+  });
+
+  it("ignores an unsupported network it never ensured a route for", async () => {
+    const current = fixture();
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "unsupported", reason: "no_web_push" },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.diagnostics).not.toHaveBeenCalled();
+  });
+
   it("turns forbidden registration off visibly", async () => {
     const current = fixture();
     requireRoute(current.engine);

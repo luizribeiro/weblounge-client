@@ -2141,6 +2141,52 @@ test.describe("push settings states in a desktop browser", () => {
       .poll(() => relay.calls())
       .toContain("POST /v1/devices/device-1/routes");
   });
+
+  test("push settings show a route the server cannot register and retry it", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    await page.addInitScript(() => {
+      Reflect.set(globalThis, "hostedPushUnsupported", "no_account");
+    });
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    const composer = page.getByRole("textbox", { name: /^Message /u });
+    await composer.fill("/debug push");
+    await composer.press("Enter");
+    await expect(page.locator("[data-debug-overlay]")).toContainText(
+      "engine=Unsupported(no_account) / relay=none (route-io) / last error=engine: unsupported(no_account)",
+    );
+    const dialog = await openDesktopNotificationSettings(page);
+    const failure = dialog.getByText("Couldn't turn on notifications");
+    await expect(failure).toBeVisible();
+    await expect(pushSwitch(dialog)).toBeChecked();
+
+    await page.evaluate(() =>
+      Reflect.deleteProperty(globalThis, "hostedPushUnsupported"),
+    );
+    await dialog.getByRole("button", { name: "Retry" }).click();
+
+    await expect(failure).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        (await registrationSequence(page)).filter(
+          (step) => step === "ensure:route-ios",
+        ),
+      )
+      .toHaveLength(2);
+  });
 });
 
 test.describe("push settings on the iPhone home screen", () => {
@@ -2651,6 +2697,14 @@ async function installFakeEngine(
               : "unknown-route";
           const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
           if (Array.isArray(sequence)) sequence.push(`ensure:${routeId}`);
+          const unsupported = Reflect.get(globalThis, "hostedPushUnsupported");
+          if (typeof unsupported === "string") {
+            this.emit({
+              type: "push_state_changed",
+              network_id: 1,
+              state: { status: "unsupported", reason: unsupported },
+            });
+          }
           Reflect.set(globalThis, "completePushRegistration", () => {
             this.emit({
               type: "push_state_changed",

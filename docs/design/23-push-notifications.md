@@ -634,8 +634,10 @@ without repeating relay route or dead-endpoint calls. Reconnect reuses the relay
 a changed home or relay VAPID key starts convergence for the new key. Activation failure is retried;
 a dead route rotates. `invalid_parameters` rotates once per connection, `registration_limit` drains
 dead endpoints and retries once, temporary errors keep the current route and back off, and
-`web_push_forbidden` deletes the route and remains visibly off. Relay 410 clears the dead device and
-re-upserts; 401 enters hosted reauthorization.
+`web_push_forbidden` deletes the route and remains visibly off. An `Unsupported` reply (no Web Push
+capability, account or VAPID key) keeps the route but fails visibly without a timer; the engine
+announces a fresh requirement once the missing prerequisite arrives. Relay 410 clears the dead
+device and re-upserts; 401 enters hosted reauthorization.
 
 The relay owns reconciliation and retires every duplicate live route for the same device and home.
 Its dead-endpoint drain returns at most five endpoints for the requested home VAPID key. The page
