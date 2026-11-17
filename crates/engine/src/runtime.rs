@@ -1967,7 +1967,7 @@ impl Runtime {
         client: papo::Client,
         instance: u64,
         nick: String,
-        text: Option<String>,
+        mut text: Option<String>,
         focus: bool,
     ) {
         let state = Arc::clone(&self.state);
@@ -2024,6 +2024,7 @@ impl Runtime {
                     }
                 },
             };
+            let unlabelled = crate::services::take_unlabelled(&client.state(), &nick, &mut text);
             let (pending, rejection, output) = {
                 let mut state = lock(&state);
                 let Some(running) = state
@@ -2065,6 +2066,7 @@ impl Runtime {
             if let Some(pending) = pending {
                 finish_send(&state, &outbound, &client, instance, &pending).await;
             }
+            let rejection = crate::services::send(&client, unlabelled, rejection).await;
             let _ = outbound.send(terminal_command(command_id, rejection));
         });
     }
@@ -8317,6 +8319,103 @@ async fn delay(duration: Duration) {
         .await
         .expect("returned peer is resolved");
         drop(held);
+    }
+
+    const ERGO_CAPS: [&str; 3] = ["batch", "echo-message", "labeled-response"];
+
+    /// Sends `/msg <nick> REGISTER #room`, answering papo's identity lookups, and returns the
+    /// `PRIVMSG` it wrote with whether a guarded send queued its local echo.
+    async fn sent_direct_privmsg(nick: &str, caps: &[&str], isupport: &str) -> (String, bool) {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(format!(
+            ":offline.test 005 weblounge MONITOR=100 {isupport} :supported"
+        ))
+        .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::FeaturesChanged { .. })
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .set_connection(crate::NetworkConnectionState::Online, None);
+        let runtime = Runtime { state, outbound };
+        runtime.request(EngineRequestEnvelope {
+            id: "message".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: format!("/msg {nick} REGISTER #room"),
+            },
+        });
+        loop {
+            let sent = wire.next_sent().await;
+            if sent.contains("PRIVMSG") {
+                let local_echo = !changed_messages(&collect(&mut receiver)).is_empty();
+                return (sent, local_echo);
+            }
+            if sent.starts_with("MONITOR") {
+                wire.server(format!(":offline.test 730 weblounge {nick}"))
+                    .await;
+            } else if sent.contains("WHO") {
+                answer_who(&mut wire, &sent, nick).await;
+            }
+        }
+    }
+
+    async fn answer_who(wire: &mut papo_testing::Wire, request: &str, nick: &str) {
+        let rows = [
+            format!(":offline.test 354 weblounge {nick} 0"),
+            format!(":offline.test 315 weblounge {nick} :End of WHO list"),
+        ];
+        if !request.starts_with("@label=") {
+            for row in rows {
+                wire.server(row).await;
+            }
+            return;
+        }
+        let label = request_label(request);
+        wire.server(format!(
+            "@label={label} :offline.test BATCH +who labeled-response"
+        ))
+        .await;
+        for row in rows {
+            wire.server(format!("@batch=who {row}")).await;
+        }
+        wire.server(":offline.test BATCH -who").await;
+    }
+
+    #[tokio::test]
+    async fn a_message_to_an_ergo_service_goes_out_unlabelled() {
+        assert_eq!(
+            sent_direct_privmsg("ChanServ", &ERGO_CAPS, "SAFERATE").await,
+            ("PRIVMSG ChanServ :REGISTER #room".to_owned(), false)
+        );
+    }
+
+    #[tokio::test]
+    async fn messages_off_ergo_or_to_people_keep_the_guarded_send() {
+        for (nick, caps, isupport) in [
+            ("alice", &ERGO_CAPS[..], "SAFERATE"),
+            ("ChanServ", &ERGO_CAPS[..], "WHOX"),
+            ("ChanServ", &["batch", "labeled-response"][..], "SAFERATE"),
+        ] {
+            let (sent, local_echo) = sent_direct_privmsg(nick, caps, isupport).await;
+
+            assert!(local_echo, "{nick} {isupport}: {sent}");
+            assert!(
+                sent.ends_with(&format!("PRIVMSG {nick} :REGISTER #room")),
+                "{sent}"
+            );
+        }
     }
 
     #[tokio::test]

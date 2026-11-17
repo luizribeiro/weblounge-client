@@ -17,6 +17,7 @@ pub mod read_model;
 mod redaction;
 mod request_error;
 mod runtime;
+mod services;
 mod settings;
 mod state;
 pub mod storage;
