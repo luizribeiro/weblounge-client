@@ -2,6 +2,8 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task. The Roadmap below is the short view: keep it current, moving an item to Done (with the date) in the same commit that finishes it, and keep detail in the sections further down.
 
+Releases and deploys follow `docs/RELEASING.md`.
+
 ## Roadmap
 
 ### Now
