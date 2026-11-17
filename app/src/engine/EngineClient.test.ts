@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "./app-settings-fixture";
 import {
   type EngineConnection,
   type EnginePort,
@@ -680,8 +681,7 @@ describe("WorkerEngineClient", () => {
       app: {
         theme: "lounge-night",
         message_density: "compact",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       },
     };
     port.emit({ type: "settings_changed", settings });
@@ -709,8 +709,7 @@ describe("WorkerEngineClient", () => {
           app: {
             theme: "neon",
             message_density: "cozy",
-            unread_tab_indicator: true,
-            push_on_this_device: true,
+            ...switchesOn,
           },
         },
       }),

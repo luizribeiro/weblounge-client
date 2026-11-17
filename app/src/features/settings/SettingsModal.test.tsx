@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { SettingsModal } from "./SettingsModal";
 
@@ -15,8 +16,7 @@ function setup(rail = false) {
       settings={{
         theme: "system",
         message_density: "cozy",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       }}
     />
   ));
@@ -76,8 +76,7 @@ describe("SettingsModal", () => {
         settings={{
           theme: "system",
           message_density: "cozy",
-          unread_tab_indicator: true,
-          push_on_this_device: true,
+          ...switchesOn,
         }}
       />
     ));

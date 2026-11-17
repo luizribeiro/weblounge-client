@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
+import { switchesOn } from "./engine/app-settings-fixture";
 import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
 import type {
   BufferProjection,
@@ -121,8 +122,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
       app: {
         theme: "lounge",
         message_density: "comfortable",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       },
     },
   });
@@ -132,8 +132,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
       app: {
         theme: "lounge-night",
         message_density: "compact",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       },
     },
   });
@@ -143,16 +142,14 @@ it("loads appearance settings and follows changes from the engine", async () => 
       {
         theme: "lounge",
         message_density: "comfortable",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       },
     ],
     [
       {
         theme: "lounge-night",
         message_density: "compact",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       },
     ],
   ]);

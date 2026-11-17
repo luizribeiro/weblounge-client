@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import {
   installPlatformEnvironment,
@@ -12,8 +13,7 @@ import type { PushSettings, PushSwitchStatus } from "./push-settings";
 const loaded: AppSettings = {
   theme: "lounge-night",
   message_density: "compact",
-  unread_tab_indicator: true,
-  push_on_this_device: true,
+  ...switchesOn,
 };
 
 function installTarget(target: PlatformTarget): void {

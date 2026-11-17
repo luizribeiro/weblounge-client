@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import { themes } from "../../theme/theme-registry";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -9,8 +10,7 @@ function setup(
   initial: AppSettings = {
     theme: "system",
     message_density: "cozy",
-    unread_tab_indicator: true,
-    push_on_this_device: true,
+    ...switchesOn,
   },
 ) {
   const onChange = vi.fn();
@@ -145,8 +145,7 @@ describe("AppearanceSettings", () => {
     const { setSettings } = setup({
       theme: "lounge",
       message_density: "compact",
-      unread_tab_indicator: true,
-      push_on_this_device: true,
+      ...switchesOn,
     });
     expect(screen.getByRole("radio", { name: "Lounge" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "Compact" })).toBeChecked();
@@ -154,8 +153,7 @@ describe("AppearanceSettings", () => {
     setSettings({
       theme: "lounge-night",
       message_density: "comfortable",
-      unread_tab_indicator: true,
-      push_on_this_device: true,
+      ...switchesOn,
     });
 
     expect(screen.getByRole("radio", { name: "Lounge Night" })).toBeChecked();

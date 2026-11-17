@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { MobileSettings, type MobileSettingsPage } from "./MobileSettings";
 
@@ -15,8 +16,7 @@ function setup(page: MobileSettingsPage) {
       settings={{
         theme: "system",
         message_density: "comfortable",
-        unread_tab_indicator: true,
-        push_on_this_device: true,
+        ...switchesOn,
       }}
     />
   ));

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import {
   installPlatformEnvironment,
@@ -13,8 +14,7 @@ import {
 const settings: AppSettings = {
   theme: "lounge",
   message_density: "comfortable",
-  unread_tab_indicator: true,
-  push_on_this_device: true,
+  ...switchesOn,
 };
 
 function push(status: PushSwitchStatus | undefined): PushSettings {

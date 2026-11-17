@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type { BufferProjection } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
 import type { MemberWindow } from "../../features/members/MemberPanel";
@@ -51,8 +52,7 @@ it("pushes Settings and its Appearance page over Chats and pops them with Back",
         app: {
           theme: "lounge-night",
           message_density: "cozy",
-          unread_tab_indicator: true,
-          push_on_this_device: true,
+          ...switchesOn,
         },
       }}
     />

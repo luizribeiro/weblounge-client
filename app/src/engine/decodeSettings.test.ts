@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { switchesOn } from "./app-settings-fixture";
 import { decodeAppearance, decodeSettings } from "./decodeSettings";
 
 const lounge = {
   theme: "lounge",
   message_density: "cozy",
-  unread_tab_indicator: true,
-  push_on_this_device: true,
+  ...switchesOn,
 };
 
 describe("decodeSettings", () => {

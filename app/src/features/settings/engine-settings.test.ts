@@ -1,5 +1,6 @@
 import { createRoot, createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type { EngineClient } from "../../engine/EngineClient";
 import type { Settings } from "../../engine/generated/Settings";
 import type {
@@ -13,16 +14,14 @@ const night: Settings = {
   app: {
     theme: "lounge-night",
     message_density: "compact",
-    unread_tab_indicator: true,
-    push_on_this_device: true,
+    ...switchesOn,
   },
 };
 const lounge: Settings = {
   app: {
     theme: "lounge",
     message_density: "comfortable",
-    unread_tab_indicator: true,
-    push_on_this_device: true,
+    ...switchesOn,
   },
 };
 

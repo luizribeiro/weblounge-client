@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
+import { switchesOn } from "../../engine/app-settings-fixture";
 import type {
   BufferProjection,
   MessageProjection,
@@ -705,8 +706,7 @@ it("opens Settings from the web chord and returns focus on Escape", async () => 
         app: {
           theme: "lounge",
           message_density: "cozy",
-          unread_tab_indicator: true,
-          push_on_this_device: true,
+          ...switchesOn,
         },
       }}
     />
