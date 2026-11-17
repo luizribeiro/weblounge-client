@@ -4510,12 +4510,17 @@ fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
     }
 }
 
+/// A read mark another device advanced past this cache's newest line says nothing about the lines
+/// in between, so the page starts from the cache's own newest line there.
 fn cached_refresh_cursor(buffer: &BufferState) -> Option<HistoryCursor> {
-    buffer
+    let mark = buffer
         .read_facts
         .mark()
-        .map(|mark| HistoryCursor::new(None, mark.value()))
-        .or_else(|| buffer.newest.clone())
+        .map(|mark| HistoryCursor::new(None, mark.value()));
+    match (mark, buffer.newest.clone()) {
+        (Some(mark), Some(newest)) if mark.server_time > newest.server_time => Some(newest),
+        (mark, newest) => mark.or(newest),
+    }
 }
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
@@ -7586,6 +7591,68 @@ mod tests {
         assert!(matches!(
             model.buffers[&buffer_id].history,
             HistoryState::LoadingLatest
+        ));
+    }
+
+    fn cached_direct_row(newest_ms: i64, read_ms: i64) -> SnapshotRow {
+        SnapshotRow {
+            conversation: SnapshotConversation::Direct {
+                key: "alice".into(),
+            },
+            title: "Alice".into(),
+            last_activity_ms: Some(newest_ms),
+            stubs: Vec::new(),
+            redacted_stubs: Vec::new(),
+            gap_until: None,
+            preview: Some("cached preview".into()),
+            newest: Some(SnapshotCursor {
+                msgid: Some("cached-newest".into()),
+                server_time_ms: newest_ms,
+            }),
+            read_at_ms: Some(read_ms),
+            raw_read_at_ms: Some(read_ms),
+            pending_read_at_ms: None,
+            peer_pin: None,
+            peer_bot: false,
+        }
+    }
+
+    #[test]
+    fn a_read_mark_past_the_cached_newest_line_catches_up_from_that_line() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![cached_direct_row(100, 250)],
+        ));
+        let nick = nick_name(&state, "alice");
+
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(300));
+
+        assert!(matches!(
+            fetch,
+            Some(HistoryFetch::After { newest, .. })
+                if newest.reference()
+                    == papo::HistoryReference::from(papo::MessageId::from("cached-newest"))
+        ));
+    }
+
+    #[test]
+    fn a_read_mark_at_the_cached_newest_line_catches_up_from_the_mark() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![cached_direct_row(100, 100)],
+        ));
+        let nick = nick_name(&state, "alice");
+
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(300));
+
+        assert!(matches!(
+            fetch,
+            Some(HistoryFetch::After { newest, .. })
+                if newest.reference() == papo::HistoryReference::from(
+                    UNIX_EPOCH + Duration::from_millis(100)
+                )
         ));
     }
 

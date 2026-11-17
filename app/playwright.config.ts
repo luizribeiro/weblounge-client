@@ -22,6 +22,7 @@ export default defineConfig({
         "**/mobile-input-zoom.spec.ts",
         "**/mobile-page-zoom.spec.ts",
         "**/mobile-read-state.spec.ts",
+        "**/catchup-read-elsewhere.spec.ts",
         "**/connection-resilience.spec.ts",
         "**/close-phone.spec.ts",
         "**/reactions-phone.spec.ts",
@@ -310,6 +311,11 @@ export default defineConfig({
       name: "webkit-mobile-chat-list",
       testMatch: "**/mobile-chat-list.spec.ts",
       grep: /reaction-only TARGETS activity/u,
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-mobile-catchup-read-elsewhere",
+      testMatch: "**/catchup-read-elsewhere.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
