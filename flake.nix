@@ -259,8 +259,10 @@
           fileset = pkgs.lib.fileset.unions [
             ./.gitignore
             ./app
-            # The web release plan's node test imports the desktop release's preconditions.
+            # The release cut reuses the native release's preconditions and version helpers; the app's tests cover both.
             ./apps/tauri/release/plan.mjs
+            ./apps/tauri/release/release-version.mjs
+            ./apps/tauri/release/release-version.test.mjs
             ./biome.json
             ./fixtures/timeline
             ./package.json

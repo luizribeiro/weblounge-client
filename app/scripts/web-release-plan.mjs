@@ -1,14 +1,15 @@
 import { blockers } from "../../apps/tauri/release/plan.mjs";
+import {
+  BUMPS,
+  nextReleaseVersion,
+  releaseTag,
+} from "../../apps/tauri/release/release-version.mjs";
 
-export const WEB_TAG_PREFIX = "web-v";
-export const FIRST_WEB_VERSION = "0.1.0";
 export const REPOSITORY = "luizribeiro/weblounge-client";
 export const CI_CHECK = "CI";
-const BUMPS = ["patch", "minor", "major"];
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 
 export function parseArguments(argv) {
-  const options = { bump: "patch", execute: false };
+  const options = { bump: "minor", execute: false };
   for (const argument of argv) {
     const flag = argument.startsWith("--") ? argument.slice(2) : undefined;
     if (flag === "execute") options.execute = true;
@@ -19,32 +20,6 @@ export function parseArguments(argv) {
       );
   }
   return options;
-}
-
-const webVersions = (tags) =>
-  tags
-    .filter((tag) => tag.startsWith(WEB_TAG_PREFIX))
-    .map((tag) => SEMVER.exec(tag.slice(WEB_TAG_PREFIX.length)))
-    .filter(Boolean)
-    .map((match) => match.slice(1).map(Number));
-
-const byVersion = (left, right) =>
-  left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
-
-export function nextWebVersion(tags, bump) {
-  const latest = webVersions(tags).sort(byVersion).at(-1);
-  if (latest === undefined) return FIRST_WEB_VERSION;
-  const [major, minor, patch] = latest;
-  switch (bump) {
-    case "patch":
-      return `${major}.${minor}.${patch + 1}`;
-    case "minor":
-      return `${major}.${minor + 1}.0`;
-    case "major":
-      return `${major + 1}.0.0`;
-    default:
-      throw new Error(`unknown bump ${bump}`);
-  }
 }
 
 export function ciBlocker(checkRuns, commit) {
@@ -63,8 +38,8 @@ export function ciBlocker(checkRuns, commit) {
 }
 
 export function webReleasePlan({ git, checkRuns, bump }) {
-  const version = nextWebVersion(git.tags, bump);
-  const tag = `${WEB_TAG_PREFIX}${version}`;
+  const version = nextReleaseVersion(git.tags, bump);
+  const tag = releaseTag(version);
   const commit = git.head;
   return {
     version,
@@ -75,15 +50,10 @@ export function webReleasePlan({ git, checkRuns, bump }) {
       ciBlocker(checkRuns, commit),
     ].filter(Boolean),
     commands: [
-      ["git", "tag", "-a", tag, commit, "-m", `weblounge web ${version}`],
+      ["git", "tag", "-a", tag, commit, "-m", `weblounge ${version}`],
       ["git", "push", "origin", tag],
     ],
-    pin: {
-      tag,
-      commit,
-      flake: `github:${REPOSITORY}/${commit}`,
-      flakeByTag: `github:${REPOSITORY}/${tag}`,
-    },
+    pin: { commit, version },
   };
 }
 
@@ -94,14 +64,14 @@ export const shellCommand = (command) => command.map(shellWord).join(" ");
 
 export function describePlan(plan) {
   return [
-    `web release ${plan.tag} at ${plan.commit}`,
+    `release ${plan.tag} at ${plan.commit}`,
     "",
     "commands:",
     ...plan.commands.map((command) => `  ${shellCommand(command)}`),
     "",
-    "server pin for irc.weblounge.org (weblounge-client flake input):",
-    `  ${plan.pin.flake}`,
-    `  (or by tag: ${plan.pin.flakeByTag})`,
+    "server pin for irc.weblounge.org (weblounge-client):",
+    `  rev = ${plan.pin.commit}`,
+    `  version = ${plan.pin.version}`,
     ...(plan.blockers.length === 0
       ? []
       : ["", "blocked:", ...plan.blockers.map((blocker) => `  - ${blocker}`)]),

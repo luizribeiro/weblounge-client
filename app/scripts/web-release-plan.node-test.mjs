@@ -4,44 +4,25 @@ import {
   ciBlocker,
   cut,
   describePlan,
-  nextWebVersion,
   parseArguments,
   shellCommand,
   webReleasePlan,
 } from "./web-release-plan.mjs";
 
 const commit = "66f1c2ca0d9a4b7e8f1a2b3c4d5e6f708192a3b4";
-const nativeTags = ["desktop-v0.1.2", "desktop-v0.1.3", "ios-v0.1.3+1412"];
+const releasedTags = ["web-v0.1.0", "desktop-v0.1.3", "v0.2.0"];
 const green = [{ name: "CI", status: "completed", conclusion: "success" }];
 const cleanMain = {
   status: "",
   head: commit,
   originMain: commit,
-  tags: nativeTags,
+  tags: releasedTags,
 };
 
-test("the first web release is 0.1.0 whatever the native versions are", () => {
-  assert.equal(nextWebVersion(nativeTags, "patch"), "0.1.0");
-  assert.equal(nextWebVersion([], "major"), "0.1.0");
-});
-
-test("later releases bump the highest web tag, compared numerically", () => {
-  const tags = [
-    ...nativeTags,
-    "web-v0.1.9",
-    "web-v0.1.10",
-    "web-v0.1.2",
-    "web-vnext",
-  ];
-  assert.equal(nextWebVersion(tags, "patch"), "0.1.11");
-  assert.equal(nextWebVersion(tags, "minor"), "0.2.0");
-  assert.equal(nextWebVersion(tags, "major"), "1.0.0");
-});
-
-test("arguments default to a patch dry run", () => {
-  assert.deepEqual(parseArguments([]), { bump: "patch", execute: false });
-  assert.deepEqual(parseArguments(["--minor", "--execute"]), {
-    bump: "minor",
+test("arguments default to a minor dry run", () => {
+  assert.deepEqual(parseArguments([]), { bump: "minor", execute: false });
+  assert.deepEqual(parseArguments(["--patch", "--execute"]), {
+    bump: "patch",
     execute: true,
   });
   assert.deepEqual(parseArguments(["--major"]), {
@@ -85,26 +66,25 @@ test("only a completed, successful CI check lets the release through", () => {
   );
 });
 
-test("a clean, green main plans the tag, its commands and the server pin", () => {
+test("a clean, green main plans the next minor tag, its commands and the server pin", () => {
   const plan = webReleasePlan({
     git: cleanMain,
     checkRuns: green,
-    bump: "patch",
+    bump: "minor",
   });
-  assert.equal(plan.tag, "web-v0.1.0");
+  assert.equal(plan.tag, "v0.3.0");
   assert.deepEqual(plan.blockers, []);
   assert.deepEqual(plan.commands.map(shellCommand), [
-    `git tag -a web-v0.1.0 ${commit} -m 'weblounge web 0.1.0'`,
-    "git push origin web-v0.1.0",
+    `git tag -a v0.3.0 ${commit} -m 'weblounge 0.3.0'`,
+    "git push origin v0.3.0",
   ]);
-  assert.deepEqual(plan.pin, {
-    tag: "web-v0.1.0",
-    commit,
-    flake: `github:luizribeiro/weblounge-client/${commit}`,
-    flakeByTag: "github:luizribeiro/weblounge-client/web-v0.1.0",
-  });
+  assert.deepEqual(plan.pin, { commit, version: "0.3.0" });
   const described = describePlan(plan);
-  assert.match(described, /git push origin web-v0\.1\.0/);
+  assert.match(described, /git push origin v0\.3\.0/);
+  assert.match(
+    described,
+    new RegExp(`rev = ${commit}\n {2}version = 0\\.3\\.0`),
+  );
   assert.doesNotMatch(described, /blocked:/);
 });
 
@@ -114,12 +94,12 @@ test("every unmet precondition is listed at once", () => {
       status: " M app/src/App.tsx",
       head: commit,
       originMain: "0".repeat(40),
-      tags: ["web-v0.1.0"],
+      tags: [...releasedTags, "v0.2.1"],
     },
     checkRuns: undefined,
     bump: "patch",
   });
-  assert.equal(plan.tag, "web-v0.1.1");
+  assert.equal(plan.tag, "v0.2.2");
   assert.deepEqual(plan.blockers, [
     "the worktree has uncommitted changes",
     "HEAD is not origin/main",
@@ -145,15 +125,15 @@ function cutWith(plan, execute, failing) {
 }
 
 const readyPlan = () =>
-  webReleasePlan({ git: cleanMain, checkRuns: green, bump: "patch" });
+  webReleasePlan({ git: cleanMain, checkRuns: green, bump: "minor" });
 const blockedPlan = () =>
-  webReleasePlan({ git: cleanMain, checkRuns: [], bump: "patch" });
+  webReleasePlan({ git: cleanMain, checkRuns: [], bump: "minor" });
 
 test("without --execute nothing runs, even when the release is ready", () => {
   const { ran, logged, run } = cutWith(readyPlan(), false);
   assert.equal(run(), 0);
   assert.deepEqual(ran, []);
-  assert.match(logged.at(-1), /dry run: web-v0\.1\.0 was not created/);
+  assert.match(logged.at(-1), /dry run: v0\.3\.0 was not created/);
 });
 
 test("a blocked release runs nothing and fails, even with --execute", () => {
@@ -166,8 +146,8 @@ test("--execute on a ready release tags, then pushes", () => {
   const { ran, run } = cutWith(readyPlan(), true);
   assert.equal(run(), 0);
   assert.deepEqual(ran, [
-    `git tag -a web-v0.1.0 ${commit} -m weblounge web 0.1.0`,
-    "git push origin web-v0.1.0",
+    `git tag -a v0.3.0 ${commit} -m weblounge 0.3.0`,
+    "git push origin v0.3.0",
   ]);
 });
 
@@ -176,6 +156,6 @@ test("a failed push says how to finish or undo the local tag", () => {
   assert.throws(run, /push failed/);
   assert.match(
     logged.at(-1),
-    /git push origin web-v0\.1\.0` or delete it with `git tag -d web-v0\.1\.0`/,
+    /git push origin v0\.3\.0` or delete it with `git tag -d v0\.3\.0`/,
   );
 });
