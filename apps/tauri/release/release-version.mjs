@@ -27,3 +27,43 @@ export function nextReleaseVersion(tags, bump) {
       throw new Error(`unknown bump ${bump}`);
   }
 }
+
+const count = (label, value, minimum) => {
+  const text = value.trim();
+  if (!/^\d+$/.test(text) || Number(text) < minimum) {
+    throw new Error(`the ${label} (${text}) is not a commit count`);
+  }
+  return Number(text);
+};
+
+export function commitVersion({ tag, commitsSinceTag, commitsTotal }) {
+  const release = parseReleaseTag(tag);
+  if (release === undefined) throw new Error(`${tag} is not a vX.Y.Z release tag`);
+  const version = release.join(".");
+  const since = count("count since the release", commitsSinceTag, 0);
+  return {
+    version,
+    display: since === 0 ? version : `${version}+${since}`,
+    build: String(count("build number", commitsTotal, 1)),
+  };
+}
+
+// Pre-release and build-metadata tags are skipped, so they never name a build's release.
+const NEAREST_RELEASE_TAG = [
+  "describe",
+  "--tags",
+  "--abbrev=0",
+  "--match",
+  "v[0-9]*.[0-9]*.[0-9]*",
+  "--exclude",
+  "*[-+]*",
+];
+
+export function describeCommit(commit, git) {
+  const tag = git([...NEAREST_RELEASE_TAG, commit]);
+  return commitVersion({
+    tag,
+    commitsSinceTag: git(["rev-list", "--count", `${tag}..${commit}`]),
+    commitsTotal: git(["rev-list", "--count", commit]),
+  });
+}

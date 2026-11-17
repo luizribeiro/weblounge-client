@@ -87,10 +87,12 @@ source has no `.git`, and `github:` inputs carry no tags and no `revCount` (a `g
 `revCount`, which is the total count, still without tags). So the version is computed from git
 **outside** the build and passed in:
 
-- **One computation:** `describeVersion` in `apps/tauri/release/release-version.mjs` turns the
-  nearest `v` tag and the count since it into `X.Y.Z` or `X.Y.Z+N`. `git describe --tags --match
-  'v[0-9]*' --abbrev=0 <commit>` names the tag and `git rev-list --count <tag>..<commit>` gives the
-  count. `node apps/tauri/release/describe-version.mjs <commit>` prints it after fetching tags.
+- **One computation:** `describeCommit` in `apps/tauri/release/release-version.mjs` finds the
+  nearest plain `vX.Y.Z` tag (`git describe --tags --abbrev=0`, matching `v[0-9]*.[0-9]*.[0-9]*`
+  and skipping tags with `-` or `+`) and the counts `git rev-list --count <tag>..<commit>` and
+  `<commit>`, and `commitVersion` turns them into the short version, the displayed `X.Y.Z` or
+  `X.Y.Z+N` and the build number. `node apps/tauri/release/describe-version.mjs <commit>` prints
+  the displayed version after fetching tags.
 - **Web:** the Vite build reads `WEBLOUNGE_VERSION` and defines it as `__BUILD_VERSION__`
   (`null` when unset). The flake's `app` stays version-free, so CI and local builds carry none,
   and offers `app.withVersion "<version>"`. The page's `versionFor` (design 38) shows it.
@@ -167,7 +169,7 @@ Homebrew macOS app.
 
 - Unit: the decoder accepts `"beta"` and `"release"`, rejects other values, and treats absent as
   release; the title helper; the cut plan (version bumps, tag, blockers including every CI state,
-  printed commands, `--execute` gating); `describeVersion` at, after and with no release tag; the
+  printed commands, `--execute` gating); `commitVersion` at, after and with no release tag; the
   native plans' versions, build numbers and Tauri `--config`.
 - Mac-only (Luiz's Mac session): a dry run of each native script shows the expected short version,
   build number and shell `version`.
