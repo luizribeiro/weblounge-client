@@ -144,6 +144,21 @@ final class PushPresenterTests: XCTestCase {
     let offered = await present(stale, storage: route.storage)
     XCTAssertEqual(offered.count, 0)
     XCTAssertTrue(try route.storage.needsReregistration(routeId: route.routeId))
+    XCTAssertTrue(try route.storage.routesNeedingReregistration().contains(route.routeId))
+  }
+
+  func testListsFlaggedRoutesInOrderOnlyUntilTheirFlagsAreCleared() throws {
+    let routes = try [StoredTestRoute(self), StoredTestRoute(self)]
+    let storage = routes[0].storage
+    let ids = routes.map(\.routeId)
+    let listed = { try storage.routesNeedingReregistration().filter(ids.contains) }
+    XCTAssertEqual(try listed(), [])
+
+    for id in ids { try storage.flagForReregistration(routeId: id) }
+    XCTAssertEqual(try listed(), ids.sorted())
+
+    try storage.clearReregistrationFlag(routeId: ids[0])
+    XCTAssertEqual(try listed(), [ids[1]])
   }
 
   func testLeavesTheRouteRegisteredWhenAPushOpensButDoesNotParse() async throws {

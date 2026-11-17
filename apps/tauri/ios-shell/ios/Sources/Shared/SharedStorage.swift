@@ -150,6 +150,13 @@ extension SharedStorage {
     try defaults().bool(forKey: Self.reregistrationKeyPrefix + routeId)
   }
 
+  func routesNeedingReregistration() throws -> [String] {
+    let routeIds = try defaults().dictionaryRepresentation().keys
+      .filter { $0.hasPrefix(Self.reregistrationKeyPrefix) }
+      .map { String($0.dropFirst(Self.reregistrationKeyPrefix.count)) }
+    return try routeIds.filter { try needsReregistration(routeId: $0) }.sorted()
+  }
+
   func clearReregistrationFlag(routeId: String) throws {
     try defaults().removeObject(forKey: Self.reregistrationKeyPrefix + routeId)
   }
