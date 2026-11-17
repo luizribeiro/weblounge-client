@@ -50,7 +50,6 @@ export function recordPresentedNotification(
     conversation.messages.set(presented.messageId, messageTime);
   }
   state.conversations.set(presented.tag, conversation);
-  state.readAtMs.delete(presented.tag);
 }
 
 export function markConversationRead(

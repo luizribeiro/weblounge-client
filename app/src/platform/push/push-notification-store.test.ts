@@ -1,6 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import {
+  conversationNotificationCount,
   emptyNotificationState,
   markConversationRead,
   notificationDataIsRead,
@@ -70,7 +71,25 @@ describe("push notification state storage", () => {
     await record(factory, "after-read", "2026-11-03T12:34:56.790Z");
     state = await readNotificationState(factory);
     expect(notificationStateTotal(state)).toBe(1);
-    expect(state.readAtMs.has(tag)).toBe(false);
+    expect(state.readAtMs.get(tag)).toBe(marker);
+  });
+
+  it("keeps the read marker after a newer message, so a re-delivered older one stays read", async () => {
+    const factory = new IDBFactory();
+    const marker = Date.parse(time);
+    await updateNotificationState(
+      (state) => markConversationRead(state, tag, marker),
+      factory,
+    );
+    await record(factory, "after-read", "2026-11-03T12:34:56.790Z");
+
+    await record(factory, "redelivered-at-marker", time);
+    await record(factory, "late-before-marker", "2026-11-03T12:34:55.000Z");
+
+    const state = await readNotificationState(factory);
+    expect(notificationStateTotal(state)).toBe(1);
+    expect(conversationNotificationCount(state, tag)).toBe(1);
+    expect(state.readAtMs.get(tag)).toBe(marker);
   });
 
   it("does not promote an engine marker to worker cleanup authority", () => {
