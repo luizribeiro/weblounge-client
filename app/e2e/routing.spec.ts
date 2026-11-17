@@ -1,5 +1,9 @@
 import type { Page } from "@playwright/test";
-import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import {
+  cachedChatList,
+  closeEngineDatabase,
+  openEngineDatabase,
+} from "./engine-database";
 import { expect, test } from "./irc-fixture";
 import { useDedicatedWorker } from "./production-ergo";
 
@@ -84,27 +88,6 @@ async function restoreDebugConnection(
       url.searchParams.append(name, value);
     history.replaceState(history.state, "", url);
   }, startUrl);
-}
-
-async function cachedChatList(page: Page): Promise<string> {
-  const database = await openEngineDatabase(page);
-  try {
-    return await database.evaluate(async (value) => {
-      const snapshot = await new Promise<unknown>((resolve, reject) => {
-        const request = value
-          .transaction("cache")
-          .objectStore("cache")
-          .get(new TextEncoder().encode("chat-list-snapshot"));
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      return snapshot instanceof Uint8Array
-        ? new TextDecoder().decode(snapshot)
-        : "";
-    });
-  } finally {
-    await closeEngineDatabase(database);
-  }
 }
 
 async function deleteCachedChatList(page: Page): Promise<void> {

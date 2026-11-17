@@ -44,6 +44,27 @@ export async function openEngineDatabase(
   );
 }
 
+export async function cachedChatList(page: Page): Promise<string> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(async (value) => {
+      const snapshot = await new Promise<unknown>((resolve, reject) => {
+        const request = value
+          .transaction("cache")
+          .objectStore("cache")
+          .get(new TextEncoder().encode("chat-list-snapshot"));
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      return snapshot instanceof Uint8Array
+        ? new TextDecoder().decode(snapshot)
+        : "";
+    });
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
+
 export async function closeEngineDatabase(
   database: JSHandle<IDBDatabase>,
 ): Promise<void> {
