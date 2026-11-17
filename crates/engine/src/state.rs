@@ -2730,6 +2730,16 @@ impl NetworkModel {
         Some(target)
     }
 
+    /// A window seeded by a live line or a catch-up page was never reported by a page load.
+    pub(crate) fn settled_history_at_start(&self, buffer_id: BufferId) -> Option<bool> {
+        match &self.buffers.get(&buffer_id)?.history {
+            HistoryState::Ready { oldest, at_start } if oldest.is_some() || *at_start => {
+                Some(*at_start)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn history_load(&self, conversation: &papo::Conversation) -> Option<HistoryLoad> {
         let key = NameKey::from_conversation(conversation)?;
         let buffer = self.buffers.get(self.names.get(&key)?)?;
@@ -9560,6 +9570,28 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["kept history"]
         );
+    }
+
+    #[test]
+    fn a_direct_seeded_by_a_live_line_reports_older_history_on_open() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            direct_incoming(&state, "alice", "first live line", 100),
+            &state,
+        );
+        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+
+        assert!(
+            model
+                .request_history(buffer_id, crate::HistoryDirection::Latest)
+                .is_none()
+        );
+        assert_eq!(model.settled_history_at_start(buffer_id), Some(false));
+        assert!(matches!(
+            model.request_history(buffer_id, crate::HistoryDirection::Older),
+            Some(HistoryFetch::Before { .. })
+        ));
+        assert_eq!(model.settled_history_at_start(buffer_id), None);
     }
 
     #[test]

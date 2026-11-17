@@ -50,6 +50,32 @@ test.describe("a DM opened after a new line still shows its earlier history", ()
     await expectSettled(relaunched, { conversation: peer.nickname });
     await nativeFeelAudit(relaunched);
   });
+
+  test("when the line arrived live after the DM was closed and the app reloaded", async ({
+    page,
+    irc,
+  }) => {
+    await irc.self([irc.channel]);
+    const peer = await irc.peer("closed-dm");
+    await installNativeFeelInstrumentation(page);
+    const earlier = await readEarlierDirects(page, irc, peer);
+    await directRow(page, peer.nickname).hover();
+    await page
+      .getByRole("button", { name: `Close conversation with ${peer.nickname}` })
+      .click();
+    await expect(directRow(page, peer.nickname)).toHaveCount(0);
+    await page.goto(irc.url({ path: channelPath(irc) }));
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+
+    const latest = `arrived live ${irc.id}`;
+    await peer.privmsgConfirmed(irc.account, latest);
+    await expect(directRow(page, peer.nickname)).toBeVisible();
+
+    await openFromSwitcher(page, peer.nickname);
+    await expectTranscript(page, earlier, latest);
+    await expectSettled(page, { conversation: peer.nickname });
+    await nativeFeelAudit(page);
+  });
 });
 
 async function readEarlierDirects(

@@ -2338,7 +2338,18 @@ impl Runtime {
             return vec![EngineToUi::CommandResult { id: command_id }];
         }
         let Some(fetch) = running.model.request_history(buffer_id, direction) else {
-            return vec![EngineToUi::CommandResult { id: command_id }];
+            let result = EngineToUi::CommandResult { id: command_id };
+            if direction == crate::HistoryDirection::Latest
+                && let Some(at_start) = running.model.settled_history_at_start(buffer_id)
+            {
+                let settled = EngineToUi::HistoryStateChanged {
+                    buffer_id,
+                    loading: false,
+                    at_start,
+                };
+                return vec![settled, result];
+            }
+            return vec![result];
         };
         let sync = running.model.buffer_updated(buffer_id);
         let direct_resolution = running.model.begin_buffer_direct_resolution(buffer_id);
