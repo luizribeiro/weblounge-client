@@ -148,6 +148,31 @@ describe("relay client", () => {
     expect(waits).toEqual([500]);
   });
 
+  it("lifts the gate when asked to retry now", async () => {
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 501 }))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => 0,
+      wait: async (delay) => {
+        waits.push(delay);
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+    await client.updateTarget(device, target);
+
+    client.resetBackoff();
+
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(waits).toEqual([]);
+  });
+
   it("keeps lease traffic outside the synchronization gate", async () => {
     let now = 0;
     const waits: number[] = [];

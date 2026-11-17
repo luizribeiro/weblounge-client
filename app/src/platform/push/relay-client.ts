@@ -280,6 +280,11 @@ export class RelayClient {
     return { ok: false, error };
   }
 
+  /** Lets the next request go now: someone asked to try again. */
+  resetBackoff(): void {
+    this.#succeeded();
+  }
+
   #succeeded(): void {
     this.#failureAttempts = 0;
     this.#notBefore = 0;

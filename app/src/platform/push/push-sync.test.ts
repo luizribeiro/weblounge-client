@@ -162,6 +162,7 @@ function fakeRelay() {
       ok: true,
       value: null,
     })),
+    resetBackoff: vi.fn<RelayClient["resetBackoff"]>(),
     deleteRoute: vi.fn<RelayClient["deleteRoute"]>(async () => ({
       ok: true,
       value: null,
@@ -957,6 +958,7 @@ describe("push state synchronization", () => {
       current.synchronizer.retryNow();
       await current.synchronizer.settled();
 
+      expect(current.relay.resetBackoff).toHaveBeenCalledOnce();
       expect(current.relay.ensureRoute).toHaveBeenCalledTimes(4);
       expect(lastFailing(current)).toBe(false);
     });

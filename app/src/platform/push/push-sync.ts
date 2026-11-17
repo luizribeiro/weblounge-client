@@ -31,6 +31,7 @@ type RelayApi = Pick<
   | "deleteRoute"
   | "ensureRoute"
   | "takeDeadEndpoints"
+  | "resetBackoff"
   | "updateTarget"
 >;
 
@@ -217,6 +218,7 @@ export class PushSynchronizer {
 
   /** Tries every home again now instead of waiting for its backoff. */
   retryNow(): void {
+    this.#relay.resetBackoff();
     for (const networkId of this.#homes.keys()) {
       this.#cancelRetry(networkId);
       this.#retryAttempts.delete(networkId);
