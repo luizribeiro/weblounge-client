@@ -36,8 +36,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DL8: small unanswered design questions: copying a partly selected message (whole row or substring), notice form `-nick- text` vs `<nick>` (design 15); whether durable drafts roam through an account service, and `/topic` with no text (design 13); account-wide push lease vs activity-based lease (design 23 decision 6).
 - DL9: papo gaps, on the papo agenda: typed `mute`, `BanTarget`, `motd()`/`whowas()`, typed CTCP are "later" in papo; search waits (soju-only); stabilise `unstable` in the order bouncer, persistence, webpush; ordered endpoint failover; filehost EXTJWT. `docs/design/commands-catalog.md` §Gaps, design 03.
 - DL10: should the sidebar and phone header wordmark also say "weblounge β" on beta? Only the tab and window title do today. Design 37.
-- DL11: the shared version number. About's Version is the short commit today, because the web version lives only in its `web-v…` tag; `versionFor` in `build-version.ts` is the one place to change once a scheme (likely one vX.Y.Z, git-describe on beta) is chosen. Design 38.
-- DL12: the native build number. The shells publish only their crate version, so About says "Mac app 0.1.3" with no build; adding `CFBundleVersion` to `__WEBLOUNGE_SHELL__` needs a new native build. Design 38.
+- DL12: the native build number. The shells publish their displayed version (`0.2.0+3`) but not `CFBundleVersion`, so About shows no build number; adding it needs a new native build. Design 38.
 
 #### Features
 - F1: buffer events 6 (invites with Join, renames, notes), 8 (tombstones, "Unverified", "Not sent, Retry"), 9 (server buffer). Design 26.
@@ -155,8 +154,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 ### Done recently
 - 2026-11-17: About in Settings (design 38), on desktop and phone: the chair mark and app name,
   Version, Commit, Built, Channel and Platform, and Copy debug info, which puts the same facts
-  (full commit) plus the user agent on the clipboard as plain text. The flake passes the full
-  `self.rev`; the page derives the short SHA. The chair mark is a shared `ChairMark`.
+  (full commit) plus the user agent on the clipboard as plain text. Version is `__BUILD_VERSION__`
+  (option A), or the short commit when a build has none. The flake passes the full `self.rev`;
+  the page derives the short SHA. The chair mark is a shared `ChairMark`.
 - 2026-11-17: Settings → Notifications in the Mac app (design 36 "Notifications where push isn't
   available"): a per-device "Notifications" switch, engine setting `page_notifications` (default
   on), for the page-posted notifications shown while weblounge is open, wherever push isn't
