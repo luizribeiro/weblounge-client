@@ -6,6 +6,7 @@ import type { MessageId } from "./MessageId";
 import type { MessageKind } from "./MessageKind";
 import type { OwnChangeDelivery } from "./OwnChangeDelivery";
 import type { ReactionProjection } from "./ReactionProjection";
+import type { UnverifiedSender } from "./UnverifiedSender";
 
 /**
  * UI projection of one chat message.
@@ -44,9 +45,9 @@ nick_color_index: number,
  */
 highlighted: boolean,
 /**
- * Whether this direct-message row came from a sender whose identity was not verified.
+ * Why this direct-message row's sender identity was not verified, when it was not.
  */
-unverified_sender?: boolean,
+unverified_sender?: UnverifiedSender,
 /**
  * Reactions ordered by when each reaction value first appeared.
  */

@@ -10,6 +10,7 @@ use crate::{
     EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OwnChangeDelivery,
+    UnverifiedSender,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
@@ -3416,9 +3417,26 @@ impl NetworkModel {
         }
     }
 
-    fn apply_direct_peer_key(&mut self, buffer_id: BufferId, current: papo::PeerKey) -> bool {
+    fn incoming_identity(
+        &mut self,
+        buffer_id: BufferId,
+        incoming: &Incoming,
+    ) -> DirectIdentityState {
+        incoming
+            .peer_key
+            .as_ref()
+            .map_or(DirectIdentityState::Unverified, |current| {
+                self.apply_direct_peer_key(buffer_id, current.clone())
+            })
+    }
+
+    fn apply_direct_peer_key(
+        &mut self,
+        buffer_id: BufferId,
+        current: papo::PeerKey,
+    ) -> DirectIdentityState {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-            return false;
+            return DirectIdentityState::Unverified;
         };
         match buffer
             .direct_pin
@@ -3443,11 +3461,10 @@ impl NetworkModel {
             }
         }
         buffer.projection.direct_identity = direct_identity(buffer);
-        buffer.direct_mismatch.is_none()
-            && buffer
-                .direct_pin
-                .as_ref()
-                .is_some_and(papo::PeerKey::is_verified)
+        buffer
+            .projection
+            .direct_identity
+            .unwrap_or(DirectIdentityState::Unverified)
     }
 
     pub(crate) fn record_direct_mismatch(
@@ -3741,10 +3758,7 @@ impl NetworkModel {
             ),
             IncomingDestination::Server => (self.server_buffer_id(), None),
         };
-        let verified_sender = incoming
-            .peer_key
-            .as_ref()
-            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
+        let identity = self.incoming_identity(buffer_id, &incoming);
         let added = initially_added
             .map(|_| self.buffers[&buffer_id].projection.clone())
             .or_else(|| {
@@ -3762,7 +3776,7 @@ impl NetworkModel {
                 reference.location = Some((buffer_id, message_id));
             }
         }
-        let message = self.project_incoming(message_id, &incoming, state, verified_sender, false);
+        let message = self.project_incoming(message_id, &incoming, state, identity, false);
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return IncomingResult {
                 events: inconsistent_state_notice(),
@@ -3879,12 +3893,8 @@ impl NetworkModel {
                 reference.location = Some((buffer_id, message_id));
             }
         }
-        let verified_sender = incoming
-            .peer_key
-            .as_ref()
-            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
-        let mut message =
-            self.project_incoming(message_id, incoming, state, verified_sender, false);
+        let identity = self.incoming_identity(buffer_id, incoming);
+        let mut message = self.project_incoming(message_id, incoming, state, identity, false);
         message.delivery = MessageDelivery::Confirmed;
         let order_changed = self.insert(buffer_id, message.clone(), None, dedup).ok()?;
         let cursor = incoming
@@ -3929,23 +3939,15 @@ impl NetworkModel {
                         .flatten()
                 })
             })?;
-        let verified_sender = incoming
-            .peer_key
-            .as_ref()
-            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
+        let identity = self.incoming_identity(buffer_id, incoming);
         let identity_disagrees = provisional.author_key != self.casemapping.fold(&incoming.author)
             || provisional
                 .account_key
                 .as_ref()
                 .zip(incoming.legacy_account_key.as_ref())
                 .is_some_and(|(pushed, authoritative)| pushed != authoritative);
-        let mut message = self.project_incoming(
-            message_id,
-            incoming,
-            state,
-            verified_sender,
-            identity_disagrees,
-        );
+        let mut message =
+            self.project_incoming(message_id, incoming, state, identity, identity_disagrees);
         message.server_ids = vec![msgid.to_owned()];
         let authoritative_time = message_time(&message);
         let carry_read = {
@@ -4033,7 +4035,7 @@ impl NetworkModel {
         id: MessageId,
         incoming: &Incoming,
         state: &papo::State,
-        verified_sender: bool,
+        identity: DirectIdentityState,
         identity_disagrees: bool,
     ) -> MessageProjection {
         MessageProjection {
@@ -4046,12 +4048,7 @@ impl NetworkModel {
             nick_color_index: nick_color_index(state.casemapping(), &incoming.author),
             highlighted: incoming.authorship != MessageAuthorship::Own
                 && matches_highlight_rules(&incoming.text, state),
-            unverified_sender: (incoming.direct_key.is_some()
-                && incoming.authorship != MessageAuthorship::Own
-                && incoming.provisional_identity.is_none()
-                && !crate::services::is_server_service(state, &incoming.author)
-                && (!verified_sender || identity_disagrees))
-                .then_some(true),
+            unverified_sender: unverified_sender(incoming, state, identity, identity_disagrees),
             reactions: incoming
                 .msgid
                 .as_deref()
@@ -4618,6 +4615,35 @@ fn snapshot_preview(buffer: &BufferProjection, message: &MessageProjection) -> S
         format!("* {} {text}", message.author)
     } else {
         format!("{}: {text}", message.author)
+    }
+}
+
+fn unverified_sender(
+    incoming: &Incoming,
+    state: &papo::State,
+    identity: DirectIdentityState,
+    identity_disagrees: bool,
+) -> Option<UnverifiedSender> {
+    if incoming.direct_key.is_none()
+        || incoming.authorship == MessageAuthorship::Own
+        || incoming.provisional_identity.is_some()
+        || crate::services::is_server_service(state, &incoming.author)
+    {
+        return None;
+    }
+    match identity {
+        DirectIdentityState::DifferentAccount | DirectIdentityState::DeferredDifferentAccount => {
+            Some(UnverifiedSender::DifferentAccount)
+        }
+        DirectIdentityState::CannotVerify | DirectIdentityState::DeferredCannotVerify => {
+            Some(UnverifiedSender::CannotVerify)
+        }
+        _ if identity_disagrees => Some(UnverifiedSender::NotificationMismatch),
+        DirectIdentityState::Verified => None,
+        DirectIdentityState::Unverified if incoming.legacy_account_key.is_some() => {
+            Some(UnverifiedSender::UnprovenAccount)
+        }
+        DirectIdentityState::Unverified => Some(UnverifiedSender::NoAccount),
     }
 }
 
@@ -6697,14 +6723,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn pushed_direct_message_becomes_verified_when_history_arrives() {
-        let (client, mut events, mut wire) = wire(secure_wire_builder());
-        wire.register(&["account-tag", "message-tags", "server-time"])
-            .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+    fn pushed_from_louro() -> PushedMessage {
+        serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
             "network_label": "Test",
             "nickname": "weblounge",
@@ -6716,9 +6736,45 @@ mod tests {
             "text": "push test from louro-pi",
             "kind": "message",
         }))
-        .expect("pushed direct message");
+        .expect("pushed direct message")
+    }
 
-        model.restore_pushed_messages(vec![pushed], &client.state());
+    #[tokio::test]
+    async fn pushed_direct_message_from_another_account_is_flagged_when_history_arrives() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&["account-tag", "message-tags", "server-time"])
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.restore_pushed_messages(vec![pushed_from_louro()], &client.state());
+        take_changed_messages(&mut model);
+
+        wire.server("@account=mallory;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :louro-pi!l@example.test PRIVMSG weblounge :push test from louro-pi")
+            .await;
+        let history = loop {
+            if let Some(papo::Event::Message(message)) = events.next().await {
+                break message;
+            }
+        };
+        model.receive(&history, true, &client.state(), None);
+
+        let updated = take_changed_messages(&mut model);
+        assert_eq!(
+            updated
+                .first()
+                .and_then(|(_, message)| message.unverified_sender),
+            Some(crate::UnverifiedSender::NotificationMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn pushed_direct_message_becomes_verified_when_history_arrives() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&["account-tag", "message-tags", "server-time"])
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.restore_pushed_messages(vec![pushed_from_louro()], &client.state());
         let restored = take_changed_messages(&mut model);
         assert!(restored[0].1.unverified_sender.is_none());
 
@@ -6798,7 +6854,7 @@ mod tests {
                 .timeline
                 .last()
                 .and_then(chat_projection)
-                .is_some_and(|message| message.unverified_sender != Some(true))
+                .is_some_and(|message| message.unverified_sender.is_none())
         );
         assert_eq!(
             model.buffers[&buffer_id].projection.draft_key,
@@ -9470,7 +9526,7 @@ mod tests {
                 .last()
                 .and_then(chat_projection)
                 .and_then(|message| message.unverified_sender),
-            Some(true)
+            Some(crate::UnverifiedSender::DifferentAccount)
         );
         let replacement = client
             .direct_to(&replacement_message)
@@ -10874,19 +10930,28 @@ mod tests {
         ));
     }
 
-    async fn direct_notice_is_unverified(isupport: &str, sender: &str) -> Option<bool> {
-        let (client, mut events, mut wire) = wire(secure_wire_builder());
-        wire.register(&["message-tags"]).await;
+    async fn direct_notice_unverified_sender(
+        isupport: &str,
+        source: &str,
+    ) -> Option<crate::UnverifiedSender> {
+        notice_unverified_sender(secure_wire_builder(), isupport, source).await
+    }
+
+    async fn notice_unverified_sender(
+        builder: papo::Builder,
+        isupport: &str,
+        source: &str,
+    ) -> Option<crate::UnverifiedSender> {
+        let (client, mut events, mut wire) = wire(builder);
+        wire.register(&["message-tags", "account-tag"]).await;
         next_event(&mut events, |event| {
             matches!(event, papo::Event::Connected(_)).then_some(())
         })
         .await;
         wire.server(format!(":irc.test 005 weblounge {isupport} :are supported"))
             .await;
-        wire.server(format!(
-            ":{sender}!{sender}@localhost NOTICE weblounge :HELP reply"
-        ))
-        .await;
+        wire.server(format!("{source} NOTICE weblounge :HELP reply"))
+            .await;
         let notice = next_event(&mut events, |event| match event {
             papo::Event::Notice(notice) => Some(notice),
             _ => None,
@@ -10905,29 +10970,48 @@ mod tests {
 
     #[tokio::test]
     async fn ergo_services_send_trusted_lines_without_an_account() {
-        assert_eq!(
-            direct_notice_is_unverified("SAFERATE", "ChanServ").await,
-            None
-        );
-        assert_eq!(
-            direct_notice_is_unverified("SAFERATE", "nickserv").await,
-            None
-        );
+        for service in [
+            ":ChanServ!ChanServ@localhost",
+            ":nickserv!NickServ@localhost",
+        ] {
+            assert_eq!(
+                direct_notice_unverified_sender("SAFERATE", service).await,
+                None,
+                "{service}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn service_nicks_stay_unverified_off_ergo_and_people_stay_unverified_on_it() {
+        for (isupport, source) in [
+            ("NICKLEN=32", ":ChanServ!ChanServ@localhost"),
+            ("SAFERATE", ":alice!a@host"),
+            ("SAFERATE", ":ChanServ_!c@host"),
+        ] {
+            assert_eq!(
+                direct_notice_unverified_sender(isupport, source).await,
+                Some(crate::UnverifiedSender::NoAccount),
+                "{source} with {isupport}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_account_the_connection_cannot_prove_is_unverified_for_that_reason() {
+        let tagged = "@account=alice :alice!a@host";
         assert_eq!(
-            direct_notice_is_unverified("NICKLEN=32", "ChanServ").await,
-            Some(true)
+            notice_unverified_sender(
+                papo::Client::builder("irc://plain.example", "weblounge"),
+                "SAFERATE",
+                tagged,
+            )
+            .await,
+            Some(crate::UnverifiedSender::UnprovenAccount)
         );
         assert_eq!(
-            direct_notice_is_unverified("SAFERATE", "alice").await,
-            Some(true)
-        );
-        assert_eq!(
-            direct_notice_is_unverified("SAFERATE", "ChanServ_").await,
-            Some(true)
+            direct_notice_unverified_sender("SAFERATE", tagged).await,
+            None
         );
     }
 }

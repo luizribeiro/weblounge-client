@@ -50,7 +50,7 @@ describe("startsMobileMessageGroup", () => {
     expect(
       startsMobileMessageGroup(
         previous,
-        message({ id: 2, unverified_sender: true }),
+        message({ id: 2, unverified_sender: "no_account" }),
       ),
     ).toBe(true);
   });

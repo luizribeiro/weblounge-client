@@ -29,7 +29,7 @@ export function NoticeRow(props: {
         title={props.message.author}
         value={props.message.author}
       />
-      {props.message.unverified_sender === true && (
+      {props.message.unverified_sender !== undefined && (
         <span
           aria-label={t("messages.unverified_sender")}
           class={styles.unverified}
@@ -57,7 +57,9 @@ export function NoticeRow(props: {
       data-message-text={props.message.text}
       data-notice-source={source}
       data-presentation={props.presentation}
-      data-unverified-sender={props.message.unverified_sender || undefined}
+      data-unverified-sender={
+        props.message.unverified_sender !== undefined || undefined
+      }
     >
       {props.presentation === "mobile" ? (
         <>

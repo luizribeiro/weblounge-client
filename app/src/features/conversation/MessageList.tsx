@@ -1788,14 +1788,16 @@ function MessageRow(props: {
       : createLongPress(() => openActions(message));
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender !== undefined ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
       data-held={props.held || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={isRedacted(message.kind) ? "" : message.text}
       data-pressing={longPress?.pressing() || undefined}
-      data-unverified-sender={message.unverified_sender === true || undefined}
+      data-unverified-sender={
+        message.unverified_sender !== undefined || undefined
+      }
       onFocusIn={toolbar.onFocusIn}
       onFocusOut={toolbar.onFocusOut}
       onPointerEnter={toolbar.onPointerEnter}
@@ -1983,7 +1985,7 @@ function MessageImage(props: {
 }
 
 function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
-  return props.message.unverified_sender === true ? (
+  return props.message.unverified_sender !== undefined ? (
     <span
       aria-label={t("messages.unverified_sender")}
       class={styles.unverifiedMark}

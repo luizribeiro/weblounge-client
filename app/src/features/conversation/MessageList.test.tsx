@@ -440,7 +440,7 @@ it("inlines only the network's file host images and follows its origin", () => {
 
 it("marks a direct row whose sender identity is unverified", () => {
   render(() => (
-    <MessageList messages={[{ ...message, unverified_sender: true }]} />
+    <MessageList messages={[{ ...message, unverified_sender: "no_account" }]} />
   ));
 
   const row = screen.getByText("hello weblounge").closest("[data-message-row]");

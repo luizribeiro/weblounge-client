@@ -500,6 +500,22 @@ pub enum PeerPresence {
     Away,
 }
 
+/// Why a direct-message row's sender could not be confirmed as the conversation's peer.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum UnverifiedSender {
+    /// The sender is not logged in to an account.
+    NoAccount,
+    /// The sender is logged in, but this connection cannot prove accounts.
+    UnprovenAccount,
+    /// The nick is held by a different account than the conversation's peer.
+    DifferentAccount,
+    /// The sender cannot be proven to be the conversation's peer.
+    CannotVerify,
+    /// The pushed notification named a different sender than the server's copy.
+    NotificationMismatch,
+}
+
 /// Identity state for a direct-message peer.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -743,10 +759,10 @@ pub struct MessageProjection {
     pub nick_color_index: u32,
     /// Whether this row matches the user's highlight rules.
     pub highlighted: bool,
-    /// Whether this direct-message row came from a sender whose identity was not verified.
+    /// Why this direct-message row's sender identity was not verified, when it was not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub unverified_sender: Option<bool>,
+    pub unverified_sender: Option<UnverifiedSender>,
     /// Reactions ordered by when each reaction value first appeared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

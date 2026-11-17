@@ -19,7 +19,6 @@ const base: MessageProjection = {
   server_time_ms: 1_700_000_000_000,
   received_at_ms: 1_700_000_000_100,
   reactions: [],
-  unverified_sender: false,
 };
 
 function notice(source: "user" | "service" | "server"): IrcNoticeMessage {

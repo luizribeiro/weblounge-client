@@ -1231,7 +1231,13 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.highlighted !== "boolean" ||
     !(
       value.unverified_sender === undefined ||
-      typeof value.unverified_sender === "boolean"
+      isOneOf(value.unverified_sender, [
+        "no_account",
+        "unproven_account",
+        "different_account",
+        "cannot_verify",
+        "notification_mismatch",
+      ])
     ) ||
     (value.reactions !== undefined && reactions === undefined) ||
     !(

@@ -442,6 +442,46 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(patch);
   });
 
+  it("decodes why a sender is unverified and rejects the old flag", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const message = {
+      id: 13,
+      author: "ChanServ_",
+      text: "trust me",
+      kind: "text",
+      bot: null,
+      authorship: "other",
+      nick_color_index: 0,
+      highlighted: false,
+      unverified_sender: "no_account",
+      delivery: "received",
+      local_send_id: null,
+      server_ids: [],
+      server_time_ms: 20,
+      received_at_ms: 30,
+    };
+    const patch = {
+      type: "timeline_changed",
+      buffer_id: 2,
+      reset: false,
+      upserted: [timelineMessage(message)],
+      removed: [],
+    };
+
+    port.emit(patch);
+    expect(() =>
+      port.emit({
+        ...patch,
+        upserted: [timelineMessage({ ...message, unverified_sender: true })],
+      }),
+    ).toThrow("invalid engine message");
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(patch);
+  });
+
   it("decodes redacted messages and rejects a malformed redactor", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
@@ -1141,7 +1181,7 @@ describe("WorkerEngineClient", () => {
           authorship: "other",
           nick_color_index: 2,
           highlighted: false,
-          unverified_sender: true,
+          unverified_sender: "different_account",
           delivery: "received",
           local_send_id: null,
           server_ids: [],
@@ -1156,7 +1196,9 @@ describe("WorkerEngineClient", () => {
       expect.objectContaining({
         buffer: expect.objectContaining({
           direct_identity: "different_account",
-          last_message: expect.objectContaining({ unverified_sender: true }),
+          last_message: expect.objectContaining({
+            unverified_sender: "different_account",
+          }),
         }),
       }),
     );
