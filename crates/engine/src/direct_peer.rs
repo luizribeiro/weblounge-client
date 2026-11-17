@@ -261,6 +261,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_channel_who_without_the_bot_flag_overrides_a_remembered_bot() {
+        let mut peer = Peer::sharing_a_channel(&[]).await;
+        assert_eq!(peer.wire.next_sent().await, "MODE #room");
+        assert_eq!(peer.wire.next_sent().await, "WHO #room");
+        peer.server(":offline.test 005 weblounge BOT=B :supported", |event| {
+            matches!(event, papo::Event::FeaturesChanged { .. })
+        })
+        .await;
+        peer.server(
+            "@bot;msgid=bot;time=2026-11-14T12:01:00.000Z :alice!u@h PRIVMSG weblounge :I am a bot",
+            message,
+        )
+        .await;
+        assert_eq!(peer.sync_bot(), [(peer.alice, true)]);
+
+        peer.wire
+            .server(":offline.test 352 weblounge #room ~alice h offline.test alice H :0 Alice")
+            .await;
+        peer.server(
+            ":offline.test 315 weblounge #room :End of WHO list",
+            |event| matches!(event, papo::Event::MembersRefreshed { .. }),
+        )
+        .await;
+
+        assert_eq!(peer.sync_bot(), [(peer.alice, false)]);
+    }
+
+    #[tokio::test]
     async fn a_pending_peer_reported_online_shows_online_without_resolving_its_handle() {
         let mut peer = Peer::monitored().await;
         peer.server(

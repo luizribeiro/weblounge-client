@@ -6124,6 +6124,7 @@ mod tests {
                 redacted_stubs: Vec::new(),
                 gap_until: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         )
     }
@@ -6351,6 +6352,7 @@ async fn delay(duration: Duration) {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         let second = ChatListSnapshot::new(
@@ -6372,6 +6374,7 @@ async fn delay(duration: Duration) {
                     raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 },
             ],
         );
@@ -6426,6 +6429,7 @@ async fn delay(duration: Duration) {
                 redacted_stubs: Vec::new(),
                 gap_until: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         storage.fail_next_commit();
@@ -6466,6 +6470,7 @@ async fn delay(duration: Duration) {
                 redacted_stubs: Vec::new(),
                 gap_until: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         crate::chat_list_snapshot::write(storage.as_ref(), &before)
@@ -6501,6 +6506,7 @@ async fn delay(duration: Duration) {
             redacted_stubs: Vec::new(),
             gap_until: None,
             peer_pin: None,
+            peer_bot: false,
         });
         schedule_snapshot_write(
             Arc::clone(&storage),
@@ -6698,6 +6704,7 @@ async fn delay(duration: Duration) {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         let (outbound, _receiver) = mpsc::unbounded_channel();
@@ -10018,6 +10025,7 @@ async fn delay(duration: Duration) {
                     raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 }],
             ));
             _ = model.mark_vanished_restored_rows();
@@ -10673,6 +10681,7 @@ async fn delay(duration: Duration) {
                     raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 }],
             )
             .with_cursor_ms(Some(100)),
@@ -11440,6 +11449,7 @@ async fn delay(duration: Duration) {
                         raw_read_at_ms: None,
                         pending_read_at_ms: None,
                         peer_pin: None,
+                        peer_bot: false,
                     }],
                 ));
         }
@@ -12422,6 +12432,7 @@ async fn delay(duration: Duration) {
                     raw_read_at_ms: Some(50),
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 }],
             ));
             running
@@ -12528,6 +12539,7 @@ async fn delay(duration: Duration) {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let snapshot = ChatListSnapshot::new("network".into(), vec![unresolved.clone()]);
         restore_and_store_snapshot(&state, &snapshot).await;
@@ -14005,6 +14017,7 @@ async fn delay(duration: Duration) {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         let (state, outbound, _receiver) = harness(client.clone());

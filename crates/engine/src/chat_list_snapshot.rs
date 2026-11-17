@@ -293,6 +293,8 @@ pub(crate) struct SnapshotRow {
     pub(crate) gap_until: Option<ServerTimeMs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) peer_pin: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) peer_bot: bool,
 }
 
 impl SnapshotRow {
@@ -306,6 +308,7 @@ impl SnapshotRow {
             preview,
             newest,
             peer_pin,
+            peer_bot,
             ..
         } = incoming;
         if incoming_is_newer {
@@ -313,6 +316,7 @@ impl SnapshotRow {
             self.last_activity_ms = last_activity_ms;
             self.preview = preview;
             self.newest = newest;
+            self.peer_bot = peer_bot;
         }
         self.peer_pin = self.peer_pin.take().or(peer_pin);
         self.read_at_ms = facts.mark().map(ServerTimeMs::value);
@@ -458,6 +462,7 @@ mod tests {
                     redacted_stubs: Vec::new(),
                     gap_until: None,
                     peer_pin: None,
+                    peer_bot: false,
                 },
                 SnapshotRow {
                     conversation: SnapshotConversation::Direct {
@@ -479,6 +484,7 @@ mod tests {
                     redacted_stubs: Vec::new(),
                     gap_until: Some(ServerTimeMs::new(1_700_000_000_000)),
                     peer_pin: Some("papo-peer-v1;scope=server%3Aexample;account=alice".into()),
+                    peer_bot: true,
                 },
             ],
         )
@@ -497,6 +503,8 @@ mod tests {
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(value["rows"][0]["newest"]["msgid"], "newest-1");
         assert_eq!(value["rows"][0]["read_at_ms"], 1_699_999_999_000_i64);
+        assert!(value["rows"][0].get("peer_bot").is_none());
+        assert_eq!(value["rows"][1]["peer_bot"], true);
         assert_eq!(
             value["rows"][0]["pending_read_at_ms"],
             1_699_999_999_000_i64
@@ -742,6 +750,36 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["newest-1", "older-stub", "newer-stub"]
         );
+    }
+
+    #[test]
+    fn a_direct_rows_bot_flag_follows_the_newest_writer() {
+        let mut stored = snapshot().rows.remove(1);
+        let mut stale = stored.clone();
+        stale.last_activity_ms = Some(1_699_999_999_000);
+        stale.peer_bot = false;
+        let mut current = stored.clone();
+        current.peer_bot = false;
+
+        stored.merge(stale);
+        assert!(stored.peer_bot);
+        stored.merge(current);
+        assert!(!stored.peer_bot);
+    }
+
+    #[test]
+    fn a_row_saved_before_the_bot_flag_decodes_as_not_a_bot() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&snapshot().encode().expect("encode")).expect("json");
+        value["rows"][1]
+            .as_object_mut()
+            .expect("row object")
+            .remove("peer_bot");
+        let bytes = serde_json::to_vec(&value).expect("json bytes");
+
+        let decoded = ChatListSnapshot::decode(&bytes, &snapshot().fingerprint).expect("decode");
+
+        assert!(!decoded.rows[1].peer_bot);
     }
 
     #[test]

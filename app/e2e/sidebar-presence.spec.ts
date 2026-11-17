@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import { cachedChatList } from "./engine-database";
 import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -207,6 +208,38 @@ test.describe("sidebar presence against local Ergo", () => {
     } finally {
       bot.close();
       human.close();
+    }
+  });
+
+  test("keeps a bot DM peer's robot after a reload without opening its DM", async ({
+    page,
+    irc,
+  }) => {
+    const bot = await irc.peer("iris", []);
+    try {
+      await bot.mode(bot.nickname, "+B");
+      await installNativeFeelInstrumentation(page);
+      await page.goto(irc.url());
+      await expectSettled(page, { conversation: irc.channel });
+      await bot.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+      const name = `${bot.nickname}, bot, 1 unread, including mentions, online`;
+      await directRow(page, name);
+      await expect.poll(() => cachedChatList(page)).toContain(bot.nickname);
+
+      await page.evaluate(
+        (url) => history.replaceState(null, "", url),
+        irc.url(),
+      );
+      await page.reload();
+      await expectSettled(page, { conversation: irc.channel });
+
+      const row = await directRow(page, name);
+      await expect(
+        row.locator("[data-sidebar-prefix] [data-peer-bot]"),
+      ).toHaveAttribute("data-presence", "online");
+      await nativeFeelAudit(page);
+    } finally {
+      bot.close();
     }
   });
 });

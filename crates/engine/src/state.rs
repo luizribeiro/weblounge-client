@@ -771,6 +771,7 @@ impl NetworkModel {
                     buffer.projection.channel_status = None;
                 }
                 buffer.direct_pin = row.peer_pin.and_then(|pin| pin.parse().ok());
+                buffer.projection.peer_bot = row.peer_bot;
                 buffer.projection.direct_identity = direct_identity(buffer);
                 derive_read_projection(buffer);
             }
@@ -962,6 +963,7 @@ impl NetworkModel {
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
                 copy_read_facts_to_snapshot(buffer, &mut row);
+                row.peer_bot = buffer.projection.peer_bot;
                 if buffer.provisional_preview.is_some() {
                     row.preview.clone_from(&buffer.provisional_preview);
                 }
@@ -4532,6 +4534,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
             .as_ref()
             .and_then(papo::PeerKey::as_verified_str)
             .map(str::to_owned),
+        peer_bot: buffer.projection.peer_bot,
     })
 }
 
@@ -5890,6 +5893,7 @@ mod tests {
                 redacted_stubs: Vec::new(),
                 gap_until: Some(ServerTimeMs::new(200)),
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         let mut value: serde_json::Value =
@@ -6899,6 +6903,35 @@ mod tests {
     }
 
     #[test]
+    fn chat_list_snapshot_round_trip_preserves_a_direct_peers_bot_flag() {
+        let (mut live, state) = model(10);
+        live.receive_incoming(
+            Incoming {
+                bot: Some(true),
+                ..direct_incoming(&state, "Iris", "beep", 100)
+            },
+            &state,
+        );
+        live.receive_incoming(direct_incoming(&state, "ana", "hello", 200), &state);
+        let encoded = live
+            .chat_list_snapshot("network".into())
+            .encode()
+            .expect("encode snapshot");
+        let decoded = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
+        let (mut restored, _) = model(10);
+
+        restored.restore_chat_list(decoded);
+
+        let bots = restored
+            .ordered_buffers()
+            .into_iter()
+            .filter(|buffer| buffer.kind == BufferKind::Direct)
+            .map(|buffer| (buffer.title, buffer.peer_bot))
+            .collect::<Vec<_>>();
+        assert_eq!(bots, [("ana".into(), false), ("Iris".into(), true)]);
+    }
+
+    #[test]
     fn restored_direct_order_uses_target_activity_before_history_arrives() {
         let (mut model, state) = model(10);
         for (nick, seconds) in [("Bob", 100), ("alice", 100), ("carol", 200)] {
@@ -6983,6 +7016,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         model.restore_chat_list(restored.clone());
@@ -7038,6 +7072,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7073,6 +7108,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7112,6 +7148,7 @@ mod tests {
                 raw_read_at_ms: Some(100),
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7144,6 +7181,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7186,6 +7224,7 @@ mod tests {
                     raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 }],
             )
             .with_cursor_ms(Some(100)),
@@ -7268,6 +7307,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         model.set_connection(crate::NetworkConnectionState::Online, None);
@@ -7317,6 +7357,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7349,6 +7390,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let channel = channel_name(&state, "#room");
@@ -7390,6 +7432,7 @@ mod tests {
                 raw_read_at_ms: Some(200),
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let buffer_id = model.names[&NameKey::Channel(channel.clone())];
@@ -7479,6 +7522,7 @@ mod tests {
                 raw_read_at_ms: Some(50),
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
@@ -7550,6 +7594,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let channel = channel_name(&state, "#room");
@@ -9933,6 +9978,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let buffer_id = *model
@@ -9974,6 +10020,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#gone"))];
@@ -10026,6 +10073,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
@@ -10085,6 +10133,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: Some("not-a-peer-key".into()),
+                peer_bot: false,
             }],
         ));
         let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
@@ -10114,6 +10163,7 @@ mod tests {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let previous = ChatListSnapshot::new(
             "network".into(),
@@ -10134,6 +10184,7 @@ mod tests {
                     raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
+                    peer_bot: false,
                 },
             ],
         );
@@ -10165,6 +10216,42 @@ mod tests {
     }
 
     #[test]
+    fn a_cached_direct_row_takes_its_peers_live_bot_flag() {
+        let (mut model, state) = model(10);
+        let previous = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct { key: "iris".into() },
+                title: "iris".into(),
+                last_activity_ms: Some(200),
+                stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
+                gap_until: None,
+                preview: Some("beep".into()),
+                newest: None,
+                read_at_ms: None,
+                raw_read_at_ms: None,
+                pending_read_at_ms: None,
+                peer_pin: None,
+                peer_bot: false,
+            }],
+        );
+        model.restore_chat_list(previous.clone());
+        let iris = model.names[&NameKey::Direct(nick_name(&state, "iris"))];
+        model
+            .buffers
+            .get_mut(&iris)
+            .expect("iris buffer")
+            .projection
+            .peer_bot = true;
+
+        let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+
+        assert!(merged.rows[0].peer_bot);
+        assert_eq!(merged.rows[0].preview.as_deref(), Some("beep"));
+    }
+
+    #[test]
     fn live_direct_restores_a_snapshot_row_dropped_by_target_reconciliation() {
         let (mut model, state) = model(10);
         let cached_direct = SnapshotRow {
@@ -10182,6 +10269,7 @@ mod tests {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let unresolved = SnapshotRow {
             conversation: SnapshotConversation::Channel {
@@ -10198,6 +10286,7 @@ mod tests {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let cached =
             ChatListSnapshot::new("network".into(), vec![cached_direct, unresolved.clone()]);
@@ -10255,6 +10344,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         );
         model.restore_chat_list(previous.clone());
@@ -10308,6 +10398,7 @@ mod tests {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
         model.restore_chat_list(previous.clone());
@@ -10348,6 +10439,7 @@ mod tests {
             raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
+            peer_bot: false,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
         model.restore_chat_list(previous.clone());
@@ -10415,6 +10507,7 @@ mod tests {
                 raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
