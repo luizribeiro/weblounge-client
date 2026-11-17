@@ -47,9 +47,8 @@ targets:
       - path: Externals
         excludes: ["**/*.a"]
       - path: weblounge-desktop_iOS
-      - path: assets
-        buildPhase: resources
-        type: folder
+      # `assets` is not a resource: Tauri fills it only from `bundle.resources`, which the app has
+      # none of, and App Store Connect rejects an empty folder in the bundle (90207).
       - path: LaunchScreen.storyboard
     info:
       path: weblounge-desktop_iOS/Info.plist
