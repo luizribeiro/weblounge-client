@@ -287,9 +287,9 @@ so no column can go ragged.
   fallbacks drew them far smaller than the letters. The caps are hidden from assistive tech; the
   label as written is read instead.
 - The slot has a fixed width (`--wl-omnibar-slot-width`, 116px) sized for the longest primary
-  label, `Ctrl+Shift+,` on Linux (about 115px as keycaps). A subgrid on the listbox would size the slot to the widest cell of the
-  current results, so the name's ellipsis would move as the user types; a fixed width keeps every
-  edge still. The palette e2e tests, with macOS and Linux chords, fail if a label ever outgrows
+  label, `Ctrl+Shift+,` on Linux (about 115px as keycaps). A subgrid on the listbox would size
+  the slot to the widest cell of the current results, so the name's ellipsis would move as the
+  user types; a fixed width keeps every edge still. The palette e2e tests, with macOS and Linux chords, fail if a label ever outgrows
   the slot.
 - Matched characters are not highlighted yet (PLAN F38).
 
