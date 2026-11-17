@@ -266,6 +266,10 @@ pub enum DeploymentConfig {
     App,
     /// One preconfigured network authenticated by the deployment's OAuth issuer.
     Hosted {
+        /// Release channel the host serves; absent means release.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        channel: Option<ReleaseChannel>,
         /// Network shown in the shell.
         network: HostedNetworkConfig,
         /// Public OAuth authorization-code client configuration.
@@ -279,6 +283,16 @@ pub enum DeploymentConfig {
         #[ts(optional)]
         client: Option<Box<ClientDeploymentConfig>>,
     },
+}
+
+/// Web release channel a hosted deployment serves.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseChannel {
+    /// Rolling deployment of every green main commit.
+    Beta,
+    /// Hand-cut web release.
+    Release,
 }
 
 /// Hosted client remediation controls supplied by the deployment.

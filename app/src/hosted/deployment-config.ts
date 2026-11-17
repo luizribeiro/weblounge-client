@@ -1,4 +1,5 @@
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
+import type { ReleaseChannel } from "../engine/generated/ReleaseChannel";
 import { t } from "../strings";
 import { withStartupDeadline } from "./startup-deadline";
 
@@ -150,7 +151,7 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   }
   recordUnknownFields(
     root,
-    ["mode", "network", "oauth", "push", "client"],
+    ["mode", "channel", "network", "oauth", "push", "client"],
     "hosted",
   );
   const network = record(root.network, '"network"');
@@ -175,12 +176,15 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
     oauth.session_token_endpoint,
     issuer,
   );
+  const channel =
+    root.channel === undefined ? undefined : releaseChannel(root.channel);
   const push = root.push === undefined ? undefined : pushConfig(root.push);
   const client =
     root.client === undefined ? undefined : clientConfig(root.client);
 
   return {
     mode: "hosted",
+    ...(channel === undefined ? {} : { channel }),
     network: { name, endpoint, autojoin },
     oauth: {
       issuer,
@@ -191,6 +195,13 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
     ...(push === undefined ? {} : { push }),
     ...(client === undefined ? {} : { client }),
   };
+}
+
+function releaseChannel(value: unknown): ReleaseChannel {
+  if (value !== "beta" && value !== "release") {
+    throw new DeploymentConfigError('"channel" must be "beta" or "release"');
+  }
+  return value;
 }
 
 function clientConfig(value: unknown): {

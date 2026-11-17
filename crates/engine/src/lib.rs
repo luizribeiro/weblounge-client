@@ -46,8 +46,8 @@ pub use protocol::{
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
     OwnChangeDelivery, PeerPresence, PushDeploymentConfig, PushDeviceCredentials, PushFailure,
     PushRoute, PushState, PushUnsupportedReason, ReactionActorProjection, ReactionProjection,
-    RedactedSecret, Redaction, SaslCredentials, ShellKind, TypingProjection, UiToEngine,
-    UploadApproval, UploadAuthorization, UploadResolution,
+    RedactedSecret, Redaction, ReleaseChannel, SaslCredentials, ShellKind, TypingProjection,
+    UiToEngine, UploadApproval, UploadAuthorization, UploadResolution,
 };
 
 /// Reads service-worker push records while constructing the web engine.

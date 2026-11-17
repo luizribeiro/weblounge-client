@@ -3,11 +3,16 @@ import type { ClientDeploymentConfig } from "./ClientDeploymentConfig";
 import type { HostedNetworkConfig } from "./HostedNetworkConfig";
 import type { HostedOAuthConfig } from "./HostedOAuthConfig";
 import type { PushDeploymentConfig } from "./PushDeploymentConfig";
+import type { ReleaseChannel } from "./ReleaseChannel";
 
 /**
  * Runtime deployment configuration served by the web host.
  */
 export type DeploymentConfig = { "mode": "app" } | { "mode": "hosted",
+/**
+ * Release channel the host serves; absent means release.
+ */
+channel?: ReleaseChannel,
 /**
  * Network shown in the shell.
  */

@@ -39,6 +39,22 @@ describe("deployment config", () => {
     expect(decodeDeploymentConfig(hosted)).toEqual(hosted);
   });
 
+  it("decodes an optional release channel", () => {
+    for (const channel of ["beta", "release"] as const) {
+      expect(decodeDeploymentConfig({ ...hosted, channel })).toEqual({
+        ...hosted,
+        channel,
+      });
+    }
+    expect(decodeDeploymentConfig(hosted)).not.toHaveProperty("channel");
+  });
+
+  it.each(["stable", "Beta", null, 1])("rejects the channel %j", (channel) => {
+    expect(() => decodeDeploymentConfig({ ...hosted, channel })).toThrow(
+      'This deployment is misconfigured. Invalid /config.json: "channel" must be "beta" or "release"',
+    );
+  });
+
   it("strictly decodes optional push configuration", () => {
     const configured = {
       ...hosted,
