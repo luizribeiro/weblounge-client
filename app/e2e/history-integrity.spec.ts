@@ -189,6 +189,39 @@ test.describe("history integrity against local Ergo", () => {
       ...writers.map((writer) => writer.nickname),
     ]);
   });
+
+  test("deletions and reactions leave the transcript matching the server", async ({
+    context,
+    page,
+    irc,
+  }) => {
+    const { keeper, channel, peer } = await alwaysOnRoom(irc, "edits");
+    const app = await launch(page, irc, [channel]);
+    const seen = await sendEach(
+      peer,
+      [channel, irc.account],
+      3,
+      `seen ${irc.id}`,
+    );
+    await expect(chatRow(app, peer.nickname)).toBeVisible();
+    await changeLines(peer, seen);
+    await expect(app.locator("[data-redacted]")).toHaveCount(0);
+    await closeAppUntilDetached(app, keeper);
+
+    const unseen = await sendEach(
+      peer,
+      [channel, irc.account],
+      3,
+      `unseen ${irc.id}`,
+    );
+    await changeLines(peer, unseen);
+
+    await expectBuffersMatchServer(
+      await relaunch(context, irc, [channel], [channel, peer.nickname]),
+      irc,
+      [channel, peer.nickname],
+    );
+  });
 });
 
 interface SentLine {
@@ -394,4 +427,18 @@ async function leaveConversation(page: Page, title: string): Promise<void> {
   await expectSettled(page, { conversation: title });
   await page.getByRole("button", { name: "Back to chats" }).click();
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+}
+
+/** Reacts to the first line sent to each target and deletes the second. */
+async function changeLines(
+  sender: IrcClient,
+  lines: readonly SentLine[],
+): Promise<void> {
+  for (const target of new Set(lines.map((line) => line.target))) {
+    const [reacted, deleted] = lines.filter((line) => line.target === target);
+    if (reacted === undefined || deleted === undefined)
+      throw new Error(`two lines to ${target} are needed`);
+    await sender.reactionConfirmed(target, messageId(reacted.line), "👍");
+    await sender.redactConfirmed(target, messageId(deleted.line));
+  }
 }
