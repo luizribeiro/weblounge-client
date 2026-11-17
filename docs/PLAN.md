@@ -47,7 +47,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F6: image viewer later: move between a conversation's images, Android back closes it, Copy link and Save in Tauri, Open original; close when the image's row is virtualised away fades instead of shrinking. Design 30 §Later.
 - F7: natural-size cache in the engine's `Space::Cache` (needs a protocol request and records) and `filehost_origin` persisted in the chat-list snapshot. Design 30 §Later.
 - F8: UI to forget remembered upload hosts (`ForgetUploadApprovals` exists, nothing calls it), in Networks settings. Design 31.
-- F9: uploads beyond v1: Attach button (the `/file` picker is done), drag and drop, several images, arbitrary files, offline outbox, native Tauri uploader, `NSCameraUsageDescription` for the iOS app's picker (design 33). Design 31 §Out of scope, design 13.
+- F9: uploads beyond v1: Attach button (the `/file` picker and drag and drop are done), several images, arbitrary files, offline outbox, native Tauri uploader, `NSCameraUsageDescription` for the iOS app's picker (design 33). Design 31 §Out of scope, design 13.
 - F10: Settings beyond slice 1: Networks, Notifications, keyboard rebinding, quiet hours and per-sender rules, per-network overrides, search, import/export, cross-device sync, onboarding, native macOS Settings window. Design 29 §Out of scope. (The push switch is done, design 36.)
 - F11: link previews (cards, proxy, per-channel toggle, Tauri direct fetch, link shimming of outbound clicks, IRCv3 previews extension); paused, and the "images from other sites" switch is left out of Settings. Memory, design 30, design 29.
 - F12: animate phone chat-list reorders (row slides to top); parked as finicky. If revisited: moved row, new row, off-screen row, bursts, reduced motion. Memory.
@@ -153,6 +153,13 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: image drag and drop (part of F9, #feedback item 4, design 31 "Drag and drop"): a
+  file dropped anywhere on the window attaches to the open conversation's composer through the
+  same check as paste and `/file` (one `attachableImage`, now with a 50 MB ceiling), with a subtle
+  overlay while dragging; an unsupported, unreadable or too large file, several files, no open
+  conversation or no file host show an error dialog built on the confirmation dialog's frame. Text
+  drops are left alone. `e2e/image-drop.spec.ts` on Chromium and WebKit. The Mac app needs
+  `disable_drag_drop_handler()` on its window: Tauri's handler swallows drops before WKWebView.
 - 2026-11-17: About in Settings (design 38), on desktop and phone: the chair mark and app name,
   Version, Commit, Built, Channel and Platform, and Copy debug info, which puts the same facts
   (full commit) plus the user agent on the clipboard as plain text. Version is `__BUILD_VERSION__`
