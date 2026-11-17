@@ -218,9 +218,6 @@ test.describe("history integrity against local Ergo", () => {
     page,
     irc,
   }) => {
-    // B33: the queued lines go out before the reconnect's CHATHISTORY TARGETS, so the channel's
-    // newest activity falls after the query's end and the peer's offline line is never fetched.
-    test.fail();
     const { keeper, channel, peer } = await alwaysOnRoom(irc, "queued");
     const app = await launch(page, irc, [channel]);
     await peer.privmsgConfirmed(channel, `before offline ${irc.id}`);

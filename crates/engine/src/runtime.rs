@@ -50,6 +50,11 @@ const HISTORY_PAGE_SIZE: usize = 100;
 const RECENT_DIRECT_LIMIT: usize = 100;
 const RECENT_TARGET_LIMIT: usize = 1_000;
 const RECENT_DIRECT_WINDOW: Duration = Duration::from_hours(30 * 24);
+/// `CHATHISTORY TARGETS` lists a conversation only when its newest line falls inside the window.
+/// Lines keep landing after the query is built (queued sends flush as soon as the connection is
+/// up, and peers keep talking), and any one of them would hide every line before it, so the window
+/// reaches past now. The cursor still advances only to the query time.
+const TARGETS_LATE_ACTIVITY: Duration = Duration::from_hours(24);
 const COMPLETION_LIMIT: usize = 100;
 const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
@@ -4060,7 +4065,10 @@ fn spawn_target_reconciliation(
                     .checked_sub(RECENT_DIRECT_WINDOW)
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             });
-        if let Ok(recent) = client.recent_conversations(since, until).await {
+        if let Ok(recent) = client
+            .recent_conversations(since, until + TARGETS_LATE_ACTIVITY)
+            .await
+        {
             let complete = recent.len() < RECENT_TARGET_LIMIT;
             let recent = recent
                 .into_iter()
@@ -11329,6 +11337,43 @@ async fn delay(duration: Duration) {
         ));
 
         drain.abort();
+    }
+
+    #[tokio::test]
+    async fn target_window_includes_lines_stamped_after_the_query() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut wire).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+
+        spawn_target_reconciliation(Arc::clone(&state), outbound, client.clone(), 1);
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        let own_flush_stamp = papo::time::now();
+
+        let end = targets
+            .split_whitespace()
+            .nth(4)
+            .and_then(|bound| bound.strip_prefix("timestamp="))
+            .and_then(papo_proto::time::parse)
+            .expect("TARGETS end bound");
+        assert!(end > own_flush_stamp, "{targets}");
+
+        send_recent_targets(&mut wire, request_label(&targets), &[]).await;
+        let cursor = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let cursor = lock(&state)
+                    .network
+                    .as_ref()
+                    .and_then(|running| running.model.cursor());
+                if let Some(cursor) = cursor {
+                    break cursor;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("an empty complete TARGETS page settles the cursor");
+        assert!(cursor <= own_flush_stamp);
     }
 
     #[tokio::test]

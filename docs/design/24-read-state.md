@@ -169,8 +169,10 @@ suppression covers every visible pane.
 
 ## 5. Launch sync
 
-Channel markers arrive with JOIN. TARGETS begins at the network cursor. For each target whose latest
-time exceeds the row's latest time, fetch `CHATHISTORY LATEST <target>
+Channel markers arrive with JOIN. TARGETS begins at the network cursor and ends a day past the
+query time, because TARGETS omits a conversation whose newest line (often an own line flushed on
+reconnect) is later than its end; the cursor still advances only to the query time. For each
+target whose latest time exceeds the row's latest time, fetch `CHATHISTORY LATEST <target>
 timestamp=max(mark, row.latest) 100`, retaining the newest 100 messages after the bound. A full page
 records an unfilled transcript range from the request bound to its oldest result (design 26).
 Unchanged targets keep their persisted stubs and need no fetch.

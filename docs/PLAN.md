@@ -119,7 +119,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - B30: docked members list narrows the composer (feedback #25). Fixed in c5d51d6a. The inline column now ends at the composer's top and the composer spans the pane (design 34 decision 14); `app/e2e/member-pane.spec.ts`.
 - B29: composer suggestion popup stuck open over an empty composer (feedback #24). Fixed in 56d20df7 and 41a1b756: clearing the composer after a send left the completion caret behind, so a `/msg` argument suggestion stayed open; the caret now moves with every text change, and a press outside the composer closes the popup. `app/e2e/composer-suggestion-dismiss.spec.ts`.
 - B32: ChanServ/service messages marked as unverified (feedback #26). Fixed in 3cf5b306. The "?" after the nick and the red left bar are one warning, `unverified_sender`: Ergo's services hold no account (their lines carry no `account` tag and `WHO` reports account `0`), so papo pins them by continuity only, which is never verified; papo is right, and on Ergo (`SAFERATE`) the reserved service nicks are the proof instead. Still open: Ergo's blank HELP lines (`NOTICE` with empty text) show as rows with only the nick; collapsing them to a spacer needs a design call.
-- B33: a line someone sends while this device is offline never shows in a conversation this device also queued lines for. On reconnect the queued `PRIVMSG`s go out before `CHATHISTORY TARGETS`, so the conversation's newest activity is later than the query's end, `TARGETS` leaves it out, and nothing fetches the missed line. Found by the history integrity suite (design 39); `app/e2e/history-integrity.spec.ts` "own lines queued while offline" is marked `test.fail()` until fixed.
+- B33: a line someone sent while this device was offline never showed in a conversation this device had also queued lines for. Fixed on `history-integrity-r2`: `CHATHISTORY TARGETS` lists a conversation only when its newest line falls inside the window, and the queued `PRIVMSG`s went out right after reconnecting with server times past the window's end, which hid the conversation from the catch-up. The window now reaches a day past the query time (`TARGETS_LATE_ACTIVITY`); the cursor still advances only to the query time. `app/e2e/history-integrity.spec.ts` "own lines queued while offline".
 
 #### Test flakes
 - T1: `spacing-audit.spec.ts:133` opens at the top of the transcript instead of the live edge (2 in ~80 main runs); under 10x CPU throttle three later steps also fail. Failures attach `transcript-geometry`; hypothesis: TanStack drops the in-flight `scrollToEnd` and MessageList never re-issues it.
@@ -177,9 +177,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   (`app/e2e/history-integrity.ts`), compares every message row's msgid with the server's
   `CHATHISTORY`; `app/e2e/history-integrity.spec.ts` runs it, with the chat-list badge and preview
   check, on desktop Chromium and iPhone WebKit across 12 scenarios, and
-  `crates/engine/src/runtime/tests/history_integrity.rs` is its engine proptest. Two scenarios are
-  `test.fail()` until their bugs are fixed: B20 (an open app offline for more than one page) and
-  B33 (own lines queued offline); remove the annotation in the commit that fixes each.
+  `crates/engine/src/runtime/tests/history_integrity.rs` is its engine proptest. One scenario is
+  `test.fail()` until B20 is fixed (an open app offline for more than one page); remove the
+  annotation in the commit that fixes it. The suite also found B33, fixed on the same branch.
 - 2026-11-17: desktop copy rework (B21, feedback #12; F43 desktop part, feedback #13; design 15
   "Selection and copy"). A selection inside one message copies exactly the selected text, newlines
   kept, with no `[time] <nick>`; a selection across messages keeps whole log lines and paints those
