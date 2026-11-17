@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildNumber, iosReleaseTag, staleBuild, unshippableVersion } from "./ios-plan.mjs";
+import {
+  buildNumber,
+  iosReleaseTag,
+  staleBuild,
+  unshippableVersion,
+  uploadCredentials,
+} from "./ios-plan.mjs";
 
 test("names the tag after the version and the build", () => {
   assert.equal(iosReleaseTag("0.1.3", "2620"), "ios-v0.1.3+2620");
@@ -43,4 +49,40 @@ test("only plain integer versions ship to App Store Connect", () => {
   for (const version of ["0.1.3-beta.1", "0.1.3.4", "v0.1.3"]) {
     assert.match(unshippableVersion(version), /is not an App Store version/);
   }
+});
+
+const credentials = {
+  APP_STORE_CONNECT_KEY_ID: "2X9R4HXF34",
+  APP_STORE_CONNECT_ISSUER_ID: "57246542-96fe-1a63-e053-0824d011072a",
+};
+
+test("upload credentials come from the environment and the key file", () => {
+  assert.deepEqual(
+    uploadCredentials(credentials, (keyId) => keyId === "2X9R4HXF34"),
+    {
+      keyId: "2X9R4HXF34",
+      issuer: "57246542-96fe-1a63-e053-0824d011072a",
+      problems: [],
+    },
+  );
+});
+
+test("reports every missing upload credential", () => {
+  assert.deepEqual(uploadCredentials({}, () => true).problems, [
+    "APP_STORE_CONNECT_KEY_ID is not set",
+    "APP_STORE_CONNECT_ISSUER_ID is not set",
+  ]);
+  assert.deepEqual(uploadCredentials(credentials, () => false).problems, [
+    "~/.appstoreconnect/private_keys/AuthKey_2X9R4HXF34.p8 does not exist",
+  ]);
+});
+
+test("without a key id there is no key file to look for", () => {
+  const lookedUp = [];
+  const { problems } = uploadCredentials(
+    { APP_STORE_CONNECT_ISSUER_ID: credentials.APP_STORE_CONNECT_ISSUER_ID },
+    (keyId) => lookedUp.push(keyId),
+  );
+  assert.deepEqual(problems, ["APP_STORE_CONNECT_KEY_ID is not set"]);
+  assert.deepEqual(lookedUp, []);
 });

@@ -25,3 +25,22 @@ export function staleBuild({ tags, build }) {
     `build ${build} is not above the last uploaded build ${last}; release from origin/main`
   );
 }
+
+export const CREDENTIAL_VARIABLES = {
+  keyId: "APP_STORE_CONNECT_KEY_ID",
+  issuer: "APP_STORE_CONNECT_ISSUER_ID",
+};
+
+export const keyFile = (home, keyId) =>
+  `${home}/.appstoreconnect/private_keys/AuthKey_${keyId}.p8`;
+
+export function uploadCredentials(env, keyFileExists) {
+  const keyId = env[CREDENTIAL_VARIABLES.keyId];
+  const issuer = env[CREDENTIAL_VARIABLES.issuer];
+  const problems = [
+    !keyId && `${CREDENTIAL_VARIABLES.keyId} is not set`,
+    !issuer && `${CREDENTIAL_VARIABLES.issuer} is not set`,
+    keyId && !keyFileExists(keyId) && `${keyFile("~", keyId)} does not exist`,
+  ].filter(Boolean);
+  return { keyId, issuer, problems };
+}
