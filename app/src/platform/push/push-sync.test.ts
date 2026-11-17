@@ -185,6 +185,7 @@ function fixture(
   const { deadEndpoints, relay } = fakeRelay();
   const diagnostics = vi.fn();
   const authorizationRequired = vi.fn();
+  const session: { account: string | undefined } = { account: undefined };
   const retries: Array<() => void> = [];
   const retryDelays: number[] = [];
   const synchronizer = new PushSynchronizer({
@@ -196,7 +197,11 @@ function fixture(
     routes,
     acquireSessionToken: async () => "member-session",
     onAuthorizationRequired: authorizationRequired,
-    routeContext: () => ({ networkLabel: "Lounge", nickname: "weblounge" }),
+    routeContext: () => ({
+      networkLabel: "Lounge",
+      nickname: "weblounge",
+      ...(session.account === undefined ? {} : { account: session.account }),
+    }),
     onRouteDiagnostic: diagnostics,
     generateRouteKeys,
     ...(routesNeedingReregistration === undefined
@@ -212,6 +217,7 @@ function fixture(
   });
   return {
     authorizationRequired,
+    session,
     deadEndpoints,
     devices,
     diagnostics,
@@ -1013,6 +1019,94 @@ describe("push state synchronization", () => {
 
     expect(current.routes.values.get("legacy-home")).toEqual(legacy);
     expect(current.engine.requests).toEqual([]);
+  });
+
+  describe("another account on this device", () => {
+    async function registerAs(
+      current: ReturnType<typeof fixture>,
+      account: string,
+    ): Promise<void> {
+      current.session.account = account;
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+    }
+
+    it("deletes the device and registers a new one when the home's account changes", async () => {
+      const current = fixture();
+      await registerAs(current, "luiz");
+      expect(current.routes.values.get("home-vapid")?.account).toBe("luiz");
+      current.relay.createDevice.mockResolvedValueOnce({
+        ok: true,
+        value: { id: "device-2", secret: "device-2-secret" },
+      });
+
+      await registerAs(current, "mel");
+
+      expect(current.relay.deleteDevice).toHaveBeenCalledWith({
+        id: "device-1",
+        secret: "device-secret",
+      });
+      expect(current.engine.requests).toContainEqual(
+        expect.objectContaining({
+          request: expect.objectContaining({
+            type: "unregister_push_route",
+            route_id: "route-1",
+          }),
+        }),
+      );
+      expect(current.relay.createDevice).toHaveBeenCalledTimes(2);
+      expect(current.routes.values.get("home-vapid")).toMatchObject({
+        account: "mel",
+        deviceId: "device-2",
+      });
+    });
+
+    it("keeps trying to delete the old account's device while the relay is down", async () => {
+      const current = fixture();
+      await registerAs(current, "luiz");
+      current.relay.deleteDevice.mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "unavailable" },
+      });
+
+      await registerAs(current, "mel");
+
+      expect(current.devices.credentials?.device_id).toBe("device-1");
+      expect(current.routes.values.get("home-vapid")?.account).toBe("luiz");
+      expect(current.relay.createDevice).toHaveBeenCalledOnce();
+      current.retries.at(-1)?.();
+      await current.synchronizer.settled();
+      expect(current.relay.deleteDevice).toHaveBeenCalledTimes(2);
+      expect(current.routes.values.get("home-vapid")?.account).toBe("mel");
+    });
+
+    it("keeps the device for the same account", async () => {
+      const current = fixture();
+      await registerAs(current, "luiz");
+
+      await registerAs(current, "luiz");
+
+      expect(current.relay.deleteDevice).not.toHaveBeenCalled();
+      expect(current.relay.createDevice).toHaveBeenCalledOnce();
+    });
+
+    it("adopts a route stored before accounts were recorded", async () => {
+      const current = fixture();
+      current.devices.credentials = {
+        relay: relayOrigin,
+        device_id: "device-1",
+        secret: "device-secret",
+      };
+      current.routes.values.set("home-vapid", route());
+
+      await registerAs(current, "luiz");
+
+      expect(current.relay.deleteDevice).not.toHaveBeenCalled();
+      expect(current.routes.values.get("home-vapid")).toMatchObject({
+        routeId: "route-1",
+        account: "luiz",
+      });
+    });
   });
 
   it("deletes the relay device on sign-out even when IRC cleanup fails", async () => {

@@ -1303,9 +1303,14 @@ export function App(props: AppProps) {
         const network = networks().find(
           (candidate) => candidate.id === networkId,
         );
-        return network === undefined
-          ? undefined
-          : { networkLabel: network.label, nickname: network.nickname };
+        if (network === undefined) return undefined;
+        return {
+          networkLabel: network.label,
+          nickname: network.nickname,
+          ...(network.account === undefined
+            ? {}
+            : { account: network.account }),
+        };
       },
       acquireSessionToken: async () => {
         try {

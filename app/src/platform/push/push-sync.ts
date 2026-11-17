@@ -69,6 +69,7 @@ export interface PushRouteDiagnostic {
 interface PushRouteContext {
   readonly networkLabel: string;
   readonly nickname: string;
+  readonly account?: string;
 }
 
 // The first two backoff retries (relayRetryDelay's 0.5–1s and 1–2s) still read as starting up;
@@ -243,6 +244,18 @@ export class PushSynchronizer {
   }
 
   async signOut(): Promise<void> {
+    await this.#dropDevice(true);
+    for (const networkId of this.#homes.keys()) {
+      this.#publish(networkId, "none");
+    }
+    this.#homes.clear();
+  }
+
+  /**
+   * Unregisters every route and deletes this device at the relay, keeping the known homes. Unless
+   * `force`d, a device the relay failed to delete is kept, so the deletion can be retried.
+   */
+  async #dropDevice(force: boolean): Promise<RelayFailure | undefined> {
     const [storedDevice, routes] = await Promise.all([
       this.#devices.load(this.#relayOrigin),
       this.#routes.all(),
@@ -252,6 +265,7 @@ export class PushSynchronizer {
         () => undefined,
       );
     }
+    let failure: RelayFailure | undefined;
     if (storedDevice !== undefined) {
       const deleted = await this.#relay.deleteDevice(
         asRelayDevice(storedDevice),
@@ -259,14 +273,34 @@ export class PushSynchronizer {
       if (!deleted.ok && deleted.error.kind === "unauthorized") {
         this.#onAuthorizationRequired();
       }
+      if (!deleted.ok && deleted.error.kind !== "gone") failure = deleted.error;
     }
+    if (failure !== undefined && !force) return failure;
     await Promise.all(routes.map((route) => this.#routes.delete(route.vapid)));
     await this.#devices.clear(this.#relayOrigin);
-    for (const networkId of this.#homes.keys()) {
-      this.#publish(networkId, "none");
-    }
-    this.#homes.clear();
+    for (const cancel of this.#cancelRetries.values()) cancel();
+    this.#cancelRetries.clear();
+    this.#retryAttempts.clear();
+    this.#recoveries.clear();
+    this.#legacyEndpoints.clear();
     this.#currentRoutes.clear();
+    this.#activeRoutes.clear();
+    this.#reconciledDeviceId = undefined;
+    this.#reconciledTarget = undefined;
+    return failure;
+  }
+
+  /**
+   * A home's stored route was registered for another account, so this device must stop
+   * receiving that account's pushes before it registers for the current one.
+   */
+  async #registeredForAnotherAccount(
+    home: string,
+    account: string | undefined,
+  ): Promise<boolean> {
+    if (account === undefined) return false;
+    const stored = await this.#routes.get(home);
+    return stored?.account !== undefined && stored.account !== account;
   }
 
   async #reregisterFlaggedRoutes(): Promise<void> {
@@ -295,6 +329,17 @@ export class PushSynchronizer {
     const home = this.#homes.get(networkId);
     const context = this.#routeContext(networkId);
     if (home === undefined || context === undefined || this.#disposed) return;
+    if (await this.#registeredForAnotherAccount(home, context.account)) {
+      const failure = await this.#dropDevice(false);
+      if (failure !== undefined) {
+        this.#relayFailed(networkId, "none", undefined, "device", failure);
+        return;
+      }
+      for (const other of this.#homes.keys()) {
+        if (other !== networkId)
+          this.#enqueue(() => this.#ensureHomeLocked(other));
+      }
+    }
     const deviceResult = await this.#ensureDevice();
     if (!deviceResult.ok) {
       this.#relayFailed(
@@ -364,7 +409,12 @@ export class PushSynchronizer {
         ? { ...current, ...context, networkId }
         : storedRoute(
             networkId,
-            context,
+            {
+              ...(stored?.account === undefined
+                ? {}
+                : { account: stored.account }),
+              ...context,
+            },
             home,
             await this.#generateRouteKeys({
               routeId: ensured.value.id,

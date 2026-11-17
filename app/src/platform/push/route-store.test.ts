@@ -33,6 +33,18 @@ it("stores no CryptoKey anywhere in a route record", async () => {
   expect(containsCryptoKey(await readRawRoute(factory))).toBe(false);
 });
 
+it("keeps the account a route was registered for, and reads older routes without one", async () => {
+  const factory = new IDBFactory();
+  const store = new IndexedDbPushRouteStore(factory);
+  const keys = await createRouteKeys(webcrypto as unknown as Crypto);
+
+  await store.put(route(keys));
+  expect(await store.get("home-vapid")).not.toHaveProperty("account");
+  await store.put(route({ ...keys, account: "luiz" }));
+
+  expect(await store.get("home-vapid")).toMatchObject({ account: "luiz" });
+});
+
 it("keeps a route's browser or APNs target", async () => {
   const keys = await createRouteKeys(webcrypto as unknown as Crypto);
   const browser = {

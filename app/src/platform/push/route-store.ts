@@ -13,6 +13,8 @@ interface PushRouteMetadata {
   readonly networkId: number;
   readonly networkLabel: string;
   readonly nickname: string;
+  /** The casefolded account the home registered this route for, once known. */
+  readonly account?: string;
   readonly vapid: string;
   readonly routeId: string;
   readonly deviceId?: string;
@@ -216,6 +218,9 @@ function decodeRoute(value: unknown): PushRouteRecord {
     ...("deviceId" in value && typeof value.deviceId === "string"
       ? { deviceId: value.deviceId }
       : {}),
+    ...("account" in value && typeof value.account === "string"
+      ? { account: value.account }
+      : {}),
     ...("retiring" in value && value.retiring === true
       ? { retiring: true }
       : {}),
@@ -274,6 +279,7 @@ function encodeRoute(route: StoredPushRoute): StoredPushRoute {
       ? { privateKeyPkcs8: route.privateKeyPkcs8.slice() }
       : { keyStorage: route.keyStorage }),
     ...(route.deviceId === undefined ? {} : { deviceId: route.deviceId }),
+    ...(route.account === undefined ? {} : { account: route.account }),
     ...(route.target === undefined ? {} : { target: route.target }),
     ...(route.active === true ? { active: true } : {}),
     ...(route.needsReregistration === true

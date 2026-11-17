@@ -1889,6 +1889,45 @@ test.describe("push startup keeps an existing registration", () => {
     expect(relay.bodies("POST /v1/devices")).toHaveLength(1);
   });
 
+  test("push startup replaces the device when another account signs in", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+
+    await page.evaluate(() =>
+      localStorage.setItem("e2e.hosted-account", "mel"),
+    );
+    await page.reload();
+
+    await expect
+      .poll(() => relay.calls())
+      .toContain("DELETE /v1/devices/device-1");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toEqual(
+        expect.arrayContaining([
+          "unregister:route-ios:https://push.weblounge.org/v1/r/route-ios",
+          "ensure:route-ios-2",
+        ]),
+      );
+    const calls = relay.calls();
+    expect(calls.lastIndexOf("POST /v1/devices")).toBeGreaterThan(
+      calls.indexOf("DELETE /v1/devices/device-1"),
+    );
+    expect(relay.bodies("POST /v1/devices")).toHaveLength(2);
+  });
+
   test("push startup keeps the device when a session refresh fails and signs in again", async ({
     baseURL,
     browserName,
@@ -2635,6 +2674,8 @@ async function installFakeEngine(
                 id: 1,
                 label: "weblounge",
                 nickname: "weblounge",
+                account:
+                  localStorage.getItem("e2e.hosted-account") ?? "weblounge",
                 state: "online",
               },
             });
