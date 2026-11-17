@@ -1742,6 +1742,10 @@ function MessageRow(props: {
       ? current
       : undefined;
   });
+  // Copy text alone does not make a row a tab stop: on a network without reactions every row
+  // would join the Tab order.
+  const isRowTabStop = () =>
+    hoverToolbarReact !== undefined || canRedact(message, menu()?.redact);
   const [rowElement, setRowElement] = createSignal<HTMLElement>();
   createEffect(() => {
     const row = rowElement();
@@ -1803,9 +1807,7 @@ function MessageRow(props: {
           if (restored !== undefined) focusControl(row, restored);
         });
       }}
-      tabindex={
-        hoverToolbarReact === undefined && menu() === undefined ? undefined : 0
-      }
+      tabindex={isRowTabStop() ? 0 : undefined}
     >
       <Show
         when={

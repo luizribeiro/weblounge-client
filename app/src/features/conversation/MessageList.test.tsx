@@ -148,7 +148,7 @@ it("shows the reaction toolbar on hover and keyboard focus of a server message",
   if (pending === null) throw new Error("pending row is missing");
 
   expect(row).toHaveAttribute("tabindex", "0");
-  expect(pending).toHaveAttribute("tabindex", "0");
+  expect(pending).not.toHaveAttribute("tabindex");
   fireEvent.pointerEnter(row);
   fireEvent.click(await screen.findByRole("button", { name: "React with 😂" }));
   fireEvent.pointerLeave(row);
@@ -280,8 +280,11 @@ it("drops the delete action when the capability goes away", async () => {
     await screen.findByRole("button", { name: "More actions" }),
   ).toBeInTheDocument();
 
+  expect(ownRow()).toHaveAttribute("tabindex", "0");
+
   setRedact(undefined);
 
+  expect(ownRow()).not.toHaveAttribute("tabindex");
   fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
   expect(
     await screen.findByRole("menuitem", { name: "Copy text" }),
