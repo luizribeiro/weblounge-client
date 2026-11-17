@@ -1928,6 +1928,40 @@ test.describe("push startup keeps an existing registration", () => {
     expect(relay.bodies("POST /v1/devices")).toHaveLength(2);
   });
 
+  test("push startup deletes the device when the session is revoked", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+
+    await page.evaluate(() => {
+      const emit = Reflect.get(globalThis, "emitHostedEngineEvent");
+      if (typeof emit !== "function")
+        throw new Error("hosted engine events are not wired");
+      emit({
+        type: "notice",
+        key: "engine.hosted_auth_failed",
+        values: {},
+        tone: "error",
+        action: null,
+      });
+    });
+
+    await expect
+      .poll(() => relay.calls())
+      .toContain("DELETE /v1/devices/device-1");
+  });
+
   test("push startup keeps the device when a session refresh fails and signs in again", async ({
     baseURL,
     browserName,
