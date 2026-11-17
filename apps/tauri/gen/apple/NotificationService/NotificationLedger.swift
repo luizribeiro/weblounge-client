@@ -20,7 +20,9 @@ struct NotificationLedger {
     {
       return
     }
-    replace(NotificationCount(tag: tag, count: (current?.count ?? 0) + 1, readAtMs: nil))
+    replace(
+      NotificationCount(
+        tag: tag, count: (current?.count ?? 0) + 1, readAtMs: current?.readAtMs))
   }
 
   /// The conversation was read up to `untilMs` elsewhere. A later marker never moves back, so

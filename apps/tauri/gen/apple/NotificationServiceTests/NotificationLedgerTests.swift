@@ -46,13 +46,23 @@ final class NotificationLedgerTests: XCTestCase {
     XCTAssertEqual(marker(ledger, direct), serverTimeMs("2026-11-16T22:40:00.000Z"))
   }
 
-  func testCountsAMessageNewerThanTheReadMarkerAndDropsTheMarker() {
+  func testCountsAMessageNewerThanTheReadMarkerAndKeepsTheMarker() {
     var ledger = ledger()
 
     ledger.record(tag: direct, messageTime: "2026-11-16T22:40:00.001Z")
 
     XCTAssertEqual(ledger.count(tag: direct), 1)
-    XCTAssertNil(marker(ledger, direct))
+    XCTAssertEqual(marker(ledger, direct), serverTimeMs("2026-11-16T22:40:00.000Z"))
+  }
+
+  func testKeepsSkippingMessagesReadPastAfterANewerOneIsCounted() {
+    var ledger = ledger()
+
+    ledger.record(tag: direct, messageTime: "2026-11-16T22:41:00.000Z")
+    ledger.record(tag: direct, messageTime: "2026-11-16T22:40:00.000Z")
+    ledger.record(tag: direct, messageTime: "2026-11-16T22:39:00.000Z")
+
+    XCTAssertEqual(ledger.count(tag: direct), 1)
   }
 
   func testCountsAMessageWithoutAComparableTime() {
