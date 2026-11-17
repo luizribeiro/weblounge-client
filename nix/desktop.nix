@@ -8,7 +8,8 @@ let
     cargo = rustToolchain;
     rustc = rustToolchain;
   };
-  root = ../apps/tauri;
+  repo = ../.;
+  root = repo + "/apps/tauri";
   rcodesign = pkgs.lib.getExe pkgs.rcodesign;
   readConfig = name: builtins.fromJSON (builtins.readFile (root + "/${name}"));
   config =
@@ -20,8 +21,15 @@ rustPlatform.buildRustPackage {
   pname = if release then "weblounge-desktop" else "weblounge-desktop-dev";
   inherit (config) version;
   src = pkgs.lib.fileset.toSource {
-    inherit root;
+    root = repo;
     fileset = pkgs.lib.fileset.unions [
+      # native-bridge inherits its package metadata from the repo's workspace manifest.
+      (repo + "/Cargo.toml")
+      (repo + "/crates/native-bridge/Cargo.toml")
+      (repo + "/crates/native-bridge/src")
+      (root + "/ios-shell")
+      # shell.rs's tests compare the identity script against this config.
+      (root + "/.cargo")
       (root + "/Cargo.toml")
       (root + "/Cargo.lock")
       (root + "/build.rs")
@@ -37,6 +45,7 @@ rustPlatform.buildRustPackage {
       (root + "/release/identities.test.mjs")
     ];
   };
+  sourceRoot = "source/apps/tauri";
   cargoLock.lockFile = root + "/Cargo.lock";
   nativeBuildInputs = [ pkgs.cargo-tauri.hook ];
   # Every other build keeps the dev identity, so it never shares an identifier with the installed app.
