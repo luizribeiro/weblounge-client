@@ -1,0 +1,23 @@
+---
+name: Nix with Cachix
+description: Install Nix and the weblounge Cachix cache.
+inputs:
+  auth-token:
+    description: Cachix token; leave empty for a read-only cache.
+    default: ""
+runs:
+  using: composite
+  steps:
+    # v35
+    # yamllint disable-line rule:line-length
+    - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      with:
+        # A cache download cut off mid-transfer must build locally, not fail.
+        nix_conf: |
+          max-jobs = auto
+          fallback = true
+          download-attempts = 5
+    - uses: cachix/cachix-action@v17
+      with:
+        name: weblounge
+        authToken: ${{ inputs.auth-token }}

@@ -24,14 +24,7 @@ jobs:
       # v6
       # yamllint disable-line rule:line-length
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      # v35
-      # yamllint disable-line rule:line-length
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
-        with:
-          nix_conf: max-jobs = auto
-      - uses: cachix/cachix-action@v17
-        with:
-          name: weblounge
+      - uses: ./.github/actions/nix
       - id: list
         run: |
           nix run --inputs-from . nixpkgs#nix-eval-jobs -- \
@@ -51,15 +44,9 @@ jobs:
       # v6
       # yamllint disable-line rule:line-length
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      # v35
-      # yamllint disable-line rule:line-length
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: ./.github/actions/nix
         with:
-          nix_conf: max-jobs = auto
-      - uses: cachix/cachix-action@v17
-        with:
-          name: weblounge
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build shared dependencies
         run: nix build --print-build-logs --no-link
           .#packages.x86_64-linux.ci-deps
@@ -72,15 +59,9 @@ jobs:
       # v6
       # yamllint disable-line rule:line-length
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      # v35
-      # yamllint disable-line rule:line-length
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: ./.github/actions/nix
         with:
-          nix_conf: max-jobs = auto
-      - uses: cachix/cachix-action@v17
-        with:
-          name: weblounge
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Evaluate packages and formatter
         run: |
           nix eval --json .#packages.x86_64-linux \
@@ -105,15 +86,9 @@ jobs:
       # v6
       # yamllint disable-line rule:line-length
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      # v35
-      # yamllint disable-line rule:line-length
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+      - uses: ./.github/actions/nix
         with:
-          nix_conf: max-jobs = auto
-      - uses: cachix/cachix-action@v17
-        with:
-          name: weblounge
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - env:
           CHECK: ${{ matrix.check }}
         run: nix build --print-build-logs --no-link
