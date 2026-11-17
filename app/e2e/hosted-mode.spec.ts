@@ -2189,6 +2189,46 @@ test.describe("push settings states in a desktop browser", () => {
   });
 });
 
+test.describe("push ownership across tabs", () => {
+  test("a tab that takes over push from a closed tab registers the route", async ({
+    baseURL,
+    browserName,
+    context,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const grantedWebPush = {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    } as const;
+    await preparePushSettings(page, baseURL, grantedWebPush);
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+
+    const second = await context.newPage();
+    await preparePushSettings(second, baseURL, grantedWebPush);
+    await second.addInitScript(() => {
+      Reflect.set(globalThis, "hostedEngineAlreadyConnected", true);
+    });
+    await second.goto("/");
+    await expect(second.locator("[data-initial-splash]")).toHaveCount(0);
+
+    await page.close();
+
+    await expect
+      .poll(() =>
+        second.evaluate(() => Reflect.get(globalThis, "hostedEngineRequests")),
+      )
+      .toContainEqual({ type: "announce_push_route", network_id: 1 });
+    await expect
+      .poll(() => registrationSequence(second))
+      .toContain("ensure:route-ios");
+  });
+});
+
 test.describe("push settings on the iPhone home screen", () => {
   test.use({ ...iphone16Pro, serviceWorkers: "block" });
 
@@ -2741,6 +2781,21 @@ async function installFakeEngine(
             }
           }
         }
+        if (request?.type === "announce_push_route") {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          if (Array.isArray(requests)) requests.push(request);
+          if (
+            Reflect.get(globalThis, "hostedPushEnabled") === true &&
+            Reflect.get(globalThis, "hostedConnected") === true
+          ) {
+            this.emit({
+              type: "push_route_required",
+              network_id: 1,
+              vapid: "home-vapid",
+              previous_route_id: null,
+            });
+          }
+        }
         if (request?.type === "unregister_push_route") {
           const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
           if (Array.isArray(sequence)) {
@@ -2845,7 +2900,11 @@ async function installFakeEngine(
                 });
               },
             );
-            if (Reflect.get(globalThis, "hostedPushEnabled") === true) {
+            Reflect.set(globalThis, "hostedConnected", true);
+            if (
+              Reflect.get(globalThis, "hostedPushEnabled") === true &&
+              Reflect.get(globalThis, "hostedEngineAlreadyConnected") !== true
+            ) {
               this.emit({
                 type: "push_route_required",
                 network_id: 1,

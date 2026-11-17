@@ -1385,6 +1385,7 @@ export function App(props: AppProps) {
         for (const event of knownPushStates.values()) {
           synchronizer.handle(event);
         }
+        announceUnknownPushRoutes(mountedClient);
         void synchronizer.refreshTarget(target);
         return () => {
           synchronizer.dispose();
@@ -1394,6 +1395,18 @@ export function App(props: AppProps) {
       channel === undefined ? null : navigator.locks,
     );
     pushOwner = owner;
+  }
+
+  function announceUnknownPushRoutes(mountedClient: EngineClient): void {
+    for (const network of networks()) {
+      if (knownPushRequirements.has(network.id)) continue;
+      void mountedClient
+        .send({
+          id: crypto.randomUUID(),
+          request: { type: "announce_push_route", network_id: network.id },
+        })
+        .catch(() => undefined);
+    }
   }
 
   function refreshConfiguredPush(mountedClient: EngineClient): Promise<void> {

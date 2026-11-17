@@ -648,8 +648,10 @@ deletes the relay device and local records even when IRC is unavailable.
 
 Every registration outcome carries the route id that produced it. The engine emits even an older
 generation's command result instead of silently dropping it, while only the current generation
-changes engine state. `attach_shell` replays status but never replays route activation work to every
-tab. A successful REGISTER schedules a route-scoped refresh after 24 hours.
+changes engine state. `attach_shell` replays status but never replays route activation work to
+every tab; a page that takes over push without having seen the requirement asks with
+`AnnouncePushRoute`, which repeats it to that page alone. A successful REGISTER schedules a
+route-scoped refresh after 24 hours.
 
 `ensurePushSubscription` never prompts: permission must already be `granted`. On every launch,
 return to visible and `pushsubscriptionchange`, the page calls `getSubscription()`, replaces a
