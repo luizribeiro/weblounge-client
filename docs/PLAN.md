@@ -83,6 +83,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F38: bold the matched characters in ⌘K switcher and command palette rows, so the fuzzy ranking explains itself (option D of the omnibar column audit). Needs match ranges from `fuzzyScore`. Design 14 §Omnibar rows. Luiz, 2026-11-16.
 - F39: guard against sending an agent prompt to a person's DM. Luiz switches windows a lot and sometimes assumes the open DM is an agent's. Proposed batch: remember each DM peer's bot flag once seen, plus a "This is an agent" switch for accounts that never set it; give agent DMs a coloured composer edge, a robot icon and a "Prompt <nick> (agent)" placeholder, and show the robot icon in ⌘K; ask once, using the existing InlineConfirmation bar, on the first send to a person after coming back to the window, when an agent was prompted recently. Open question: ask on every return, or only when the text looks like a prompt. Proposals: https://claude.ai/artifact/AsgSpHnEFyfV3LuCUkPJ64. Luiz, 2026-11-16: not important, backlog only.
 - F40: page (tab) notifications still format chat text, tags and routes in TypeScript (`page-notification-format.ts`), beside the Rust formatter the service worker and iOS share; move them onto `push-payload` (lazy wasm in the page, or the engine) so all three can't drift. Design 33.
+- F41: Mac app push (APNs while the app is closed), like the iOS app. Until then the Mac app's Settings → Notifications has only the while-open "Notifications" switch (design 36 "Notifications where push isn't available"). Related F18, F36. Luiz, 2026-11-17.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
@@ -149,6 +150,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: Settings → Notifications in the Mac app (design 36 "Notifications where push isn't
+  available"): a per-device "Notifications" switch, engine setting `page_notifications` (default
+  on), for the page-posted notifications shown while weblounge is open, wherever push isn't
+  available but the page can notify. `notificationSwitchKind` picks the push row, this row or
+  none; while it is off the page posts nothing and the prompt hides. Real Mac push is F41.
 - 2026-11-17: two silent push stalls fixed (design 23). An `Unsupported` reply to `ensure_push`
   now fails visibly in Settings and `/debug push` (`engine: unsupported(<reason>)`) instead of
   leaving the route `probing`; the engine's next requirement (late account) restarts it. A page that
