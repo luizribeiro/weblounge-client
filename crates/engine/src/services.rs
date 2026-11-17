@@ -37,9 +37,13 @@ pub(crate) async fn send(
 }
 
 pub(crate) fn sends_unlabelled(state: &papo::State, nick: &str) -> bool {
-    state.isupport().saferate()
-        && state.supports(papo::Feature::EchoMessages)
-        && service_name(nick).is_some()
+    state.supports(papo::Feature::EchoMessages) && is_server_service(state, nick)
+}
+
+/// Ergo's services hold no account, so papo can never prove who sent their lines; Ergo (which
+/// alone advertises `SAFERATE`) reserves their nicks, which is the proof instead.
+pub(crate) fn is_server_service(state: &papo::State, nick: &str) -> bool {
+    state.isupport().saferate() && service_name(nick).is_some()
 }
 
 /// Ergo's own spelling of a service nick typed in any case. papo matches the nick in a WHO reply

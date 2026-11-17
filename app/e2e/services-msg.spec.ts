@@ -67,6 +67,29 @@ test("shows ChanServ's reply to a line typed in its conversation", async ({
   await expectChanServReply(page, HELP_REPLY);
 });
 
+test("shows ChanServ's replies as trusted server service lines", async ({
+  page,
+  irc,
+}) => {
+  await page.goto(irc.url());
+  await queryChanServ(page, irc.channel);
+  await sendToChanServ(page, "HELP");
+  await expectChanServReply(page, HELP_REPLY);
+
+  const replies = page.locator(
+    '[data-message-row][data-irc-notice="true"][data-notice-source="user"]',
+  );
+  await expect(
+    replies.filter({ hasText: "End of ChanServ HELP" }),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-message-row][data-unverified-sender="true"]'),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("img", { name: "Unverified sender" }),
+  ).toHaveCount(0);
+});
+
 test("registers through a ChanServ conversation reopened from Jump to after a relaunch", async ({
   page,
   irc,

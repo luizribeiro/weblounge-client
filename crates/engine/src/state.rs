@@ -4049,6 +4049,7 @@ impl NetworkModel {
             unverified_sender: (incoming.direct_key.is_some()
                 && incoming.authorship != MessageAuthorship::Own
                 && incoming.provisional_identity.is_none()
+                && !crate::services::is_server_service(state, &incoming.author)
                 && (!verified_sender || identity_disagrees))
                 .then_some(true),
             reactions: incoming
@@ -10871,5 +10872,62 @@ mod tests {
             [crate::EngineToUi::Notice { key, .. }]
                 if key == EngineMessageKey::StateInconsistent.as_str()
         ));
+    }
+
+    async fn direct_notice_is_unverified(isupport: &str, sender: &str) -> Option<bool> {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&["message-tags"]).await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_)).then_some(())
+        })
+        .await;
+        wire.server(format!(":irc.test 005 weblounge {isupport} :are supported"))
+            .await;
+        wire.server(format!(
+            ":{sender}!{sender}@localhost NOTICE weblounge :HELP reply"
+        ))
+        .await;
+        let notice = next_event(&mut events, |event| match event {
+            papo::Event::Notice(notice) => Some(notice),
+            _ => None,
+        })
+        .await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.receive_chat_with_advance((&notice).into(), false, &client.state(), None);
+        model
+            .buffers
+            .values()
+            .flat_map(|buffer| buffer.timeline.iter().filter_map(chat_projection))
+            .find(|message| message.text == "HELP reply")
+            .expect("notice reaches a timeline")
+            .unverified_sender
+    }
+
+    #[tokio::test]
+    async fn ergo_services_send_trusted_lines_without_an_account() {
+        assert_eq!(
+            direct_notice_is_unverified("SAFERATE", "ChanServ").await,
+            None
+        );
+        assert_eq!(
+            direct_notice_is_unverified("SAFERATE", "nickserv").await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn service_nicks_stay_unverified_off_ergo_and_people_stay_unverified_on_it() {
+        assert_eq!(
+            direct_notice_is_unverified("NICKLEN=32", "ChanServ").await,
+            Some(true)
+        );
+        assert_eq!(
+            direct_notice_is_unverified("SAFERATE", "alice").await,
+            Some(true)
+        );
+        assert_eq!(
+            direct_notice_is_unverified("SAFERATE", "ChanServ_").await,
+            Some(true)
+        );
     }
 }
