@@ -105,3 +105,47 @@ export async function snapshotRow(page: Page, title: string): Promise<unknown> {
     await closeEngineDatabase(database);
   }
 }
+
+/** Stores a pushed line the way the push worker drains it, for the engine to load at launch. */
+export async function seedPushedMessage(
+  page: Page,
+  message: {
+    readonly nickname: string;
+    readonly msgid: string;
+    readonly sender: string;
+    readonly target: string;
+    readonly text: string;
+    readonly time: string;
+  },
+): Promise<void> {
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value, pushed) => {
+      await new Promise<void>((resolve, reject) => {
+        const encoder = new TextEncoder();
+        const transaction = value.transaction("cache", "readwrite");
+        transaction.objectStore("cache").put(
+          encoder.encode(
+            JSON.stringify({
+              schema: 1,
+              network_label: "Local Ergo",
+              nickname: pushed.nickname,
+              sender: pushed.sender,
+              target: pushed.target,
+              msgid: pushed.msgid,
+              time: pushed.time,
+              text: pushed.text,
+              kind: "message",
+            }),
+          ),
+          encoder.encode(`pushed-message\0Local Ergo\0${pushed.msgid}`),
+        );
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }, message);
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
