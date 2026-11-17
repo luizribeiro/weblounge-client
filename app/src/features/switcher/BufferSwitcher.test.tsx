@@ -187,7 +187,7 @@ it("shows only an action's primary chord and keeps the rest in its tooltip", () 
   ));
   const option = screen.getByRole("option", { name: /Previous buffer/u });
 
-  const chords = option.querySelectorAll("[data-omnibar-slot] > kbd");
+  const chords = option.querySelectorAll("[data-chord]");
   expect(chords).toHaveLength(1);
   expect(chords[0]?.querySelector(".visually-hidden")).toHaveTextContent(
     /^⌥↑$/u,

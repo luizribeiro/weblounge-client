@@ -4,7 +4,9 @@ import { ChordHint } from "./ChordHint";
 
 function caps(label: string): readonly HTMLElement[] {
   const { container } = render(() => <ChordHint label={label} />);
-  return [...container.querySelectorAll<HTMLElement>("kbd kbd")];
+  return [
+    ...container.querySelectorAll<HTMLElement>("[data-chord] [data-key]"),
+  ];
 }
 
 it("draws each key of a macOS chord as its own cap", () => {
@@ -36,5 +38,5 @@ it("hides the caps from assistive tech and reads the chord as written", () => {
     /^⌥⌘S$/u,
   );
   const caps = container.querySelector("[aria-hidden='true']");
-  expect(caps?.querySelectorAll("kbd")).toHaveLength(3);
+  expect(caps?.querySelectorAll("[data-key]")).toHaveLength(3);
 });

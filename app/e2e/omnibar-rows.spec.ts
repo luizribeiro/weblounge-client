@@ -93,26 +93,23 @@ test.describe("omnibar rows against local Ergo", () => {
       await page.keyboard.press(platform.openPalette);
       const results = page.getByRole("listbox", { name: "Commands" });
       const settings = results.getByRole("option", { name: /^Settings/u });
-      await expect(
-        settings.locator("[data-omnibar-slot] > kbd kbd"),
-      ).toHaveText(platform.settingsCaps);
+      await expect(settings.locator("[data-chord] [data-key]")).toHaveText(
+        platform.settingsCaps,
+      );
       await expect(settings.locator("[data-omnibar-suffix]")).toHaveText(
         "View",
       );
       const leave = results.getByRole("option", {
         name: /^Leave a channel/u,
       });
-      await expect(leave.locator("kbd")).toHaveCount(0);
+      await expect(leave.locator("[data-chord]")).toHaveCount(0);
       await expect(leave.locator("[data-omnibar-suffix]")).toHaveCount(0);
       expect(
         await results
           .getByRole("option")
           .evaluateAll((rows) =>
             Math.max(
-              ...rows.map(
-                (row) =>
-                  row.querySelectorAll("[data-omnibar-slot] > kbd").length,
-              ),
+              ...rows.map((row) => row.querySelectorAll("[data-chord]").length),
             ),
           ),
       ).toBe(1);

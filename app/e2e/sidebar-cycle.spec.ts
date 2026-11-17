@@ -46,14 +46,24 @@ test.describe("next and previous buffer chords against local Ergo", () => {
     await page.keyboard.press("Meta+Shift+P");
     await page.getByRole("combobox", { name: "Run a command" }).fill(">buffer");
     const next = page.getByRole("option", { name: /^Next buffer/u });
-    await expect(next.locator("kbd")).toHaveText("⌥↓");
+    await expect(next.locator("[data-chord] [data-key]")).toHaveText([
+      "⌥",
+      "↓",
+    ]);
+    await expect(next).toHaveAccessibleName(/^Next buffer\s*Navigation\s*⌥↓$/u);
     await expect(next).toHaveAttribute("title", "⌥↓ / ⌃Tab / ⇧⌘]");
     await expect(next).toHaveAttribute(
       "aria-keyshortcuts",
       "Alt+ArrowDown Control+Tab Meta+Shift+BracketRight",
     );
     const previous = page.getByRole("option", { name: /^Previous buffer/u });
-    await expect(previous.locator("kbd")).toHaveText("⌥↑");
+    await expect(previous.locator("[data-chord] [data-key]")).toHaveText([
+      "⌥",
+      "↑",
+    ]);
+    await expect(previous).toHaveAccessibleName(
+      /^Previous buffer\s*Navigation\s*⌥↑$/u,
+    );
     await expect(previous).toHaveAttribute("title", "⌥↑ / ⌃⇧Tab / ⇧⌘[");
     await expect(previous).toHaveAttribute(
       "aria-keyshortcuts",
