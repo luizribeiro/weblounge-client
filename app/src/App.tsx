@@ -1041,15 +1041,18 @@ export function App(props: AppProps) {
         updateVisibility();
       }
     };
-    const suspendPushOwnership = () => {
+    const leaveForeground = () => {
       if (foregroundLeaseHandoffTimer !== undefined) {
         window.clearTimeout(foregroundLeaseHandoffTimer);
         foregroundLeaseHandoffTimer = undefined;
       }
       foregroundLease?.release();
       pushLeaseOwner?.setEligible(false);
-      pushOwner?.setEligible(false);
       setAppForeground(false);
+    };
+    const suspendPushOwnership = () => {
+      pushOwner?.setEligible(false);
+      leaveForeground();
     };
     const updateConnectivity = () => {
       for (const network of networks()) {
@@ -1078,7 +1081,9 @@ export function App(props: AppProps) {
     const stopHostIntegration = startHostIntegration(
       {
         openRoute: openRoutePath,
-        background: suspendPushOwnership,
+        // The app is the only page that could own push, and a registration it started before
+        // backgrounding must still finish in the background task iOS grants.
+        background: leaveForeground,
         foreground: updateVisibility,
       },
       window.location.pathname,

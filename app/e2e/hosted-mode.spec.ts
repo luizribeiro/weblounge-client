@@ -1589,6 +1589,50 @@ test.describe("the iPhone app's push registration", () => {
     viewport: { width: 402, height: 874 },
   });
 
+  test("activates the route after Turn on while the app sits in the background", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    await installNativeFeelInstrumentation(page);
+    await installIosShellStub(page);
+    await installFakeEngine(page);
+    await installFakeOAuth(page);
+    await page.addInitScript(() => {
+      Reflect.set(globalThis, "hostedPushEnabled", true);
+    });
+    await routeHostedPushBackend(page, baseURL);
+    const relay = await routeApnsRelay(page, new URL(baseURL).origin);
+
+    await page.goto("/");
+    const prompt = page.getByRole("region", { name: "Notifications" });
+    await prompt.getByRole("button", { name: "Turn on" }).click();
+    await issueApnsToken(page, {
+      platform: "apns",
+      token: "0a".repeat(32),
+      environment: "production",
+    });
+    await expectEnsuredPush(page, "route-ios");
+
+    await setPageHidden(page, true);
+    await dispatchShellEvent(page, {
+      name: "weblounge:lifecycle",
+      detail: "background",
+    });
+    await page.evaluate(() => {
+      const complete = Reflect.get(globalThis, "completePushRegistration");
+      if (typeof complete !== "function")
+        throw new Error("push registration release is missing");
+      complete();
+    });
+
+    await expect
+      .poll(() => relay.calls())
+      .toContain("PUT /v1/routes/route-ios/active");
+  });
+
   test("registers the APNs token and keychain route keys through the shell", async ({
     baseURL,
     browserName,
