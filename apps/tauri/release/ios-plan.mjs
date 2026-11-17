@@ -90,8 +90,16 @@ const mismatch = (label, actual, expected) =>
 const lacks = (label, list, expected) =>
   !(list ?? []).includes(expected) && `${label} lacks ${expected}`;
 
-function bundleProblems(name, { info, entitlements }, { identifier, version, build, group }) {
+const REQUIRED_BUNDLE_KEYS = ["CFBundleExecutable", "CFBundleName", "CFBundlePackageType"];
+// App Store Connect rejects an app extension without a display name (90360).
+const REQUIRED_EXTENSION_KEYS = [...REQUIRED_BUNDLE_KEYS, "CFBundleDisplayName"];
+
+const missingKeys = (name, info, keys) =>
+  keys.filter((key) => !info[key]).map((key) => `${name} Info.plist lacks ${key}`);
+
+function bundleProblems(name, { info, entitlements }, { identifier, version, build, group, keys }) {
   return [
+    ...missingKeys(name, info, keys),
     mismatch(`${name} CFBundleIdentifier`, info.CFBundleIdentifier, identifier),
     mismatch(`${name} CFBundleShortVersionString`, info.CFBundleShortVersionString, version),
     mismatch(`${name} CFBundleVersion`, info.CFBundleVersion, build),
@@ -113,10 +121,15 @@ export function ipaProblems({ app, extension, emptyDirectories }, { appIdentifie
   const expected = { version, build, group: `group.${appIdentifier}` };
   return [
     ...emptyDirectories.map((dir) => `the app holds the empty directory ${dir}`),
-    ...bundleProblems("app", app, { ...expected, identifier: appIdentifier }),
+    ...bundleProblems("app", app, {
+      ...expected,
+      identifier: appIdentifier,
+      keys: REQUIRED_BUNDLE_KEYS,
+    }),
     ...bundleProblems("extension", extension, {
       ...expected,
       identifier: `${appIdentifier}.notifications`,
+      keys: REQUIRED_EXTENSION_KEYS,
     }),
     mismatch(
       "extension WebloungeKeychainGroup",

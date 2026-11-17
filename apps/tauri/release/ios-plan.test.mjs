@@ -154,8 +154,12 @@ test("uploads the IPA with the API key", () => {
   );
 });
 
-const bundle = (identifier, entitlements) => ({
+const bundle = (identifier, entitlements, keys) => ({
   info: {
+    CFBundleExecutable: "weblounge",
+    CFBundleName: "weblounge",
+    CFBundlePackageType: "APPL",
+    ...keys,
     CFBundleIdentifier: identifier,
     CFBundleShortVersionString: "0.1.3",
     CFBundleVersion: "2620",
@@ -171,7 +175,12 @@ const bundle = (identifier, entitlements) => ({
 
 const exported = {
   app: bundle("org.weblounge.ios", { "aps-environment": "production" }),
-  extension: bundle("org.weblounge.ios.notifications"),
+  extension: bundle("org.weblounge.ios.notifications", {}, {
+    CFBundleExecutable: "weblounge-notifications",
+    CFBundleName: "weblounge-notifications",
+    CFBundleDisplayName: "weblounge",
+    CFBundlePackageType: "XPC!",
+  }),
   emptyDirectories: [],
 };
 const expected = { appIdentifier: "org.weblounge.ios", version: "0.1.3", build: "2620" };
@@ -232,5 +241,21 @@ test("an unsigned IPA lacks every entitlement", () => {
 test("reports an empty directory in the app", () => {
   assert.deepEqual(ipaProblems({ ...exported, emptyDirectories: ["assets"] }, expected), [
     "the app holds the empty directory assets",
+  ]);
+});
+
+test("requires a display name on the extension only", () => {
+  const { CFBundleDisplayName: _, ...info } = exported.extension.info;
+  assert.deepEqual(
+    ipaProblems({ ...exported, extension: { ...exported.extension, info } }, expected),
+    ["extension Info.plist lacks CFBundleDisplayName"],
+  );
+});
+
+test("reports every bundle key a bundle lacks", () => {
+  const { CFBundleExecutable: _, CFBundlePackageType: __, ...info } = exported.app.info;
+  assert.deepEqual(ipaProblems({ ...exported, app: { ...exported.app, info } }, expected), [
+    "app Info.plist lacks CFBundleExecutable",
+    "app Info.plist lacks CFBundlePackageType",
   ]);
 });
