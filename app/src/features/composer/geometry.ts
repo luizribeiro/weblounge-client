@@ -2,6 +2,9 @@ export const composerGeometryWillChangeEvent =
   "weblounge:composer-geometry-will-change";
 export const composerGeometryChangeEvent = "weblounge:composer-geometry-change";
 
+/** Marks the element that holds a transcript and the composer beside it. */
+export const composerScopeSelector = "[data-composer-scope]";
+
 /**
  * Runs a measurement that briefly collapses content inside `element` while the
  * element keeps its laid-out block size. A scroll container beside `element`

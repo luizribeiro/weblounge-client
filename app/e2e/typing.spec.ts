@@ -664,7 +664,7 @@ async function transcriptEdgeGeometry(
       measured = await row
         .evaluate((message) => {
           const list = message.closest<HTMLElement>("[data-message-list]");
-          const conversation = list?.parentElement?.parentElement;
+          const conversation = list?.closest("[data-composer-scope]");
           const composer =
             conversation?.querySelector<HTMLElement>("[data-composer]") ?? null;
           const typing =

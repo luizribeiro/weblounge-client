@@ -171,6 +171,7 @@ function PaneConversation(props: DesktopPaneProps) {
       />
       <div
         class={styles.paneBody}
+        data-composer-scope="true"
         data-members-inline={members.inlineShown() ? "true" : undefined}
       >
         <div class={styles.conversationBody}>

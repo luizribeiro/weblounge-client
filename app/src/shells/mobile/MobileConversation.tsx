@@ -236,7 +236,7 @@ export function MobileConversation(props: MobileConversationProps) {
           />
         )}
       </Show>
-      <div class={styles.conversation}>
+      <div class={styles.conversation} data-composer-scope="true">
         <Show
           when={props.buffer.available !== false}
           fallback={

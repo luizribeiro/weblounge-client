@@ -57,6 +57,7 @@ import {
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
+  composerScopeSelector,
 } from "../composer/geometry";
 import { InlineImage } from "./InlineImage";
 import { inlineImageUrl } from "./inline-image-url";
@@ -1170,7 +1171,7 @@ export function MessageList(props: MessageListProps) {
   onMount(() => {
     props.onLiveEdgeChange?.(logicallyAtLiveEdge);
     const fonts = document.fonts;
-    const composerOwner = list?.parentElement?.parentElement;
+    const composerOwner = list?.closest<HTMLElement>(composerScopeSelector);
     const anchorComposerGeometry = () => {
       syncViewportRect?.();
     };

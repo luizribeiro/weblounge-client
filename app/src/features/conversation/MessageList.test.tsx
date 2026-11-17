@@ -731,7 +731,7 @@ it("anchors composer height changes before viewport resize delivery", async () =
     },
   );
   render(() => (
-    <div>
+    <div data-composer-scope="true">
       <MessageList
         messages={Array.from({ length: 30 }, (_, index) => ({
           ...message,
