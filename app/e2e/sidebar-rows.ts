@@ -89,3 +89,26 @@ export function directRow(page: Page, peer: IrcClient): Locator {
 export function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
+
+export async function openFromSwitcher(
+  page: Page,
+  title: string,
+): Promise<void> {
+  await page.keyboard.press("Control+K");
+  const query = page.getByRole("combobox", { name: "Jump to" });
+  await query.fill(title);
+  await query.press("Enter");
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+}
+
+export async function closeFromSidebar(
+  page: Page,
+  sidebarRow: Locator,
+  title: string,
+): Promise<void> {
+  await sidebarRow.hover();
+  await page
+    .getByRole("button", { name: `Close conversation with ${title}` })
+    .click();
+  await expect(sidebarRow).toHaveCount(0);
+}

@@ -8,6 +8,7 @@ import {
 } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 import { expectSettled } from "./settled";
+import { closeFromSidebar, openFromSwitcher } from "./sidebar-rows";
 
 test.describe("a DM opened after a new line still shows its earlier history", () => {
   test.skip(
@@ -59,11 +60,7 @@ test.describe("a DM opened after a new line still shows its earlier history", ()
     const peer = await irc.peer("closed-dm");
     await installNativeFeelInstrumentation(page);
     const earlier = await readEarlierDirects(page, irc, peer);
-    await directRow(page, peer.nickname).hover();
-    await page
-      .getByRole("button", { name: `Close conversation with ${peer.nickname}` })
-      .click();
-    await expect(directRow(page, peer.nickname)).toHaveCount(0);
+    await closeFromSidebar(page, directRow(page, peer.nickname), peer.nickname);
     await page.goto(irc.url({ path: channelPath(irc) }));
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
 
@@ -102,14 +99,6 @@ async function readEarlierDirects(
   await expectSettled(page, { conversation: peer.nickname });
   await channelRow.click();
   return earlier;
-}
-
-async function openFromSwitcher(page: Page, nickname: string): Promise<void> {
-  await page.keyboard.press("Control+K");
-  const query = page.getByRole("combobox", { name: "Jump to" });
-  await query.fill(nickname);
-  await query.press("Enter");
-  await expect(page.getByRole("heading", { name: nickname })).toBeVisible();
 }
 
 async function expectTranscript(
