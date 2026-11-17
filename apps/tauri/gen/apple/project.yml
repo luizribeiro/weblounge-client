@@ -118,6 +118,7 @@ targets:
     info:
       path: NotificationService/Info.plist
       properties:
+        CFBundleDisplayName: weblounge
         CFBundleShortVersionString: 0.1.3
         CFBundleVersion: "0.1.3"
         NSExtension:
