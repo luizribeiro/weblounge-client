@@ -763,6 +763,7 @@ test("reconciles a restored pushed direct message with history", async ({
   const bot = await irc.peer("push-bot");
   const botNickname = bot.nickname;
   const text = `pushed direct before history ${botNickname}`;
+  const earlier = `direct history before the push ${botNickname}`;
   await page.goto(irc.url());
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expect.poll(() => snapshotRow(page, irc.channel)).toBeDefined();
@@ -770,6 +771,7 @@ test("reconciles a restored pushed direct message with history", async ({
   await page.close();
   await departed;
   await setTestAccountAlwaysOn(appAccount, appPassword, true);
+  await bot.privmsgConfirmed(appAccount, earlier);
   blockIrc = true;
   const deliveryPage = await context.newPage();
   await deliveryPage.goto("/config.json");
@@ -836,6 +838,9 @@ test("reconciles a restored pushed direct message with history", async ({
   const marker = `direct history settled ${Date.now()}`;
   await bot.privmsgConfirmed(appAccount, marker);
   await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+  await expect(
+    coldPage.locator("[data-message-row]", { hasText: earlier }),
+  ).toBeVisible();
   expect(documentRequests).toBe(1);
   await expect(row).toHaveCount(1);
   // The plaintext fixture turns the provisional row into an unverified authoritative row.
