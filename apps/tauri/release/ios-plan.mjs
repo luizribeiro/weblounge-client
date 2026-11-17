@@ -83,3 +83,45 @@ export const uploadArgs = ({ ipa, keyId, issuer }) => [
   "--apiIssuer",
   issuer,
 ];
+
+const mismatch = (label, actual, expected) =>
+  actual !== expected && `${label} is ${actual ?? "missing"}, not ${expected}`;
+
+const lacks = (label, list, expected) =>
+  !(list ?? []).includes(expected) && `${label} lacks ${expected}`;
+
+function bundleProblems(name, { info, entitlements }, { identifier, version, build, group }) {
+  return [
+    mismatch(`${name} CFBundleIdentifier`, info.CFBundleIdentifier, identifier),
+    mismatch(`${name} CFBundleShortVersionString`, info.CFBundleShortVersionString, version),
+    mismatch(`${name} CFBundleVersion`, info.CFBundleVersion, build),
+    mismatch(`${name} WebloungeAppGroup`, info.WebloungeAppGroup, group),
+    lacks(
+      `${name} application groups`,
+      entitlements["com.apple.security.application-groups"],
+      group,
+    ),
+    lacks(
+      `${name} keychain groups`,
+      entitlements["keychain-access-groups"],
+      info.WebloungeKeychainGroup,
+    ),
+  ];
+}
+
+export function ipaProblems({ app, extension }, { appIdentifier, version, build }) {
+  const expected = { version, build, group: `group.${appIdentifier}` };
+  return [
+    ...bundleProblems("app", app, { ...expected, identifier: appIdentifier }),
+    ...bundleProblems("extension", extension, {
+      ...expected,
+      identifier: `${appIdentifier}.notifications`,
+    }),
+    mismatch(
+      "extension WebloungeKeychainGroup",
+      extension.info.WebloungeKeychainGroup,
+      app.info.WebloungeKeychainGroup,
+    ),
+    mismatch("app aps-environment", app.entitlements["aps-environment"], "production"),
+  ].filter(Boolean);
+}

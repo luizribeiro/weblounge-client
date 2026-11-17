@@ -5,6 +5,7 @@ import {
   iosBuildArgs,
   iosBuildEnv,
   iosReleaseTag,
+  ipaProblems,
   staleBuild,
   unshippableVersion,
   uploadArgs,
@@ -149,6 +150,76 @@ test("uploads the IPA with the API key", () => {
       "2X9R4HXF34",
       "--apiIssuer",
       "57246542",
+    ],
+  );
+});
+
+const bundle = (identifier, entitlements) => ({
+  info: {
+    CFBundleIdentifier: identifier,
+    CFBundleShortVersionString: "0.1.3",
+    CFBundleVersion: "2620",
+    WebloungeAppGroup: "group.org.weblounge.ios",
+    WebloungeKeychainGroup: "JR4C2QJKWJ.org.weblounge.ios",
+  },
+  entitlements: {
+    "com.apple.security.application-groups": ["group.org.weblounge.ios"],
+    "keychain-access-groups": ["JR4C2QJKWJ.org.weblounge.ios"],
+    ...entitlements,
+  },
+});
+
+const exported = {
+  app: bundle("org.weblounge.ios", { "aps-environment": "production" }),
+  extension: bundle("org.weblounge.ios.notifications"),
+};
+const expected = { appIdentifier: "org.weblounge.ios", version: "0.1.3", build: "2620" };
+
+test("an App Store IPA with the extension and production push passes", () => {
+  assert.deepEqual(ipaProblems(exported, expected), []);
+});
+
+test("reports a development push environment and a dev extension", () => {
+  assert.deepEqual(
+    ipaProblems(
+      {
+        app: bundle("org.weblounge.ios", { "aps-environment": "development" }),
+        extension: {
+          info: {
+            ...exported.extension.info,
+            CFBundleIdentifier: "org.weblounge.ios.dev.notifications",
+            CFBundleVersion: "0.1.3",
+            WebloungeAppGroup: "group.org.weblounge.ios.dev",
+          },
+          entitlements: {
+            "com.apple.security.application-groups": ["group.org.weblounge.ios.dev"],
+            "keychain-access-groups": ["JR4C2QJKWJ.org.weblounge.ios.dev"],
+          },
+        },
+      },
+      expected,
+    ),
+    [
+      "extension CFBundleIdentifier is org.weblounge.ios.dev.notifications, not org.weblounge.ios.notifications",
+      "extension CFBundleVersion is 0.1.3, not 2620",
+      "extension WebloungeAppGroup is group.org.weblounge.ios.dev, not group.org.weblounge.ios",
+      "extension application groups lacks group.org.weblounge.ios",
+      "extension keychain groups lacks JR4C2QJKWJ.org.weblounge.ios",
+      "app aps-environment is development, not production",
+    ],
+  );
+});
+
+test("an unsigned IPA lacks every entitlement", () => {
+  const unsigned = (signed) => ({ ...signed, entitlements: {} });
+  assert.deepEqual(
+    ipaProblems({ app: unsigned(exported.app), extension: unsigned(exported.extension) }, expected),
+    [
+      "app application groups lacks group.org.weblounge.ios",
+      "app keychain groups lacks JR4C2QJKWJ.org.weblounge.ios",
+      "extension application groups lacks group.org.weblounge.ios",
+      "extension keychain groups lacks JR4C2QJKWJ.org.weblounge.ios",
+      "app aps-environment is missing, not production",
     ],
   );
 });
