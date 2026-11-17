@@ -14,6 +14,7 @@ import {
 import type { BufferProjection, HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { MobileSettingsPage } from "../../features/settings/MobileSettings";
+import { createCloseUndo } from "../../features/sidebar/close-undo";
 import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -120,10 +121,6 @@ export function MobileShell(props: MobileShellProps) {
     readonly bufferId: number;
     readonly invoker?: HTMLElement | undefined;
   }>();
-  const [closedConversation, setClosedConversation] = createSignal<{
-    readonly networkId: number;
-    readonly title: string;
-  }>();
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
@@ -152,7 +149,6 @@ export function MobileShell(props: MobileShellProps) {
   let shellElement: HTMLElement | undefined;
   let chatsStable = true;
   let returnScrollTop = 0;
-  let closeUndoTimer: number | undefined;
   const requestedHistory = new Set<number>();
   const newestMessageIds = createMemo(
     () =>
@@ -273,23 +269,15 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
-  const dismissCloseUndo = () => {
-    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
-    closeUndoTimer = undefined;
-    setClosedConversation(undefined);
-  };
+  const closeUndo = createCloseUndo((closed) =>
+    props.onOpenDirect?.(closed.networkId, closed.title),
+  );
   const closeDirect = async (buffer: BufferProjection): Promise<boolean> => {
     if (!(await props.onSend(buffer.id, "/close"))) return false;
     const active = stack().active;
     if (active.kind === "chat" && active.bufferId === buffer.id)
       replaceWithRoot();
-    setClosedConversation({
-      networkId: buffer.network_id,
-      title: buffer.title,
-    });
-    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
-    // wait-ok: Undo remains available for the approved fixed six-second window.
-    closeUndoTimer = window.setTimeout(dismissCloseUndo, 6_000);
+    closeUndo.record({ networkId: buffer.network_id, title: buffer.title });
     return true;
   };
   const requestClose = async (buffer: BufferProjection): Promise<boolean> => {
@@ -308,15 +296,6 @@ export function MobileShell(props: MobileShellProps) {
     setChatActions(undefined);
     queueMicrotask(() => invoker?.focus({ preventScroll: true }));
   };
-  const undoClose = () => {
-    const closed = closedConversation();
-    if (closed === undefined) return;
-    dismissCloseUndo();
-    props.onOpenDirect?.(closed.networkId, closed.title);
-  };
-  onCleanup(() => {
-    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
-  });
   let handledBufferRemoval: MobileShellProps["bufferRemoval"];
   createEffect(() => {
     const removal = props.bufferRemoval;
@@ -820,14 +799,14 @@ export function MobileShell(props: MobileShellProps) {
           title={detailsBuffer()?.title ?? ""}
         />
       )}
-      {closedConversation() !== undefined && (
+      {closeUndo.closed() !== undefined && (
         <div class={styles.undoToast} role="status">
           <span>
             {t("sidebar.closed_conversation", {
-              title: closedConversation()?.title ?? "",
+              title: closeUndo.closed()?.title ?? "",
             })}
           </span>
-          <button onClick={undoClose} type="button">
+          <button onClick={closeUndo.undo} type="button">
             {t("sidebar.undo")}
           </button>
         </div>

@@ -37,6 +37,7 @@ import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import type { NotificationSwitch } from "../../features/settings/push-settings";
 import { SettingsModal } from "../../features/settings/SettingsModal";
+import { createCloseUndo } from "../../features/sidebar/close-undo";
 import {
   Sidebar,
   type SidebarListController,
@@ -170,11 +171,6 @@ export function DesktopShell(props: DesktopShellProps) {
   const [recentBufferIds, setRecentBufferIds] = createSignal<readonly number[]>(
     [],
   );
-  const [closedConversation, setClosedConversation] = createSignal<{
-    readonly id: number;
-    readonly networkId: number;
-    readonly title: string;
-  }>();
   const [retainSidebarFocus, setRetainSidebarFocus] = createSignal(false);
   const [drawer, setDrawer] = createSignal<"sidebar" | null>(null);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
@@ -182,7 +178,6 @@ export function DesktopShell(props: DesktopShellProps) {
   let messageListController: MessageListController | undefined;
   let shellElement: HTMLDivElement | undefined;
   let paneMembers: PaneMembersController | undefined;
-  let closeUndoTimer: number | undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -290,11 +285,9 @@ export function DesktopShell(props: DesktopShellProps) {
         window.history.replaceState(window.history.state, "", path);
     }
   };
-  const dismissCloseUndo = () => {
-    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
-    closeUndoTimer = undefined;
-    setClosedConversation(undefined);
-  };
+  const closeUndo = createCloseUndo((closed) =>
+    props.onOpenDirect?.(closed.networkId, closed.title),
+  );
   const closeDirect = async (
     buffer: BufferProjection,
     nextBufferId = focusAfterClose(
@@ -307,20 +300,8 @@ export function DesktopShell(props: DesktopShellProps) {
     setRetainSidebarFocus(retainFocus);
     showBuffer(nextBufferId);
     if (retainFocus) queueMicrotask(() => setRetainSidebarFocus(false));
-    setClosedConversation({
-      id: buffer.id,
-      networkId: buffer.network_id,
-      title: buffer.title,
-    });
-    if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
-    closeUndoTimer = window.setTimeout(dismissCloseUndo, 6_000);
+    closeUndo.record({ networkId: buffer.network_id, title: buffer.title });
     return true;
-  };
-  const undoClose = () => {
-    const closed = closedConversation();
-    if (closed === undefined) return;
-    dismissCloseUndo();
-    props.onOpenDirect?.(closed.networkId, closed.title);
   };
   const moveBuffer = (offset: -1 | 1) => {
     const ids = sidebarRowIds(props.networks, props.buffers);
@@ -490,14 +471,14 @@ export function DesktopShell(props: DesktopShellProps) {
     const handleKeydown = (event: KeyboardEvent) => {
       if (settingsOpen()) return;
       if (
-        closedConversation() !== undefined &&
+        closeUndo.closed() !== undefined &&
         (event.metaKey || event.ctrlKey) &&
         event.key.toLocaleLowerCase() === "z" &&
         !(event.target instanceof HTMLInputElement) &&
         !(event.target instanceof HTMLTextAreaElement)
       ) {
         event.preventDefault();
-        undoClose();
+        closeUndo.undo();
         return;
       }
       if (registry.handleKeydown(event, context())) return;
@@ -510,7 +491,6 @@ export function DesktopShell(props: DesktopShellProps) {
       ),
     );
     onCleanup(() => {
-      if (closeUndoTimer !== undefined) window.clearTimeout(closeUndoTimer);
       document.removeEventListener("keydown", handleKeydown);
     });
   });
@@ -638,9 +618,9 @@ export function DesktopShell(props: DesktopShellProps) {
         }}
         registry={registry}
         closedConversation={
-          closedConversation() === undefined
+          closeUndo.closed() === undefined
             ? undefined
-            : { title: closedConversation()?.title ?? "", onUndo: undoClose }
+            : { title: closeUndo.closed()?.title ?? "", onUndo: closeUndo.undo }
         }
         visibleBufferIds={visibleBufferIds()}
       />
