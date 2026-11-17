@@ -35,6 +35,7 @@
 }
 
 .fact {
+  align-items: baseline;
   border-bottom: 1px solid var(--wl-color-border);
   display: flex;
   gap: 20px;
