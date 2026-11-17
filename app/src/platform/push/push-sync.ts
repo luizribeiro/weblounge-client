@@ -47,6 +47,8 @@ export interface PushSynchronizerOptions {
   readonly onRouteDiagnostic?: (diagnostic: PushRouteDiagnostic) => void;
   readonly onDeviceReady?: (device: RelayDevice) => void;
   readonly generateRouteKeys?: RouteKeyFactory;
+  /** Routes whose pushes stopped decrypting where the page couldn't mark them itself. */
+  readonly routesNeedingReregistration?: () => Promise<readonly string[]>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly retry?: (work: () => void, delayMs: number) => () => void;
   readonly random?: () => number;
@@ -83,6 +85,7 @@ export class PushSynchronizer {
   readonly #onRouteDiagnostic: (diagnostic: PushRouteDiagnostic) => void;
   readonly #onDeviceReady: (device: RelayDevice) => void;
   readonly #generateRouteKeys: RouteKeyFactory;
+  readonly #routesNeedingReregistration: () => Promise<readonly string[]>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly #retry: (work: () => void, delayMs: number) => () => void;
   readonly #random: () => number;
@@ -115,6 +118,8 @@ export class PushSynchronizer {
     this.#onDeviceReady = options.onDeviceReady ?? (() => {});
     this.#generateRouteKeys =
       options.generateRouteKeys ?? (() => createRouteKeys());
+    this.#routesNeedingReregistration =
+      options.routesNeedingReregistration ?? (async () => []);
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#retry = options.retry ?? browserRetry;
     this.#random = options.random ?? Math.random;
@@ -198,6 +203,7 @@ export class PushSynchronizer {
         }
         return;
       }
+      await this.#reregisterFlaggedRoutes();
     });
     await this.settled();
   }
@@ -243,6 +249,20 @@ export class PushSynchronizer {
     }
     this.#homes.clear();
     this.#currentRoutes.clear();
+  }
+
+  async #reregisterFlaggedRoutes(): Promise<void> {
+    for (const routeId of await this.#routesNeedingReregistration()) {
+      const flagged = await this.#routes.findRoute(routeId);
+      if (flagged === undefined) continue;
+      await this.#withHomeLock(flagged.vapid, async () => {
+        const current = await this.#routes.get(flagged.vapid);
+        if (current?.routeId !== routeId || !hasRouteKeys(current)) return;
+        await this.#routes.put({ ...current, needsReregistration: true });
+        if (this.#homes.get(current.networkId) === current.vapid)
+          await this.#ensureHome(current.networkId, false);
+      });
+    }
   }
 
   #enqueue(work: () => Promise<void>): void {

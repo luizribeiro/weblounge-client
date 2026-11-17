@@ -176,6 +176,7 @@ function fixture(
     auth: "route-auth",
     privateKeyPkcs8: Uint8Array.of(1, 2, 3),
   }),
+  routesNeedingReregistration?: () => Promise<readonly string[]>,
 ) {
   const engine = new FakeEngine();
   const devices = new MemoryDevices();
@@ -197,6 +198,9 @@ function fixture(
     routeContext: () => ({ networkLabel: "Lounge", nickname: "weblounge" }),
     onRouteDiagnostic: diagnostics,
     generateRouteKeys,
+    ...(routesNeedingReregistration === undefined
+      ? {}
+      : { routesNeedingReregistration }),
     exclusive: async (_name, work) => work(),
     retry: (work, delay) => {
       retries.push(work);
@@ -832,5 +836,72 @@ describe("push state synchronization", () => {
 
     expect(current.relay.createDevice).toHaveBeenCalledOnce();
     expect(current.devices.credentials?.device_id).toBe("device-1");
+  });
+
+  describe("routes the host flagged for re-registration", () => {
+    function flaggedFixture(flagged: string[]) {
+      const current = fixture(undefined, async () => flagged);
+      current.devices.credentials = {
+        relay: relayOrigin,
+        device_id: "device-1",
+        secret: "device-secret",
+      };
+      current.routes.values.set("home-vapid", route({ target }));
+      return current;
+    }
+
+    it("registers a flagged route again with a new route and keys on refresh", async () => {
+      const flagged: string[] = [];
+      const current = flaggedFixture(flagged);
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      flagged.push("route-1");
+      await current.synchronizer.refreshTarget(target);
+
+      expect(current.relay.ensureRoute).toHaveBeenLastCalledWith(
+        { id: "device-1", secret: "device-secret" },
+        "home-vapid",
+        undefined,
+      );
+      const replaced = current.routes.values.get("home-vapid");
+      expect(replaced?.routeId).toBe("route-2");
+      expect(replaced?.needsReregistration).toBeUndefined();
+      expect(current.engine.requests.at(-1)?.request).toMatchObject({
+        type: "ensure_push",
+        route: { route_id: "route-2" },
+      });
+    });
+
+    it("marks a flagged route whose home has not connected for its next connection", async () => {
+      const current = flaggedFixture(["route-1"]);
+
+      await current.synchronizer.refreshTarget(target);
+
+      expect(current.relay.ensureRoute).not.toHaveBeenCalled();
+      expect(current.routes.values.get("home-vapid")?.needsReregistration).toBe(
+        true,
+      );
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+      expect(current.relay.ensureRoute).toHaveBeenCalledWith(
+        { id: "device-1", secret: "device-secret" },
+        "home-vapid",
+        undefined,
+      );
+    });
+
+    it("leaves the stored routes alone when the flagged route is unknown", async () => {
+      const current = flaggedFixture(["route-from-an-old-install"]);
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      await current.synchronizer.refreshTarget(target);
+
+      expect(current.relay.ensureRoute).toHaveBeenCalledOnce();
+      expect(current.routes.values.get("home-vapid")).toEqual(
+        route({ target }),
+      );
+    });
   });
 });
