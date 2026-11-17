@@ -159,6 +159,36 @@ test.describe("history integrity against local Ergo", () => {
       await expectHistoryPageReceived(relaunched, channel);
       await expectBuffersMatchServer(relaunched, irc, [channel]);
     });
+
+  test("busy channels and DMs while the app is hidden show every line", async ({
+    page,
+    irc,
+  }) => {
+    const channels = ["busy-a", "busy-b", "busy-c"].map(irc.channelNamed);
+    const keeper = await irc.self(channels);
+    await keeper.setAlwaysOn(true);
+    const writers = await Promise.all(
+      ["bw0", "bw1", "bw2", "bw3"].map((label) => irc.peer(label, channels)),
+    );
+    const app = await launch(page, irc, channels);
+    await setPageHidden(app, true);
+    await Promise.all(
+      writers.map((writer, index) =>
+        sendEach(
+          writer,
+          [...channels, irc.account],
+          2,
+          `hidden ${index} ${irc.id}`,
+        ),
+      ),
+    );
+    await setPageHidden(app, false);
+
+    await expectBuffersMatchServer(app, irc, [
+      ...channels,
+      ...writers.map((writer) => writer.nickname),
+    ]);
+  });
 });
 
 interface SentLine {
