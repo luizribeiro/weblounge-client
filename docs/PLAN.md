@@ -130,7 +130,8 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - SV2: command-budget bump (CHATHISTORY/MARKREAD 256, WHO/MONITOR 64) against Ergo's default fakelag needs Luiz's OK and an Ergo restart; the matching papo fakelag proposal is not delivered. Memory.
 - SV3: ask the weblounge-server session for a weblounge-client variant of the concierge/scrubber e2e (`tests/e2e/clients/`). Design 31.
 - SV4: Ergo DM history is disabled on weblounge, so client-side search cannot cover DMs; a link-preview proxy has no standard and would be an SSRF surface. `docs/design/commands-catalog.md` gap 5.
-- SV5: serve `"channel": "beta"` in beta.weblounge.org's `/config.json` (irc.weblounge.org may send `"release"` or nothing), and pin irc.weblounge.org's client input to the commit `node app/scripts/cut-web-release.mjs` prints for `web-v0.1.0`, cut from main by Luiz. Design 37.
+- SV5: serve `"channel": "beta"` in beta.weblounge.org's `/config.json` (irc.weblounge.org may send `"release"` or nothing); irc.weblounge.org is switching to the client at `v0.2.0` (64b912c4). Design 37.
+- SV6: keep each client pin (beta, release) with its version, `{ rev; version; }` from `node apps/tauri/release/describe-version.mjs <rev>`, build `clientPackages.app.withVersion version`, and build the push relay from the beta pin. `docs/RELEASING.md`, design 37.
 
 #### Device checks
 - V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
@@ -143,11 +144,21 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   drag, and in the Layers tab that the screen and its `[data-edge-shadow]` are composited with no
   per-frame repaints. Also confirm the leading-edge shadow still fades on push, pop and swipe.
 
+- V7: on the Mac, check the option A native versioning (design 37), which Linux cannot build: `cargo test` in `apps/tauri` (shell.rs's `shell_version` and the `TAURI_WEBLOUNGE_VERSION` identity); `release.mjs --dry-run` builds through `nix build --expr (builtins.getFlake "git+file://…?rev=…")…desktop.override` from this worktree layout, the Tauri hook passes the `--config` JSON whole, and the app's Info.plist has short version `0.2.0` and the commit count as `CFBundleVersion`; `__WEBLOUNGE_SHELL__.version` reads `0.2.0+N`; `gh release view` says "release not found" for a missing tag; `release-ios.mjs --dry-run` gives both bundles `0.2.0` and the build number, and `TAURI_WEBLOUNGE_VERSION` reaches the Rust build through Xcode.
+
 #### Docs and housekeeping
 - DC1: remove stray worktrees and branches (`~/weblounge-client-*`, old `bump-previous-*` pins, `.claude/worktrees/agent-*`); keep `~/weblounge-client-tap-recovery` for reference.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: shared release versions, option A (design 37, `docs/RELEASING.md`): one `vX.Y.Z`
+  tag line for web, macOS and iOS (first `v0.2.0`); `cut-web-release.mjs` cuts it, minor by
+  default with `--patch`/`--major`. Builds between tags show `X.Y.Z+N` from
+  `describe-version.mjs`: the web build takes `WEBLOUNGE_VERSION` as `__BUILD_VERSION__`
+  (`app.withVersion`), the shell `TAURI_WEBLOUNGE_VERSION`. Native short and cask versions are
+  the last tag, the build number the commit count; no `web-v`, `desktop-v` or `ios-v` tags are
+  made, macOS attaches to the existing tag (one build per tag) and the cask bumps from `v*`
+  releases. The push relay builds from the beta pin. Mac checks in V7, server pins in SV6.
 - 2026-11-17: release channels (design 37): irc.weblounge.org serves a hand-cut `web-v<semver>`
   release, beta.weblounge.org every green main commit; the native apps load beta and need a new
   TestFlight build only when app-built code changes. The hosted config's optional `channel`
