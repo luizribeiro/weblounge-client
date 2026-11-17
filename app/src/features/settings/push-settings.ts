@@ -1,3 +1,4 @@
+import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { HostShell } from "../../platform/host-shell";
 
 export type PushSwitchStatus = "off" | "on" | "blocked" | "failed";
@@ -21,6 +22,11 @@ export interface PageNotificationSettings {
   readonly blockedIn: PushBlockedIn;
   readonly onToggle: (on: boolean) => void;
 }
+
+export type NotificationSwitchSetting = Extract<
+  keyof AppSettings,
+  "push_on_this_device" | "page_notifications"
+>;
 
 /** The one notification switch this host offers. */
 export type NotificationSwitch =

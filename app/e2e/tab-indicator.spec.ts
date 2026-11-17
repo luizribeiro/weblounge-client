@@ -175,9 +175,10 @@ test.describe("browser tab indicator against local Ergo", () => {
     await expect(
       dialog.getByRole("button", { name: "Appearance" }),
     ).toBeVisible();
+    await dialog.getByRole("button", { name: "Notifications" }).click();
     await expect(
-      dialog.getByRole("button", { name: "Notifications" }),
-    ).toHaveCount(0);
+      dialog.getByRole("switch", { name: "Notifications", exact: true }),
+    ).toBeVisible();
     await expect(
       dialog.getByRole("switch", { name: "Show unread in the tab" }),
     ).toHaveCount(0);

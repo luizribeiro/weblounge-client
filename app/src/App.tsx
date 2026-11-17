@@ -47,16 +47,18 @@ import { migrateDraft } from "./features/composer/draft-storage";
 import { ImageViewerOutlet } from "./features/image-viewer/ImageViewerOutlet";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
-  canPushHere,
   formatNotificationPromptVisibility,
   isIos,
   type NotificationPromptVisibility,
+  notificationSwitchKind,
   pageNotificationsSwitchedOn,
   shouldShowNotificationPrompt,
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
 import {
   type NotificationSwitch,
+  type NotificationSwitchSetting,
+  pageSwitchStatus,
   pushBlockedIn,
   pushSwitchStatus,
 } from "./features/settings/push-settings";
@@ -369,23 +371,42 @@ export function App(props: AppProps) {
     shellBridge === undefined
       ? undefined
       : () => void shellBridge.call("open_app_settings").catch(() => undefined);
-  const notificationSwitch = (): NotificationSwitch | undefined =>
-    canPushHere(notificationPromptConditions())
-      ? {
+  const notificationSwitch = (): NotificationSwitch | undefined => {
+    const app = engineSettings.current()?.app;
+    const permission = notificationPermission();
+    const blockedIn = pushBlockedIn(hostShell(), isIos(navigator));
+    switch (notificationSwitchKind(notificationPromptConditions())) {
+      case "push":
+        return {
           kind: "push",
           push: {
             status: pushSwitchStatus({
-              enabled: engineSettings.current()?.app.push_on_this_device,
-              permission: notificationPermission(),
+              enabled: app?.push_on_this_device,
+              permission,
               failing: pushFailing(),
             }),
-            blockedIn: pushBlockedIn(hostShell(), isIos(navigator)),
-            onToggle: setPushOnThisDevice,
+            blockedIn,
+            onToggle: (on) => setNotificationSwitch("push_on_this_device", on),
             onRetry: retryPush,
             onOpenSystemSettings: openAppSettings,
           },
-        }
-      : undefined;
+        };
+      case "page":
+        return {
+          kind: "page",
+          page: {
+            status: pageSwitchStatus({
+              enabled: app?.page_notifications,
+              permission,
+            }),
+            blockedIn,
+            onToggle: (on) => setNotificationSwitch("page_notifications", on),
+          },
+        };
+      case undefined:
+        return undefined;
+    }
+  };
 
   createEffect(() => {
     setNotificationDebugReading(
@@ -1188,13 +1209,13 @@ export function App(props: AppProps) {
       void startConfiguredPush(client).catch(() => undefined);
   }
 
-  function setPushOnThisDevice(on: boolean): void {
+  function setNotificationSwitch(
+    key: NotificationSwitchSetting,
+    on: boolean,
+  ): void {
     const choose = (value: boolean) => {
-      if (engineSettings.current()?.app.push_on_this_device !== value)
-        engineSettings.change({
-          scope: "app",
-          setting: { key: "push_on_this_device", value },
-        });
+      if (engineSettings.current()?.app[key] !== value)
+        engineSettings.change({ scope: "app", setting: { key, value } });
     };
     if (!on || notificationPermission() === "granted") {
       choose(on);
