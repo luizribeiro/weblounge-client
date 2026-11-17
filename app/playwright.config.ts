@@ -259,6 +259,11 @@ export default defineConfig({
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
+      name: "webkit-message-copy",
+      testMatch: "**/message-copy.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-conversation",
       testMatch: ["**/composer-anchor.spec.ts", "**/transcript-paint.spec.ts"],
       use: { browserName: "webkit" },
