@@ -24,6 +24,12 @@ impl OrderKey {
     pub const fn primary_ms(self) -> i64 {
         self.0
     }
+
+    /// Returns this key's times with another allocation sequence.
+    #[must_use]
+    pub const fn with_sequence(self, sequence: u64) -> Self {
+        Self(self.0, self.1, sequence)
+    }
 }
 
 /// A local-calendar day counted from 1970-01-01.

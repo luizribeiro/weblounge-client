@@ -14905,6 +14905,99 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn queued_sends_keep_send_order_when_an_earlier_one_confirms_later() {
+        let caps = [
+            "echo-message",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("joined channel is projected");
+        let queued = ["first queued", "second queued", "third queued"].map(|text| {
+            model
+                .begin_send(buffer_id, text.into(), &client.state())
+                .expect("channel is sendable")
+                .0
+        });
+        let server_day = crate::timeline::LocalDay(47_482);
+
+        for (label, pending) in queued.iter().enumerate() {
+            let sender = client.clone();
+            let send_pending = pending.clone();
+            let send_task = tokio::spawn(async move { super::send(&sender, &send_pending).await });
+            assert_eq!(
+                wire.next_sent().await,
+                format!("@label={label} PRIVMSG #room :{}", pending.text)
+            );
+            wire.server(format!(
+                "@label={label};msgid=m{label};time=2100-01-01T00:00:0{label}.000Z :weblounge!u@host PRIVMSG #room :{}",
+                pending.text
+            ))
+            .await;
+            let sent = send_task
+                .await
+                .expect("send task completes")
+                .expect("send succeeds");
+            model
+                .confirm_send(pending, &sent)
+                .expect("optimistic row exists");
+
+            let delivery = |index: usize| {
+                if index <= label {
+                    MessageDelivery::Confirmed
+                } else {
+                    MessageDelivery::Optimistic
+                }
+            };
+            let expected = queued
+                .iter()
+                .enumerate()
+                .map(|(index, queued)| (queued.text.clone(), delivery(index), server_day))
+                .collect::<Vec<_>>();
+            assert_eq!(timeline_rows(&mut model, buffer_id), expected);
+        }
+    }
+
+    fn timeline_rows(
+        model: &mut NetworkModel,
+        buffer_id: BufferId,
+    ) -> Vec<(String, MessageDelivery, crate::timeline::LocalDay)> {
+        model
+            .take_timeline_changes(true)
+            .into_iter()
+            .filter_map(|event| match event {
+                EngineToUi::TimelineChanged {
+                    buffer_id: changed,
+                    upserted,
+                    ..
+                } if changed == buffer_id => Some(upserted),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|item| match item.body {
+                crate::timeline::ItemBody::Message(message) => {
+                    Some((message.text, message.delivery, item.day))
+                }
+                crate::timeline::ItemBody::System(_) | crate::timeline::ItemBody::Gap(_) => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
     async fn labelled_multiline_send_preserves_the_confirmed_text() {
         let caps = [
             "batch",

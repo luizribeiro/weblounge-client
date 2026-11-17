@@ -22,8 +22,9 @@ use crate::{
     redaction::{EarlyRedactions, REDACTED_PREVIEW, redact_projection, redactor_name},
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
-        LocalCalendar, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person, RecordBody,
-        Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord, diff, fold,
+        LocalCalendar, LocalDay, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person,
+        RecordBody, Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord, diff,
+        fold,
     },
 };
 
@@ -4277,6 +4278,8 @@ impl NetworkModel {
             .then(|| message_stub(&projection, counts_as_mention))
             .flatten();
         let id = projection.id;
+        let confirms_own_send = projection.authorship == MessageAuthorship::Own
+            && projection.delivery == MessageDelivery::Confirmed;
         let order =
             self.allocate_order(message_primary_time(&projection), projection.received_at_ms);
         let record = TimelineRecord {
@@ -4294,7 +4297,11 @@ impl NetworkModel {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return Err(StateError::MissingBuffer(buffer_id));
         };
+        let day = record.day;
         buffer.timeline.push(record);
+        if confirms_own_send {
+            keep_pending_sends_after(&mut buffer.timeline, order, day, &mut self.next_sequence);
+        }
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.chat_metadata.insert(id, metadata);
         self.dirty_timelines.insert(buffer_id);
@@ -4654,6 +4661,25 @@ fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStu
         provisional_time: None,
         mention,
     })
+}
+
+/// Pending sends flush after every confirmed one, so a confirmed row's server time must not sort
+/// it past them.
+fn keep_pending_sends_after(
+    timeline: &mut [TimelineRecord],
+    confirmed: OrderKey,
+    confirmed_day: LocalDay,
+    next_sequence: &mut u64,
+) {
+    for record in timeline.iter_mut().filter(|record| {
+        record.order < confirmed
+            && chat_projection(record)
+                .is_some_and(|message| message.delivery == MessageDelivery::Optimistic)
+    }) {
+        record.order = confirmed.with_sequence(*next_sequence);
+        record.day = confirmed_day;
+        *next_sequence += 1;
+    }
 }
 
 fn chat_projection(record: &TimelineRecord) -> Option<&MessageProjection> {
