@@ -172,6 +172,7 @@ const bundle = (identifier, entitlements) => ({
 const exported = {
   app: bundle("org.weblounge.ios", { "aps-environment": "production" }),
   extension: bundle("org.weblounge.ios.notifications"),
+  emptyDirectories: [],
 };
 const expected = { appIdentifier: "org.weblounge.ios", version: "0.1.3", build: "2620" };
 
@@ -183,6 +184,7 @@ test("reports a development push environment and a dev extension", () => {
   assert.deepEqual(
     ipaProblems(
       {
+        ...exported,
         app: bundle("org.weblounge.ios", { "aps-environment": "development" }),
         extension: {
           info: {
@@ -213,7 +215,10 @@ test("reports a development push environment and a dev extension", () => {
 test("an unsigned IPA lacks every entitlement", () => {
   const unsigned = (signed) => ({ ...signed, entitlements: {} });
   assert.deepEqual(
-    ipaProblems({ app: unsigned(exported.app), extension: unsigned(exported.extension) }, expected),
+    ipaProblems(
+      { ...exported, app: unsigned(exported.app), extension: unsigned(exported.extension) },
+      expected,
+    ),
     [
       "app application groups lacks group.org.weblounge.ios",
       "app keychain groups lacks JR4C2QJKWJ.org.weblounge.ios",
@@ -222,4 +227,10 @@ test("an unsigned IPA lacks every entitlement", () => {
       "app aps-environment is missing, not production",
     ],
   );
+});
+
+test("reports an empty directory in the app", () => {
+  assert.deepEqual(ipaProblems({ ...exported, emptyDirectories: ["assets"] }, expected), [
+    "the app holds the empty directory assets",
+  ]);
 });

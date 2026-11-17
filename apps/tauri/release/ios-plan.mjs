@@ -109,9 +109,10 @@ function bundleProblems(name, { info, entitlements }, { identifier, version, bui
   ];
 }
 
-export function ipaProblems({ app, extension }, { appIdentifier, version, build }) {
+export function ipaProblems({ app, extension, emptyDirectories }, { appIdentifier, version, build }) {
   const expected = { version, build, group: `group.${appIdentifier}` };
   return [
+    ...emptyDirectories.map((dir) => `the app holds the empty directory ${dir}`),
     ...bundleProblems("app", app, { ...expected, identifier: appIdentifier }),
     ...bundleProblems("extension", extension, {
       ...expected,

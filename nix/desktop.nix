@@ -40,6 +40,8 @@ rustPlatform.buildRustPackage {
       (root + "/icons")
       (root + "/icons-dev")
       (root + "/src")
+      (root + "/release/bundle-files.mjs")
+      (root + "/release/bundle-files.test.mjs")
       (root + "/release/plan.mjs")
       (root + "/release/plan.test.mjs")
       (root + "/release/identities.test.mjs")

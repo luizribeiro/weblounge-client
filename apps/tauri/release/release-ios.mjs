@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { findEmptyDirectories } from "./bundle-files.mjs";
 import {
   buildNumber,
   iosBuildArgs,
@@ -104,7 +105,11 @@ function verify(release) {
     const app = join(unpacked, "Payload", APP);
     step("/usr/bin/codesign", ["--verify", "--strict", "--deep", "--verbose=2", app]);
     const problems = ipaProblems(
-      { app: bundleContents(app), extension: bundleContents(join(app, EXTENSION)) },
+      {
+        app: bundleContents(app),
+        extension: bundleContents(join(app, EXTENSION)),
+        emptyDirectories: findEmptyDirectories(app),
+      },
       { appIdentifier: APP_IDENTIFIER, version: release.version, build: release.build },
     );
     if (problems.length > 0) throw new Error(`${IPA} is not ready:\n- ${problems.join("\n- ")}`);
