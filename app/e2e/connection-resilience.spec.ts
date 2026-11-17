@@ -9,7 +9,12 @@ import {
   releaseHeldHistoryRequest,
 } from "./history-wire-fixture";
 import { type IrcClient, messageId, serverTime } from "./irc-client";
-import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import {
+  enableAppAlwaysOn,
+  expect,
+  type IrcTestAccount,
+  test,
+} from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
 import {
@@ -780,11 +785,6 @@ async function openChannel(
   return page.getByRole("textbox", {
     name: isMobile(projectName) ? `Message ${channel}` : "Message",
   });
-}
-
-async function enableAppAlwaysOn(irc: IrcTestAccount): Promise<void> {
-  const client = await irc.self();
-  await client.setAlwaysOn(true);
 }
 
 async function sendAndExpectEcho(

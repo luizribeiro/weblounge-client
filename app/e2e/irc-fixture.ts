@@ -47,6 +47,11 @@ export const test = base.extend<{ irc: IrcTestAccount }>({
 
 export { expect } from "@playwright/test";
 
+export async function enableAppAlwaysOn(irc: IrcTestAccount): Promise<void> {
+  const client = await irc.self();
+  await client.setAlwaysOn(true);
+}
+
 async function createIrcTestAccount(
   baseURL: string,
   clients: IrcClient[],

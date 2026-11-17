@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
 import type { IrcClient } from "./irc-client";
-import { expect, test } from "./irc-fixture";
+import { enableAppAlwaysOn, expect, test } from "./irc-fixture";
 import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
@@ -298,6 +298,8 @@ for (const [layout, viewport] of [
       page,
       irc,
     }) => {
+      // Ergo drops a reloaded account's channels unless the account is always-on.
+      await enableAppAlwaysOn(irc);
       const channel = irc.channelNamed("tf");
       const operator = await irc.peer("tf-op", [channel]);
       await operator.topic(channel, `fresh device topic ${irc.id}`);
