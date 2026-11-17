@@ -13,15 +13,26 @@ export interface PushSettings {
   readonly onOpenSystemSettings: (() => void) | undefined;
 }
 
-/** The one notification switch this host offers. */
-export type NotificationSwitch = {
-  readonly kind: "push";
-  readonly push: PushSettings;
-};
+export type PageSwitchStatus = Exclude<PushSwitchStatus, "failed">;
 
-export interface PushSwitchInputs {
+export interface PageNotificationSettings {
+  /** Undefined until the engine's settings load. */
+  readonly status: PageSwitchStatus | undefined;
+  readonly blockedIn: PushBlockedIn;
+  readonly onToggle: (on: boolean) => void;
+}
+
+/** The one notification switch this host offers. */
+export type NotificationSwitch =
+  | { readonly kind: "push"; readonly push: PushSettings }
+  | { readonly kind: "page"; readonly page: PageNotificationSettings };
+
+export interface SwitchInputs {
   readonly enabled: boolean | undefined;
   readonly permission: NotificationPermission;
+}
+
+export interface PushSwitchInputs extends SwitchInputs {
   readonly failing: boolean;
 }
 
@@ -57,11 +68,17 @@ export function pushBlockedIn(shell: HostShell, ios: boolean): PushBlockedIn {
   return shell === "ios-app" || ios ? "ios" : "browser";
 }
 
+export function pageSwitchStatus(
+  inputs: SwitchInputs,
+): PageSwitchStatus | undefined {
+  if (inputs.permission === "denied") return "blocked";
+  if (inputs.enabled === undefined) return undefined;
+  return inputs.enabled && inputs.permission === "granted" ? "on" : "off";
+}
+
 export function pushSwitchStatus(
   inputs: PushSwitchInputs,
 ): PushSwitchStatus | undefined {
-  if (inputs.permission === "denied") return "blocked";
-  if (inputs.enabled === undefined) return undefined;
-  if (!inputs.enabled || inputs.permission !== "granted") return "off";
-  return inputs.failing ? "failed" : "on";
+  const status = pageSwitchStatus(inputs);
+  return status === "on" && inputs.failing ? "failed" : status;
 }

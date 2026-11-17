@@ -6,7 +6,11 @@ import { AppearanceSettings, densityLabel } from "./AppearanceSettings";
 import { inBrowserTab } from "./in-browser-tab";
 import { NotificationsIcon } from "./NotificationsIcon";
 import { NotificationsSettings } from "./NotificationsSettings";
-import type { NotificationSwitch, PushSwitchStatus } from "./push-settings";
+import type {
+  NotificationSwitch,
+  PageSwitchStatus,
+  PushSwitchStatus,
+} from "./push-settings";
 import type { SettingsPageProps } from "./settings-page-props";
 import { themeName } from "./ThemeCards";
 
@@ -35,12 +39,37 @@ const pushSummaries: Readonly<Record<PushSwitchStatus, MessageKey>> = {
   failed: "settings.notifications.summary.push_failed",
 };
 
+const pageSummaries: Readonly<Record<PageSwitchStatus, MessageKey>> = {
+  on: "settings.notifications.summary.page_on",
+  off: "settings.notifications.summary.page_off",
+  blocked: "settings.notifications.summary.page_blocked",
+};
+
+function switchSummary(
+  notifications: NotificationSwitch | undefined,
+): MessageKey | undefined {
+  if (notifications === undefined) return undefined;
+  switch (notifications.kind) {
+    case "push":
+      return summaryFor(notifications.push.status, pushSummaries);
+    case "page":
+      return summaryFor(notifications.page.status, pageSummaries);
+  }
+}
+
+function summaryFor<S extends string>(
+  status: S | undefined,
+  summaries: Readonly<Record<S, MessageKey>>,
+): MessageKey | undefined {
+  return status === undefined ? undefined : summaries[status];
+}
+
 function notificationsSummary(
   settings: AppSettings,
   notifications?: NotificationSwitch | undefined,
 ): string {
-  const status = notifications?.push.status;
-  if (status !== undefined) return t(pushSummaries[status]);
+  const summary = switchSummary(notifications);
+  if (summary !== undefined) return t(summary);
   return settings.unread_tab_indicator
     ? t("settings.notifications.summary.tab_on")
     : t("settings.notifications.summary.tab_off");

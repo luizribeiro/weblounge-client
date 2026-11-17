@@ -67,6 +67,18 @@ function switchRowView(notifications: NotificationSwitch): SwitchRowView {
         onToggle: push.onToggle,
       };
     }
+    case "page": {
+      const { page } = notifications;
+      const blocked = page.status === "blocked";
+      return {
+        label: "settings.page_notifications",
+        description: "settings.page_notifications.description",
+        note: blocked ? blockedNote(page.blockedIn) : undefined,
+        checked: pushSwitchChecked(page.status),
+        blocked,
+        onToggle: page.onToggle,
+      };
+    }
   }
 }
 

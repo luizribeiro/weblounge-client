@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type PushSettings,
+  pageSwitchStatus,
   pushBlockedIn,
   pushNote,
   pushSwitchChecked,
@@ -73,5 +74,17 @@ describe("push switch status", () => {
     ["failed when registration keeps failing", true, "granted", true, "failed"],
   ] as const)("is %s", (_name, enabled, permission, failing, status) => {
     expect(pushSwitchStatus({ enabled, permission, failing })).toBe(status);
+  });
+});
+
+describe("page notifications switch status", () => {
+  it.each([
+    ["blocked even when chosen on", true, "denied", "blocked"],
+    ["unknown until settings load", undefined, "granted", undefined],
+    ["off before anyone asked", true, "default", "off"],
+    ["off when turned off", false, "granted", "off"],
+    ["on when chosen and granted", true, "granted", "on"],
+  ] as const)("is %s", (_name, enabled, permission, status) => {
+    expect(pageSwitchStatus({ enabled, permission })).toBe(status);
   });
 });

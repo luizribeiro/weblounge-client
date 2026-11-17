@@ -341,12 +341,18 @@ export const messages = {
   "settings.message_density.description":
     "Spacing, text size and avatar size in the conversation.",
   "settings.notifications": "Notifications",
+  "settings.notifications.summary.page_blocked": "Notifications blocked",
+  "settings.notifications.summary.page_off": "Notifications off",
+  "settings.notifications.summary.page_on": "Notifications on",
   "settings.notifications.summary.push_blocked": "Push blocked",
   "settings.notifications.summary.push_failed": "Couldn't turn on",
   "settings.notifications.summary.push_off": "Push off",
   "settings.notifications.summary.push_on": "Push on",
   "settings.notifications.summary.tab_off": "Unread hidden from the tab",
   "settings.notifications.summary.tab_on": "Unread in the tab",
+  "settings.page_notifications": "Notifications",
+  "settings.page_notifications.description":
+    "Show a notification for direct messages and mentions while weblounge is open.",
   "settings.push": "Push notifications",
   "settings.push.blocked.browser": "Blocked in this site's browser settings",
   "settings.push.blocked.ios":

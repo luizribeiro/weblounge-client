@@ -5,7 +5,11 @@ import {
   installPlatformEnvironment,
   type PlatformTarget,
 } from "../../platform/environment";
-import type { NotificationSwitch, PushSwitchStatus } from "./push-settings";
+import type {
+  NotificationSwitch,
+  PageSwitchStatus,
+  PushSwitchStatus,
+} from "./push-settings";
 import {
   shownSettingsSection,
   shownSettingsSections,
@@ -27,6 +31,13 @@ function push(status: PushSwitchStatus | undefined): NotificationSwitch {
       onRetry: () => {},
       onOpenSystemSettings: undefined,
     },
+  };
+}
+
+function page(status: PageSwitchStatus | undefined): NotificationSwitch {
+  return {
+    kind: "page",
+    page: { status, blockedIn: "macos", onToggle: () => {} },
   };
 }
 
@@ -64,6 +75,27 @@ describe("settings sections", () => {
       "appearance",
       "notifications",
     ]);
+  });
+
+  it("offers Notifications in the Mac app for its page notifications row", () => {
+    expect(shownIn("tauri-desktop", page("on"))).toEqual([
+      "appearance",
+      "notifications",
+    ]);
+  });
+
+  it.each([
+    ["on", "Notifications on"],
+    ["off", "Notifications off"],
+    ["blocked", "Notifications blocked"],
+  ] as const)("summarises page notifications %s", (status, summary) => {
+    shownIn("tauri-desktop", undefined);
+    expect(
+      shownSettingsSection("notifications", page(status))?.summary(
+        settings,
+        page(status),
+      ),
+    ).toBe(summary);
   });
 
   it("finds a section only where it is shown", () => {

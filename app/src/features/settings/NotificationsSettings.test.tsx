@@ -10,6 +10,7 @@ import {
 import { NotificationsSettings } from "./NotificationsSettings";
 import type {
   NotificationSwitch,
+  PageSwitchStatus,
   PushSettings,
   PushSwitchStatus,
 } from "./push-settings";
@@ -46,6 +47,15 @@ function pushSwitch(
     },
   };
 }
+
+function pageSwitch(
+  status: PageSwitchStatus | undefined,
+  onToggle: (on: boolean) => void = vi.fn(),
+): NotificationSwitch {
+  return { kind: "page", page: { status, blockedIn: "macos", onToggle } };
+}
+
+const pageToggle = () => screen.getByRole("switch", { name: "Notifications" });
 
 const pushToggle = () =>
   screen.getByRole("switch", { name: "Push notifications" });
@@ -189,6 +199,51 @@ describe("NotificationsSettings", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("turns page notifications on and off where push isn't available", () => {
+    installTarget("tauri-desktop");
+    const [status, setStatus] = createSignal<PageSwitchStatus>("on");
+    const onToggle = vi.fn();
+    render(() => (
+      <NotificationsSettings
+        onChange={vi.fn()}
+        notifications={pageSwitch(status(), onToggle)}
+        settings={loaded}
+      />
+    ));
+
+    expect(screen.getByRole("heading", { name: "This device" })).toBeVisible();
+    expect(pageToggle()).toBeChecked();
+    expect(pageToggle()).toHaveAccessibleDescription(
+      "Show a notification for direct messages and mentions while weblounge is open.",
+    );
+    expect(
+      screen.queryByRole("switch", { name: "Push notifications" }),
+    ).toBeNull();
+    fireEvent.click(pageToggle());
+    expect(onToggle).toHaveBeenLastCalledWith(false);
+    setStatus("off");
+    expect(pageToggle()).not.toBeChecked();
+    fireEvent.click(pageToggle());
+    expect(onToggle).toHaveBeenLastCalledWith(true);
+  });
+
+  it("names System Settings when the Mac blocks page notifications", () => {
+    installTarget("tauri-desktop");
+    render(() => (
+      <NotificationsSettings
+        onChange={vi.fn()}
+        notifications={pageSwitch("blocked")}
+        settings={loaded}
+      />
+    ));
+
+    expect(pageToggle()).toBeDisabled();
+    expect(pageToggle()).toHaveAccessibleDescription(
+      /Blocked in System Settings → Notifications → weblounge/u,
+    );
+    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
   });
 
   it("waits for the settings before the push switch can change", () => {
