@@ -144,13 +144,18 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   drag, and in the Layers tab that the screen and its `[data-edge-shadow]` are composited with no
   per-frame repaints. Also confirm the leading-edge shadow still fades on push, pop and swipe.
 
-- V7: on the Mac, check the option A native versioning (design 37), which Linux cannot build: `cargo test` in `apps/tauri` (shell.rs's `shell_version` and the `TAURI_WEBLOUNGE_VERSION` identity); `release.mjs --dry-run` builds through `nix build --expr (builtins.getFlake "git+file://…?rev=…")…desktop.override` from this worktree layout, the Tauri hook passes the `--config` JSON whole, and the app's Info.plist has short version `0.2.0` and the commit count as `CFBundleVersion`; `__WEBLOUNGE_SHELL__.version` reads `0.2.0+N`; `gh release view` says "release not found" for a missing tag; `release-ios.mjs --dry-run` gives both bundles `0.2.0` and the build number, and `TAURI_WEBLOUNGE_VERSION` reaches the Rust build through Xcode.
-
 #### Docs and housekeeping
 - DC1: remove stray worktrees and branches (`~/weblounge-client-*`, old `bump-previous-*` pins, `.claude/worktrees/agent-*`); keep `~/weblounge-client-tap-recovery` for reference.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: V7, option A versioning checked on the Mac. `cargo test` in `apps/tauri`, the
+  release node tests and `.#desktop`/`.#desktop-dev` pass; `release.mjs --dry-run` built through
+  `getFlake "git+file://…?rev=…"`, `gh release view` reported v0.2.0 not found (unpublished), and
+  the notarized DMG's app is `0.2.0` / `2711` showing `0.2.0+20`. `release-ios.mjs --dry-run`
+  now gives both bundles `0.2.0` and the build number (Tauri's `--config` carries the short
+  version) and passes `altool --validate-app`, which runs with the build's Xcode environment
+  because under the dev shell it reports a valid IPA as 90207; Tauri's IPA zip needs no repack.
 - 2026-11-17: shared release versions, option A (design 37, `docs/RELEASING.md`): one `vX.Y.Z`
   tag line for web, macOS and iOS (first `v0.2.0`); `cut-web-release.mjs` cuts it, minor by
   default with `--patch`/`--major`. Builds between tags show `X.Y.Z+N` from
