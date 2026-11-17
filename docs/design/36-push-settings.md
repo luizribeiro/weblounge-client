@@ -40,10 +40,10 @@ app and the Mac app have no Notifications section at all.
    dismissing the prompt does not turn the setting off: dismissal means "stop asking", and the
    switch stays there for later. Turning on from the switch asks for permission, after which the
    prompt's own rule (permission `default`) hides it.
-7. **"Open Settings" capability.** The page cannot list a shell's commands, and older iOS builds
-   keep loading newer pages. The shell identity global gains an optional `commands` array naming
-   the optional commands it answers; the button shows only when it lists `open_app_settings`. The
-   Mac session adds the command to `crates/native-bridge` and the name to `shell.rs`'s identity.
+7. **"Open Settings" capability.** The button shows wherever the iOS native bridge exists, and
+   calls its `open_app_settings` command (`crates/native-bridge`, c8d977c3; no request, answers
+   null). Every iOS shell build answers it: none shipped before the command landed, so the bridge
+   itself is the capability check and the shell identity needs no command list.
 8. **What counts as failed.** Per network, the synchronizer counts failed attempts in a row in its
    existing `#retryAttempts`. A network is failing once that count reaches 3 (the first try and two
    backoff retries, about 2–3 s with `relayRetryDelay`'s 0.5–1 s and 1–2 s), or at once for a
@@ -61,7 +61,7 @@ app and the Mac app have no Notifications section at all.
 
 | Permission | Setting | Registration | Switch | Line |
 |---|---|---|---|---|
-| any | not loaded | — | disabled | — |
+| default or granted | not loaded | — | disabled | — |
 | denied | any | — | off, disabled | Blocked in …, Open Settings (iOS app) |
 | default | any | — | off | — |
 | granted | off | — | off | — |
@@ -79,7 +79,8 @@ synchronizer and then signs it out the same way, so every route still ends up re
 
 Turning on again needs nothing new. `App.tsx` already keeps every `push_route_required` it has
 seen (`knownPushRequirements`) and replays them into each new synchronizer, so the homes register
-again. Retry runs `retryNow()` in the tab that owns the synchronizer; any other tab sends `retry`
+again. Retry runs `retryNow()` (which also lifts the relay client's backoff gate, so it tries at once) in
+the tab that owns the synchronizer; any other tab sends `retry`
 over the push channel; a setup failure reruns `startConfiguredPush`.
 
 On the phone the root row's value is the push state ("Push on", "Push off", "Push blocked",
@@ -136,8 +137,7 @@ class PushSynchronizer { retryNow(): void }
 
 ## Out of scope
 
-Notify me about and highlight rows (design 29); per-network push; a native-command list beyond
-`commands`; retrying a failed off (it is best-effort like sign-out: the home `UNREGISTER` happens
+Notify me about and highlight rows (design 29); per-network push; retrying a failed off (it is best-effort like sign-out: the home `UNREGISTER` happens
 first, so the home stops pushing even if the relay delete fails); showing a missing APNs token as a
 failure (the token normally arrives just after the grant).
 
