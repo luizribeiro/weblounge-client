@@ -2,9 +2,9 @@ import UIKit
 import WebKit
 
 /// Reports each page's background colour, or `nil` when the page paints none of its own: when a
-/// document loads, when the app's theme changes, and when the system appearance flips under a
-/// `light dark` page. It reads the computed colour in the page because `underPageBackgroundColor`
-/// stays white in this transparent web view.
+/// document is parsed and again once it is shown with its stylesheets, when the app's theme
+/// changes, and when the system appearance flips under a `light dark` page. It reads the computed
+/// colour in the page because `underPageBackgroundColor` stays white in this transparent web view.
 final class PageBackground: NSObject, WKScriptMessageHandler {
   private static let handlerName = "webloungePageBackground"
   // An isolated world keeps the handler and the watcher out of reach of the hosted pages.
@@ -51,13 +51,10 @@ final class PageBackground: NSObject, WKScriptMessageHandler {
         context.fillRect(0, 0, 1, 1);
         return Array.from(context.getImageData(0, 0, 1, 1).data);
       };
-      let reported;
       const report = () => {
         const color = [document.documentElement, document.body]
           .map((element) => (element ? getComputedStyle(element).backgroundColor : ""))
           .find(painted) ?? null;
-        if (color === reported) return;
-        reported = color;
         window.webkit.messageHandlers.\(handlerName).postMessage(color && bytes(color));
       };
       new MutationObserver(report).observe(document.documentElement, {
@@ -65,6 +62,10 @@ final class PageBackground: NSObject, WKScriptMessageHandler {
         attributeFilter: ["data-theme"],
       });
       matchMedia("(prefers-color-scheme: dark)").addEventListener("change", report);
+      // Stylesheets can arrive after parsing ends. `pageshow` fires once they have applied, and
+      // again on a back-forward-cache restore, where the underlay still holds the colour of the
+      // page that was left.
+      addEventListener("pageshow", report);
       if (document.readyState === "loading") {
         addEventListener("DOMContentLoaded", report, { once: true });
       }

@@ -225,9 +225,11 @@ over, but three things differ and are checked on device in the first build:
 - The underlay and the status bar: wherever the page doesn't paint (the band WebKit insets a page
   without `viewport-fit=cover` by, and the first frames of a load), the web view's own background
   shows. A watcher the shell runs in an isolated script world reports the page's computed
-  background on each document, on `data-theme` changes and on system appearance flips; the shell
-  paints the web view with it and sets the status bar to light content over a dark background
-  and dark content over a light one, or follows the system when the page paints none. There is no
+  background on each document (when it is parsed, and again on `pageshow`, because its
+  stylesheets may arrive after parsing ends and a page can return from the back-forward cache),
+  on `data-theme` changes and on system appearance flips; the shell paints the web view with it
+  and sets the status bar to light content over a dark background and dark content over a light
+  one, or follows the system when the page paints none. There is no
   `apple-mobile-web-app-status-bar-style` in a web view, and Tauri's `set_theme` does nothing on
   iOS.
 - Keyboard: the web view must not scroll the whole document when the composer focuses; the PWA's
