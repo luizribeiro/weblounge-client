@@ -466,7 +466,8 @@ pub(crate) struct PendingSend {
 pub(crate) struct OwnReactionChange {
     pub(crate) buffer_id: BufferId,
     pub(crate) message_id: MessageId,
-    pub(crate) target: SendTarget,
+    /// `None` when the conversation cannot be sent to, so the change can only fail visibly.
+    pub(crate) target: Option<SendTarget>,
     pub(crate) msgid: String,
     pub(crate) text: String,
     pub(crate) action: ReactionAction,
@@ -1389,7 +1390,7 @@ impl NetworkModel {
         message_id: MessageId,
         text: String,
     ) -> Option<OwnReactionChange> {
-        let target = self.action_target(buffer_id)?;
+        let target = self.action_target(buffer_id);
         let msgid = self
             .buffers
             .get(&buffer_id)?

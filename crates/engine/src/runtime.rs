@@ -2793,7 +2793,8 @@ async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> usiz
 }
 
 async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
-    let message = message_reference(client, change.target.clone(), change.msgid.clone()).await?;
+    let target = change.target.clone().ok_or(SendError::DirectTargetGone)?;
+    let message = message_reference(client, target, change.msgid.clone()).await?;
     let text = change.text.clone();
     match change.action {
         ReactionAction::Added => client.react(message, text).await,
@@ -15105,6 +15106,61 @@ async fn delay(duration: Duration) {
             projected_reaction(&retried, "refused here").and_then(|reaction| reaction.own_delivery),
             Some(crate::OwnChangeDelivery::Sending)
         );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn own_reaction_in_an_unsendable_direct_fails_visibly() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let text = "react to my DM";
+        harness
+            .wire
+            .server(format!(
+                "@time=2026-10-27T13:01:00.000Z;msgid=dm-target :alice!a@host PRIVMSG weblounge :{text}"
+            ))
+            .await;
+        _ = harness.timeline_output(&[text]).await;
+        let (buffer_id, message_id) = {
+            let mut state = lock(&harness.state);
+            let model = &mut state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model;
+            let alice = harness
+                .client
+                .state()
+                .name_rules()
+                .expect("registered test client has name rules")
+                .nick("alice");
+            let buffer_id = model
+                .buffer_id_for_conversation(&papo::Conversation::Private(alice))
+                .expect("direct buffer");
+            model.resolve_direct(buffer_id, DirectAvailability::Failed);
+            let message_id = model
+                .projected_messages(buffer_id)
+                .into_iter()
+                .find(|message| message.text == text)
+                .expect("direct message")
+                .id;
+            (buffer_id, message_id)
+        };
+
+        let output = harness.toggle_reaction(buffer_id, message_id);
+
+        assert_eq!(
+            projected_reaction(&output, text).and_then(|reaction| reaction.own_delivery),
+            Some(crate::OwnChangeDelivery::Sending)
+        );
+        let failed = harness
+            .reaction_until(text, |reaction| {
+                reaction.is_some_and(|reaction| {
+                    reaction.own_delivery == Some(crate::OwnChangeDelivery::Failed)
+                })
+            })
+            .await
+            .expect("failed reaction");
+        assert!(failed.mine);
         harness.drain.abort();
     }
 

@@ -1,5 +1,10 @@
 import type { Locator, Page } from "@playwright/test";
-import { messageId } from "./irc-client";
+import {
+  IrcClient,
+  isolatedPassword,
+  messageId,
+  registerAccount,
+} from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -242,6 +247,61 @@ for (const cycle of ["reload", "reconnect"] as const) {
     await expectIdle(page);
     await nativeFeelAudit(page);
   });
+}
+
+test("shows a reaction to a DM peer who left as failed and retries it once they return", async ({
+  context,
+  page,
+  irc,
+}) => {
+  const keeper = await irc.self();
+  await keeper.setAlwaysOn(true);
+  const nick = irc.nickNamed("gone-dm");
+  await registerAccount(nick, isolatedPassword(nick));
+  let peer = await connectDirectPeer(nick);
+  const text = "react to me after I leave";
+  await openOnline(page, irc);
+  const id = messageId(await peer.privmsgConfirmed(irc.account, text));
+  await page
+    .getByRole("button", { name: new RegExp(`^${nick}(?:,|$)`) })
+    .click();
+  const row = productionMessageRow(page, text);
+  await expect(row).toBeVisible();
+  await expectSettled(page, { conversation: nick });
+  const departure = keeper.waitForNickDeparture(nick);
+  peer.close();
+  await peer.waitForDisconnect();
+  await departure;
+  await context.setOffline(true);
+  const online = page.locator('[data-network-state="online"]');
+  await expect(online).toHaveCount(0);
+  await context.setOffline(false);
+  await dispatchPersistedPageShow(page);
+  await expect(online).toHaveCount(1);
+  await page.getByRole("button", { name: irc.channel }).click();
+  await expectSettled(page, { conversation: irc.channel });
+  await page
+    .getByRole("button", { name: new RegExp(`^${nick}(?:,|$)`) })
+    .click();
+  await expectSettled(page, { conversation: nick });
+
+  await row.hover();
+  const toolbar = row.getByRole("toolbar", { name: "Message actions" });
+  await toolbar.getByRole("button", { name: "React with 😂" }).click();
+  const chip = row.locator('[data-reaction="😂"]');
+  await expect(chip).toHaveAttribute("data-reaction-delivery", "failed");
+
+  peer = await connectDirectPeer(nick);
+  await chip.click();
+  await peer.waitForReaction(nick, id, "😂", irc.account);
+  await expect(chip).toHaveAttribute("data-reaction-own", "true");
+  await expect(chip).not.toHaveAttribute("data-reaction-delivery");
+  peer.close();
+  await peer.waitForDisconnect();
+});
+
+function connectDirectPeer(nick: string): Promise<IrcClient> {
+  return IrcClient.connectWithoutJoin(nick, nick, isolatedPassword(nick));
 }
 
 async function transcriptGeometry(page: Page) {
