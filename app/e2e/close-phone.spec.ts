@@ -8,7 +8,7 @@ import {
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
-import { backToChats, expectSettled } from "./settled";
+import { backToChatList, backToChats, expectSettled } from "./settled";
 
 const screenshots = path.join(
   process.cwd(),
@@ -181,6 +181,30 @@ test.describe("phone conversation closing against local Ergo", () => {
     await expectSettled(page);
     await expect(directRow).toHaveCount(0);
     await expect(channelRow).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
+
+  test("undo of a DM closed with /close reopens it", async ({ page, irc }) => {
+    const peer = await irc.peer("by-command");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expect(rowFor(page, irc.channel)).toBeVisible();
+    await peer.privmsgConfirmed(irc.account, "close me with a command");
+    await rowFor(page, peer.nickname).click();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${peer.nickname}`,
+    });
+    await composer.fill("/close");
+    await composer.press("Enter");
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expect(rowFor(page, peer.nickname)).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: peer.nickname }),
+    ).toBeVisible();
+    await backToChatList(page, peer.nickname);
+    await expect(rowFor(page, peer.nickname)).toBeVisible();
     await nativeFeelAudit(page);
   });
 

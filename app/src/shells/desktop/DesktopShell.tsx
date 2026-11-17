@@ -42,7 +42,10 @@ import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
-import { focusAfterClose } from "../../features/sidebar/sidebar-close";
+import {
+  closesDirect,
+  focusAfterClose,
+} from "../../features/sidebar/sidebar-close";
 import {
   conversationRowIds,
   sidebarRowIds,
@@ -533,7 +536,7 @@ export function DesktopShell(props: DesktopShellProps) {
           onRequestCompletion={props.onRequestCompletion}
           onRetry={props.onRetry}
           onSendText={(buffer, text) =>
-            buffer.kind === "direct" && /^\/(?:close|wc)\s*$/iu.test(text)
+            closesDirect(buffer, text)
               ? closeDirect(buffer)
               : props.onSend(buffer.id, text)
           }

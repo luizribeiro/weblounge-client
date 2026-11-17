@@ -15,6 +15,7 @@ import type { BufferProjection, HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { MobileSettingsPage } from "../../features/settings/MobileSettings";
 import { createCloseUndo } from "../../features/sidebar/close-undo";
+import { closesDirect } from "../../features/sidebar/sidebar-close";
 import {
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -279,6 +280,12 @@ export function MobileShell(props: MobileShellProps) {
       replaceWithRoot();
     closeUndo.record({ networkId: buffer.network_id, title: buffer.title });
     return true;
+  };
+  const send = (bufferId: number, text: string): Promise<boolean> => {
+    const buffer = props.buffers.find((candidate) => candidate.id === bufferId);
+    return buffer !== undefined && closesDirect(buffer, text)
+      ? closeDirect(buffer)
+      : props.onSend(bufferId, text);
   };
   const requestClose = async (buffer: BufferProjection): Promise<boolean> => {
     if (buffer.kind === "channel") {
@@ -756,7 +763,7 @@ export function MobileShell(props: MobileShellProps) {
               )
                 returnScrollTop = nextScrollTop;
             }}
-            onSend={props.onSend}
+            onSend={send}
             onTurnOnNotifications={props.onTurnOnNotifications}
             onOpenSettings={
               props.onChangeSetting === undefined ? undefined : openSettings

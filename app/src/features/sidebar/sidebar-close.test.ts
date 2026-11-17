@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusAfterClose } from "./sidebar-close";
+import { closesDirect, focusAfterClose } from "./sidebar-close";
 
 describe("focusAfterClose", () => {
   it("moves to the row below", () => {
@@ -12,5 +12,17 @@ describe("focusAfterClose", () => {
 
   it("leaves no target after the only row closes", () => {
     expect(focusAfterClose([2], 2)).toBeUndefined();
+  });
+});
+
+describe("closesDirect", () => {
+  it.each(["/close", "/wc", "/CLOSE  "])("closes a direct with %j", (input) => {
+    expect(closesDirect({ kind: "direct" }, input)).toBe(true);
+  });
+
+  it("leaves other input and other buffers to the engine", () => {
+    expect(closesDirect({ kind: "direct" }, "/close now")).toBe(false);
+    expect(closesDirect({ kind: "direct" }, "close")).toBe(false);
+    expect(closesDirect({ kind: "channel" }, "/close")).toBe(false);
   });
 });
