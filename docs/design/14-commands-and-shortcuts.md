@@ -268,7 +268,7 @@ so no column can go ragged.
 | Row | Leading | Suffix | Slot |
 |---|---|---|---|
 | Channel, DM, bot | the sidebar's prefix: `#` (or the channel's own sign), presence dot, bot icon | network label, only when more than one network is configured | unread or mention badge |
-| Palette action | `>` | group, hidden for the default “Commands” group | the first active binding's label |
+| Palette action | `>` | group, hidden for the default “Commands” group | the first active binding, as keycaps |
 
 - The leading column renders with the sidebar row's prefix component, so a DM reads the same in
   both places; a DM with no known presence has an empty leading cell. Names with unread messages
@@ -278,10 +278,19 @@ so no column can go ragged.
   flickers while one reconnects.
 - The slot shows one binding only. All of an action's bindings stay in help, the row's tooltip
   and the option's `aria-keyshortcuts` (space-separated, WAI-ARIA tokens).
-- The slot has a fixed width (`--wl-omnibar-slot-width`) sized for the longest primary label,
-  `Ctrl+Shift+,` on Linux. A subgrid on the listbox would size the slot to the widest cell of the
+- A chord shows each key as its own keycap (feedback F42, direction A, agreed by Luiz
+  2026-11-17): 12px UI font, caps 20px tall with a 2px bottom edge, 3px apart. Each cap is filled
+  with 7% and outlined with 24% of the row's text colour, so caps stay visible on the selected row
+  in every theme. A macOS label splits into one cap per modifier glyph plus the key (`⇧` `⌘` `,`);
+  other platforms split on `+` (`Ctrl` `Shift` `,`). The modifier glyphs `⌘⌥⇧⌃` use
+  `--wl-font-key-symbols` (the system UI font): Inter and the theme fonts lack them, and their
+  fallbacks drew them far smaller than the letters. The caps are hidden from assistive tech; the
+  label as written is read instead.
+- The slot has a fixed width (`--wl-omnibar-slot-width`, 116px) sized for the longest primary
+  label, `Ctrl+Shift+,` on Linux (about 115px as keycaps). A subgrid on the listbox would size the slot to the widest cell of the
   current results, so the name's ellipsis would move as the user types; a fixed width keeps every
-  edge still. The palette e2e test fails if a label ever outgrows the slot.
+  edge still. The palette e2e tests, with macOS and Linux chords, fail if a label ever outgrows
+  the slot.
 - Matched characters are not highlighted yet (PLAN F38).
 
 ## Pane mode
