@@ -167,6 +167,11 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-row-toolbar",
+      testMatch: "**/row-toolbar.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-console",
       testMatch: "**/console-clean.spec.ts",
       use: { browserName: "webkit" },

@@ -90,7 +90,7 @@ import {
   focusControl,
   type RowReactions,
 } from "./row-reactions";
-import { createRowToolbarVisibility } from "./row-toolbar-visibility";
+import { createRowToolbars, type RowToolbars } from "./row-toolbars";
 import { Divider } from "./timeline/Divider";
 import {
   estimateSystemLineHeight,
@@ -421,6 +421,7 @@ export function MessageList(props: MessageListProps) {
   const rowReactions = () =>
     props.onToggleReaction === undefined ? undefined : reactionActions;
   const deletion = createMessageDeletion(() => props.onRedactMessage);
+  const toolbars = createRowToolbars(deletion.menuRow);
   const confirmDelete = (
     messageId: number | undefined,
     invoker: HTMLElement,
@@ -1464,6 +1465,7 @@ export function MessageList(props: MessageListProps) {
                       deletion={deletion.rows()}
                       presentation={props.presentation}
                       row={row()}
+                      toolbars={toolbars}
                     />
                   </li>
                 );
@@ -1539,6 +1541,7 @@ function TimelineRowView(props: {
   readonly reactions?: RowReactions | undefined;
   readonly deletion?: MessageRowDeletion | undefined;
   readonly row: TimelineRow | undefined;
+  readonly toolbars: RowToolbars;
 }) {
   let renderedRow: TimelineRow | undefined;
   // Timeline projection recreates wrappers on append; selection and browser
@@ -1626,6 +1629,7 @@ function TimelineRowView(props: {
                 deletion={props.deletion}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
+                toolbars={props.toolbars}
               />
             )}
           </Match>
@@ -1698,6 +1702,7 @@ function MessageRow(props: {
   readonly reactions?: RowReactions | undefined;
   readonly deletion?: MessageRowDeletion | undefined;
   readonly startsMobileGroup: boolean;
+  readonly toolbars: RowToolbars;
 }) {
   const message = props.message;
   if (isLocalNoticeMessage(message))
@@ -1758,8 +1763,12 @@ function MessageRow(props: {
       });
     };
   };
-  const toolbar = createRowToolbarVisibility();
+  const toolbar = props.toolbars.row(message.id);
+  onCleanup(toolbar.unmount);
   const [pickerInvoker, setPickerInvoker] = createSignal<HTMLElement>();
+  createEffect(() => {
+    if (pickerInvoker() !== undefined) onCleanup(toolbar.pin());
+  });
   const openActions = props.onMessageActions;
   const longPress =
     openActions === undefined
@@ -1797,7 +1806,7 @@ function MessageRow(props: {
     >
       <Show
         when={
-          (toolbar.shown() || pickerInvoker() !== undefined) &&
+          toolbar.shown() &&
           (hoverToolbarReact !== undefined || openMoreMenu() !== undefined)
         }
       >

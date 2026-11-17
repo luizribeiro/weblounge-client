@@ -1,4 +1,5 @@
 import { createSignal, type JSX, Show } from "solid-js";
+import type { MessageId } from "../../engine/generated/MessageId";
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
 import { t } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
@@ -18,6 +19,8 @@ export interface MessageRowDeletion {
 export interface MessageDeletion {
   /** Row actions, absent when the network cannot delete messages. */
   readonly rows: () => MessageRowDeletion | undefined;
+  /** The message whose row menu is open. */
+  readonly menuRow: () => MessageId | undefined;
   /** Asks before deleting, as every entry point must; does nothing for other rows. */
   readonly confirm: (message: MessageProjection, invoker: HTMLElement) => void;
   readonly view: () => JSX.Element;
@@ -65,6 +68,7 @@ export function createMessageDeletion(
             openMenu: (message, request) => setMenu({ message, request }),
           };
     },
+    menuRow: () => menu()?.message.id,
     confirm,
     view: () => (
       <>
