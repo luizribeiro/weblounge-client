@@ -149,6 +149,13 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: two silent push stalls fixed (design 23). An `Unsupported` reply to `ensure_push`
+  now fails visibly in Settings and `/debug push` (`engine: unsupported(<reason>)`) instead of
+  leaving the route `probing`; the engine's next requirement (late account) restarts it. A page that
+  becomes push owner after attaching to a connected SharedWorker asks with `announce_push_route`.
+  Not reproduced as the cause of the irc.weblounge.org Firefox stall; `/debug push` on that tab
+  would tell. papo 40c6722 never requests `draft/webpush` from CAP NEW, so only a reconnect or
+  account change can lift `NoWebPush` (DL9).
 - 2026-11-17: V7, option A versioning checked on the Mac. `cargo test` in `apps/tauri`, the
   release node tests and `.#desktop`/`.#desktop-dev` pass; `release.mjs --dry-run` built through
   `getFlake "git+file://…?rev=…"`, `gh release view` reported v0.2.0 not found (unpublished), and
