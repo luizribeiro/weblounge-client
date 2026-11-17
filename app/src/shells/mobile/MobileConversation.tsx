@@ -44,6 +44,7 @@ import {
 import type { NetworkUploads } from "../../features/uploads/types";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
+import { copyText } from "../../ui/copy-text";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import { MobileMessageActionSheet } from "./MobileMessageActionSheet";
@@ -357,9 +358,4 @@ export function MobileConversation(props: MobileConversationProps) {
       </Show>
     </section>
   );
-}
-
-function copyText(text: string): void {
-  // A refused write (no permission, insecure context) leaves the clipboard as it was.
-  navigator.clipboard?.writeText(text).catch(() => undefined);
 }

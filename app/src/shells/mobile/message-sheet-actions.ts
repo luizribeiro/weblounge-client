@@ -25,7 +25,7 @@ export function messageSheetActions(
 ): readonly MessageSheetAction[] {
   const copy: MessageSheetAction = {
     id: "copy-text",
-    label: t("mobile.copy_text"),
+    label: t("message.copy_text"),
     icon: CopyIcon,
     run: () => commands.copyText(message.text),
   };
