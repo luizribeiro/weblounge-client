@@ -1,23 +1,16 @@
 // Signing needs the login keychain and notarization needs the network, so this runs on Luiz's
 // Mac outside the Nix sandbox (design 28). System tools are called by absolute path because the
 // dev shell puts Nix's own xcrun and codesign shims first on PATH.
-import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  blockers,
-  foreignLibraries,
-  imageName,
-  releaseTag,
-  releaseVersion,
-} from "./plan.mjs";
+import { blockers, foreignLibraries, imageName, releaseTag } from "./plan.mjs";
+import { crateFile, crateVersion, gitState, run, step } from "./shell.mjs";
 
 const IDENTITY = "Developer ID Application: LUIZ GUSTAVO CARDOSO RIBEIRO (JR4C2QJKWJ)";
 const NOTARY_PROFILE = "weblounge";
-const repo = new URL("../../../", import.meta.url).pathname;
-const crate = join(repo, "apps/tauri");
-const releaseIdentity = JSON.parse(readFileSync(join(crate, "tauri.release.conf.json"), "utf8"));
+const releaseIdentity = JSON.parse(crateFile("tauri.release.conf.json"));
 const BUNDLE_ID = releaseIdentity.identifier;
 const APP = `${releaseIdentity.productName}.app`;
 
@@ -28,29 +21,15 @@ const LSREGISTER =
 // temporary copy for the installed app's bundle ID.
 const forget = (app) => spawnSync(LSREGISTER, ["-u", app]);
 
-const run = (command, args) =>
-  execFileSync(command, args, { cwd: repo, encoding: "utf8" }).trim();
-const step = (command, args) =>
-  execFileSync(command, args, { cwd: repo, stdio: "inherit" });
-
 // Node rewrites relative symlinks to absolute paths unless told not to, which breaks a sealed bundle.
 const copyBundle = (from, to) =>
   cpSync(from, to, { recursive: true, verbatimSymlinks: true });
 
 function preflight() {
-  const version = releaseVersion({
-    cargoToml: readFileSync(join(crate, "Cargo.toml"), "utf8"),
-    tauriConf: readFileSync(join(crate, "tauri.conf.json"), "utf8"),
-  });
-  run("git", ["fetch", "--quiet", "--tags", "origin", "main"]);
-  const head = run("git", ["rev-parse", "HEAD"]);
-  const problems = blockers({
-    status: run("git", ["status", "--porcelain"]),
-    head,
-    originMain: run("git", ["rev-parse", "origin/main"]),
-    tags: run("git", ["tag", "--list"]).split("\n"),
-    tag: releaseTag(version),
-  });
+  const version = crateVersion();
+  const git = gitState();
+  const head = git.head;
+  const problems = blockers({ ...git, tag: releaseTag(version) });
   if (problems.length > 0) {
     throw new Error(`cannot release ${version}:\n- ${problems.join("\n- ")}`);
   }
