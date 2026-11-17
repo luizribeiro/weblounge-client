@@ -3,4 +3,4 @@
 /**
  * Which edge of a conversation history request should be fetched.
  */
-export type HistoryDirection = "latest" | "older";
+export type HistoryDirection = "latest" | "older" | "gap";

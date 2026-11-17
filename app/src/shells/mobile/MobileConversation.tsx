@@ -271,6 +271,7 @@ export function MobileConversation(props: MobileConversationProps) {
             historyState={props.historyState}
             onLiveEdgeChange={setAtLiveEdge}
             onLoadOlder={() => props.onLoadHistory(props.buffer.id, "older")}
+            onGapShown={() => props.onLoadHistory(props.buffer.id, "gap")}
             onOpenChannel={(channel) => {
               void props.onSend(props.buffer.id, `/join ${channel}`);
             }}

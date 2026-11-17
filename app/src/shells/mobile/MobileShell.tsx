@@ -177,7 +177,7 @@ export function MobileShell(props: MobileShellProps) {
     bufferId: number,
     direction: HistoryDirection,
   ) => {
-    if (direction === "older") {
+    if (direction !== "latest") {
       props.onLoadHistory(bufferId, direction);
       return;
     }

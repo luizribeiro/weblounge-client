@@ -476,6 +476,8 @@ pub enum HistoryDirection {
     Latest,
     /// Fetch the next page before the retained oldest cursor.
     Older,
+    /// Fetch the next page into the newest "Messages may be missing" gap.
+    Gap,
 }
 
 /// Whether a channel buffer currently represents an active membership.

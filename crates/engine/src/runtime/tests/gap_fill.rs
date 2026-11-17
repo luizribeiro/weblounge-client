@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use super::{
-    EngineToUi, HISTORY_CAPS, ReplayHarness, collect, known_channel, lock, next_sent_containing,
-    request_label, send_ergo_history_page, timeline_texts,
+    EngineRequest, EngineRequestEnvelope, EngineToUi, HISTORY_CAPS, ReplayHarness, Runtime,
+    collect, known_channel, lock, next_sent_containing, request_label, send_ergo_history_page,
+    timeline_texts,
 };
-use crate::{BufferId, timeline::ItemBody};
+use crate::{BufferId, HistoryDirection, timeline::ItemBody};
 
 const GAP_FROM_MS: i64 = 1_793_102_400_000;
 const GAP_TO_MS: i64 = GAP_FROM_MS + 5_000;
@@ -157,4 +158,44 @@ fn gap_fill_loading(harness: &ReplayHarness, buffer_id: BufferId) -> bool {
 
 fn room(harness: &ReplayHarness) -> papo::Conversation {
     papo::Conversation::Channel(known_channel(&harness.client, "#room"))
+}
+
+#[tokio::test]
+async fn a_shown_gap_row_fetches_the_next_page_into_what_is_still_missing() {
+    let (mut harness, buffer_id, latest) = joined_with_gap().await;
+    let fill = finish_catch_up(&mut harness, &latest).await;
+    send_ergo_history_page(
+        &mut harness.wire,
+        &fill,
+        &["@batch={batch};time=2026-10-27T12:00:03.000Z;msgid=late :alice!a@host PRIVMSG #room :late in the gap"],
+    )
+    .await;
+    events_until(&mut harness, |events| {
+        timeline_texts(events)
+            .iter()
+            .any(|text| text == "late in the gap")
+    })
+    .await;
+
+    let result = Runtime {
+        state: Arc::clone(&harness.state),
+        outbound: harness.outbound.clone(),
+    }
+    .request(EngineRequestEnvelope {
+        id: "gap".into(),
+        request: EngineRequest::LoadHistory {
+            buffer_id,
+            direction: HistoryDirection::Gap,
+        },
+    });
+
+    assert!(matches!(
+        result.as_slice(),
+        [EngineToUi::CommandResult { id }] if id == "gap"
+    ));
+    let next = next_sent_containing(&mut harness.wire, " CHATHISTORY BEFORE ").await;
+    assert!(
+        next.ends_with("CHATHISTORY BEFORE #room timestamp=2026-10-27T12:00:03.001Z 100"),
+        "{next}"
+    );
 }

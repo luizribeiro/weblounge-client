@@ -95,6 +95,7 @@ import {
 } from "./row-reactions";
 import { createRowToolbars, type RowToolbars } from "./row-toolbars";
 import { Divider } from "./timeline/Divider";
+import { GapRow } from "./timeline/GapRow";
 import {
   estimateSystemLineHeight,
   systemLineSizeRevision,
@@ -132,6 +133,7 @@ interface MessageListProps {
   readonly unread?: number | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onLoadOlder?: (() => void) | undefined;
+  readonly onGapShown?: (() => void) | undefined;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
@@ -1464,6 +1466,7 @@ export function MessageList(props: MessageListProps) {
                       onOpenChannel={props.onOpenChannel}
                       onOpenDirect={props.onOpenDirect}
                       onOpenExternal={props.onOpenExternal}
+                      onGapShown={props.onGapShown}
                       onRejoin={props.onRejoin}
                       onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
@@ -1540,6 +1543,7 @@ function TimelineRowView(props: {
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onGapShown?: (() => void) | undefined;
   readonly onRejoin?: (() => void) | undefined;
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
@@ -1601,14 +1605,12 @@ function TimelineRowView(props: {
           </Match>
           <Match when={row.kind === "gap"}>
             {row.kind === "gap" && (
-              <Divider
-                content={{
-                  kind: "gap",
-                  label: t("messages.gap", {
-                    from: formatTime(row.fromMs),
-                    to: formatTime(row.toMs),
-                  }),
-                }}
+              <GapRow
+                label={t("messages.gap", {
+                  from: formatTime(row.fromMs),
+                  to: formatTime(row.toMs),
+                })}
+                onShown={props.onGapShown}
               />
             )}
           </Match>

@@ -14,6 +14,8 @@ import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 const desktop = { viewport: { width: 1_280, height: 800 } } as const;
+/** More than the catch-up page and the one page filled right after it. */
+const longGapLength = 230;
 
 test.describe("transcript gap and boundary dividers", () => {
   test.skip(
@@ -163,6 +165,50 @@ test.describe("transcript gap and boundary dividers", () => {
         activeMessageList(page).locator("[data-gap-row]"),
       ).toHaveCount(0);
       await expectEachOnce(page, [seed]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("fills the rest of a long gap when its row comes into view", async ({
+    baseURL,
+    browser,
+    irc,
+  }) => {
+    await setAppAlwaysOn(irc);
+    const channel = irc.channelNamed("long");
+    const senders = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        irc.peer(`long-${index}`, [channel]),
+      ),
+    );
+    const seed = `long cursor ${irc.id}`;
+    await senders[0]?.privmsgConfirmed(channel, seed);
+    const page = await openApp(browser, baseURL, irc, desktop);
+    try {
+      await openChannel(page, irc, channel, false);
+      await expect(messageText(page, seed)).toBeVisible();
+
+      await irc.forwarder.drop();
+      const lines = Array.from(
+        { length: longGapLength },
+        (_, index) => `outage ${irc.id} ${String(index).padStart(3, "0")}`,
+      );
+      for (const [index, text] of lines.entries())
+        await senders[index % senders.length]?.privmsgConfirmed(channel, text);
+      const beyondTheFirstFill = lines[10] ?? "";
+      await irc.forwarder.holdIncomingContaining(beyondTheFirstFill);
+      await reconnect(page, irc);
+
+      const list = activeMessageList(page);
+      await scrollToTranscriptTop(list);
+      const gap = list.locator("[data-gap-row]");
+      await expect(gap).toHaveCount(1);
+      await expect.poll(() => irc.forwarder.isHoldingIncoming()).toBe(true);
+      await irc.forwarder.resumeIncoming();
+      await expect(gap).toHaveCount(0);
+      await expectEachOnce(page, [seed, ...lines.slice(0, 3)]);
+      await expectSettled(page, { conversation: channel });
     } finally {
       await page.context().close();
     }

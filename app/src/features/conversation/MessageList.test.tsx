@@ -2067,6 +2067,20 @@ it("renders a timeline gap as a dashed labelled divider", async () => {
   );
 });
 
+it("asks to fill a gap each time its row is shown with new bounds", async () => {
+  const shown = vi.fn();
+  const [timeline, setTimeline] = createSignal(
+    timelineView([gapItem(1_000, 9_000)]),
+  );
+  render(() => (
+    <MessageList messages={[]} onGapShown={shown} timeline={timeline()} />
+  ));
+  await vi.waitFor(() => expect(shown).toHaveBeenCalledTimes(1));
+
+  setTimeline(timelineView([gapItem(1_000, 5_000)]));
+  await vi.waitFor(() => expect(shown).toHaveBeenCalledTimes(2));
+});
+
 it("renders the signed empty direct row after history settles", async () => {
   const { container } = render(() => (
     <MessageList

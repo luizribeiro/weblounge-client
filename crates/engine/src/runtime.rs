@@ -2321,6 +2321,21 @@ impl Runtime {
         output
     }
 
+    fn fill_shown_gap(&self, running: &mut RunningNetwork, buffer_id: BufferId) {
+        if !running.client.state().supports(papo::Feature::History) {
+            return;
+        }
+        if let Some(fetch) = running.model.begin_gap_fill(buffer_id) {
+            spawn_gap_fill(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                running.client.clone(),
+                running.instance,
+                fetch,
+            );
+        }
+    }
+
     fn load_history(
         &self,
         command_id: String,
@@ -2335,6 +2350,10 @@ impl Runtime {
             if direction == crate::HistoryDirection::Latest {
                 running.model.queue_latest_history(buffer_id);
             }
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        }
+        if direction == crate::HistoryDirection::Gap {
+            self.fill_shown_gap(running, buffer_id);
             return vec![EngineToUi::CommandResult { id: command_id }];
         }
         let Some(fetch) = running.model.request_history(buffer_id, direction) else {

@@ -198,6 +198,7 @@ function PaneConversation(props: DesktopPaneProps) {
             historyState={props.historyStates?.get(buffer().id)}
             onLiveEdgeChange={props.onLiveEdgeChange}
             onLoadOlder={() => props.onLoadHistory(buffer().id, "older")}
+            onGapShown={() => props.onLoadHistory(buffer().id, "gap")}
             onOpenChannel={(channel) => void send(`/join ${channel}`)}
             onOpenDirect={
               buffer().kind === "server" ? undefined : props.onOpenDirect
