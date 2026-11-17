@@ -33,7 +33,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DL5: where notification rules live: per-account on the server (`weblounge.org/notify-rules` Ergo extension) or device-local; deferred past v1. Design 23 §Later, design 29.
 - DL6: telemetry; the design is agreed, do not build it without talking to Luiz. Memory.
 - DL7: which shell tablets and iPad (with trackpad) get; mobile shell for now. Design 09, design 10.
-- DL8: small unanswered design questions: copying a partly selected message (whole row or substring), notice form `-nick- text` vs `<nick>` (design 15); whether durable drafts roam through an account service, and `/topic` with no text (design 13); account-wide push lease vs activity-based lease (design 23 decision 6).
+- DL8: small unanswered design questions: notice form `-nick- text` vs `<nick>` (design 15); whether durable drafts roam through an account service, and `/topic` with no text (design 13); account-wide push lease vs activity-based lease (design 23 decision 6).
 - DL9: papo gaps, on the papo agenda: typed `mute`, `BanTarget`, `motd()`/`whowas()`, typed CTCP are "later" in papo; search waits (soju-only); stabilise `unstable` in the order bouncer, persistence, webpush; ordered endpoint failover; filehost EXTJWT. `docs/design/commands-catalog.md` §Gaps, design 03.
 - DL10: should the sidebar and phone header wordmark also say "weblounge β" on beta? Only the tab and window title do today. Design 37.
 - DL12: the native build number. The shells publish their displayed version (`0.2.0+3`) but not `CFBundleVersion`, so About shows no build number; adding it needs a new native build. Design 38.
@@ -84,6 +84,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F38: bold the matched characters in ⌘K switcher and command palette rows, so the fuzzy ranking explains itself (option D of the omnibar column audit). Needs match ranges from `fuzzyScore`. Design 14 §Omnibar rows. Luiz, 2026-11-16.
 - F39: guard against sending an agent prompt to a person's DM. Luiz switches windows a lot and sometimes assumes the open DM is an agent's. Proposed batch: remember each DM peer's bot flag once seen, plus a "This is an agent" switch for accounts that never set it; give agent DMs a coloured composer edge, a robot icon and a "Prompt <nick> (agent)" placeholder, and show the robot icon in ⌘K; ask once, using the existing InlineConfirmation bar, on the first send to a person after coming back to the window, when an agent was prompted recently. Open question: ask on every return, or only when the text looks like a prompt. Proposals: https://claude.ai/artifact/AsgSpHnEFyfV3LuCUkPJ64. Luiz, 2026-11-16: not important, backlog only.
 - F40: page (tab) notifications still format chat text, tags and routes in TypeScript (`page-notification-format.ts`), beside the Rust formatter the service worker and iOS share; move them onto `push-payload` (lazy wasm in the page, or the engine) so all three can't drift. Design 33.
+- F44: phone copying beyond the sheet's whole-message Copy text: a Select text reader, Copy link, copying several messages. Skipped by Luiz's decision (2026-11-17, F43): the phone stays as it is. Audit: design 15 "Selection and copy".
 - F41: Mac app push (APNs while the app is closed), like the iOS app. Until then the Mac app's Settings → Notifications has only the while-open "Notifications" switch (design 36 "Notifications where push isn't available"). Related F18, F36. Luiz, 2026-11-17.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
@@ -164,6 +165,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: desktop copy rework (B21, feedback #12; F43 desktop part, feedback #13; design 15
+  "Selection and copy"). A selection inside one message copies exactly the selected text, newlines
+  kept, with no `[time] <nick>`; a selection across messages keeps whole log lines and paints those
+  rows' time and nick with the selection colours. Copy text sits in the row's More menu and
+  right-click menu for every message. WebKit fixes: a triple-click no longer copies the next
+  message too, and a drag that starts on a link selects text. Phone copying is unchanged (F44).
 - 2026-11-17: F42 done (feedback #3): omnibar chords are readable keycaps, one cap per key at
   12px, 3px apart, tinted from the row's text colour, with `⌘⌥⇧⌃` in the system font; the
   shortcut slot is 116px so Linux `Ctrl Shift ,` fits. Design 14 §Omnibar rows.
