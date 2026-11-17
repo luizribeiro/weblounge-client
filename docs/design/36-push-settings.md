@@ -1,6 +1,6 @@
 # 36 — Push notifications switch
 
-Status: decisions 1–4 by Luiz (2026-11-17); the rest follow from them and design 29.
+Status: decisions 1–4 and the no-push Notifications row by Luiz (2026-11-17); the rest follow from them and design 29.
 This fills in design 29's planned `PushOnThisDevice` row (Notifications → This device).
 
 ## Problem
@@ -86,6 +86,61 @@ over the push channel; a setup failure reruns `startConfiguredPush`.
 On the phone the root row's value is the push state ("Push on", "Push off", "Push blocked",
 "Couldn't turn on"), or the tab value where there is no push row.
 
+## Notifications where push isn't available
+
+Decided by Luiz (2026-11-17). Some hosts can't push but can still show notifications while
+weblounge is open: today the Mac app (WKWebView has no `PushManager` and there is no native macOS
+push yet), and a browser tab where push isn't configured. The Mac app had no Notifications section
+at all; such a browser tab had only the tab row. Decision 3's Mac wording ("Blocked in System
+Settings → Notifications → weblounge") is the line this row uses until the Mac app can push.
+
+- **The row.** "Notifications" under This device, described as "Show a notification for direct
+  messages and mentions while weblounge is open". It controls only page-posted notifications
+  (`platform/page-notifications`): off, the page posts none. Unread counts, the dock badge and the
+  tab indicator are unchanged.
+- **Which row.** At most one notification switch applies per host, decided in one place,
+  `notificationSwitchKind` (next to `canPushHere`): `"push"` wherever push works (decision 2),
+  otherwise `"page"` wherever the page can show notifications, otherwise none. Never both: where
+  push works, push replaces this row. The setting is honoured only where its row shows, so a
+  value saved under one host can't silently mute push's page fallback under another. The tab row
+  is independent and stays browser-tab only.
+- **Storage.** A new engine app setting, `page_notifications: bool`, default `true`, stored and
+  broadcast exactly like `push_on_this_device`: per device, survives reloads, and a record saved
+  before the field existed loads it on.
+- **States.** The push switch's states without "failed": disabled until settings load; permission
+  denied is off and disabled with decision 3's "Blocked in …" line; permission `default` reads off,
+  and turning it on asks for permission first; granted reads the setting. Until settings load the
+  page posts nothing, so a saved off is never overridden at launch.
+- **Gate.** `App.tsx` gives `PageNotifications` the switch's value; `shouldPostPageNotification`
+  gains `switchedOn: boolean` (true where the row doesn't apply).
+- **The prompt.** As decision 6, the notification prompt's page-only branch hides while this
+  setting is off (`NotificationPromptVisibility` gains `pageNotificationsOn`). That branch also
+  needs push configured, so in a tab without push configured the row is the only way to ask for
+  permission.
+- **Phone summary.** The root row's value is the push state, else "Notifications on", "Notifications
+  off" or "Notifications blocked", else the tab value.
+
+Types: the settings pages take the applicable switch as one tagged value, so both rows can't be
+passed at once.
+
+```ts
+type NotificationSwitch =
+  | { readonly kind: "push"; readonly push: PushSettings }
+  | { readonly kind: "page"; readonly page: PageNotificationSettings };
+interface PageNotificationSettings {
+  readonly status: "off" | "on" | "blocked" | undefined; // undefined until settings load
+  readonly blockedIn: PushBlockedIn;
+  readonly onToggle: (on: boolean) => void;
+}
+// SettingsPageProps.push and the sections' push argument become `notifications?: NotificationSwitch`.
+```
+
+Tests: Rust as decision 5's switches (`entries()` grows to five); unit tests for
+`notificationSwitchKind`, the page switch's states, the post policy with the switch off, the
+prompt, section visibility and the Notifications page's row; a Playwright journey with the Mac
+shell identity: the section shows the switch, off stops a page notification for an incoming DM,
+on restores it.
+
 ## Types
 
 ```ts
@@ -143,7 +198,7 @@ failure (the token normally arrives just after the grant).
 
 ## Testing
 
-- Rust: `AppSetting::PushOnThisDevice` (so `entries()` grows to four), default `true`, change and
+- Rust: `AppSetting::PushOnThisDevice` (so `entries()` grows to four, five with `page_notifications`), default `true`, change and
   reload, a record saved before the field existed, and invalid-value fallback reported in
   `invalid_fields`. These are the tab indicator's tests, parameterised over both switches.
 - Unit: `pushSwitchStatus` for every row of the table; the prompt hides while off; the synchronizer
