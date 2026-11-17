@@ -36,7 +36,7 @@ pub(crate) async fn send(
         .map(|_| EngineMessageKey::CommandRefused)
 }
 
-fn sends_unlabelled(state: &papo::State, nick: &str) -> bool {
+pub(crate) fn sends_unlabelled(state: &papo::State, nick: &str) -> bool {
     state.isupport().saferate() && state.supports(papo::Feature::EchoMessages) && is_service(nick)
 }
 

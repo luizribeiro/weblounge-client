@@ -1634,6 +1634,17 @@ impl Runtime {
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
+    fn unlabelled_peer(&self, buffer_id: BufferId) -> Option<String> {
+        let state = lock(&self.state);
+        let running = state
+            .network
+            .as_ref()
+            .filter(|running| running.device_online && running.model.is_online())?;
+        let nick = running.model.direct_peer(buffer_id)?;
+        crate::services::sends_unlabelled(&running.client.state(), nick.as_str())
+            .then(|| nick.to_string())
+    }
+
     fn send_input(
         &self,
         command_id: String,
@@ -1641,6 +1652,11 @@ impl Runtime {
         text: String,
         kind: &crate::MessageKind,
     ) -> Vec<EngineToUi> {
+        if *kind == crate::MessageKind::Text
+            && let Some(nick) = self.unlabelled_peer(buffer_id)
+        {
+            return self.message_direct(command_id, nick, text, false);
+        }
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
@@ -8323,52 +8339,94 @@ async fn delay(duration: Duration) {
 
     const ERGO_CAPS: [&str; 3] = ["batch", "echo-message", "labeled-response"];
 
-    /// Sends `/msg <nick> REGISTER #room`, answering papo's identity lookups, and returns the
-    /// `PRIVMSG` it wrote with whether a guarded send queued its local echo.
-    async fn sent_direct_privmsg(nick: &str, caps: &[&str], isupport: &str) -> (String, bool) {
-        let (client, mut events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(caps).await;
-        _ = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Connected(_))
-        })
-        .await;
-        wire.server(format!(
-            ":offline.test 005 weblounge MONITOR=100 {isupport} :supported"
-        ))
-        .await;
-        _ = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::FeaturesChanged { .. })
-        })
-        .await;
-        let (state, outbound, mut receiver) = harness(client);
-        lock(&state)
-            .network
-            .as_mut()
-            .expect("network remains active")
-            .model
-            .set_connection(crate::NetworkConnectionState::Online, None);
-        let runtime = Runtime { state, outbound };
-        runtime.request(EngineRequestEnvelope {
-            id: "message".into(),
-            request: EngineRequest::SubmitInput {
-                buffer_id: BufferId(1),
-                input: format!("/msg {nick} REGISTER #room"),
-            },
-        });
-        loop {
-            let sent = wire.next_sent().await;
-            if sent.contains("PRIVMSG") {
-                let local_echo = !changed_messages(&collect(&mut receiver)).is_empty();
-                return (sent, local_echo);
-            }
-            if sent.starts_with("MONITOR") {
-                wire.server(format!(":offline.test 730 weblounge {nick}"))
-                    .await;
-            } else if sent.contains("WHO") {
-                answer_who(&mut wire, &sent, nick).await;
+    struct DirectSends {
+        runtime: Runtime,
+        wire: papo_testing::Wire,
+        receiver: mpsc::UnboundedReceiver<EngineToUi>,
+        _events: papo::Events,
+    }
+
+    impl DirectSends {
+        async fn connect(caps: &[&str], isupport: &str) -> Self {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            wire.register(caps).await;
+            _ = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            wire.server(format!(
+                ":offline.test 005 weblounge MONITOR=100 {isupport} :supported"
+            ))
+            .await;
+            _ = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::FeaturesChanged { .. })
+            })
+            .await;
+            let (state, outbound, receiver) = harness(client);
+            lock(&state)
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .set_connection(crate::NetworkConnectionState::Online, None);
+            Self {
+                runtime: Runtime { state, outbound },
+                wire,
+                receiver,
+                _events: events,
             }
         }
+
+        /// Submits `input`, answering papo's identity lookups of `nick`, and returns the
+        /// `PRIVMSG` it wrote with whether a guarded send queued its local echo.
+        async fn submit(&mut self, buffer_id: BufferId, input: &str, nick: &str) -> (String, bool) {
+            self.runtime.request(EngineRequestEnvelope {
+                id: "message".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id,
+                    input: input.into(),
+                },
+            });
+            loop {
+                let sent = self.wire.next_sent().await;
+                if sent.contains("PRIVMSG") {
+                    let local_echo = !changed_messages(&collect(&mut self.receiver)).is_empty();
+                    return (sent, local_echo);
+                }
+                if sent.starts_with("MONITOR") {
+                    self.wire
+                        .server(format!(":offline.test 730 weblounge {nick}"))
+                        .await;
+                } else if sent.contains("WHO") {
+                    answer_who(&mut self.wire, &sent, nick).await;
+                }
+            }
+        }
+
+        fn direct_buffer(&self, nick: &str) -> BufferId {
+            let EngineToUi::BuffersChanged { buffers, .. } = lock(&self.runtime.state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .model
+                .buffers_event()
+            else {
+                panic!("buffer projections")
+            };
+            buffers
+                .iter()
+                .find(|buffer| buffer.title == nick)
+                .expect("direct buffer")
+                .id
+        }
+    }
+
+    async fn sent_direct_privmsg(nick: &str, caps: &[&str], isupport: &str) -> (String, bool) {
+        DirectSends::connect(caps, isupport)
+            .await
+            .submit(BufferId(1), &format!("/msg {nick} REGISTER #room"), nick)
+            .await
     }
 
     async fn answer_who(wire: &mut papo_testing::Wire, request: &str, nick: &str) {
@@ -8399,6 +8457,48 @@ async fn delay(duration: Duration) {
             sent_direct_privmsg("ChanServ", &ERGO_CAPS, "SAFERATE").await,
             ("PRIVMSG ChanServ :REGISTER #room".to_owned(), false)
         );
+    }
+
+    #[tokio::test]
+    async fn typing_in_an_ergo_service_direct_goes_out_unlabelled() {
+        let mut sends = DirectSends::connect(&ERGO_CAPS, "SAFERATE").await;
+        _ = sends
+            .submit(BufferId(1), "/msg ChanServ REGISTER #room", "ChanServ")
+            .await;
+        let chanserv = sends.direct_buffer("ChanServ");
+
+        assert_eq!(
+            sends.submit(chanserv, "INFO #room", "ChanServ").await,
+            ("PRIVMSG ChanServ :INFO #room".to_owned(), false)
+        );
+    }
+
+    #[tokio::test]
+    async fn typing_in_an_ergo_service_direct_while_offline_queues_the_line() {
+        let mut sends = DirectSends::connect(&ERGO_CAPS, "SAFERATE").await;
+        _ = sends
+            .submit(BufferId(1), "/msg ChanServ REGISTER #room", "ChanServ")
+            .await;
+        let chanserv = sends.direct_buffer("ChanServ");
+        let mut state = lock(&sends.runtime.state);
+        state
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .device_online = false;
+        drop(state);
+
+        sends.runtime.request(EngineRequestEnvelope {
+            id: "offline".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: chanserv,
+                input: "INFO #room".into(),
+            },
+        });
+
+        let state = lock(&sends.runtime.state);
+        let running = state.network.as_ref().expect("network remains active");
+        assert_eq!(running.pending_sends.len(), 1);
     }
 
     #[tokio::test]

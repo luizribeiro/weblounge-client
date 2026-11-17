@@ -30,3 +30,29 @@ test("registers a channel by messaging ChanServ and shows its reply", async ({
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expectSettled(page, { conversation: "ChanServ" });
 });
+
+test("shows ChanServ's reply to a line typed in its conversation", async ({
+  page,
+  irc,
+}) => {
+  await page.goto(irc.url());
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  await page.getByRole("button", { name: irc.channel, exact: true }).click();
+  const channelComposer = page.getByRole("textbox", {
+    name: `Message ${irc.channel}`,
+  });
+  await channelComposer.fill("/query ChanServ");
+  await channelComposer.press("Enter");
+  await expect(page.getByRole("heading", { name: "ChanServ" })).toBeVisible();
+  const composer = page.getByRole("textbox", { name: "Message ChanServ" });
+  await composer.fill("HELP");
+  await composer.press("Enter");
+
+  await expect(
+    page
+      .locator('[data-message-row][data-irc-notice="true"]')
+      .filter({ hasText: "ChanServ lets you register and manage channels." }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expectSettled(page, { conversation: "ChanServ" });
+});
