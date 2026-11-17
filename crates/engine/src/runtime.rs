@@ -498,9 +498,11 @@ impl Runtime {
                 offset,
                 filter.as_deref().unwrap_or_default(),
             ),
-            EngineRequest::OpenDirect { network_id, nick } => {
-                self.open_direct(envelope.id, network_id, nick)
-            }
+            EngineRequest::OpenDirect {
+                network_id,
+                nick,
+                focus,
+            } => self.open_direct(envelope.id, network_id, nick, focus),
             EngineRequest::TrustDirectIdentity { buffer_id } => {
                 self.trust_direct_identity(envelope.id, buffer_id)
             }
@@ -1055,6 +1057,7 @@ impl Runtime {
         command_id: String,
         network_id: NetworkId,
         nick: String,
+        focus: bool,
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state
@@ -1067,7 +1070,7 @@ impl Runtime {
         let client = running.client.clone();
         let instance = running.instance;
         drop(state);
-        self.capture_direct(command_id, client, instance, nick, None, true);
+        self.capture_direct(command_id, client, instance, nick, None, focus);
         Vec::new()
     }
 
@@ -1931,7 +1934,7 @@ impl Runtime {
             .as_ref()
             .map(|running| running.model.id());
         if let Some(network_id) = network_id {
-            self.open_direct(command_id, network_id, nick)
+            self.open_direct(command_id, network_id, nick, true)
         } else {
             rejected_command(command_id, EngineMessageKey::NetworkNotFound)
         }
@@ -7761,6 +7764,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::OpenDirect {
                         network_id: NetworkId(1),
                         nick: "alice".into(),
+                        focus: true,
                     },
                 })
                 .is_empty()
@@ -8144,8 +8148,12 @@ async fn delay(duration: Duration) {
         );
     }
 
-    #[tokio::test]
-    async fn closing_a_direct_buffer_releases_its_monitor_entry() {
+    async fn online_runtime_with_monitor() -> (
+        Runtime,
+        mpsc::UnboundedReceiver<EngineToUi>,
+        Wire,
+        papo::Events,
+    ) {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -8154,18 +8162,22 @@ async fn delay(duration: Duration) {
         })
         .await;
         enable_test_monitor(&mut events, &mut wire, 1).await;
-        let (state, outbound, mut receiver) = harness(client.clone());
+        let (state, outbound, receiver) = harness(client);
         lock(&state)
             .network
             .as_mut()
             .expect("network remains active")
             .model
             .set_connection(crate::NetworkConnectionState::Online, None);
-        let runtime = Runtime {
-            state: Arc::clone(&state),
-            outbound,
-        };
+        (Runtime { state, outbound }, receiver, wire, events)
+    }
 
+    async fn open_alice(
+        runtime: &Runtime,
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+        wire: &mut Wire,
+        focus: bool,
+    ) -> Vec<EngineToUi> {
         assert!(
             runtime
                 .request(EngineRequestEnvelope {
@@ -8173,6 +8185,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::OpenDirect {
                         network_id: NetworkId(1),
                         nick: "alice".into(),
+                        focus,
                     },
                 })
                 .is_empty()
@@ -8183,12 +8196,46 @@ async fn delay(duration: Duration) {
             .await;
         wire.server(":offline.test 315 weblounge alice :End of WHO list")
             .await;
-        let buffer_id = loop {
-            if let EngineToUi::BufferAdded { buffer } = receiver.recv().await.expect("open output")
-            {
-                break buffer.id;
+        let mut output = Vec::new();
+        loop {
+            let event = receiver.recv().await.expect("open output");
+            let complete = matches!(event, EngineToUi::CommandResult { .. });
+            output.push(event);
+            if complete {
+                return output;
             }
-        };
+        }
+    }
+
+    fn added_buffer(output: &[EngineToUi]) -> Option<BufferId> {
+        output.iter().find_map(|event| match event {
+            EngineToUi::BufferAdded { buffer } => Some(buffer.id),
+            _ => None,
+        })
+    }
+
+    fn requests_focus(output: &[EngineToUi]) -> bool {
+        output
+            .iter()
+            .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }))
+    }
+
+    #[tokio::test]
+    async fn open_direct_requests_focus_only_when_asked() {
+        let (runtime, mut receiver, mut wire, _events) = online_runtime_with_monitor().await;
+
+        let output = open_alice(&runtime, &mut receiver, &mut wire, false).await;
+
+        assert!(added_buffer(&output).is_some(), "{output:?}");
+        assert!(!requests_focus(&output), "{output:?}");
+    }
+
+    #[tokio::test]
+    async fn closing_a_direct_buffer_releases_its_monitor_entry() {
+        let (runtime, mut receiver, mut wire, _events) = online_runtime_with_monitor().await;
+        let opened = open_alice(&runtime, &mut receiver, &mut wire, true).await;
+        assert!(requests_focus(&opened), "{opened:?}");
+        let buffer_id = added_buffer(&opened).expect("alice's buffer is added");
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "close-alice".into(),

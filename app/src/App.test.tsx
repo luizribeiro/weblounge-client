@@ -928,7 +928,12 @@ it("opens the projected member panel and routes a member to a DM", async () => {
   );
   expect(client.requests).toContainEqual({
     id: expect.any(String),
-    request: { type: "open_direct", network_id: 1, nick: "mel" },
+    request: {
+      type: "open_direct",
+      network_id: 1,
+      nick: "mel",
+      focus: true,
+    },
   });
 });
 
@@ -1533,7 +1538,12 @@ it("reopens a hidden failed DM from its typed notice", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Open" }));
   expect(client.requests).toContainEqual({
     id: expect.any(String),
-    request: { type: "open_direct", network_id: 1, nick: "ana" },
+    request: {
+      type: "open_direct",
+      network_id: 1,
+      nick: "ana",
+      focus: true,
+    },
   });
   client.emit({ type: "buffer_added", buffer });
 

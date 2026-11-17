@@ -54,7 +54,7 @@ pub enum Command {
     SendMessage { buffer_id: ChatBufferId, draft: OutgoingMessage },
     RetryMessage { send_id: LocalSendId },
     JoinChannel { network_id: NetworkId, channel: String, key_ref: Option<SecretRef> },
-    OpenDirect { network_id: NetworkId, nick: String },
+    OpenDirect { network_id: NetworkId, nick: String, focus: bool },
     PartChannel { buffer_id: ChannelBufferId, reason: Option<String> },
     MarkRead { buffer_id: BufferId, through: EventId },
     MarkAllRead,
@@ -78,7 +78,8 @@ replaces this temporary onboarding boundary when persisted network configuration
 `SubmitInput` is the engine-owned slash-command parser/validator path required by the brief;
 ordinary chat input may be normalized into `SendMessage`. `CompleteInput` returns engine-derived
 nick, channel, and command candidates without moving parsing into the UI. `OpenDirect` backs the
-mobile/desktop `+` action. `MarkAllRead` uses the engine's current eligible buffer set.
+mobile/desktop `+` action; `focus: false` restores a closed conversation (undo) without switching
+to it. `MarkAllRead` uses the engine's current eligible buffer set.
 
 Newtypes such as `ChatBufferId`, `PageSize`, and `NonEmptyString` are validated during decode.
 Command results acknowledge success/failure, while state changes remain authoritative only through

@@ -257,7 +257,11 @@ network_id: NetworkId,
 /**
  * Current nickname selected from the member projection.
  */
-nick: string, } | { "type": "trust_direct_identity",
+nick: string,
+/**
+ * Whether the UI should switch to the conversation once it is open.
+ */
+focus: boolean, } | { "type": "trust_direct_identity",
 /**
  * Direct-message buffer whose current peer should be trusted.
  */

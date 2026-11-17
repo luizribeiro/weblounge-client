@@ -1137,6 +1137,8 @@ pub enum EngineRequest {
         network_id: NetworkId,
         /// Current nickname selected from the member projection.
         nick: String,
+        /// Whether the UI should switch to the conversation once it is open.
+        focus: bool,
     },
     /// Replace a direct thread's pin with the identity currently holding its nick.
     TrustDirectIdentity {

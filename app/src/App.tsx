@@ -530,6 +530,7 @@ export function App(props: AppProps) {
             type: "open_direct",
             network_id: context.targetNetworkId,
             nick: context.targetNick,
+            focus: true,
           },
         });
       },
