@@ -101,6 +101,24 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 
+it("names each row's server msgids for transcript checks", () => {
+  render(() => (
+    <MessageList
+      messages={[
+        { ...message, server_ids: ["split-1", "split-2"] },
+        { ...message, id: 2, text: "still sending" },
+      ]}
+    />
+  ));
+
+  expect(
+    screen.getByText("hello weblounge").closest("[data-message-row]"),
+  ).toHaveAttribute("data-msgids", "split-1 split-2");
+  expect(
+    screen.getByText("still sending").closest("[data-message-row]"),
+  ).not.toHaveAttribute("data-msgids");
+});
+
 it("marks received reactions for mobile touch sizing", () => {
   render(() => (
     <MessageList

@@ -1795,6 +1795,7 @@ function MessageRow(props: {
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={isRedacted(message.kind) ? "" : message.text}
+      data-msgids={message.server_ids.join(" ") || undefined}
       data-pressing={longPress?.pressing() || undefined}
       data-unverified-sender={
         message.unverified_sender !== undefined || undefined
