@@ -9,6 +9,11 @@ export class Forwarder {
     await this.#post("/drop");
   }
 
+  /** The app learns of the loss from the close itself, not from a liveness probe. */
+  async disconnect(): Promise<void> {
+    await this.#post("/disconnect");
+  }
+
   async restore(): Promise<void> {
     await this.#post("/restore");
   }

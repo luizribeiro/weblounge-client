@@ -10,7 +10,7 @@ import { type IrcClient, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollToTranscriptTop } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
-import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
+import { setPageHidden } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 const desktop = { viewport: { width: 1_280, height: 800 } } as const;
@@ -80,7 +80,7 @@ test.describe("transcript gap and boundary dividers", () => {
         await captureDivider(empty, layout.name, "empty");
 
         await selectBuffer(page, channel, layout.name === "phone");
-        await irc.forwarder.drop();
+        await goOffline(page, irc);
         const firstRetainedLine = await sendCappedGap(senders, channel, suffix);
 
         await irc.forwarder.holdIncomingContaining(`missing ${suffix}`);
@@ -122,7 +122,7 @@ test.describe("transcript gap and boundary dividers", () => {
       await openChannel(page, irc, channel, false);
       await expect(messageText(page, seed)).toBeVisible();
 
-      await irc.forwarder.drop();
+      await goOffline(page, irc);
       const missed = [1, 2, 3].map((index) => `outage ${irc.id} ${index}`);
       for (const text of missed) await bot.privmsgConfirmed(channel, text);
       await irc.forwarder.holdIncomingContaining(`outage ${irc.id}`);
@@ -132,7 +132,6 @@ test.describe("transcript gap and boundary dividers", () => {
       await goOffline(page, irc);
       const gap = activeMessageList(page).locator("[data-gap-row]");
       await expect(gap).toHaveCount(1);
-      await irc.forwarder.resumeIncoming();
       await reconnect(page, irc);
 
       await expect(gap).toHaveCount(0);
@@ -189,7 +188,7 @@ test.describe("transcript gap and boundary dividers", () => {
       await openChannel(page, irc, channel, false);
       await expect(messageText(page, seed)).toBeVisible();
 
-      await irc.forwarder.drop();
+      await goOffline(page, irc);
       const lines = Array.from(
         { length: longGapLength },
         (_, index) => `outage ${irc.id} ${String(index).padStart(3, "0")}`,
@@ -289,25 +288,18 @@ async function sendCappedGap(
   return firstRetained;
 }
 
+/** A held catch-up reply fails as soon as the socket closes, so no step waits on a probe timer. */
 async function goOffline(page: Page, irc: IrcTestAccount): Promise<void> {
-  await irc.forwarder.drop();
-  await returnToForeground(page);
+  await irc.forwarder.disconnect();
   await expect.poll(() => currentNetworkState(page)).not.toBe("online");
 }
 
-/** Coming back to the foreground probes a stranded socket and retries a waiting reconnect at once. */
+/** Coming back to the foreground retries a waiting reconnect at once. */
 async function reconnect(page: Page, irc: IrcTestAccount): Promise<void> {
-  await returnToForeground(page);
-  await expect.poll(() => currentNetworkState(page)).not.toBe("online");
   await irc.forwarder.restore();
-  await returnToForeground(page);
-  await expect.poll(() => currentNetworkState(page)).toBe("online");
-}
-
-async function returnToForeground(page: Page): Promise<void> {
   await setPageHidden(page, true);
   await setPageHidden(page, false);
-  await dispatchPersistedPageShow(page);
+  await expect.poll(() => currentNetworkState(page)).toBe("online");
 }
 
 async function expectEachOnce(

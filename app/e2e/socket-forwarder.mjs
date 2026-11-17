@@ -162,6 +162,12 @@ const control = http.createServer((request, response) => {
     response.end("dropped");
     return;
   }
+  if (url.pathname === "/disconnect") {
+    dropped.set(scope, true);
+    for (const connection of selected()) closeConnection(connection);
+    response.end("disconnected");
+    return;
+  }
   if (url.pathname === "/restore") {
     dropped.set(scope, false);
     response.end("restored");
