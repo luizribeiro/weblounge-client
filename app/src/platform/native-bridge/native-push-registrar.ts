@@ -34,6 +34,8 @@ export function nativePushRegistrar(bridge: NativeBridge): PushRegistrar {
     generateRouteKeys: nativeRouteKeyFactory(bridge),
     routes: () =>
       new NativeKeyedRouteStore(new IndexedDbPushRouteStore(), bridge),
+    routesNeedingReregistration: () =>
+      bridge.call("routes_needing_reregistration"),
     onTargetChange: (listener) =>
       observeNativePageEvents(window, {
         "weblounge:push-target": () => listener(),

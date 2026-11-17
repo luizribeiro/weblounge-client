@@ -25,6 +25,11 @@ export interface PushRegistrar {
   target(relayVapid: string): Promise<PushTargetResult>;
   readonly generateRouteKeys: RouteKeyFactory;
   routes(): PushRouteStore;
+  /**
+   * Routes the host found undecryptable outside the page. A browser's service worker marks its
+   * own route records, so it has none.
+   */
+  routesNeedingReregistration(): Promise<readonly string[]>;
   /** Calls `listener` when the host's target changes outside a registration. */
   onTargetChange(listener: () => void): () => void;
 }
@@ -40,6 +45,7 @@ export function webPushRegistrar(): PushRegistrar {
       ensurePushSubscription(await navigator.serviceWorker.ready, relayVapid),
     generateRouteKeys: () => createRouteKeys(),
     routes: () => new IndexedDbPushRouteStore(),
+    routesNeedingReregistration: async () => [],
     onTargetChange: (listener) => {
       const worker = navigator.serviceWorker;
       if (worker === undefined) return () => {};

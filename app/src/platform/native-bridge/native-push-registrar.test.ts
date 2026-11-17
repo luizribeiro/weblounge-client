@@ -108,6 +108,17 @@ describe("native push registrar", () => {
     expect(calls).toEqual(["create_route_keys", "drop_route_keys"]);
   });
 
+  it("reads the routes the extension flagged for re-registration", async () => {
+    const { bridge, calls } = shell({
+      routes_needing_reregistration: ["Xq3vY0bH2kRmT7nW9pLs1A"],
+    });
+
+    await expect(
+      nativePushRegistrar(bridge).routesNeedingReregistration(),
+    ).resolves.toEqual(["Xq3vY0bH2kRmT7nW9pLs1A"]);
+    expect(calls).toEqual(["routes_needing_reregistration"]);
+  });
+
   it("is the web registrar outside the iPhone app", () => {
     expect(hostPushRegistrar(undefined).native).toBe(false);
     expect(hostPushRegistrar(shell({}).bridge).native).toBe(true);
