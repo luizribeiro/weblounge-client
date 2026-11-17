@@ -5,6 +5,7 @@ import { settledScreenshot } from "./filehost-peer";
 import { messageId } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
+import { expectConfirmedOwn } from "./reaction-chip";
 
 const screenshots = path.join(process.cwd(), "e2e", "screenshots", "reactions");
 const themes = { light: "lounge", dark: "lounge-night" } as const;
@@ -34,7 +35,7 @@ test("captures the reaction toolbar, picker and chip states in both Lounge theme
 
   await chip("👍").click();
   await bot.waitForReaction(irc.channel, id, "👍", irc.account);
-  await expect(chip("👍")).not.toHaveAttribute("data-reaction-delivery");
+  await expectConfirmedOwn(chip("👍"), "2");
 
   await bot.mode(irc.channel, "+m");
   await row.hover();

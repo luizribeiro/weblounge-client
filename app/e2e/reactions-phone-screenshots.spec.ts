@@ -5,6 +5,7 @@ import { messageId } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { longPressMessage } from "./message-sheet";
 import { productionMessageRow } from "./production-ergo";
+import { expectConfirmedOwn } from "./reaction-chip";
 import { choose } from "./settings-fixture";
 import { expectSettled } from "./settled";
 import { tap } from "./touch";
@@ -47,7 +48,7 @@ test("captures the phone sheet, picker and chip states in Lounge, Lounge Night a
     if (theme.id === "lounge") {
       await tap(page, chip("❤️"));
       await bot.waitForReaction(irc.channel, id, "❤️", irc.account);
-      await expect(chip("❤️")).not.toHaveAttribute("data-reaction-delivery");
+      await expectConfirmedOwn(chip("❤️"), "2");
     }
 
     await bot.mode(irc.channel, "+m");
