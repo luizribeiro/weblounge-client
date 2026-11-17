@@ -157,7 +157,11 @@ route: PushRoute,
 /**
  * Dead relay endpoints the home must forget before registration.
  */
-unregister: Array<string>, } | { "type": "unregister_push_route",
+unregister: Array<string>, } | { "type": "announce_push_route",
+/**
+ * Network whose home needs a route.
+ */
+network_id: NetworkId, } | { "type": "unregister_push_route",
 /**
  * Network whose home owns the registration.
  */

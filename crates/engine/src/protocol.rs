@@ -1040,6 +1040,12 @@ pub enum EngineRequest {
         /// Dead relay endpoints the home must forget before registration.
         unregister: Vec<String>,
     },
+    /// Repeat a connected network's push route requirement for a page that just took over push,
+    /// since the requirement went to whichever page was active when the network connected.
+    AnnouncePushRoute {
+        /// Network whose home needs a route.
+        network_id: NetworkId,
+    },
     /// Remove one exact relay route from an IRC home.
     UnregisterPushRoute {
         /// Network whose home owns the registration.

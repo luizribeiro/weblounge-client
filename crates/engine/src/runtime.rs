@@ -442,6 +442,9 @@ impl Runtime {
                 route,
                 unregister,
             } => self.ensure_push(envelope.id, network_id, route, unregister),
+            EngineRequest::AnnouncePushRoute { network_id } => {
+                self.announce_push_route(envelope.id, network_id)
+            }
             EngineRequest::UnregisterPushRoute {
                 network_id,
                 route_id,
@@ -826,6 +829,26 @@ impl Runtime {
             Some(command_id),
         );
         Vec::new()
+    }
+
+    fn announce_push_route(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_ref()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
+        };
+        let snapshot = running.client.state();
+        let announced = snapshot
+            .is_connected()
+            .then(|| push_route_event(running, &snapshot))
+            .flatten();
+        announced
+            .into_iter()
+            .chain([EngineToUi::CommandResult { id: command_id }])
+            .collect()
     }
 
     fn unregister_push_route(
@@ -4695,28 +4718,32 @@ fn connected_push_action(
     snapshot: &papo::State,
     output: &mut Vec<EngineToUi>,
 ) {
-    if let Some(reason) = push_unsupported_reason(snapshot) {
-        let state = PushState::Unsupported { reason };
-        running.push.state = Some(state.clone());
-        output.push(EngineToUi::PushStateChanged {
-            network_id: running.model.id(),
-            state,
-        });
-        return;
-    }
-    let Some(vapid) = snapshot.isupport().vapid() else {
-        return;
+    let event = push_route_event(running, snapshot);
+    running.push.state = match &event {
+        Some(EngineToUi::PushStateChanged { state, .. }) => Some(state.clone()),
+        _ => None,
     };
-    running.push.state = None;
-    output.push(EngineToUi::PushRouteRequired {
-        network_id: running.model.id(),
+    output.extend(event);
+}
+
+fn push_route_event(running: &RunningNetwork, snapshot: &papo::State) -> Option<EngineToUi> {
+    let network_id = running.model.id();
+    if let Some(reason) = push_unsupported_reason(snapshot) {
+        return Some(EngineToUi::PushStateChanged {
+            network_id,
+            state: PushState::Unsupported { reason },
+        });
+    }
+    let vapid = snapshot.isupport().vapid()?;
+    Some(EngineToUi::PushRouteRequired {
+        network_id,
         vapid: vapid.to_owned(),
         previous_route_id: running
             .push
             .route
             .as_ref()
             .map(|route| route.route_id.clone()),
-    });
+    })
 }
 
 fn process_disconnect(
@@ -12789,6 +12816,101 @@ async fn delay(duration: Duration) {
                 .as_ref()
                 .and_then(|running| running.push.route.as_ref())
                 .is_some_and(|route| route.route_id == "route-2")
+        );
+    }
+
+    fn announce_request(network_id: u64) -> EngineRequestEnvelope {
+        EngineRequestEnvelope {
+            id: "announce".into(),
+            request: EngineRequest::AnnouncePushRoute {
+                network_id: NetworkId(network_id),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn announcing_a_push_route_repeats_the_requirement_for_a_new_owner() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        _ = collect(&mut receiver);
+        assert_no_output(&runtime.request(push_request("register", "route-1")));
+        let request = wire.next_sent().await;
+        send_push_success(&mut wire, &request, false).await;
+        _ = command_output(&mut receiver).await;
+
+        assert_eq!(
+            runtime.request(announce_request(1)),
+            vec![
+                EngineToUi::PushRouteRequired {
+                    network_id: NetworkId(1),
+                    vapid: "home-vapid".into(),
+                    previous_route_id: Some("route-1".into()),
+                },
+                EngineToUi::CommandResult {
+                    id: "announce".into()
+                },
+            ]
+        );
+        assert!(matches!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .and_then(|running| running.push.state.clone()),
+            Some(PushState::Registered { route_id }) if route_id == "route-1"
+        ));
+        assert_eq!(
+            runtime.request(announce_request(9)),
+            super::rejected_command("announce".into(), EngineMessageKey::NetworkNotFound)
+        );
+    }
+
+    #[tokio::test]
+    async fn announcing_a_push_route_reports_why_a_home_cannot_register() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, None, true).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        _ = collect(&mut receiver);
+
+        assert_eq!(
+            runtime.request(announce_request(1)),
+            vec![
+                EngineToUi::PushStateChanged {
+                    network_id: NetworkId(1),
+                    state: PushState::Unsupported {
+                        reason: crate::PushUnsupportedReason::NoVapid,
+                    },
+                },
+                EngineToUi::CommandResult {
+                    id: "announce".into()
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn announcing_a_push_route_waits_for_the_connection() {
+        let (client, _events, _wire) = push_wire();
+        let (state, outbound, _receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+
+        assert_eq!(
+            runtime.request(announce_request(1)),
+            vec![EngineToUi::CommandResult {
+                id: "announce".into()
+            }]
         );
     }
 
