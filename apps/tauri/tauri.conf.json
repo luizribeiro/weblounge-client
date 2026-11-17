@@ -58,6 +58,7 @@
             "allow-push-target",
             "allow-create-route-keys",
             "allow-drop-route-keys",
+            "allow-routes-needing-reregistration",
             "allow-take-pushed-messages",
             "allow-set-badge",
             "allow-write-notification-counts",

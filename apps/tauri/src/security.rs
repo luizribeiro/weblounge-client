@@ -12,12 +12,13 @@ mod tests {
         window::{APP_URL, MAIN_LABEL},
     };
 
-    const IOS_PERMISSIONS: [&str; 10] = [
+    const IOS_PERMISSIONS: [&str; 11] = [
         "allow-push-permission",
         "allow-request-push-permission",
         "allow-push-target",
         "allow-create-route-keys",
         "allow-drop-route-keys",
+        "allow-routes-needing-reregistration",
         "allow-take-pushed-messages",
         "allow-set-badge",
         "allow-write-notification-counts",
@@ -107,8 +108,8 @@ mod tests {
     fn every_native_command() -> HashSet<NativeCommand> {
         use NativeCommand::{
             CreateRouteKeys, DeliveredNotifications, DropRouteKeys, PushPermission, PushTarget,
-            RemoveDeliveredNotifications, RequestPushPermission, SetBadge, TakePushedMessages,
-            WriteNotificationCounts,
+            RemoveDeliveredNotifications, RequestPushPermission, RoutesNeedingReregistration,
+            SetBadge, TakePushedMessages, WriteNotificationCounts,
         };
         let all = [
             PushPermission,
@@ -116,6 +117,7 @@ mod tests {
             PushTarget,
             CreateRouteKeys,
             DropRouteKeys,
+            RoutesNeedingReregistration,
             TakePushedMessages,
             SetBadge,
             WriteNotificationCounts,
@@ -129,6 +131,7 @@ mod tests {
                 | PushTarget
                 | CreateRouteKeys
                 | DropRouteKeys
+                | RoutesNeedingReregistration
                 | TakePushedMessages
                 | SetBadge
                 | WriteNotificationCounts

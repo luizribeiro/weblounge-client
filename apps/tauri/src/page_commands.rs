@@ -10,6 +10,7 @@ pub const PAGE_COMMANDS: &[&str] = &[
     "push_target",
     "create_route_keys",
     "drop_route_keys",
+    "routes_needing_reregistration",
     "take_pushed_messages",
     "set_badge",
     "write_notification_counts",

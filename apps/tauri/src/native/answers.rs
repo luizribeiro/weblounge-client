@@ -3,7 +3,7 @@
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use weblounge_native_bridge::{
-    ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget, PushedMessage,
+    ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget, PushedMessage, RouteId,
 };
 
 /// The device token and what decides its APNs host.
@@ -66,6 +66,20 @@ impl Drained {
     /// The queue is already emptied, so a record that fails validation is dropped.
     pub fn into_messages(self) -> Vec<PushedMessage> {
         valid_entries(self.messages, "pushed message")
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Flagged {
+    route_ids: Vec<Value>,
+}
+
+impl Flagged {
+    /// The page can't register a route it can't name, so an invalid id is dropped rather than
+    /// failing the whole list on every launch.
+    pub fn into_route_ids(self) -> Vec<RouteId> {
+        valid_entries(self.route_ids, "flagged route id")
     }
 }
 
@@ -178,5 +192,17 @@ mod tests {
             .collect();
         assert_eq!(ids, ["first", "second"]);
         assert_eq!(messages[0].kind, PushedMessageKind::Message);
+    }
+
+    #[test]
+    fn flagged_route_ids_keep_the_valid_ones_in_order() {
+        let flagged: Flagged = serde_json::from_value(json!({
+            "routeIds": ["Xq3vY0bH2kRmT7nW9pLs1A", "../other-route", 7, "Bq3k7jTr2qRwWb5A"],
+        }))
+        .expect("parses");
+
+        let routes = flagged.into_route_ids();
+        let ids: Vec<&str> = routes.iter().map(RouteId::as_str).collect();
+        assert_eq!(ids, ["Xq3vY0bH2kRmT7nW9pLs1A", "Bq3k7jTr2qRwWb5A"]);
     }
 }

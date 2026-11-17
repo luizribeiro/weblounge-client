@@ -101,6 +101,10 @@ final class ShellPlugin: Plugin {
     }
   }
 
+  @objc func routesNeedingReregistration(_ invoke: Invoke) {
+    invoke.settle(.appGroup) { ["routeIds": try storage().routesNeedingReregistration()] }
+  }
+
   @objc func takePushedMessages(_ invoke: Invoke) {
     invoke.settle(.appGroup) {
       let records = try storage().drainPushedMessages()

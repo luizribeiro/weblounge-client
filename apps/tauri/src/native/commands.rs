@@ -6,12 +6,12 @@ use tauri::{AppHandle, Manager, Wry, plugin::mobile::PluginInvokeError};
 use weblounge_ios_shell::IosShell;
 use weblounge_native_bridge::{
     CreateRouteKeysRequest, DeliveredNotification, DropRouteKeysRequest, NativeBridgeError,
-    PushPermission, PushTarget, PushedMessage, RemoveDeliveredNotificationsRequest, RouteKeys,
-    SetBadgeRequest, WriteNotificationCountsRequest,
+    PushPermission, PushTarget, PushedMessage, RemoveDeliveredNotificationsRequest, RouteId,
+    RouteKeys, SetBadgeRequest, WriteNotificationCountsRequest,
 };
 
 use super::{
-    answers::{Delivered, Drained, Registration},
+    answers::{Delivered, Drained, Flagged, Registration},
     failure::{self, Fallback, apns_registration, app_group, keychain, notification_center},
 };
 
@@ -67,6 +67,14 @@ pub async fn drop_route_keys(
     request: DropRouteKeysRequest,
 ) -> Result<(), NativeBridgeError> {
     call(&app, "dropRouteKeys", request, keychain).await
+}
+
+#[tauri::command]
+pub async fn routes_needing_reregistration(
+    app: AppHandle,
+) -> Result<Vec<RouteId>, NativeBridgeError> {
+    let flagged: Flagged = call(&app, "routesNeedingReregistration", (), app_group).await?;
+    Ok(flagged.into_route_ids())
 }
 
 #[tauri::command]
