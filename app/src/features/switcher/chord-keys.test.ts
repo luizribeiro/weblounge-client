@@ -6,6 +6,17 @@ describe("chordKeys", () => {
     expect(chordKeys("⇧⌘.")).toEqual(["⇧", "⌘", "."]);
     expect(chordKeys("⌃⇧Tab")).toEqual(["⌃", "⇧", "Tab"]);
     expect(chordKeys("⌥↑")).toEqual(["⌥", "↑"]);
+    expect(chordKeys("⌃⌥1")).toEqual(["⌃", "⌥", "1"]);
+  });
+
+  it("keeps a macOS plus key after its modifiers", () => {
+    expect(chordKeys("⌘+")).toEqual(["⌘", "+"]);
+    expect(chordKeys("⇧⌘+")).toEqual(["⇧", "⌘", "+"]);
+  });
+
+  it("returns a modifier-only chord as its modifiers", () => {
+    expect(chordKeys("⌘")).toEqual(["⌘"]);
+    expect(chordKeys("")).toEqual([]);
   });
 
   it("splits plus-joined chords on other platforms", () => {
