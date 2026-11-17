@@ -1857,6 +1857,82 @@ const apnsToken = {
   environment: "production",
 } as const;
 
+test.describe("push startup keeps an existing registration", () => {
+  test("push startup never tears down a device it already has", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    await page.reload();
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    await page.reload();
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+
+    expect(relay.calls().filter((call) => call.startsWith("DELETE"))).toEqual(
+      [],
+    );
+    expect(relay.bodies("POST /v1/devices")).toHaveLength(1);
+  });
+
+  test("push startup keeps the device when a session refresh fails and signs in again", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    let failedRefreshes = 0;
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "POST" && failedRefreshes === 0) {
+        failedRefreshes += 1;
+        await route.abort("failed");
+        return;
+      }
+      await route.fallback();
+    });
+    let authorizations = 0;
+    await page.route(`${oauthIssuer}/authorize**`, async (route) => {
+      authorizations += 1;
+      await route.fallback();
+    });
+
+    await page.reload();
+
+    await expect.poll(() => authorizations).toBe(1);
+    await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    expect(relay.calls().filter((call) => call.startsWith("DELETE"))).toEqual(
+      [],
+    );
+    expect(relay.bodies("POST /v1/devices")).toHaveLength(1);
+  });
+});
+
 test.describe("push settings in a desktop browser", () => {
   test("push settings turn this browser's push on, off and on again", async ({
     baseURL,

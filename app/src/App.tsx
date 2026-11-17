@@ -1448,7 +1448,8 @@ export function App(props: AppProps) {
         ? t("hosted.restoring")
         : t("hosted.session_expired"),
     );
-    if (reason !== "worker_restarted") {
+    // A refresh that failed in transit says nothing about the account; only revocation signs push out.
+    if (reason === "revoked") {
       if (pushSynchronizer !== undefined) {
         await pushSynchronizer.signOut().catch(() => undefined);
       } else {
