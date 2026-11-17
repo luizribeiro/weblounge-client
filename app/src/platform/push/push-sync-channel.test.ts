@@ -21,6 +21,13 @@ it("accepts typed cross-tab subscription refreshes", () => {
   });
 });
 
+it("tells the owning tab to retry or sign out", () => {
+  expect(decodePushSyncMessage({ kind: "retry" })).toEqual({ kind: "retry" });
+  expect(decodePushSyncMessage({ kind: "sign_out" })).toEqual({
+    kind: "sign_out",
+  });
+});
+
 it("rejects malformed cross-tab push credentials", () => {
   expect(
     decodePushSyncMessage({

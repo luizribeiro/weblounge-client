@@ -1234,6 +1234,8 @@ export function App(props: AppProps) {
       } else if (message.kind === "refresh") {
         pushTarget = message.target;
         void pushSynchronizer?.refreshTarget(message.target);
+      } else if (message.kind === "retry") {
+        pushSynchronizer?.retryNow();
       } else {
         void pushSynchronizer?.signOut();
       }

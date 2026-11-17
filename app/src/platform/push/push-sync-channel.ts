@@ -6,13 +6,15 @@ export type PushSyncMessage =
   | { readonly kind: "refresh"; readonly target: DeviceTarget }
   | { readonly kind: "device"; readonly device: RelayDevice }
   | { readonly kind: "diagnostic"; readonly value: PushRouteDiagnostic }
-  | { readonly kind: "sign_out" };
+  | { readonly kind: "sign_out" }
+  | { readonly kind: "retry" };
 
 export function decodePushSyncMessage(
   value: unknown,
 ): PushSyncMessage | undefined {
   if (!isRecord(value) || typeof value.kind !== "string") return undefined;
   if (value.kind === "sign_out") return { kind: "sign_out" };
+  if (value.kind === "retry") return { kind: "retry" };
   if (value.kind === "refresh" && isDeviceTarget(value.target)) {
     return { kind: "refresh", target: value.target };
   }
