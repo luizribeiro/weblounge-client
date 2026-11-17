@@ -1,3 +1,4 @@
+import { type Accessor, createContext, useContext } from "solid-js";
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
 import type { ReleaseChannel } from "../engine/generated/ReleaseChannel";
 import { type MessageKey, t } from "../strings";
@@ -13,4 +14,14 @@ export function deploymentChannel(config: DeploymentConfig): ReleaseChannel {
 
 export function appTitle(channel: ReleaseChannel): string {
   return t(titles[channel]);
+}
+
+const ReleaseChannelContext = createContext<Accessor<ReleaseChannel>>(
+  (): ReleaseChannel => "release",
+);
+
+export const ReleaseChannelProvider = ReleaseChannelContext.Provider;
+
+export function useReleaseChannel(): Accessor<ReleaseChannel> {
+  return useContext(ReleaseChannelContext);
 }

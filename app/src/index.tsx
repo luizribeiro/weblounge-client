@@ -6,6 +6,7 @@ import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import type { AppSettings } from "./engine/generated/AppSettings";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
+import type { ReleaseChannel } from "./engine/generated/ReleaseChannel";
 import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
 import {
   DeploymentConfigUnavailableError,
@@ -25,7 +26,11 @@ import {
   HostedAuthorizationError,
   type OAuthMetadata,
 } from "./hosted/oauth";
-import { appTitle, deploymentChannel } from "./hosted/release-channel";
+import {
+  appTitle,
+  deploymentChannel,
+  ReleaseChannelProvider,
+} from "./hosted/release-channel";
 import { resetWebApp } from "./hosted/reset-app";
 import {
   requiresAuthorization,
@@ -127,6 +132,7 @@ function Bootstrap(props: BootstrapProps) {
   const [state, setState] = createSignal<BootstrapState>({
     type: "starting",
   });
+  const [channel, setChannel] = createSignal<ReleaseChannel>("release");
   let starting = false;
   let authorizing = false;
 
@@ -140,6 +146,7 @@ function Bootstrap(props: BootstrapProps) {
         deploymentAttempt ?? loadDeploymentAttempt(setRevalidatedConfig);
       deploymentAttempt = undefined;
       const deployment = await attempt;
+      setChannel(deploymentChannel(deployment.config));
       if (deployment.type === "app") {
         setState({
           type: "app",
@@ -318,7 +325,13 @@ function Bootstrap(props: BootstrapProps) {
       }
     }
   };
-  return <AppErrorBoundary>{content()}</AppErrorBoundary>;
+  return (
+    <AppErrorBoundary>
+      <ReleaseChannelProvider value={channel}>
+        {content()}
+      </ReleaseChannelProvider>
+    </AppErrorBoundary>
+  );
 }
 
 function takePrewarmedEngineClient(): EngineClient {
