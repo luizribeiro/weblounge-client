@@ -13,6 +13,8 @@ import {
 } from "./history-wire-fixture";
 import { type IrcClient, messageTag } from "./irc-client";
 import { expect, test } from "./irc-fixture";
+import { isPhoneViewport } from "./mobile-platform";
+import { closeAppUntilDetached } from "./page-lifecycle";
 import { useDedicatedWorker } from "./production-ergo";
 import { escapeRegex, rowName, withoutPeerPresence } from "./sidebar-rows";
 
@@ -367,7 +369,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .toMatchObject({
           label: channel,
         });
-      if (await isMobile(current))
+      if (isPhoneViewport(current))
         await expect
           .poll(() => cachedRow(current))
           .toMatchObject({ text: expect.stringContaining(preview) });
@@ -546,7 +548,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       .poll(() => cachedRow(page))
       .toMatchObject({
         label: bot.nickname,
-        unread: isMobile(page) ? null : "0",
+        unread: isPhoneViewport(page) ? null : "0",
       });
   });
 
@@ -589,7 +591,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect
         .poll(() => transcriptOrders(current, missed, live))
         .toBe(true);
-      if (isMobile(current))
+      if (isPhoneViewport(current))
         await expect(bufferRow(current, channel)).toContainText(live);
       await expect
         .poll(() => snapshotRow(current, channel))
@@ -601,7 +603,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await recordCachedRow(current, channel);
       await current.goto(irc.url({ autojoin: [channel] }));
       await expect.poll(() => cachedRow(current)).not.toBeUndefined();
-      if (isMobile(current))
+      if (isPhoneViewport(current))
         await expect
           .poll(() => cachedRow(current))
           .toMatchObject({ text: expect.stringContaining(live) });
@@ -958,27 +960,12 @@ async function openSnapshotInspector(page: Page): Promise<void> {
   await page.goto("/__snapshot-inspector");
 }
 
-// Page close resolves before the engine worker's IRC socket detaches, so lines
-// sent in between still reach the closing app and its snapshot.
-async function closeAppUntilDetached(
-  page: Page,
-  sameAccount: IrcClient,
-): Promise<void> {
-  const attached = await sameAccount.attachedClientCount();
-  await page.close();
-  await expect.poll(() => sameAccount.attachedClientCount()).toBe(attached - 1);
-}
-
-function isMobile(page: Page): boolean {
-  return (page.viewportSize()?.width ?? 1_280) < 700;
-}
-
 async function leaveConversation(
   page: Page,
   home: string,
   channel: string,
 ): Promise<void> {
-  if (isMobile(page)) {
+  if (isPhoneViewport(page)) {
     await page.getByRole("button", { name: "Back to chats" }).click();
   } else {
     await page.getByRole("button", { name: home }).click();

@@ -1,4 +1,5 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import type { IrcClient } from "./irc-client";
 
 export async function dispatchPersistedPageShow(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -48,4 +49,15 @@ export async function setPageFocused(
     setter(next);
     return at;
   }, focused);
+}
+
+// Page close resolves before the engine worker's IRC socket detaches, so lines
+// sent in between still reach the closing app and its snapshot.
+export async function closeAppUntilDetached(
+  page: Page,
+  sameAccount: IrcClient,
+): Promise<void> {
+  const attached = await sameAccount.attachedClientCount();
+  await page.close();
+  await expect.poll(() => sameAccount.attachedClientCount()).toBe(attached - 1);
 }

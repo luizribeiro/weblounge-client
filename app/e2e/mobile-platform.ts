@@ -20,3 +20,7 @@ export async function emulateStandalone(page: Page): Promise<void> {
     };
   });
 }
+
+export function isPhoneViewport(page: Page): boolean {
+  return (page.viewportSize()?.width ?? 1_280) < 700;
+}
