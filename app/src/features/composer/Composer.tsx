@@ -37,6 +37,7 @@ import {
 } from "./geometry";
 import { ImagePicker } from "./ImagePicker";
 import { InlineConfirmation } from "./InlineConfirmation";
+import { type DropAvailability, imageDropTargets } from "./image-drop";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
@@ -330,6 +331,16 @@ export function Composer(props: ComposerProps) {
     const rejection = await attachFile(file);
     if (rejection !== undefined) setUploadNote(rejection);
   };
+  const dropAvailability = (): DropAvailability => {
+    if (props.disabled === true) return "closed";
+    return props.uploads === undefined ? "unavailable" : "ready";
+  };
+  const dropTarget = imageDropTargets.register({
+    availability: dropAvailability,
+    attach: attachFile,
+    focus: focusAfterOverlay,
+  });
+  onCleanup(() => dropTarget.unregister());
   // Safari opens a file picker only inside the user's gesture, so this runs synchronously from
   // Enter or Send, before anything reaches the engine.
   const runFileCommand = () => {
@@ -622,6 +633,7 @@ export function Composer(props: ComposerProps) {
                   request(value, event.currentTarget.selectionStart, false);
                 }
               }}
+              onFocus={() => dropTarget.raise()}
               onKeyDown={keydown}
               onPaste={paste}
               placeholder={t("composer.input", { target: props.bufferTitle })}

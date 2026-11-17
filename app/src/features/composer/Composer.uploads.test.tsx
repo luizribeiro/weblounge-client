@@ -12,6 +12,7 @@ import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
 } from "./geometry";
+import { imageDropTargets } from "./image-drop";
 import { fileCommand } from "./test-commands";
 
 const url = "https://files.weblounge.org/AbCdEfGhIjKlMnOpQrStUv.png";
@@ -48,19 +49,21 @@ afterEach(() => {
 function renderComposer(
   uploads: NetworkUploads | undefined,
   bufferId: () => number = () => 2,
+  disabled = false,
 ) {
   const onSend = vi.fn(async () => true);
-  render(() => (
+  const { unmount } = render(() => (
     <Composer
       bufferId={bufferId()}
       bufferTitle="#lounge"
       commandSpecs={[fileCommand]}
+      disabled={disabled}
       draftKey="network:#lounge"
       onSend={onSend}
       uploads={uploads}
     />
   ));
-  return { onSend, input: screen.getByLabelText("Message #lounge") };
+  return { onSend, unmount, input: screen.getByLabelText("Message #lounge") };
 }
 
 // A macrotask runs only after every microtask the attach check queued.
@@ -370,4 +373,61 @@ it("sends /file with an argument on to the engine", () => {
   typeAndEnter(input, "/file holiday.png");
   expect(clicks).not.toHaveBeenCalled();
   expect(onSend).toHaveBeenCalledWith("/file holiday.png");
+});
+
+it("takes a dropped image as its drop target while mounted", async () => {
+  const { unmount } = renderComposer(new ControlledUploads());
+  const target = imageDropTargets.front();
+  expect(target?.availability()).toBe("ready");
+  const photo = new File([new Uint8Array([0x89, 0x50])], "photo.png", {
+    type: "image/png",
+  });
+  await expect(target?.attach(photo)).resolves.toBeUndefined();
+  expect(screen.getByText("Image · 2 B")).toBeTruthy();
+  const archive = new File(["PK"], "archive.zip", { type: "application/zip" });
+  await expect(target?.attach(archive)).resolves.toBe("not_image");
+  expect(screen.queryByRole("status")).toBeNull();
+  unmount();
+  expect(imageDropTargets.front()).toBeUndefined();
+});
+
+it("tells a drop when it has no file host or cannot send", () => {
+  const { unmount } = renderComposer(undefined);
+  expect(imageDropTargets.front()?.availability()).toBe("unavailable");
+  unmount();
+  renderComposer(new ControlledUploads(), () => 2, true);
+  expect(imageDropTargets.front()?.availability()).toBe("closed");
+});
+
+it("becomes the drop target again when its field gains focus", () => {
+  const { input } = renderComposer(new ControlledUploads());
+  const own = imageDropTargets.front();
+  const other = imageDropTargets.register({
+    availability: () => "ready",
+    attach: async () => undefined,
+    focus: () => undefined,
+  });
+  expect(imageDropTargets.front()).not.toBe(own);
+  fireEvent.focus(input);
+  expect(imageDropTargets.front()).toBe(own);
+  other.unregister();
+});
+
+it("follows the network's file host after mounting", () => {
+  const [uploads, setUploads] = createSignal<NetworkUploads | undefined>(
+    new ControlledUploads(),
+  );
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="#lounge"
+      draftKey="network:#lounge"
+      onSend={async () => true}
+      uploads={uploads()}
+    />
+  ));
+  const target = imageDropTargets.front();
+  expect(target?.availability()).toBe("ready");
+  setUploads(undefined);
+  expect(target?.availability()).toBe("unavailable");
 });
