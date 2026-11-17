@@ -334,6 +334,7 @@ export function App(props: AppProps) {
     ios: isIos(navigator),
     display: platformEnvironment().environment().display,
     nativePush: pushRegistrar.native,
+    pushOnThisDevice: engineSettings.current()?.app.push_on_this_device,
   });
   const notificationPromptVisible = () =>
     shouldShowNotificationPrompt(notificationPromptConditions());

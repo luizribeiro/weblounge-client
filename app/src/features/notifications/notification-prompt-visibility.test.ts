@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canPushHere,
   formatNotificationPromptVisibility,
   isIos,
   shouldShowNotificationPrompt,
@@ -14,6 +15,7 @@ const visible = {
   ios: false,
   display: "browser" as const,
   nativePush: false,
+  pushOnThisDevice: true,
 };
 
 describe("notification prompt visibility", () => {
@@ -32,6 +34,11 @@ describe("notification prompt visibility", () => {
     ["the device dismissed it", { dismissed: true }],
     ["the dismissal read is pending", { dismissed: undefined }],
     ["iOS is running in a browser", { ios: true }],
+    ["push was turned off on this device", { pushOnThisDevice: false }],
+    [
+      "push was turned off where only the page can notify",
+      { supported: false, pushOnThisDevice: false },
+    ],
   ])("hides when %s", (_name, changed) => {
     expect(shouldShowNotificationPrompt({ ...visible, ...changed })).toBe(
       false,
@@ -42,8 +49,33 @@ describe("notification prompt visibility", () => {
     expect(
       formatNotificationPromptVisibility({ ...visible, dismissed: undefined }),
     ).toBe(
-      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true / native=false",
+      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true / native=false / push=on",
     );
+  });
+
+  it("shows before the push setting loads, since the default is on", () => {
+    expect(
+      shouldShowNotificationPrompt({ ...visible, pushOnThisDevice: undefined }),
+    ).toBe(true);
+  });
+
+  it("knows where this host can push, whatever the permission", () => {
+    expect(canPushHere(visible)).toBe(true);
+    expect(canPushHere({ ...visible, configured: false })).toBe(false);
+    expect(canPushHere({ ...visible, supported: false })).toBe(false);
+    expect(canPushHere({ ...visible, ios: true })).toBe(false);
+    expect(canPushHere({ ...visible, ios: true, display: "standalone" })).toBe(
+      true,
+    );
+    expect(
+      canPushHere({
+        ...visible,
+        supported: false,
+        ios: true,
+        display: "tauri",
+        nativePush: true,
+      }),
+    ).toBe(true);
   });
 
   it("shows without Web Push when the page can post notifications", () => {

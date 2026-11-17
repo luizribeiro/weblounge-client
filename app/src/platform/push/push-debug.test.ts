@@ -71,6 +71,7 @@ it("formats prompt inputs and every typed engine and relay route state", () => {
       ios: false,
       display: "browser",
       nativePush: false,
+      pushOnThisDevice: true,
     },
     networks,
     engine,
@@ -80,7 +81,7 @@ it("formats prompt inputs and every typed engine and relay route state", () => {
   expect(snapshot.readings).toEqual([
     [
       "prompt",
-      "configured=true / supported=true / permission=granted / dismissed=false / ios=false / display=browser / page=true / native=false",
+      "configured=true / supported=true / permission=granted / dismissed=false / ios=false / display=browser / page=true / native=false / push=on",
     ],
     [
       "network Registered",
