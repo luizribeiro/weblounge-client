@@ -259,6 +259,8 @@
           fileset = pkgs.lib.fileset.unions [
             ./.gitignore
             ./app
+            # The web release plan's node test imports the desktop release's preconditions.
+            ./apps/tauri/release/plan.mjs
             ./biome.json
             ./fixtures/timeline
             ./package.json
