@@ -514,25 +514,22 @@ export function App(props: AppProps) {
       },
     ),
   );
+  const openDirect = (networkId: number, nick: string, focus: boolean) => {
+    void client?.send({
+      id: crypto.randomUUID(),
+      request: { type: "open_direct", network_id: networkId, nick, focus },
+    });
+  };
   const noticeActions = new ActionRegistry(
     {
       "buffer.open-direct": (context) => {
         if (
-          client === undefined ||
           context.targetNetworkId === undefined ||
           context.targetNick === undefined
         ) {
           return;
         }
-        void client.send({
-          id: crypto.randomUUID(),
-          request: {
-            type: "open_direct",
-            network_id: context.targetNetworkId,
-            nick: context.targetNick,
-            focus: true,
-          },
-        });
+        openDirect(context.targetNetworkId, context.targetNick, true);
       },
       "debug.overlay": (context) => {
         if (context.debugOverlay === undefined) {
