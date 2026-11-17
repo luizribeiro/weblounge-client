@@ -768,6 +768,22 @@
           );
           ergo-integration = ergoIntegration;
           protocol-types = protocolTypes;
+          # The desktop package builds only on macOS, so Linux CI checks here that its fileset holds every path dependency.
+          desktop-source =
+            let
+              inherit
+                (import ./nix/desktop.nix {
+                  inherit pkgs rustToolchain;
+                  release = false;
+                })
+                src
+                ;
+            in
+            pkgs.runCommand "desktop-source-check" { nativeBuildInputs = [ rustToolchain ]; } ''
+              cd ${src}/apps/tauri
+              CARGO_HOME="$TMPDIR/cargo" cargo metadata --no-deps --offline --format-version 1 >/dev/null
+              touch $out
+            '';
           push-e2e = pushE2e;
           push-relay-build = pushRelay;
           push-relay-test = pushRelayCheck;
