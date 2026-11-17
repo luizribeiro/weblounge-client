@@ -1,4 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
+import {
+  captureHistoryWire,
+  heldHistoryRequestCount,
+  releaseHeldHistoryRequest,
+} from "./history-wire-fixture";
 import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -64,7 +69,54 @@ test.describe("DM and member presence against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
-  test("shows a connected peer who shares no channel online after a relaunch, without opening its DM", async ({
+  test("shows no DM presence after a relaunch until the channel WHO reports away states", async ({
+    page,
+    irc,
+  }) => {
+    const detached = await irc.peer("ana");
+    const attached = await irc.peer("sam");
+    await detached.setAlwaysOn(true);
+    await detached.setAutoAway(true);
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await detached.privmsgConfirmed(irc.account, `hello ${irc.id}`);
+    await attached.privmsgConfirmed(irc.account, `hi ${irc.id}`);
+    detached.close();
+    await detached.waitForDisconnect();
+    await expect(presenceOf(page, detached.nickname)).toHaveAttribute(
+      "data-presence",
+      "away",
+    );
+    await nativeFeelAudit(page);
+
+    await captureHistoryWire(page, { holdRequest: `WHO ${irc.channel}` });
+    await page.goto(irc.url());
+    await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    const members = page.getByRole("complementary", {
+      name: `Members of ${irc.channel}`,
+    });
+    await expect(memberRow(members, detached.nickname)).toBeVisible();
+    await expect(memberRow(members, attached.nickname)).toBeVisible();
+    await expect(directRow(page, detached.nickname)).toBeVisible();
+    await expect(directRow(page, attached.nickname)).toBeVisible();
+    await expect(presenceOf(page, detached.nickname)).toHaveCount(0);
+    await expect(presenceOf(page, attached.nickname)).toHaveCount(0);
+
+    await releaseHeldHistoryRequest(page);
+    await expect(presenceOf(page, detached.nickname)).toHaveAttribute(
+      "data-presence",
+      "away",
+    );
+    await expect(presenceOf(page, attached.nickname)).toHaveAttribute(
+      "data-presence",
+      "online",
+    );
+    await expectSettled(page, { conversation: irc.channel });
+  });
+
+  test("shows a peer who shares no channel only once its away state is reported after a relaunch, without opening its DM", async ({
     page,
     irc,
   }) => {
@@ -80,6 +132,14 @@ test.describe("DM and member presence against local Ergo", () => {
 
     await page.goto(irc.url());
     await expectSettled(page, { conversation: irc.channel });
+    await expect(presenceOf(page, unshared.nickname)).toHaveCount(0);
+
+    await unshared.setAway("lunch");
+    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+      "data-presence",
+      "away",
+    );
+    await unshared.setAway(undefined);
     await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
       "data-presence",
       "online",
@@ -88,10 +148,12 @@ test.describe("DM and member presence against local Ergo", () => {
   });
 });
 
+function directRow(page: Page, nick: string): Locator {
+  return page.locator(`[data-buffer-id][aria-label^="${nick},"]`);
+}
+
 function presenceOf(page: Page, nick: string): Locator {
-  return page
-    .locator(`[data-buffer-id][aria-label^="${nick},"]`)
-    .locator("[data-sidebar-prefix] [data-presence]");
+  return directRow(page, nick).locator("[data-sidebar-prefix] [data-presence]");
 }
 
 function memberRow(members: Locator, nick: string): Locator {

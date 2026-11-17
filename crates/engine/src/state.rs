@@ -537,7 +537,7 @@ pub(crate) struct NetworkModel {
     pending_target_sync: Option<PendingTargetSync>,
     #[cfg(test)]
     name_rebuilds: usize,
-    reported_offline: HashSet<papo::Nick>,
+    peer_evidence: crate::direct_peer::PeerEvidence,
     join_requests: HashSet<String>,
 }
 
@@ -651,7 +651,7 @@ impl NetworkModel {
             pending_target_sync: None,
             #[cfg(test)]
             name_rebuilds: 0,
-            reported_offline: HashSet::new(),
+            peer_evidence: crate::direct_peer::PeerEvidence::default(),
             join_requests: HashSet::new(),
         }
     }
@@ -3009,21 +3009,8 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
-    /// papo keeps a peer with a live direct handle in its `MONITOR` online set after a `731`,
-    /// so the offline reply is remembered here until the network reports the peer again.
-    pub(crate) fn observe_monitor(&mut self, event: &papo::Event) {
-        match event {
-            papo::Event::MonitorOffline(offline) => {
-                self.reported_offline.insert(offline.subject.clone());
-            }
-            papo::Event::MonitorOnline(online) => {
-                self.reported_offline.remove(online.subject.nick());
-            }
-            papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
-                self.reported_offline.clear();
-            }
-            _ => {}
-        }
+    pub(crate) fn observe_peers(&mut self, event: &papo::Event) {
+        self.peer_evidence.observe(event);
     }
 
     pub(crate) fn sync_direct_peers(&mut self, state: &papo::State) -> Vec<EngineToUi> {
@@ -3035,8 +3022,7 @@ impl NetworkModel {
                 let Some(NameKey::Direct(nick)) = buffer.key.as_ref() else {
                     return None;
                 };
-                let presence =
-                    crate::direct_peer::of(state, nick, self.reported_offline.contains(nick));
+                let presence = self.peer_evidence.presence(state, nick);
                 let bot = crate::direct_peer::bot(state, nick, buffer.projection.peer_bot);
                 (buffer.projection.peer_presence != presence || buffer.projection.peer_bot != bot)
                     .then(|| {

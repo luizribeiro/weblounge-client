@@ -4386,7 +4386,7 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let peer_facts_may_change = crate::direct_peer::may_change(&event);
-    running.model.observe_monitor(&event);
+    running.model.observe_peers(&event);
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
     if peer_facts_may_change || output.iter().any(crate::direct_peer::reveals_buffers) {
         output.extend(running.model.sync_direct_peers(&snapshot));
@@ -7470,6 +7470,11 @@ async fn delay(duration: Duration) {
             .await
             .expect("direct task completes")
             .expect("direct");
+        wire.server(":alice!~alice@cloak.example AWAY").await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::AwayChanged(_))
+        })
+        .await;
         let (state, outbound, mut receiver) = harness(client.clone());
         let alice = lock(&state)
             .network
@@ -7519,18 +7524,18 @@ async fn delay(duration: Duration) {
         for (line, presence) in [
             (
                 ":offline.test 730 weblounge :alice!~alice@cloak.example",
-                Some(crate::PeerPresence::Online),
+                vec![],
             ),
             (
                 ":alice!~alice@cloak.example AWAY :lunch",
-                Some(crate::PeerPresence::Away),
+                vec![Some(crate::PeerPresence::Away)],
             ),
-            (":offline.test 731 weblounge :alice", None),
+            (":offline.test 731 weblounge :alice", vec![None]),
         ] {
             wire.server(line).await;
             let event = next_matching(&mut events, crate::direct_peer::may_change).await;
             process_event(&state, &outbound, &client, 1, event);
-            assert_eq!(presence_updates(&mut receiver), [presence], "after {line}");
+            assert_eq!(presence_updates(&mut receiver), presence, "after {line}");
         }
     }
 
@@ -8067,7 +8072,7 @@ async fn delay(duration: Duration) {
     async fn query_focuses_new_and_existing_direct_buffers_once() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&["extended-join"]).await;
+        wire.register(&["extended-join", "away-notify"]).await;
         _ = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Connected(_))
         })
@@ -8077,6 +8082,11 @@ async fn delay(duration: Duration) {
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         wire.server(":mel!m@host JOIN #room mel :Mel").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":mel!m@host AWAY").await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::AwayChanged(_))
+        })
+        .await;
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {

@@ -222,8 +222,8 @@ test.describe("sidebar presence against local Ergo", () => {
       await page.goto(irc.url());
       await expectSettled(page, { conversation: irc.channel });
       await bot.privmsgConfirmed(irc.account, `beep ${irc.id}`);
-      const name = `${bot.nickname}, bot, 1 unread, including mentions, online`;
-      await directRow(page, name);
+      const name = `${bot.nickname}, bot, 1 unread, including mentions`;
+      await directRow(page, `${name}, online`);
       await expect.poll(() => cachedChatList(page)).toContain(bot.nickname);
 
       await page.evaluate(
@@ -234,9 +234,9 @@ test.describe("sidebar presence against local Ergo", () => {
       await expectSettled(page, { conversation: irc.channel });
 
       const row = await directRow(page, name);
-      await expect(
-        row.locator("[data-sidebar-prefix] [data-peer-bot]"),
-      ).toHaveAttribute("data-presence", "online");
+      const robot = row.locator("[data-sidebar-prefix] [data-peer-bot]");
+      await expect(robot).toBeVisible();
+      await expect(robot).not.toHaveAttribute("data-presence");
       await nativeFeelAudit(page);
     } finally {
       bot.close();

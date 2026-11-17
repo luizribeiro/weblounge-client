@@ -1,25 +1,67 @@
+use std::collections::HashSet;
+
 use crate::{EngineToUi, PeerPresence};
 
-/// Presence the network vouches for: the peer shares a channel with us or `MONITOR` reports it
-/// online. Anything else, including a `MONITOR` offline reply, is no presence at all.
-pub(crate) fn of(
-    state: &papo::State,
-    nick: &papo::Nick,
-    reported_offline: bool,
-) -> Option<PeerPresence> {
-    let user = state.user(nick)?;
-    let visible = user.channels().len() != 0
-        || (!reported_offline
-            && state
-                .monitor_online()
-                .any(|online| online.nick() == user.nick()));
-    visible.then(|| {
-        if matches!(user.away(), papo::Away::Away { .. }) {
-            PeerPresence::Away
-        } else {
-            PeerPresence::Online
+/// What this connection's events say about DM peers beyond papo's state: papo keeps a peer whose
+/// direct handle is held in `monitor_online` after a `MONITOR` offline reply, and it does not treat
+/// a peer's own line as a report of its away state.
+#[derive(Debug, Default)]
+pub(crate) struct PeerEvidence {
+    reported_offline: HashSet<papo::Nick>,
+    heard_from: HashSet<papo::Nick>,
+}
+
+impl PeerEvidence {
+    pub(crate) fn observe(&mut self, event: &papo::Event) {
+        match event {
+            papo::Event::MonitorOffline(offline) => {
+                self.heard_from.remove(&offline.subject);
+                self.reported_offline.insert(offline.subject.clone());
+            }
+            papo::Event::MonitorOnline(online) => {
+                self.reported_offline.remove(online.subject.nick());
+            }
+            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
+                self.heard_from.insert(message.actor.nick().clone());
+            }
+            papo::Event::Quit(quit) => {
+                self.heard_from.remove(quit.actor.nick());
+            }
+            papo::Event::NickChanged(changed) => {
+                if self.heard_from.remove(changed.actor.nick()) {
+                    self.heard_from.insert(changed.new.clone());
+                }
+            }
+            papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
+                self.reported_offline.clear();
+                self.heard_from.clear();
+            }
+            _ => {}
         }
-    })
+    }
+
+    /// Presence the network vouches for: the peer shares a channel with us or `MONITOR` reports it
+    /// online, and its away state has been reported. With always-on and auto-away a detached peer
+    /// stays connected, so a visible peer whose away state is unknown has no presence either.
+    pub(crate) fn presence(&self, state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
+        let user = state.user(nick)?;
+        let visible = user.channels().len() != 0
+            || (!self.reported_offline.contains(nick)
+                && state
+                    .monitor_online()
+                    .any(|online| online.nick() == user.nick()));
+        if !visible {
+            return None;
+        }
+        match user.away() {
+            papo::Away::Away { .. } => Some(PeerPresence::Away),
+            papo::Away::Present => Some(PeerPresence::Online),
+            _ => self
+                .heard_from
+                .contains(nick)
+                .then_some(PeerPresence::Online),
+        }
+    }
 }
 
 /// papo forgets a peer once it leaves our view, so an unknown answer keeps what was last reported:
@@ -164,6 +206,16 @@ mod tests {
             }
         }
 
+        async fn report_online(&mut self) {
+            self.server(
+                ":offline.test 730 weblounge :alice!~alice@cloak.example",
+                monitor_online,
+            )
+            .await;
+            self.server(":alice!~alice@cloak.example AWAY", away_changed)
+                .await;
+        }
+
         async fn server(&mut self, line: &str, until: impl Fn(&papo::Event) -> bool) {
             self.wire.server(line).await;
             loop {
@@ -172,7 +224,7 @@ mod tests {
                     .next()
                     .await
                     .expect("papo event stream remains open");
-                self.model.observe_monitor(&event);
+                self.model.observe_peers(&event);
                 if until(&event) {
                     return;
                 }
@@ -203,6 +255,10 @@ mod tests {
         matches!(event, papo::Event::MonitorOnline(_))
     }
 
+    fn monitor_offline(event: &papo::Event) -> bool {
+        matches!(event, papo::Event::MonitorOffline(_))
+    }
+
     fn away_changed(event: &papo::Event) -> bool {
         matches!(event, papo::Event::AwayChanged(_))
     }
@@ -214,11 +270,7 @@ mod tests {
     #[tokio::test]
     async fn the_bot_tag_on_a_peers_messages_marks_its_direct_as_a_bot() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         _ = peer.sync();
 
         peer.server(
@@ -252,10 +304,8 @@ mod tests {
         .await;
         _ = peer.sync();
 
-        peer.server(":offline.test 731 weblounge :alice", |event| {
-            matches!(event, papo::Event::MonitorOffline(_))
-        })
-        .await;
+        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
+            .await;
 
         assert_eq!(peer.sync_bot(), [(peer.alice, true)]);
     }
@@ -291,11 +341,7 @@ mod tests {
     #[tokio::test]
     async fn a_pending_peer_reported_online_shows_online_without_resolving_its_handle() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         let nick = peer
             .model
             .direct_peer(peer.alice)
@@ -313,7 +359,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_monitored_peer_coming_online_updates_its_direct_once() {
+    async fn a_monitored_peer_has_no_presence_until_its_away_state_is_reported() {
         let mut peer = Peer::monitored().await;
 
         peer.server(
@@ -321,19 +367,63 @@ mod tests {
             monitor_online,
         )
         .await;
+        assert_eq!(peer.sync(), []);
 
+        peer.server(":alice!~alice@cloak.example AWAY", away_changed)
+            .await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+        assert_eq!(peer.sync(), []);
+    }
+
+    #[tokio::test]
+    async fn a_line_from_a_monitored_peer_reports_it_online() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        assert_eq!(peer.sync(), []);
+
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+    }
+
+    #[tokio::test]
+    async fn a_monitor_offline_reply_forgets_the_lines_a_peer_sent_before_it() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        _ = peer.sync();
+
+        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
+            .await;
+        _ = peer.sync();
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+
         assert_eq!(peer.sync(), []);
     }
 
     #[tokio::test]
     async fn away_notify_on_a_monitored_peer_toggles_between_away_and_online() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         _ = peer.sync();
 
         peer.server(":alice!~alice@cloak.example AWAY :lunch", away_changed)
@@ -348,17 +438,11 @@ mod tests {
     #[tokio::test]
     async fn a_peer_reported_offline_loses_its_presence_instead_of_showing_offline() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         _ = peer.sync();
 
-        peer.server(":offline.test 731 weblounge :alice", |event| {
-            matches!(event, papo::Event::MonitorOffline(_))
-        })
-        .await;
+        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
+            .await;
 
         assert_eq!(peer.sync(), [(peer.alice, None)]);
     }
@@ -366,11 +450,7 @@ mod tests {
     #[tokio::test]
     async fn a_lost_connection_clears_presence_it_can_no_longer_vouch_for() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         _ = peer.sync();
 
         peer.wire.close().await;
@@ -385,11 +465,7 @@ mod tests {
     #[tokio::test]
     async fn closing_a_direct_drops_its_presence_and_stops_updating_it() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         _ = peer.sync();
 
         _ = peer.model.close_direct(peer.alice);
@@ -405,6 +481,8 @@ mod tests {
         wire.server(":offline.test 730 weblounge :alice!~alice@cloak.example")
             .await;
         next(&mut events, monitor_online).await;
+        wire.server(":alice!~alice@cloak.example AWAY").await;
+        next(&mut events, away_changed).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
 
@@ -418,9 +496,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_peer_seen_in_a_shared_channel_is_online_until_it_leaves() {
+    async fn a_peer_in_a_shared_channel_is_online_from_the_channel_who_until_it_leaves() {
         let mut peer = Peer::sharing_a_channel(&["away-notify"]).await;
+        assert_eq!(peer.sync(), []);
 
+        peer.wire
+            .server(":offline.test 352 weblounge #room ~alice h offline.test alice H :0 Alice")
+            .await;
+        peer.server(
+            ":offline.test 315 weblounge #room :End of WHO list",
+            |event| matches!(event, papo::Event::MembersRefreshed { .. }),
+        )
+        .await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
 
         peer.server(":alice!u@h PART #room", |event| {
@@ -448,17 +535,11 @@ mod tests {
             .await
             .expect("direct task completes")
             .expect("direct");
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_online().await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
 
-        peer.server(":offline.test 731 weblounge :alice", |event| {
-            matches!(event, papo::Event::MonitorOffline(_))
-        })
-        .await;
+        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
+            .await;
 
         assert_eq!(peer.sync(), [(peer.alice, None)]);
     }
