@@ -1815,7 +1815,9 @@ async function expectStatusRowBelowSwitch(scope: Locator): Promise<void> {
     throw new Error("push rows are not laid out");
   expect(Math.abs(line.x - row.x)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(line.width - row.width)).toBeLessThanOrEqual(0.5);
-  expect(line.y).toBeGreaterThanOrEqual(row.y + row.height - 0.5);
+  expect(Math.abs(line.y - (row.y + row.height))).toBeLessThanOrEqual(0.5);
+  await expect(switchRow).toHaveCSS("border-bottom-width", "0px");
+  await expect(status).toHaveCSS("border-bottom-width", "1px");
 }
 
 function registrationSequence(page: Page): Promise<unknown> {

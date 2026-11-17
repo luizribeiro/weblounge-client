@@ -37,7 +37,11 @@ export function SettingRow(props: SettingRowProps) {
   };
   return (
     <>
-      <div class={styles.row} data-control={props.control}>
+      <div
+        class={styles.row}
+        data-control={props.control}
+        data-has-status={props.note !== undefined}
+      >
         <div class={styles.text}>
           <span class={styles.label} id={labelledBy}>
             {props.label}
