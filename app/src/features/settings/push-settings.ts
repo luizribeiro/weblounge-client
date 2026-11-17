@@ -48,7 +48,7 @@ export function pushNote(push: PushSettings): PushNote | undefined {
 
 export function pushBlockedIn(shell: HostShell, ios: boolean): PushBlockedIn {
   if (shell === "macos-app") return "macos";
-  return ios ? "ios" : "browser";
+  return shell === "ios-app" || ios ? "ios" : "browser";
 }
 
 export function pushSwitchStatus(

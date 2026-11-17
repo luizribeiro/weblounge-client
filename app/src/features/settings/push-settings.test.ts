@@ -46,6 +46,7 @@ describe("push switch row", () => {
 
   it("names where notifications are unblocked on each host", () => {
     expect(pushBlockedIn("macos-app", false)).toBe("macos");
+    expect(pushBlockedIn("ios-app", false)).toBe("ios");
     expect(pushBlockedIn("ios-app", true)).toBe("ios");
     expect(pushBlockedIn("web", true)).toBe("ios");
     expect(pushBlockedIn("web", false)).toBe("browser");

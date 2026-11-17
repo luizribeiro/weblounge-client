@@ -62,6 +62,7 @@ export async function installIosShellStub(
           return taken;
         },
         delivered_notifications: () => delivered,
+        open_app_settings: () => null,
       };
       Object.defineProperty(window, "__WEBLOUNGE_SHELL__", {
         value: Object.freeze({ kind: "ios-app", version: "0.0.0-e2e" }),

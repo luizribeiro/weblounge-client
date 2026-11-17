@@ -173,7 +173,7 @@ export default defineConfig({
     },
     {
       name: "webkit-hosted",
-      grep: /deployment config error|member session through|real (?:shared|dedicated) worker|fresh session request is aborted|recovers from a (?:rate limit|network) failure|shows an unrecoverable token failure|mobile webkit notification prompt|converges an Apple badge/,
+      grep: /push settings on the iPhone home screen|deployment config error|member session through|real (?:shared|dedicated) worker|fresh session request is aborted|recovers from a (?:rate limit|network) failure|shows an unrecoverable token failure|mobile webkit notification prompt|converges an Apple badge/,
       testMatch: "**/hosted-mode.spec.ts",
       use: { browserName: "webkit" },
     },

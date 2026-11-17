@@ -1,4 +1,12 @@
-import { devices, expect, type Page, type Route, test } from "@playwright/test";
+import {
+  devices,
+  expect,
+  type Locator,
+  type Page,
+  type Route,
+  test,
+} from "@playwright/test";
+import type { PushPermission } from "../src/platform/native-bridge/generated/PushPermission";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 import {
   dispatchShellEvent,
@@ -18,6 +26,8 @@ import {
   pageNotificationPermissionRequests,
   recordedPageNotificationBodies,
 } from "./page-notification-stub";
+import { settingsScreenshot } from "./settings-fixture";
+import { expectSettled } from "./settled";
 
 const engineWasmRequest = /\/engine_bg(?:-[^/?]+)?\.wasm(?:\?.*)?$/u;
 const builtEngineWorkerRequest =
@@ -1497,19 +1507,7 @@ test("fresh Firefox and Chromium profiles show notification setup when the prefe
   );
   await installFakeEngine(page);
   await installFakeOAuth(page);
-  await page.route("**/config.json", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify(pushHostedConfig(route.request().url())),
-    });
-  });
-  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
-    if (route.request().method() === "OPTIONS") {
-      await fulfillSessionPreflight(route, new URL(baseURL).origin);
-      return;
-    }
-    await fulfillSessionToken(route, baseURL, "push-session-token");
-  });
+  await routeHostedPushBackend(page, baseURL);
 
   await page.goto("/?debug=viewport");
 
@@ -1534,19 +1532,7 @@ test("grants page notifications without a service worker or Web Push", async ({
   });
   await installFakeEngine(page);
   await installFakeOAuth(page);
-  await page.route("**/config.json", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify(pushHostedConfig(route.request().url())),
-    });
-  });
-  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
-    if (route.request().method() === "OPTIONS") {
-      await fulfillSessionPreflight(route, new URL(baseURL).origin);
-      return;
-    }
-    await fulfillSessionToken(route, baseURL, "push-session-token");
-  });
+  await routeHostedPushBackend(page, baseURL);
   const relayRequests: string[] = [];
   await page.route("https://push.weblounge.org/**", async (route) => {
     relayRequests.push(route.request().url());
@@ -1590,19 +1576,7 @@ test.describe("the iPhone app's push registration", () => {
     await page.addInitScript(() => {
       Reflect.set(globalThis, "hostedPushEnabled", true);
     });
-    await page.route("**/config.json", async (route) => {
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify(pushHostedConfig(route.request().url())),
-      });
-    });
-    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
-      if (route.request().method() === "OPTIONS") {
-        await fulfillSessionPreflight(route, new URL(baseURL).origin);
-        return;
-      }
-      await fulfillSessionToken(route, baseURL, "push-session-token");
-    });
+    await routeHostedPushBackend(page, baseURL);
     const relay = await routeApnsRelay(page, new URL(baseURL).origin);
     const issued = {
       platform: "apns",
@@ -1698,6 +1672,7 @@ async function expectEnsuredPush(page: Page, routeId: string): Promise<void> {
 async function routeApnsRelay(page: Page, origin: string) {
   const requests: { readonly call: string; readonly body: unknown }[] = [];
   let createdRoutes = 0;
+  let failingStatus: number | undefined;
   const relayRoute = (body: unknown) => {
     const kept =
       typeof body === "object" && body !== null && "my_route_id" in body
@@ -1723,6 +1698,10 @@ async function routeApnsRelay(page: Page, origin: string) {
     const call = `${request.method()} ${new URL(request.url()).pathname}`;
     const body: unknown = request.postDataJSON();
     requests.push({ call, body });
+    if (failingStatus !== undefined) {
+      await route.fulfill({ status: failingStatus, headers: cors });
+      return;
+    }
     const answers: Record<string, () => unknown> = {
       "POST /v1/devices": () => ({ id: "device-1", secret: "device-secret" }),
       "POST /v1/devices/device-1/routes": () => relayRoute(body),
@@ -1745,8 +1724,276 @@ async function routeApnsRelay(page: Page, origin: string) {
       requests
         .filter((request) => request.call === call)
         .map(({ body }) => body),
+    calls: () => requests.map(({ call }) => call),
+    /** Answers every request with `status` until called again with undefined. */
+    failWith: (status: number | undefined) => {
+      failingStatus = status;
+    },
   };
 }
+
+type PushSettingsHost =
+  | {
+      readonly kind: "web";
+      readonly standalone: boolean;
+      readonly permission: NotificationPermission;
+    }
+  | { readonly kind: "ios-app"; readonly permission: PushPermission };
+
+async function preparePushSettings(
+  page: Page,
+  baseURL: string | undefined,
+  host: PushSettingsHost,
+) {
+  if (baseURL === undefined) throw new Error("app base URL is missing");
+  if (host.kind === "ios-app") {
+    await installIosShellStub(page, { permission: host.permission });
+  } else {
+    if (host.standalone) await installStandaloneDisplay(page);
+    await installPushManagerStub(page, host.permission, "granted");
+  }
+  await installFakeEngine(page);
+  await installFakeOAuth(page);
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "hostedPushEnabled", true);
+  });
+  await routeHostedPushBackend(page, baseURL);
+  return routeApnsRelay(page, new URL(baseURL).origin);
+}
+
+async function openDesktopNotificationSettings(page: Page) {
+  await page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("button", { name: "Notifications" }).click();
+  return dialog;
+}
+
+async function openPhoneNotificationSettings(page: Page) {
+  await page
+    .getByRole("region", { name: "Chats" })
+    .getByRole("button", { name: "Settings" })
+    .tap();
+  await page.getByRole("button", { name: /^Notifications/u }).tap();
+  await expect(
+    page.getByRole("heading", { name: "Notifications" }),
+  ).toBeVisible();
+  await expectSettled(page);
+  return page.locator("[data-mobile-settings]");
+}
+
+async function screenshotBothThemes(
+  page: Page,
+  target: Locator,
+  name: string,
+): Promise<void> {
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await settingsScreenshot(target, `push-${name}-${colorScheme}`);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
+function pushSwitch(scope: Page | Locator) {
+  return scope.getByRole("switch", { name: "Push notifications" });
+}
+
+function registrationSequence(page: Page): Promise<unknown> {
+  return page.evaluate(() =>
+    Reflect.get(globalThis, "pushRegistrationSequence"),
+  );
+}
+
+const apnsToken = {
+  platform: "apns",
+  token: "0a".repeat(32),
+  environment: "production",
+} as const;
+
+test.describe("push settings in a desktop browser", () => {
+  test("push settings turn this browser's push on, off and on again", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    await installNativeFeelInstrumentation(page);
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "default",
+    });
+    const countOf = (call: string) => relay.bodies(call).length;
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const dialog = await openDesktopNotificationSettings(page);
+    const push = pushSwitch(dialog);
+    await expect(push).not.toBeChecked();
+    await expect(push).toBeEnabled();
+    await expect(
+      dialog.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toBeChecked();
+    await screenshotBothThemes(page, dialog, "desktop-off");
+
+    await push.click();
+
+    await expect(push).toBeChecked();
+    await expect
+      .poll(() => relay.calls())
+      .toEqual(
+        expect.arrayContaining([
+          "POST /v1/devices",
+          "POST /v1/devices/device-1/routes",
+        ]),
+      );
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+    expect(
+      await page.evaluate(() =>
+        Reflect.get(globalThis, "notificationPermissionRequests"),
+      ),
+    ).toBe(1);
+    await screenshotBothThemes(page, dialog, "desktop-on");
+    await nativeFeelAudit(page);
+
+    await push.click();
+
+    await expect(push).not.toBeChecked();
+    await expect
+      .poll(() => relay.calls())
+      .toContain("DELETE /v1/devices/device-1");
+    expect(await registrationSequence(page)).toContain(
+      "unregister:route-ios:https://push.weblounge.org/v1/r/route-ios",
+    );
+
+    await page.reload();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const reloaded = await openDesktopNotificationSettings(page);
+    await expect(pushSwitch(reloaded)).not.toBeChecked();
+    expect(countOf("POST /v1/devices")).toBe(1);
+
+    await pushSwitch(reloaded).click();
+
+    await expect(pushSwitch(reloaded)).toBeChecked();
+    await expect.poll(() => countOf("POST /v1/devices")).toBe(2);
+    await expect
+      .poll(() => countOf("POST /v1/devices/device-1/routes"))
+      .toBe(2);
+  });
+});
+
+test.describe("push settings on the iPhone home screen", () => {
+  test.use({ ...iphone16Pro, serviceWorkers: "block" });
+
+  test("push settings on the iPhone home screen app turn push on", async ({
+    baseURL,
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.use.browserName !== "webkit");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: true,
+      permission: "default",
+    });
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const settings = await openPhoneNotificationSettings(page);
+    await expect(pushSwitch(settings)).not.toBeChecked();
+    await expect(
+      settings.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toHaveCount(0);
+
+    await pushSwitch(settings).tap();
+
+    await expect(pushSwitch(settings)).toBeChecked();
+    await expect.poll(() => relay.calls()).toContain("POST /v1/devices");
+    await page.getByRole("button", { name: "Back to Settings" }).tap();
+    await expect(
+      page.getByRole("button", { name: /^Notifications/u }),
+    ).toContainText("Push on");
+  });
+});
+
+test.describe("push settings in the iPhone app", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 402, height: 874 },
+  });
+
+  test("push settings show a block with Open Settings", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    await installNativeFeelInstrumentation(page);
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "ios-app",
+      permission: "denied",
+    });
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const settings = await openPhoneNotificationSettings(page);
+
+    await expect(pushSwitch(settings)).not.toBeChecked();
+    await expect(pushSwitch(settings)).toBeDisabled();
+    await expect(
+      settings.getByText("Blocked in iOS Settings → Notifications → weblounge"),
+    ).toBeVisible();
+    await expect(
+      settings.getByRole("switch", { name: "Show unread in the tab" }),
+    ).toHaveCount(0);
+    await screenshotBothThemes(page, settings, "phone-blocked");
+    await nativeFeelAudit(page);
+
+    await settings.getByRole("button", { name: "Open Settings" }).tap();
+
+    await expect
+      .poll(async () => (await nativeCalls(page)).map(({ command }) => command))
+      .toContain("open_app_settings");
+    expect(relay.calls()).toEqual([]);
+  });
+
+  test("push settings say a failed registration out loud and retry", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "ios-app",
+      permission: "default",
+    });
+    relay.failWith(501);
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const settings = await openPhoneNotificationSettings(page);
+    await screenshotBothThemes(page, settings, "phone-off");
+    await pushSwitch(settings).tap();
+    await issueApnsToken(page, apnsToken);
+
+    const failure = settings.getByText("Couldn't turn on notifications");
+    await expect(failure).toBeVisible();
+    await expect(pushSwitch(settings)).toBeChecked();
+    await screenshotBothThemes(page, settings, "phone-failed");
+
+    relay.failWith(undefined);
+    await settings.getByRole("button", { name: "Retry" }).tap();
+
+    await expect(failure).toHaveCount(0);
+    await expectEnsuredPush(page, "route-ios");
+    await expect(pushSwitch(settings)).toBeChecked();
+    await screenshotBothThemes(page, settings, "phone-on");
+  });
+});
 
 for (const surface of [
   { browser: "chromium", use: pixel7 },
@@ -1821,6 +2068,14 @@ async function prepareNotificationPrompt(
   await installPushManagerStub(page, "default", requestResult);
   await installFakeEngine(page);
   await installFakeOAuth(page);
+  await routeHostedPushBackend(page, baseURL);
+}
+
+/** Serves the push-enabled hosted config and the member session token. */
+async function routeHostedPushBackend(
+  page: Page,
+  baseURL: string,
+): Promise<void> {
   await page.route("**/config.json", async (route) => {
     await route.fulfill({
       contentType: "application/json",

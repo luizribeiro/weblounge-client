@@ -47,12 +47,18 @@ import { migrateDraft } from "./features/composer/draft-storage";
 import { ImageViewerOutlet } from "./features/image-viewer/ImageViewerOutlet";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
+  canPushHere,
   formatNotificationPromptVisibility,
   isIos,
   type NotificationPromptVisibility,
   shouldShowNotificationPrompt,
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
+import {
+  type PushSettings,
+  pushBlockedIn,
+  pushSwitchStatus,
+} from "./features/settings/push-settings";
 import { createTabIndicator } from "./features/unread/createTabIndicator";
 import { CanvasImageCodec } from "./features/uploads/image-codec";
 import { networkUploads } from "./features/uploads/network-uploads";
@@ -78,6 +84,8 @@ import {
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { createForegroundSignal } from "./platform/foreground";
+import { hostShell } from "./platform/host-shell";
+import { nativeBridge } from "./platform/native-bridge/native-bridge";
 import { startHostIntegration } from "./platform/native-bridge/native-host";
 import { hostNotificationCenter } from "./platform/native-bridge/native-notification-center";
 import { hostPushRegistrar } from "./platform/native-bridge/native-push-registrar";
@@ -266,6 +274,9 @@ export function App(props: AppProps) {
   const pushWanted = () =>
     engineSettings.current()?.app.push_on_this_device === true;
 
+  const pushFailing = () =>
+    pushSetupFailed() ||
+    [...relayPushStates().values()].some((diagnostic) => diagnostic.failing);
   let reportedVisibility: VisibilityState | undefined;
   // Render visibility follows document.hidden alone: an unfocused window
   // is still on screen and must keep drawing.
@@ -351,6 +362,25 @@ export function App(props: AppProps) {
   });
   const notificationPromptVisible = () =>
     shouldShowNotificationPrompt(notificationPromptConditions());
+  const shellBridge = nativeBridge();
+  const openAppSettings =
+    shellBridge === undefined
+      ? undefined
+      : () => void shellBridge.call("open_app_settings").catch(() => undefined);
+  const pushSettings = (): PushSettings | undefined =>
+    canPushHere(notificationPromptConditions())
+      ? {
+          status: pushSwitchStatus({
+            enabled: engineSettings.current()?.app.push_on_this_device,
+            permission: notificationPermission(),
+            failing: pushFailing(),
+          }),
+          blockedIn: pushBlockedIn(hostShell(), isIos(navigator)),
+          onToggle: setPushOnThisDevice,
+          onRetry: retryPush,
+          onOpenSystemSettings: openAppSettings,
+        }
+      : undefined;
 
   createEffect(() => {
     setNotificationDebugReading(
@@ -1133,6 +1163,46 @@ export function App(props: AppProps) {
       .catch(() => undefined);
   }
 
+  function retryPush(): void {
+    setPushSetupFailed(false);
+    setRelayPushStates(
+      (current) =>
+        new Map(
+          [...current].map(([id, diagnostic]) => [
+            id,
+            { ...diagnostic, failing: false },
+          ]),
+        ),
+    );
+    if (pushSynchronizer !== undefined) pushSynchronizer.retryNow();
+    else if (pushOwner !== undefined)
+      pushChannel?.postMessage({ kind: "retry" });
+    else if (client !== undefined)
+      void startConfiguredPush(client).catch(() => undefined);
+  }
+
+  function setPushOnThisDevice(on: boolean): void {
+    const choose = (value: boolean) => {
+      if (engineSettings.current()?.app.push_on_this_device !== value)
+        engineSettings.change({
+          scope: "app",
+          setting: { key: "push_on_this_device", value },
+        });
+    };
+    if (!on || notificationPermission() === "granted") {
+      choose(on);
+      return;
+    }
+    if (notificationPermission() === "denied") return;
+    void pushRegistrar
+      .requestPermission()
+      .then((result) => {
+        setNotificationPermission(result);
+        if (result === "granted") choose(true);
+      })
+      .catch(() => undefined);
+  }
+
   async function startConfiguredPush(
     mountedClient: EngineClient,
   ): Promise<void> {
@@ -1645,6 +1715,7 @@ export function App(props: AppProps) {
             );
           }}
           onTurnOnNotifications={turnOnNotifications}
+          pushSettings={pushSettings()}
           settings={engineSettings.current()}
           onChangeSetting={engineSettings.change}
           pathForBuffer={pathForBuffer}
