@@ -2163,7 +2163,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     (a flake input pinned to the last deployed SHA, served from Cachix), then serve the current
     build. The client must move to it without closing tabs, and the previous build must start with
     the current config.json.
-    Last bumped to `c902f26` on 2026-11-17.
+    Last bumped to `66f1c2c` on 2026-11-17.
   - U2. [x] A "Reset app" action on the startup error screen, shown only after repeated startup
     failures (two consecutive Retries). It clears the cached shell and service worker and reloads,
     keeping sign-in where possible. Its production test drives invalid configuration through the
