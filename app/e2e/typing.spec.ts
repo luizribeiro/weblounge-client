@@ -197,7 +197,6 @@ test.describe("typing indicators", () => {
         page.getByRole("heading", { name: sender.nickname }),
       ).toBeVisible();
       await backToChatList(page, sender.nickname);
-      await expectSettled(page);
       const echoedIncoming = await sender.privmsgConfirmed(
         irc.account,
         incoming,

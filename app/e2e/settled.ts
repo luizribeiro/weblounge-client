@@ -81,4 +81,5 @@ export async function backToChatList(
 ): Promise<void> {
   await backToChats(page, conversation);
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectSettled(page);
 }
