@@ -2782,18 +2782,25 @@ impl NetworkModel {
                 };
                 Some(item_count == 0)
             }
-            HistoryState::Refreshing { oldest, at_start } => {
+            HistoryState::Refreshing {
+                oldest: window_oldest,
+                at_start,
+            } => {
                 let refresh_from_ms = buffer.refresh_from_ms.take();
                 advance_cursor(buffer, newest);
+                let opens_older_edge = end && window_oldest.is_none() && oldest.is_some();
                 buffer.history = if end {
-                    HistoryState::Ready { oldest, at_start }
+                    HistoryState::Ready {
+                        oldest: window_oldest.or(oldest),
+                        at_start,
+                    }
                 } else {
                     HistoryState::RefreshCapped
                 };
                 if !end && let (Some(from_ms), Some(to_ms)) = (refresh_from_ms, oldest_time_ms) {
                     gap_range = Some((from_ms, to_ms));
                 }
-                None
+                opens_older_edge.then_some(at_start)
             }
             HistoryState::Unrequested
             | HistoryState::QueuedLatest
@@ -7145,6 +7152,92 @@ mod tests {
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
         assert_eq!(buffer.projection.unread, 1);
         assert_eq!(buffer.projection.mentions, 1);
+    }
+
+    #[test]
+    fn catching_up_a_read_cached_direct_leaves_its_earlier_history_reachable() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "alice".into(),
+                last_activity_ms: Some(100),
+                stubs: Vec::new(),
+                redacted_stubs: Vec::new(),
+                gap_until: None,
+                preview: Some("read earlier".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("earlier".into()),
+                    server_time_ms: 100,
+                }),
+                read_at_ms: Some(100),
+                raw_read_at_ms: Some(100),
+                pending_read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let nick = nick_name(&state, "alice");
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200));
+        assert!(matches!(fetch, Some(HistoryFetch::After { .. })));
+        let mut arrived = direct_incoming(&state, "alice", "arrived while closed", 200);
+        arrived.msgid = Some("arrived".into());
+        arrived.origin = TimelineOrigin::History;
+        model.receive_incoming(arrived, &state);
+        let arrived_reference = papo::HistoryReference::from(papo::MessageId::from("arrived"));
+        let completion = model
+            .finish_history(
+                &papo::Conversation::Private(nick.clone()),
+                Some(arrived_reference.clone()),
+                Some(200),
+                None,
+                1,
+                true,
+            )
+            .expect("catch-up finishes");
+        assert_eq!(completion.at_start, Some(false));
+
+        let buffer_id = model.names[&NameKey::Direct(nick)];
+        let Some(HistoryFetch::Before { oldest, .. }) =
+            model.request_history(buffer_id, crate::HistoryDirection::Older)
+        else {
+            panic!("the history before the caught-up line stays requestable");
+        };
+        assert_eq!(oldest, arrived_reference);
+    }
+
+    #[test]
+    fn catching_up_a_loaded_window_keeps_its_older_edge_unreported() {
+        let (mut model, state) = model(10);
+        let nick = nick_name(&state, "alice");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Direct(nick.clone()), None, None);
+        let loaded = papo::HistoryReference::from(papo::MessageId::from("loaded"));
+        let buffer = model.buffers.get_mut(&buffer_id).expect("direct exists");
+        buffer.history = HistoryState::Refreshing {
+            oldest: Some(loaded.clone()),
+            at_start: false,
+        };
+
+        let completion = model
+            .finish_history(
+                &papo::Conversation::Private(nick),
+                Some(papo::HistoryReference::from(papo::MessageId::from(
+                    "caught-up",
+                ))),
+                Some(200),
+                None,
+                1,
+                true,
+            )
+            .expect("catch-up finishes");
+
+        assert_eq!(completion.at_start, None);
+        assert!(matches!(
+            &model.buffers[&buffer_id].history,
+            HistoryState::Ready { oldest: Some(oldest), at_start: false } if *oldest == loaded
+        ));
     }
 
     #[test]
