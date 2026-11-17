@@ -38,7 +38,7 @@ describe("push delivery state", () => {
     }
   });
 
-  it("lets a newer same-tag notification supersede an older read marker", () => {
+  it("keeps a read marker in force when a newer same-tag message is shown", () => {
     const tag = "Lounge/#lounge";
     const time = "2026-11-03T12:34:56.789Z";
     const counts = {
@@ -48,19 +48,22 @@ describe("push delivery state", () => {
       readAtMs: new Map([[tag, Date.parse(time)]]),
       untagged: 0,
     };
-    const data = { conversationTag: tag, messageTime: time };
-    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);
+    const older = { conversationTag: tag, messageTime: time };
+    const newer = {
+      conversationTag: tag,
+      messageTime: "2026-11-03T12:34:56.790Z",
+    };
+    expect(notificationDataIsRead(older, counts.readAtMs)).toBe(true);
 
     recordPresentedNotification(counts, {
       tag,
       messageId: "new-message",
-      messageTime: "2026-11-03T12:34:56.790Z",
+      messageTime: newer.messageTime,
     });
 
     expect(counts.conversations.get(tag)?.messages.size).toBe(1);
-    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(false);
-    counts.readAtMs.set(tag, Date.parse(time));
-    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);
+    expect(notificationDataIsRead(newer, counts.readAtMs)).toBe(false);
+    expect(notificationDataIsRead(older, counts.readAtMs)).toBe(true);
   });
 });
 

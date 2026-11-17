@@ -893,9 +893,10 @@ A decrypted `MARKREAD` stores the `timestamp=` reference, removes matching known
 matching unknown baseline and closes only notifications from that conversation at or before the
 marker. A maintenance `PING` reapplies only cleanup markers already persisted by `MARKREAD`; engine
 foreground reconciliation closes against its own markers without promoting them to worker cleanup
-authority. Both controls are silent regardless of the request's urgency. A new same-tag receipt
-supersedes the prior worker cleanup marker, so an older marker can never close the notification just
-shown. Visible and generic pushes do not perform cleanup. Production's patched Ergo sends these
+authority. Both controls are silent regardless of the request's urgency. A newer same-tag receipt
+keeps the cleanup marker: a message after the marker is unread and is never closed by it, and a
+re-delivered or late message at or before it stays read, as in the iOS extension's ledger. Visible
+and generic pushes do not perform cleanup. Production's patched Ergo sends these
 controls at normal urgency, so the relay keeps them away from Apple, FCM and Windows Push while
 forwarding them to Mozilla.
 
