@@ -49,6 +49,36 @@ test.describe("row toolbars on desktop against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("keeps the toolbar's menu on its row as the transcript scrolls, and closes it once the row leaves", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await openWithPeer(page, irc, "follow");
+    await openConversation(page, irc.channel);
+    await sendLines(peer, irc.channel, 20, "before");
+    const own = await sendOwn(page, "my scrolling row");
+    await sendLines(peer, irc.channel, 6, "after");
+    await expectSettled(page);
+
+    await own.hover();
+    const more = own.getByRole("button", { name: "More actions" });
+    await more.click();
+    const menu = page.getByRole("menu", { name: "Message actions" });
+    await expect(menu).toBeVisible();
+    const gap = () => verticalGap(more, menu);
+    const opened = await gap();
+
+    await wheelTranscript(page, -40);
+    await expect.poll(gap).toBe(opened);
+    await expect(menu).toBeVisible();
+
+    await wheelTranscript(page, -2000);
+    await expect(menu).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await expectSettled(page);
+    await nativeFeelAudit(page);
+  });
+
   test("leaves no reaction bar behind when an outside click closes the picker", async ({
     page,
     irc,
@@ -174,4 +204,13 @@ async function transcriptBox(page: Page) {
   const box = await page.locator("[data-message-list]").boundingBox();
   if (box === null) throw new Error("the message list is not visible");
   return box;
+}
+
+async function verticalGap(anchor: Locator, layer: Locator): Promise<number> {
+  const [from, to] = await Promise.all([
+    anchor.boundingBox(),
+    layer.boundingBox(),
+  ]);
+  if (from === null || to === null) throw new Error("a box is not visible");
+  return Math.round(to.y - from.y);
 }

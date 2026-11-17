@@ -1,6 +1,8 @@
 import { createEffect, For, onCleanup, Show } from "solid-js";
 import styles from "./ContextMenu.module.css";
 import type { ContextMenuRequest } from "./context-menu";
+import { returnFocus } from "./focus-return";
+import { followAnchor } from "./follow-anchor";
 
 export interface ContextMenuItem {
   readonly id: string;
@@ -62,61 +64,84 @@ export function ContextMenu(props: ContextMenuProps) {
 
   return (
     <Show when={props.request} keyed>
-      {(request) => (
-        <div
-          aria-label={props.label}
-          class={styles.menu}
-          data-context-menu="true"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              move(event.key === "ArrowDown" ? 1 : -1);
-            } else if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              const index = menuItems(menu).indexOf(
-                document.activeElement as HTMLButtonElement,
-              );
-              const item = items()[index];
-              if (item !== undefined) select(item);
-            }
-          }}
-          ref={(element) => {
-            menu = element;
-            // The menu has no size until its items mount, so it is placed once they have.
-            queueMicrotask(() => {
-              const position = contextMenuPosition(
-                request,
-                element.getBoundingClientRect(),
-                window,
-              );
-              element.style.setProperty(
-                "--wl-context-menu-left",
-                `${position.left}px`,
-              );
-              element.style.setProperty(
-                "--wl-context-menu-top",
-                `${position.top}px`,
-              );
-              menuItems(element)[0]?.focus();
-            });
-          }}
-          role="menu"
-        >
-          <For each={props.items}>
-            {(item) => menuItem(item, false, select)}
-          </For>
-          <Show when={(props.destructiveItems?.length ?? 0) > 0}>
-            <Show when={(props.items?.length ?? 0) > 0}>
-              <hr class={styles.separator} />
-            </Show>
-            <For each={props.destructiveItems}>
-              {(item) => menuItem(item, true, select)}
+      {(request) => {
+        let open = true;
+        let stopFollowing = () => {};
+        onCleanup(() => {
+          open = false;
+          stopFollowing();
+        });
+        return (
+          <div
+            aria-label={props.label}
+            class={styles.menu}
+            data-context-menu="true"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                move(event.key === "ArrowDown" ? 1 : -1);
+              } else if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                const index = menuItems(menu).indexOf(
+                  document.activeElement as HTMLButtonElement,
+                );
+                const item = items()[index];
+                if (item !== undefined) select(item);
+              }
+            }}
+            ref={(element) => {
+              menu = element;
+              // The menu has no size until its items mount, so it is placed once they have.
+              queueMicrotask(() => {
+                if (!open) return;
+                stopFollowing = placeOnInvoker(element, request, () => {
+                  props.onDismiss();
+                  returnFocus(request.invoker);
+                });
+                menuItems(element)[0]?.focus();
+              });
+            }}
+            role="menu"
+          >
+            <For each={props.items}>
+              {(item) => menuItem(item, false, select)}
             </For>
-          </Show>
-        </div>
-      )}
+            <Show when={(props.destructiveItems?.length ?? 0) > 0}>
+              <Show when={(props.items?.length ?? 0) > 0}>
+                <hr class={styles.separator} />
+              </Show>
+              <For each={props.destructiveItems}>
+                {(item) => menuItem(item, true, select)}
+              </For>
+            </Show>
+          </div>
+        );
+      }}
     </Show>
   );
+}
+
+/** Places the menu where it was asked for and keeps it there relative to its invoker. */
+function placeOnInvoker(
+  element: HTMLElement,
+  request: ContextMenuRequest,
+  lose: () => void,
+): () => void {
+  const opened = request.invoker.getBoundingClientRect();
+  const place = (invoker: DOMRect) => {
+    const position = contextMenuPosition(
+      {
+        x: request.x + invoker.left - opened.left,
+        y: request.y + invoker.top - opened.top,
+      },
+      element.getBoundingClientRect(),
+      window,
+    );
+    element.style.setProperty("--wl-context-menu-left", `${position.left}px`);
+    element.style.setProperty("--wl-context-menu-top", `${position.top}px`);
+  };
+  place(opened);
+  return followAnchor(request.invoker, place, lose);
 }
 
 function menuItem(
