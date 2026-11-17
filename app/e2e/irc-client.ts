@@ -477,8 +477,16 @@ export class IrcClient {
   }
 
   async setAlwaysOn(enabled: boolean): Promise<void> {
-    this.privmsg("NickServ", `SET ALWAYS-ON ${enabled ? "true" : "false"}`);
-    await this.waitFor("always-on setting confirmation", (line) =>
+    await this.#setAccountOption("ALWAYS-ON", enabled);
+  }
+
+  async setAutoAway(enabled: boolean): Promise<void> {
+    await this.#setAccountOption("AUTO-AWAY", enabled);
+  }
+
+  async #setAccountOption(name: string, enabled: boolean): Promise<void> {
+    this.privmsg("NickServ", `SET ${name} ${enabled ? "true" : "false"}`);
+    await this.waitFor(`${name} setting confirmation`, (line) =>
       line.includes("Successfully changed your account settings"),
     );
   }
