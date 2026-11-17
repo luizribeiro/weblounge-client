@@ -64,7 +64,7 @@ test.describe("desktop shell against local Ergo", () => {
     await page
       .getByRole("textbox", { name: "Message" })
       .fill("short line three");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(
       page.getByText("short line three", { exact: true }),
     ).toBeVisible();
@@ -259,7 +259,7 @@ test.describe("desktop shell against local Ergo", () => {
       await page
         .getByRole("textbox", { name: "Message" })
         .fill("I like where this client is going");
-      await page.getByRole("button", { name: "Send" }).click();
+      await page.getByRole("button", { name: "Send", exact: true }).click();
 
       for (const nick of ["ana", "tomo", "mel"]) {
         seedClients.push(

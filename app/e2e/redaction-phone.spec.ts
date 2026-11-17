@@ -27,7 +27,7 @@ test("deletes your own message from the long-press sheet after confirming", asyn
   await openChat(page, irc);
   const text = "sent from my phone by mistake";
   await composer(page).fill(text);
-  await tap(page, page.getByRole("button", { name: "Send" }));
+  await tap(page, page.getByRole("button", { name: "Send", exact: true }));
   const sent = await peer.waitForPrivmsg(irc.channel, text, irc.account);
   const row = productionMessageRow(page, text);
   await expect(row).toHaveAttribute("data-delivery", "confirmed");
@@ -119,7 +119,7 @@ test("captures the phone sheet, confirmation and bars in Lounge, Lounge Night an
     await useTheme(page, irc, theme.name, theme.id);
     const text = `deleting this in ${theme.name}`;
     await composer(page).fill(text);
-    await tap(page, page.getByRole("button", { name: "Send" }));
+    await tap(page, page.getByRole("button", { name: "Send", exact: true }));
     const row = productionMessageRow(page, text);
     await expect(row).toHaveAttribute("data-delivery", "confirmed");
 

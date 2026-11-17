@@ -302,7 +302,7 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await expectDrawerEndsAtComposer(page);
 
     await composer.fill("sent beside the list");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expectSentFromPane(page, pal, irc, "sent beside the list");
     await expect(composer).toHaveValue("");
     await expectDockedDrawerOpen(page);

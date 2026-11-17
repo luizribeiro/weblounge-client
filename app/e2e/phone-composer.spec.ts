@@ -80,7 +80,7 @@ test("keeps the phone Send control inside a capped composer", async ({
       name: `Message ${irc.channel}`,
     });
     const field = page.locator("[data-composer-field]");
-    const send = page.getByRole("button", { name: "Send" });
+    const send = page.getByRole("button", { name: "Send", exact: true });
     await expect(send).toHaveAttribute("data-empty", "true");
     await expect(send).toHaveCSS("opacity", "1");
     await input.fill("phone composer one line");
@@ -158,7 +158,7 @@ test("aligns desktop Send with single-line and multiline fields", async ({
       name: `Message ${irc.channel}`,
     });
     const field = page.locator("[data-composer-field]");
-    const send = page.getByRole("button", { name: "Send" });
+    const send = page.getByRole("button", { name: "Send", exact: true });
     for (const density of ["compact", "cozy", "comfortable"]) {
       await page.locator("html").evaluate((root, value) => {
         root.dataset.messageDensity = value;

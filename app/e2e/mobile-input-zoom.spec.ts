@@ -130,7 +130,7 @@ test.describe("mobile text field zoom", () => {
     }
     await composer.fill("");
     for (const target of [
-      page.getByRole("button", { name: "Send" }),
+      page.getByRole("button", { name: "Send", exact: true }),
       page.locator("[data-composer]"),
     ]) {
       expect((await touchMove(target, 400, 320)).moveAllowed).toBe(false);

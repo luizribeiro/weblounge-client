@@ -47,7 +47,7 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     const sent = `console send ${suffix}`;
     const composer = page.getByRole("textbox", { name: `Message ${channel}` });
     await composer.fill(sent);
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await list.press("End");
     await expect(page.getByText(sent, { exact: true })).toBeVisible();
     phase = "open members";

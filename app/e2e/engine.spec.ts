@@ -52,7 +52,7 @@ test.describe("local Ergo user flow", () => {
     const ownText = `from browser ${Date.now()}`;
     await observeDeliveries(page, ownText);
     await page.getByRole("textbox", { name: "Message" }).fill(ownText);
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByText(ownText, { exact: true })).toBeVisible();
     await expect
       .poll(() => observedDeliveries(page))
@@ -315,7 +315,7 @@ test.describe("local Ergo user flow", () => {
       const reply = "trusted reply";
       await observeDeliveries(page, reply);
       await page.getByRole("textbox", { name: `Message ${alias}` }).fill(reply);
-      await page.getByRole("button", { name: "Send" }).click();
+      await page.getByRole("button", { name: "Send", exact: true }).click();
       await expect(page.getByText(reply, { exact: true })).toBeVisible();
       await expect.poll(() => observedDeliveries(page)).toContain("confirmed");
     } finally {
@@ -398,7 +398,7 @@ test.describe("local Ergo user flow", () => {
     const text = "operator send";
     await observeDeliveries(page, text);
     await page.getByRole("textbox", { name: "Message" }).fill(text);
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect
       .poll(() => observedDeliveries(page))
       .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
@@ -720,7 +720,7 @@ test.describe("local Ergo user flow", () => {
     const text = "shared send";
     await observeDeliveries(secondTab, text);
     await firstTab.getByRole("textbox", { name: "Message" }).fill(text);
-    await firstTab.getByRole("button", { name: "Send" }).click();
+    await firstTab.getByRole("button", { name: "Send", exact: true }).click();
     await expect(secondTab.getByText(text, { exact: true })).toBeVisible();
 
     await expect

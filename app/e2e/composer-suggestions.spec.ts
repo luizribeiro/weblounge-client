@@ -112,7 +112,7 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(composer).toHaveValue("hello anita");
 
         await composer.fill("focus stays after desktop send");
-        await page.getByRole("button", { name: "Send" }).click();
+        await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(composer).toBeFocused();
         await expect(
           page.getByText("focus stays after desktop send", { exact: true }),
@@ -211,7 +211,7 @@ test.describe("composer suggestions against local Ergo", () => {
         await composer.press("Enter");
         await expect(composer).toHaveValue("#weblounge-test");
         await composer.fill("focus stays after mobile send");
-        await page.getByRole("button", { name: "Send" }).tap();
+        await page.getByRole("button", { name: "Send", exact: true }).tap();
         await expect(composer).toBeFocused();
         await expect(
           page.getByText("focus stays after mobile send", { exact: true }),
