@@ -1,14 +1,30 @@
 export interface BuildVersion {
+  readonly version: string;
+  readonly commit: string;
   readonly sha: string;
   readonly builtAt: Date | null;
+  readonly built: string | null;
   readonly text: string;
 }
 
+const shortCommitLength = 7;
+
 export function formatBuildVersion(
-  sha: string,
+  commit: string,
   builtAtEpochSeconds: number,
 ): BuildVersion {
-  if (sha === "dev") return { sha, builtAt: null, text: "weblounge dev" };
+  const sha = shortCommit(commit);
+  const version = versionFor(sha);
+  if (commit === "dev") {
+    return {
+      version,
+      commit,
+      sha,
+      builtAt: null,
+      built: null,
+      text: `weblounge ${version}`,
+    };
+  }
 
   const builtAt = new Date(builtAtEpochSeconds * 1_000);
   if (
@@ -17,12 +33,26 @@ export function formatBuildVersion(
   ) {
     throw new Error("invalid build timestamp");
   }
-  const minute = builtAt.toISOString().slice(0, 16).replace("T", " ");
+  const built = `${builtAt.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   return {
+    version,
+    commit,
     sha,
     builtAt,
-    text: `weblounge ${sha} · built ${minute} UTC`,
+    built,
+    text: `weblounge ${version} · built ${built}`,
   };
+}
+
+// Web releases are named only by their tag, which the build cannot read.
+function versionFor(sha: string): string {
+  return sha;
+}
+
+function shortCommit(commit: string): string {
+  return /^[0-9a-f]{40}$/u.test(commit)
+    ? commit.slice(0, shortCommitLength)
+    : commit;
 }
 
 export const buildVersion = Object.freeze(

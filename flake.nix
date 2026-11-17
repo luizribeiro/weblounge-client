@@ -40,7 +40,7 @@
       system:
       let
         overlays = [ (import rust-overlay) ];
-        buildSha = self.shortRev or "dirty";
+        buildSha = self.rev or "dirty";
         buildTimestamp = toString (self.lastModified or 0);
         pkgs = import nixpkgs { inherit overlays system; };
         rustToolchainWith =
