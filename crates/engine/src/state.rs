@@ -1957,20 +1957,44 @@ impl NetworkModel {
         }
     }
 
-    fn clear_covered_gaps(&mut self, buffer_id: BufferId, from_ms: i64, to_ms: i64) {
+    /// An older page runs unbroken up to the line it was requested before, so it fills the part of
+    /// any gap ending at or below that line, leaving only what lies beyond the page's oldest line.
+    fn backfill_gaps(&mut self, buffer_id: BufferId, page_oldest_ms: i64, page_newest_ms: i64) {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return;
         };
-        let previous = buffer.timeline.len();
-        buffer.timeline.retain(|record| {
-            !matches!(
-                &record.body,
-                RecordBody::Gap(gap) if from_ms <= gap.from_ms && gap.to_ms <= to_ms
-            )
-        });
-        if buffer.timeline.len() != previous {
-            derive_read_projection(buffer);
-            self.dirty_timelines.insert(buffer_id);
+        let contiguous_until = buffer
+            .timeline
+            .iter()
+            .filter_map(chat_projection)
+            .map(message_time)
+            .filter(|time| *time > page_newest_ms)
+            .min()
+            .unwrap_or(page_newest_ms);
+        let reached = buffer
+            .timeline
+            .iter()
+            .filter_map(|record| match &record.body {
+                RecordBody::Gap(gap)
+                    if page_oldest_ms < gap.to_ms && gap.to_ms <= contiguous_until =>
+                {
+                    Some((record.id, gap.from_ms))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if reached.is_empty() {
+            return;
+        }
+        buffer
+            .timeline
+            .retain(|record| reached.iter().all(|(id, _)| *id != record.id));
+        derive_read_projection(buffer);
+        self.dirty_timelines.insert(buffer_id);
+        for (_, from_ms) in reached {
+            if from_ms < page_oldest_ms {
+                let _ = self.record_gap(buffer_id, from_ms, page_oldest_ms);
+            }
         }
     }
 
@@ -2833,7 +2857,7 @@ impl NetworkModel {
             at_start,
         };
         if loading_older && let (Some(from_ms), Some(to_ms)) = (oldest_time_ms, newest_time_ms) {
-            self.clear_covered_gaps(buffer_id, from_ms, to_ms);
+            self.backfill_gaps(buffer_id, from_ms, to_ms);
         }
         let reconnect_filled = end || gap_range.is_some();
         if let Some((from_ms, to_ms)) = gap_range {
@@ -6058,6 +6082,109 @@ mod tests {
                 .iter()
                 .all(|record| !matches!(record.body, RecordBody::Gap(_)))
         );
+    }
+
+    fn room_with_gap_below_its_window(window: &[i64], gap: (i64, i64)) -> (NetworkModel, BufferId) {
+        let (mut model, state) = model(50);
+        for &time in window {
+            let id = format!("line-{time}");
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    &id,
+                    Some(&id),
+                    Some(time),
+                    time,
+                    TimelineOrigin::History,
+                ),
+                &state,
+            );
+        }
+        let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
+        model.record_gap(buffer_id, gap.0, gap.1).expect("gap");
+        (model, buffer_id)
+    }
+
+    const OLDER_PAGE_LINES: usize = 2;
+
+    fn finish_older_page(model: &mut NetworkModel, buffer_id: BufferId, oldest: i64, newest: i64) {
+        let channel = match &model.buffers[&buffer_id].key {
+            Some(NameKey::Channel(channel)) => channel.clone(),
+            _ => panic!("room is a channel"),
+        };
+        model.buffers.get_mut(&buffer_id).expect("room").history = HistoryState::LoadingOlder {
+            oldest: papo::HistoryReference::from(papo::MessageId::from("window-oldest")),
+        };
+        model
+            .finish_history(
+                &papo::Conversation::Channel(channel),
+                Some(papo::HistoryReference::from(system_time_from_millis(
+                    oldest,
+                ))),
+                Some(oldest),
+                Some(HistoryCursor::new(None, newest)),
+                OLDER_PAGE_LINES,
+                false,
+            )
+            .expect("older page finishes");
+    }
+
+    fn gaps(model: &NetworkModel, buffer_id: BufferId) -> Vec<(i64, i64)> {
+        model.buffers[&buffer_id]
+            .timeline
+            .iter()
+            .filter_map(|record| match &record.body {
+                RecordBody::Gap(gap) => Some((gap.from_ms, gap.to_ms)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_older_page_reaching_past_a_capped_catch_up_gap_fills_it() {
+        let (mut model, buffer_id) = room_with_gap_below_its_window(&[200, 210], (100, 200));
+
+        finish_older_page(&mut model, buffer_id, 90, 199);
+
+        assert!(gaps(&model, buffer_id).is_empty());
+    }
+
+    #[test]
+    fn an_older_page_stopping_inside_a_gap_leaves_only_its_older_part() {
+        let (mut model, buffer_id) = room_with_gap_below_its_window(&[200, 210], (100, 200));
+
+        finish_older_page(&mut model, buffer_id, 150, 199);
+        assert_eq!(gaps(&model, buffer_id), [(100, 150)]);
+
+        finish_older_page(&mut model, buffer_id, 90, 149);
+        assert!(gaps(&model, buffer_id).is_empty());
+    }
+
+    #[test]
+    fn an_older_page_keeps_a_gap_wholly_below_its_oldest_line() {
+        let (mut model, buffer_id) = room_with_gap_below_its_window(&[200, 210], (50, 80));
+
+        finish_older_page(&mut model, buffer_id, 90, 199);
+
+        assert_eq!(gaps(&model, buffer_id), [(50, 80)]);
+    }
+
+    #[test]
+    fn an_older_page_starting_at_a_gaps_older_edge_fills_it() {
+        let (mut model, buffer_id) = room_with_gap_below_its_window(&[200, 210], (100, 200));
+
+        finish_older_page(&mut model, buffer_id, 100, 199);
+
+        assert!(gaps(&model, buffer_id).is_empty());
+    }
+
+    #[test]
+    fn an_older_page_keeps_a_gap_above_the_line_it_was_requested_before() {
+        let (mut model, buffer_id) = room_with_gap_below_its_window(&[200, 300], (220, 280));
+
+        finish_older_page(&mut model, buffer_id, 90, 199);
+
+        assert_eq!(gaps(&model, buffer_id), [(220, 280)]);
     }
 
     #[test]
