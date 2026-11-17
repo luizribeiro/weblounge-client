@@ -287,10 +287,13 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
   `cargo tauri ios build --export-method app-store-connect` with the release `--config` and
   `TAURI_WEBLOUNGE_APP_IDENTIFIER` set (see the NSE), then puts back the `gen/apple` files the
   build rewrote. It checks the IPA's signature, both bundles' identifiers, versions, App Group and
-  keychain group, and `aps-environment = production`, uploads it with
-  `xcrun altool --upload-app` and the API key, then pushes the tag. `--dry-run` reports what a
-  release would refuse instead of stopping, builds and checks the IPA, and uploads and tags
-  nothing.
+  keychain group, the Info.plist keys App Store Connect requires (the extension's
+  `CFBundleDisplayName` among them), `aps-environment = production`, and that the app holds no
+  empty directory (Tauri's `gen/apple/assets` folder holds only `bundle.resources`, so the Xcode
+  project doesn't bundle it). It then runs `xcrun altool --validate-app` and
+  `--upload-app` with the API key, and pushes the tag. `--dry-run` reports what a release would
+  refuse instead of stopping, builds, checks and (given the credentials) validates the IPA, and
+  uploads and tags nothing.
 - **Privacy manifests**: the app's binary calls `stat`, `fstat` and `lstat` (Rust std and Tauri)
   and the NSE's `fstat`, so both manifests declare file timestamps (`C617.1`). Neither uses
   `mach_absolute_time`, `systemUptime` or the disk-space APIs (checked with `nm -u` on a release
