@@ -47,6 +47,11 @@ pub async fn push_permission(app: AppHandle) -> Result<PushPermission, NativeBri
 }
 
 #[tauri::command]
+pub async fn open_app_settings(app: AppHandle) -> Result<(), NativeBridgeError> {
+    call(&app, "openAppSettings", (), notification_center).await
+}
+
+#[tauri::command]
 pub async fn push_target(app: AppHandle) -> Result<Option<PushTarget>, NativeBridgeError> {
     let registration: Option<Registration> =
         call(&app, "pushTarget", (), apns_registration).await?;

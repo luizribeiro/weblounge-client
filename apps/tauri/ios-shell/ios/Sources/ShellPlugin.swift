@@ -78,6 +78,22 @@ final class ShellPlugin: Plugin {
     }
   }
 
+  @objc func openAppSettings(_ invoke: Invoke) {
+    guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else {
+      invoke.reject(BridgeFailure(.notificationCenter, "no notification settings URL"))
+      return
+    }
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url) { opened in
+        if opened {
+          invoke.resolve()
+        } else {
+          invoke.reject(BridgeFailure(.notificationCenter, "Settings didn't open"))
+        }
+      }
+    }
+  }
+
   @objc func pushTarget(_ invoke: Invoke) {
     switch registration.current() {
     case .unknown: invoke.resolve(Optional<String>.none)

@@ -9,6 +9,8 @@ pub enum NativeCommand {
     PushPermission,
     /// Asks for alert, sound and badge authorization, then registers with APNs.
     RequestPushPermission,
+    /// Opens the app's notification settings in the Settings app.
+    OpenAppSettings,
     /// Reads the APNs target once the app delegate has a device token.
     PushTarget,
     /// Creates and stores one route's decryption keys.
@@ -41,6 +43,7 @@ mod tests {
                 NativeCommand::RequestPushPermission,
                 "request_push_permission",
             ),
+            (NativeCommand::OpenAppSettings, "open_app_settings"),
             (NativeCommand::PushTarget, "push_target"),
             (NativeCommand::CreateRouteKeys, "create_route_keys"),
             (NativeCommand::DropRouteKeys, "drop_route_keys"),

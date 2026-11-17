@@ -26,7 +26,7 @@ pub enum NativeBridgeError {
         message: String,
     },
     /// `UNUserNotificationCenter` failed to authorize, set the badge, or list or remove
-    /// delivered notifications.
+    /// delivered notifications, or the app's notification settings couldn't be opened.
     #[error("notification center failed: {message}")]
     NotificationCenter {
         /// The system's description.

@@ -12,9 +12,10 @@ mod tests {
         window::{APP_URL, MAIN_LABEL},
     };
 
-    const IOS_PERMISSIONS: [&str; 11] = [
+    const IOS_PERMISSIONS: [&str; 12] = [
         "allow-push-permission",
         "allow-request-push-permission",
+        "allow-open-app-settings",
         "allow-push-target",
         "allow-create-route-keys",
         "allow-drop-route-keys",
@@ -107,13 +108,14 @@ mod tests {
     /// The match stops compiling when the bridge gains a command, so its grant is decided here.
     fn every_native_command() -> HashSet<NativeCommand> {
         use NativeCommand::{
-            CreateRouteKeys, DeliveredNotifications, DropRouteKeys, PushPermission, PushTarget,
-            RemoveDeliveredNotifications, RequestPushPermission, RoutesNeedingReregistration,
-            SetBadge, TakePushedMessages, WriteNotificationCounts,
+            CreateRouteKeys, DeliveredNotifications, DropRouteKeys, OpenAppSettings, PushPermission,
+            PushTarget, RemoveDeliveredNotifications, RequestPushPermission,
+            RoutesNeedingReregistration, SetBadge, TakePushedMessages, WriteNotificationCounts,
         };
         let all = [
             PushPermission,
             RequestPushPermission,
+            OpenAppSettings,
             PushTarget,
             CreateRouteKeys,
             DropRouteKeys,
@@ -128,6 +130,7 @@ mod tests {
             match command {
                 PushPermission
                 | RequestPushPermission
+                | OpenAppSettings
                 | PushTarget
                 | CreateRouteKeys
                 | DropRouteKeys

@@ -7,6 +7,7 @@ pub const PAGE_COMMANDS: &[&str] = &[
     "close_notification",
     "push_permission",
     "request_push_permission",
+    "open_app_settings",
     "push_target",
     "create_route_keys",
     "drop_route_keys",

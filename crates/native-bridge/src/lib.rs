@@ -19,6 +19,9 @@
 //!   re-registration, and only `request_push_permission` can show the system prompt. The token
 //!   arrives asynchronously from the app delegate, so it is read separately from the request, and
 //!   the shell announces a new or changed one with the `weblounge:push-target` page event;
+//! - blocked notifications: `open_app_settings` opens the app's notification settings. Once the
+//!   user has denied the prompt, iOS never shows it again and only the user can re-enable
+//!   notifications in Settings, so the page offers "Open Settings" instead of a prompt;
 //! - route keys: `create_route_keys` and `drop_route_keys`. Creating also stores the route's
 //!   network label and nickname, the route metadata the extension formats a push with,
 //!   because they are needed exactly as long as the keys;

@@ -24,6 +24,7 @@ interface NativeCommandSignatures
   extends Record<NativeCommand, Signature<unknown, unknown>> {
   readonly push_permission: Signature<NoRequest, PushPermission>;
   readonly request_push_permission: Signature<NoRequest, PushPermission>;
+  readonly open_app_settings: Signature<NoRequest, null>;
   readonly push_target: Signature<NoRequest, PushTarget | null>;
   readonly create_route_keys: Signature<CreateRouteKeysRequest, RouteKeys>;
   readonly drop_route_keys: Signature<DropRouteKeysRequest, null>;

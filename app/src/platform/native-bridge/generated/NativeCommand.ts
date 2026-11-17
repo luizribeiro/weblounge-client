@@ -3,4 +3,4 @@
 /**
  * The name of one shell command the page may `invoke`.
  */
-export type NativeCommand = "push_permission" | "request_push_permission" | "push_target" | "create_route_keys" | "drop_route_keys" | "routes_needing_reregistration" | "take_pushed_messages" | "set_badge" | "write_notification_counts" | "delivered_notifications" | "remove_delivered_notifications";
+export type NativeCommand = "push_permission" | "request_push_permission" | "open_app_settings" | "push_target" | "create_route_keys" | "drop_route_keys" | "routes_needing_reregistration" | "take_pushed_messages" | "set_badge" | "write_notification_counts" | "delivered_notifications" | "remove_delivered_notifications";

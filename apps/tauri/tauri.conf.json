@@ -40,7 +40,7 @@
         },
         {
           "identifier": "remote-page-ios",
-          "description": "Lets the hosted app register for APNs, keep its push route keys where the notification extension can read them, and manage the badge and delivered notifications on iOS, and nothing else.",
+          "description": "Lets the hosted app register for APNs, keep its push route keys where the notification extension can read them, manage the badge and delivered notifications, and open its notification settings on iOS, and nothing else.",
           "platforms": [
             "iOS"
           ],
@@ -55,6 +55,7 @@
           "permissions": [
             "allow-push-permission",
             "allow-request-push-permission",
+            "allow-open-app-settings",
             "allow-push-target",
             "allow-create-route-keys",
             "allow-drop-route-keys",
