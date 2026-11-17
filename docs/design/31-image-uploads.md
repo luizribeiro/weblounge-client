@@ -228,6 +228,66 @@ the choice exactly as a paste does, so the chip, U2 to U8, the limits and the fa
   file's chip; Playwright picks a fixture PNG through the `filechooser` event on Chromium, WebKit
   and the phone projects, sends it, and covers cancel and a network without a file host.
 
+## Drag and drop
+
+Added 2026-11-17 (a slice of backlog F9, Luiz via #feedback item 4): dropping an image anywhere on
+the window attaches it to the open conversation's composer, on desktop, the phone layout and the Mac
+app.
+
+- **One attach path.** A drop, a paste and a `/file` pick all go through one new composer function,
+  `attachFile`, which runs one new check, `attachableImage` (`features/composer/attachable-image.ts`,
+  replacing the picker's `pickedImage`), and then the controller's `attach`, so the chip, U2 to U8
+  and the replace question are the same. A file typed `image/*` passes, a file typed as anything else is
+  `not_image`, an untyped file is typed by its sniffed bytes or is `unreadable`, and a file over
+  `maxImageBytes` (50 MB, a client ceiling that keeps decoding and re-encoding in memory bounds;
+  the file host's own limit still answers with `413` and the shrink retry) is `too_large`. This also refuses a pasted image over 50 MB, which
+  used to fail only at upload; the chip's `too_large` text for a host's `413` is unchanged. Paste and
+  `/file` show a rejection as the note above the composer; a drop shows it in a dialog, because the
+  pointer, not the composer, is where the user is looking.
+- **The target.** The window has one drop zone (`ImageDropZone`, mounted by the responsive shell).
+  Each mounted composer registers itself as a drop target and moves to the front when its text
+  field gains focus; the front target is the open conversation's (with split view, the pane last
+  focused). An unmounted composer leaves the list, so the previous one takes over. A target answers `ready`, `unavailable` (no file host) or `closed` (the
+  composer is disabled, as in a server buffer).
+- **Events.** `dragenter`, `dragover`, `dragleave` and `drop` on `window`. Only a drag whose
+  `dataTransfer.types` includes `Files` counts: its `dragover` and `drop` are always
+  `preventDefault`ed, so the browser never navigates to the file, and `dragover` sets
+  `dropEffect = "copy"`. While a modal dialog is open (any `[aria-modal="true"]`, the drop dialog
+  included) a file drop is still prevented but ignored, and no overlay shows. Text, links and in-page drags are
+  left alone (dropping text into the composer still inserts it natively). `dragleave` fires for
+  every child the pointer crosses, so the overlay follows an enter/leave depth counter, reset on
+  `drop` and on window `blur`. `relatedTarget` alone cannot be used: WebKit reports it as null
+  for every `dragleave`. A drag cancelled with Escape fires `dragleave`, and `dragend` never fires
+  for a drag from outside the page.
+- **Overlay.** While files are dragged over the window, a subtle full-window hint: a scrim in
+  `overlay-scrim` at low opacity, an inset dashed `accent` outline with the panel radius, and a
+  centred label "Drop an image to attach it". It is `pointer-events: none`, so it never becomes a
+  drag target itself, has no motion, and is not rendered at rest.
+- **Rejections** open `ErrorDialog`, an alert dialog on the same frame as `ConfirmationDialog`
+  (scrim, focus trap, Escape) with one OK button, which returns focus to the composer. The title is
+  "Can't attach {name}" ("Can't attach these files" for several), with a name longer than 40
+  characters shortened in the middle, keeping its extension, and the explanation is:
+  | Case | Explanation |
+  |---|---|
+  | several files (v1 sends one image) | Drop one image at a time. |
+  | `not_image` | Only images can be sent. |
+  | `too_large` | Image is too large (max 50 MB). |
+  | `unreadable` | Can't read this image. |
+  | no target | Open a channel or direct message first. |
+  | `closed` (server buffer, kicked, unavailable) | You can't send messages here. |
+  | `unavailable` | This network doesn't accept uploads. |
+- **Mac app.** Tauri installs its own drag-and-drop handler on the webview by default, and on macOS
+  that handler consumes the native drag (wry skips `WKWebView`'s `draggingEntered`/
+  `performDragOperation` when it returns true, which Tauri's always does), so the page never sees
+  the drop. The wrapper must build its window with `disable_drag_drop_handler()` (design 27); until
+  then drag and drop works in browsers only.
+- **Testing:** unit tests for `attachableImage` (every outcome, the ceiling), the drop decision over
+  each case, the depth counter, `ErrorDialog`, and the composer's drop target. Playwright against
+  local Ergo dispatches `DataTransfer` drag events on Chromium: a PNG shows the chip, a `.zip`, an
+  image over the ceiling and two files show the dialog, a text drop does nothing, and the overlay
+  shows during the drag and clears on leave and drop. Screenshots of the overlay and the dialog,
+  light and dark.
+
 ## CSP
 
 The beta policy already allows `blob:` in `img-src` and the file host's `/upload` in `connect-src`
@@ -263,5 +323,5 @@ images (design 30); Tauri has no CSP.
 
 ## Out of scope
 
-The Attach button, drag-and-drop, several images, arbitrary files, an outbox for
+The Attach button, several images, arbitrary files, an outbox for
 offline sends, deleting uploads (the spec has none), and a native Tauri uploader.
