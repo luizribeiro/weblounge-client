@@ -66,6 +66,12 @@ export async function openNotificationSettings(page: Page): Promise<void> {
 type AboutFacts = Readonly<Record<string, string>>;
 
 const fullCommitTail = "[0-9a-f]{33}";
+const releaseVersion = String.raw`\d+\.\d+\.\d+(?:\+\d+)?`;
+const commitLabel = "[0-9a-f]{7}|ci|dirty";
+export const shownVersion = new RegExp(
+  `(?:${releaseVersion}|${commitLabel})$`,
+  "u",
+);
 
 export async function expectAboutFacts(
   about: Locator,
@@ -80,8 +86,10 @@ export async function expectAboutFacts(
     labels.map((label, index) => [label, values[index] ?? ""]),
   );
   expect(labels).toEqual(["Version", "Commit", "Built", "Channel", "Platform"]);
-  expect(facts.Version).toMatch(/^(?:[0-9a-f]{7}|ci|dirty)$/u);
-  expect(facts.Commit).toBe(facts.Version);
+  expect(facts.Commit).toMatch(new RegExp(`^(?:${commitLabel})$`, "u"));
+  expect(facts.Version).toMatch(
+    new RegExp(`^(?:${releaseVersion}|${facts.Commit})$`, "u"),
+  );
   expect(facts.Built).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/u);
   expect(facts.Channel).toBe("Release");
   expect(facts.Platform).toBe(platform);

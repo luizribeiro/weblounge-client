@@ -23,7 +23,22 @@ it.each([
   `${fullCommit}0`,
   fullCommit.toUpperCase(),
 ])("keeps %s whole when it is not a full commit", (commit) => {
-  expect(formatBuildVersion(commit, 0)).toMatchObject({ commit, sha: commit });
+  expect(formatBuildVersion(commit, 0, null)).toMatchObject({
+    commit,
+    sha: commit,
+    version: commit,
+    text: `weblounge ${commit} · built 1970-01-01 00:00 UTC`,
+  });
+});
+
+it("names a released build by its version, keeping the short commit", () => {
+  const build = formatBuildVersion(fullCommit, 0, "0.2.0+14");
+  expect(build).toMatchObject({
+    version: "0.2.0+14",
+    commit: fullCommit,
+    sha: "68ea9a3",
+  });
+  expect(build.text).toBe("weblounge 0.2.0+14 · built 1970-01-01 00:00 UTC");
 });
 
 it("labels the development server without a fake timestamp", () => {

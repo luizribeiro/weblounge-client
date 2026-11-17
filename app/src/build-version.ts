@@ -12,9 +12,10 @@ const shortCommitLength = 7;
 export function formatBuildVersion(
   commit: string,
   builtAtEpochSeconds: number,
+  release: string | null = null,
 ): BuildVersion {
   const sha = shortCommit(commit);
-  const version = versionFor(sha);
+  const version = versionFor(release, sha);
   if (commit === "dev") {
     return {
       version,
@@ -44,9 +45,9 @@ export function formatBuildVersion(
   };
 }
 
-// Web releases are named only by their tag, which the build cannot read.
-function versionFor(sha: string): string {
-  return sha;
+// CI and local builds get no release version (docs/RELEASING.md), so they go by their commit.
+function versionFor(release: string | null, sha: string): string {
+  return release ?? sha;
 }
 
 function shortCommit(commit: string): string {
@@ -56,7 +57,11 @@ function shortCommit(commit: string): string {
 }
 
 export const buildVersion = Object.freeze(
-  formatBuildVersion(__BUILD_SHA__, Number(__BUILD_TIMESTAMP__)),
+  formatBuildVersion(
+    __BUILD_SHA__,
+    Number(__BUILD_TIMESTAMP__),
+    __BUILD_VERSION__,
+  ),
 );
 
 export function exposeBuildVersion(browserWindow: Window): void {

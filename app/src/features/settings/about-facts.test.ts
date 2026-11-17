@@ -8,9 +8,9 @@ const safariOnMac =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
 
 const macBeta: AboutInput = {
-  build: formatBuildVersion(fullCommit, builtAt),
+  build: formatBuildVersion(fullCommit, builtAt, "0.2.0+14"),
   channel: "beta",
-  shell: { kind: "macos-app", version: "0.1.3" },
+  shell: { kind: "macos-app", version: "0.2.0+3" },
   display: "tauri",
 };
 
@@ -21,13 +21,13 @@ function shown(input: AboutInput): Record<string, string> {
 }
 
 describe("about facts", () => {
-  it("shows the short commit and the native shell version", () => {
+  it("shows the release version beside the short commit and the shell version", () => {
     expect(shown(macBeta)).toEqual({
-      "settings.about.version": "68ea9a3",
+      "settings.about.version": "0.2.0+14",
       "settings.about.commit": "68ea9a3",
       "settings.about.built": "2026-11-16 06:40 UTC",
       "settings.about.channel": "Beta",
-      "settings.about.platform": "Mac app 0.1.3",
+      "settings.about.platform": "Mac app 0.2.0+3",
     });
   });
 
@@ -61,11 +61,11 @@ describe("debug info text", () => {
     expect(text).toBe(
       [
         "weblounge debug info",
-        "Version: 68ea9a3",
+        "Version: 0.2.0+14",
         `Commit: ${fullCommit}`,
         "Built: 2026-11-16 06:40 UTC",
         "Channel: Beta",
-        "Platform: Mac app 0.1.3",
+        "Platform: Mac app 0.2.0+3",
         `User agent: ${safariOnMac}`,
       ].join("\n"),
     );

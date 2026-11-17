@@ -11,6 +11,7 @@ import {
   expectAboutFacts,
   expectCopyDebugInfo,
   settingsScreenshot,
+  shownVersion,
 } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
@@ -99,7 +100,7 @@ test.describe("Settings in the installed phone app", () => {
     await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
     await openSettings(page);
     const row = page.getByRole("button", { name: /^About/u });
-    await expect(row).toContainText(/About\s*(?:[0-9a-f]{7}|ci|dirty)$/u);
+    await expect(row).toContainText(shownVersion);
     await row.tap();
     await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
     await expectSettled(page);
