@@ -119,6 +119,40 @@ mod tests {
     impl Peer {
         async fn monitored() -> Self {
             let (client, events, wire, nick) = monitoring_alice().await;
+            Self::with_direct(client, events, wire, nick)
+        }
+
+        async fn sharing_a_channel(caps: &[&str]) -> Self {
+            let (client, mut events, mut wire) =
+                papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            wire.register(caps).await;
+            next(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            wire.server(":weblounge!u@h JOIN #room").await;
+            wire.server(":offline.test 353 weblounge = #room :weblounge alice")
+                .await;
+            wire.server(":offline.test 366 weblounge #room :End of NAMES")
+                .await;
+            next(&mut events, |event| {
+                matches!(event, papo::Event::ChannelSynced(_))
+            })
+            .await;
+            let nick = client
+                .state()
+                .user("alice")
+                .map(|user| user.nick().clone())
+                .expect("alice shares #room");
+            Self::with_direct(client, events, wire, nick)
+        }
+
+        fn with_direct(
+            client: papo::Client,
+            events: papo::Events,
+            wire: Wire,
+            nick: papo::Nick,
+        ) -> Self {
             let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
             let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
             Self {
@@ -357,45 +391,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_peer_seen_in_a_shared_channel_is_online_until_it_leaves() {
-        let (client, mut events, mut wire) =
-            papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&["away-notify"]).await;
-        next(&mut events, |event| {
-            matches!(event, papo::Event::Connected(_))
+        let mut peer = Peer::sharing_a_channel(&["away-notify"]).await;
+
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+
+        peer.server(":alice!u@h PART #room", |event| {
+            matches!(event, papo::Event::Parted(_))
         })
         .await;
-        wire.server(":weblounge!u@h JOIN #room").await;
-        wire.server(":offline.test 353 weblounge = #room :weblounge alice")
-            .await;
-        wire.server(":offline.test 366 weblounge #room :End of NAMES")
-            .await;
-        next(&mut events, |event| {
-            matches!(event, papo::Event::ChannelSynced(_))
-        })
-        .await;
-        let nick = client
-            .state()
-            .user("alice")
-            .map(|user| user.nick().clone())
-            .expect("alice shares #room");
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
-        let presence = |model: &mut NetworkModel| {
-            model
-                .sync_direct_peers(&client.state())
-                .into_iter()
-                .map(|event| match event {
-                    EngineToUi::BufferUpdated { buffer } => (buffer.id, buffer.peer_presence),
-                    other => panic!("unexpected presence event {other:?}"),
-                })
-                .collect::<Vec<_>>()
-        };
-
-        assert_eq!(presence(&mut model), [(alice, Some(PeerPresence::Online))]);
-
-        wire.server(":alice!u@h PART #room").await;
-        next(&mut events, |event| matches!(event, papo::Event::Parted(_))).await;
-        assert_eq!(presence(&mut model), [(alice, None)]);
+        assert_eq!(peer.sync(), [(peer.alice, None)]);
     }
 
     #[tokio::test]
