@@ -6,7 +6,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import { snapshotRow } from "./engine-database";
 import { captureHistoryWire, type WireTrace } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollToTranscriptTop } from "./message-list-scroll";
@@ -80,8 +80,8 @@ for (const shell of shells) {
           new RegExp(`^${fixture.channel}, (?:[1-9]\\d*|99\\+) unread`, "u"),
         );
       await expect
-        .poll(async () => (await snapshotRow(page, seeded.channel))?.preview)
-        .toBe(`weblounge-bot: ${seeded.newest}`);
+        .poll(() => snapshotRow(page, seeded.channel))
+        .toMatchObject({ preview: `weblounge-bot: ${seeded.newest}` });
 
       await page.goto(appUrl(seeded.channel));
       await expect(row).toBeVisible();
@@ -509,35 +509,4 @@ async function rowTime(row: Locator): Promise<number> {
   return new Date(
     (await row.locator("time").getAttribute("datetime")) ?? 0,
   ).getTime();
-}
-
-interface SnapshotRow {
-  readonly preview?: string;
-  readonly title?: string;
-}
-
-async function snapshotRow(
-  page: Page,
-  title: string,
-): Promise<SnapshotRow | undefined> {
-  const database = await openEngineDatabase(page);
-  try {
-    return await database.evaluate(async (value, expectedTitle) => {
-      const bytes = await new Promise<unknown>((resolve, reject) => {
-        const request = value
-          .transaction("cache")
-          .objectStore("cache")
-          .get(new TextEncoder().encode("chat-list-snapshot"));
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      if (!(bytes instanceof Uint8Array)) return undefined;
-      const snapshot = JSON.parse(new TextDecoder().decode(bytes)) as {
-        rows?: readonly SnapshotRow[];
-      };
-      return snapshot.rows?.find((row) => row.title === expectedTitle);
-    }, title);
-  } finally {
-    await closeEngineDatabase(database);
-  }
 }

@@ -1,5 +1,9 @@
 import { devices, type Locator, type Page } from "@playwright/test";
-import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import {
+  closeEngineDatabase,
+  openEngineDatabase,
+  snapshotRow,
+} from "./engine-database";
 import {
   captureHistoryWire,
   heldHistoryRequestCount,
@@ -1008,40 +1012,6 @@ async function expectRead(
   channel: string,
 ): Promise<void> {
   await expect(row).toHaveAttribute("aria-label", rowName(channel));
-}
-
-async function snapshotRow(page: Page, channel: string): Promise<unknown> {
-  const database = await openEngineDatabase(page);
-  try {
-    return await database.evaluate(async (value, title) => {
-      const bytes = await new Promise<unknown>((resolve, reject) => {
-        const request = value
-          .transaction("cache")
-          .objectStore("cache")
-          .get(new TextEncoder().encode("chat-list-snapshot"));
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      if (!(bytes instanceof Uint8Array)) return undefined;
-      const snapshot: unknown = JSON.parse(new TextDecoder().decode(bytes));
-      if (
-        typeof snapshot !== "object" ||
-        snapshot === null ||
-        !("rows" in snapshot) ||
-        !Array.isArray(snapshot.rows)
-      )
-        return undefined;
-      return snapshot.rows.find(
-        (row) =>
-          typeof row === "object" &&
-          row !== null &&
-          "title" in row &&
-          row.title === title,
-      );
-    }, channel);
-  } finally {
-    await closeEngineDatabase(database);
-  }
 }
 
 async function snapshotRows(

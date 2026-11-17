@@ -71,3 +71,37 @@ export async function closeEngineDatabase(
   await database.evaluate((value) => value.close());
   await database.dispose();
 }
+
+export async function snapshotRow(page: Page, title: string): Promise<unknown> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(async (value, expectedTitle) => {
+      const bytes = await new Promise<unknown>((resolve, reject) => {
+        const request = value
+          .transaction("cache")
+          .objectStore("cache")
+          .get(new TextEncoder().encode("chat-list-snapshot"));
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      if (!(bytes instanceof Uint8Array)) return undefined;
+      const snapshot: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      if (
+        typeof snapshot !== "object" ||
+        snapshot === null ||
+        !("rows" in snapshot) ||
+        !Array.isArray(snapshot.rows)
+      )
+        return undefined;
+      return snapshot.rows.find(
+        (row) =>
+          typeof row === "object" &&
+          row !== null &&
+          "title" in row &&
+          row.title === expectedTitle,
+      );
+    }, title);
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}

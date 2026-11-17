@@ -5,6 +5,7 @@ import {
   ENGINE_DATABASE_STORES,
   ENGINE_DATABASE_VERSION,
   openEngineDatabase,
+  snapshotRow,
 } from "./engine-database";
 import { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
@@ -764,7 +765,7 @@ test("reconciles a restored pushed direct message with history", async ({
   const text = `pushed direct before history ${botNickname}`;
   await page.goto(irc.url());
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-  await expect.poll(() => snapshotContainsBuffer(page, irc.channel)).toBe(true);
+  await expect.poll(() => snapshotRow(page, irc.channel)).toBeDefined();
   const departed = bot.waitForNickDeparture(appAccount);
   await page.close();
   await departed;
@@ -902,44 +903,6 @@ async function setTestAccountAlwaysOn(
   } finally {
     client.close();
     await client.waitForDisconnect();
-  }
-}
-
-async function snapshotContainsBuffer(
-  page: Page,
-  title: string,
-): Promise<boolean> {
-  const database = await openEngineDatabase(page);
-  try {
-    return await database.evaluate(async (value, expectedTitle) => {
-      const bytes = await new Promise<unknown>((resolve, reject) => {
-        const request = value
-          .transaction("cache")
-          .objectStore("cache")
-          .get(new TextEncoder().encode("chat-list-snapshot"));
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      if (!(bytes instanceof Uint8Array)) return false;
-      const snapshot: unknown = JSON.parse(new TextDecoder().decode(bytes));
-      if (
-        typeof snapshot !== "object" ||
-        snapshot === null ||
-        !("rows" in snapshot) ||
-        !Array.isArray(snapshot.rows)
-      ) {
-        return false;
-      }
-      return snapshot.rows.some(
-        (row) =>
-          typeof row === "object" &&
-          row !== null &&
-          "title" in row &&
-          row.title === expectedTitle,
-      );
-    }, title);
-  } finally {
-    await closeEngineDatabase(database);
   }
 }
 
