@@ -3,9 +3,8 @@ import { Portal } from "solid-js/web";
 import { t } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
 import { trapTab } from "../../ui/focus-trap";
-import { followAnchor } from "../../ui/follow-anchor";
 import { onPointerDownOutside } from "../../ui/outside-pointer";
-import { pickerPosition } from "./picker-position";
+import { anchorPopover } from "./anchored-popover";
 import styles from "./ReactionPicker.module.css";
 import { ReactionPickerPanel } from "./ReactionPickerPanel";
 
@@ -30,12 +29,10 @@ export function ReactionPicker(props: {
   };
 
   onMount(() => {
-    if (dialog !== undefined) {
-      const opened = dialog;
-      const follow = () => place(opened, props.invoker);
-      follow();
-      onCleanup(followAnchor(props.invoker, follow, close));
-    }
+    if (dialog !== undefined)
+      onCleanup(
+        anchorPopover(dialog, props.invoker, "--wl-reaction-picker", close),
+      );
     search?.focus({ preventScroll: true });
     onPointerDownOutside(
       () => [dialog, props.invoker],
@@ -71,14 +68,4 @@ export function ReactionPicker(props: {
       </div>
     </Portal>
   );
-}
-
-function place(dialog: HTMLElement, invoker: HTMLElement): void {
-  const position = pickerPosition(
-    invoker.getBoundingClientRect(),
-    dialog.getBoundingClientRect(),
-    window,
-  );
-  dialog.style.setProperty("--wl-reaction-picker-left", `${position.left}px`);
-  dialog.style.setProperty("--wl-reaction-picker-top", `${position.top}px`);
 }
