@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  altoolArgs,
   buildNumber,
   iosBuildArgs,
   iosBuildEnv,
@@ -8,7 +9,6 @@ import {
   ipaProblems,
   staleBuild,
   unshippableVersion,
-  uploadArgs,
   uploadCredentials,
 } from "./ios-plan.mjs";
 
@@ -136,12 +136,12 @@ test("builds the release identity for App Store Connect with the build number", 
   ]);
 });
 
-test("uploads the IPA with the API key", () => {
-  assert.deepEqual(
-    uploadArgs({ ipa: "/tmp/weblounge.ipa", keyId: "2X9R4HXF34", issuer: "57246542" }),
-    [
+test("validates and uploads the IPA with the API key", () => {
+  const credentials = { ipa: "/tmp/weblounge.ipa", keyId: "2X9R4HXF34", issuer: "57246542" };
+  for (const action of ["validate-app", "upload-app"]) {
+    assert.deepEqual(altoolArgs(action, credentials), [
       "altool",
-      "--upload-app",
+      `--${action}`,
       "--type",
       "ios",
       "-f",
@@ -150,8 +150,8 @@ test("uploads the IPA with the API key", () => {
       "2X9R4HXF34",
       "--apiIssuer",
       "57246542",
-    ],
-  );
+    ]);
+  }
 });
 
 const bundle = (identifier, entitlements, keys) => ({

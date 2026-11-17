@@ -71,9 +71,9 @@ export const iosBuildArgs = (build) => [
   "app-store-connect",
 ];
 
-export const uploadArgs = ({ ipa, keyId, issuer }) => [
+export const altoolArgs = (action, { ipa, keyId, issuer }) => [
   "altool",
-  "--upload-app",
+  `--${action}`,
   "--type",
   "ios",
   "-f",

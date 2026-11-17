@@ -8,6 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { findEmptyDirectories } from "./bundle-files.mjs";
 import {
+  altoolArgs,
   buildNumber,
   iosBuildArgs,
   iosBuildEnv,
@@ -16,7 +17,6 @@ import {
   keyFile,
   staleBuild,
   unshippableVersion,
-  uploadArgs,
   uploadCredentials,
 } from "./ios-plan.mjs";
 import { blockers } from "./plan.mjs";
@@ -118,13 +118,18 @@ function verify(release) {
   }
 }
 
+const altool = (action, credentials) =>
+  step("/usr/bin/xcrun", altoolArgs(action, { ipa: IPA, ...credentials }));
+
 // The tag records that App Store Connect has taken this build number, so it follows a successful
 // upload even if processing later rejects the build.
 function publish({ head, tag, version, build, credentials }) {
   if (run("git", ["rev-parse", "HEAD"]) !== head) {
     throw new Error("HEAD moved during the build; the IPA no longer matches it");
   }
-  step("/usr/bin/xcrun", uploadArgs({ ipa: IPA, ...credentials }));
+  // App Store Connect's own checks, so a build Apple would reject stops before it is uploaded.
+  altool("validate-app", credentials);
+  altool("upload-app", credentials);
   step("git", ["tag", "-a", tag, "-m", `weblounge iOS ${version} (${build})`, head]);
   try {
     step("git", ["push", "origin", `refs/tags/${tag}`]);
@@ -149,6 +154,7 @@ if (release.clean && run("git", ["status", "--porcelain"]) !== "") {
 }
 verify(release);
 if (dryRun) {
+  if (release.credentials.problems.length === 0) altool("validate-app", release.credentials);
   console.log(`dry run: verified ${IPA}; nothing was uploaded and ${release.tag} was not created`);
 } else {
   publish(release);
