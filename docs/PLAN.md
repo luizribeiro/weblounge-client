@@ -91,6 +91,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - B8: slow launch with many buffers: history replies trail papo's post-JOIN burst by ~1.5s; a no-cache launch sends 48 commands, 17 history commands exceed the budget by one; the 30-day TARGETS window can omit older DMs. Waits on papo. Known limits.
 - B9: the engine keeps its own "MONITOR offline" memory because papo keeps a held-direct-handle peer in monitor_online; `presence()` in newer papo replaces it; away for MONITOR-only peers needs extended-monitor. Waits on papo.
 - B10: Chromium appears to apply a tagged persistent notification's `close()` asynchronously to whatever notification holds that tag (close-then-show of one tag lost the new one in 6 of 1600 tries locally). So closing a read conversation's notification (page `closeReadConversationNotifications` or worker `tidyReadNotifications`) could drop a new unread push for that tag shown just after the close was issued. Unconfirmed in the app; a fix would serialize closes and shows per tag in the worker. `app/e2e/push-notifications.spec.ts` `replaceWithConversationNotification`.
+- B11: after a reconnect every DM's peer handle stays pending until the peer is seen again (a line, a MONITOR online, or an own message), which may be behind the wrong desktop presence dots Luiz reported; deleting in a DM that cannot be resolved still does nothing, and reacting or messaging a peer who is offline fails, because papo's guarded direct needs the peer's current identity. `crates/engine/src/state.rs` `action_target`.
 
 #### Test flakes
 - T1: `spacing-audit.spec.ts:133` opens at the top of the transcript instead of the live edge (2 in ~80 main runs); under 10x CPU throttle three later steps also fail. Failures attach `transcript-geometry`; hypothesis: TanStack drops the in-flight `scrollToEnd` and MessageList never re-issues it.
@@ -142,6 +143,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-16: reactions in a DM work after a reconnect while the peer stays quiet (they resolve
+  the peer when sent, as a queued message does), and a reaction in a DM that cannot be sent to
+  shows the failed chip instead of doing nothing. `reactions.spec.ts`, `reactions-phone.spec.ts`.
 - 2026-11-16: one row grid for the ⌘K switcher and the command palette (option C of the omnibar
   column audit, design 14 §Omnibar rows): the sidebar's prefix (sign, presence dot, bot icon) and
   bold unread names, a muted network suffix only with more than one network, the palette group as
