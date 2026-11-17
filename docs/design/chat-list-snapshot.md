@@ -38,8 +38,15 @@ protect sends to that nick, but it is not the thread key. Each row contains only
 - an optional, single-line latest-message preview, already truncated by the UI's visible excerpt
   rule (currently 80 characters plus an ellipsis). Direct-message previews are included under the
   same bound;
-- an optional newest history cursor (server time and msgid when the server supplied one); and
-- the optional server read-marker time used to rebuild unread state for a changed row.
+- an optional newest history cursor (server time and msgid when the server supplied one);
+- the optional server read-marker time used to rebuild unread state for a changed row; and
+- for a direct, whether its peer was last known to be a bot (IRCv3 bot mode).
+
+The bot flag lets a restored DM show its robot at launch: `MONITOR` replies carry no bot mode, so
+a peer who shares no channel is otherwise unknown until its DM is opened or it sends a line. The
+cached value is a hint. Live evidence (a channel `WHO` flag, a `WHOIS` bot numeric, or the `bot`
+tag on the peer's own line) overrides it, and like the preview, the writer with the newest activity
+wins when two instances save the row.
 
 There is no transient `BufferId`, topic, membership, message body beyond the truncated preview, or
 conversation transcript. The two cursor fields are synchronization metadata, not paging state for
