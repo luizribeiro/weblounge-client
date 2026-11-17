@@ -121,17 +121,19 @@ function verify(release) {
   }
 }
 
-const altool = (action, credentials) =>
-  step("/usr/bin/xcrun", altoolArgs(action, { ipa: IPA, ...credentials }));
+// Under the dev shell's DEVELOPER_DIR and SDKROOT, altool finds no executable in the app and App
+// Store Connect rejects it with 90207, so it runs with the build's Xcode environment.
+const altool = (action, { credentials, env }) =>
+  step("/usr/bin/xcrun", altoolArgs(action, { ipa: IPA, ...credentials }), { env });
 
 // App Store Connect refuses a build number it has already taken in validate-app, so a reused
 // commit stops here, before the upload.
-function publish({ head, credentials }) {
-  if (run("git", ["rev-parse", "HEAD"]) !== head) {
+function publish(release) {
+  if (run("git", ["rev-parse", "HEAD"]) !== release.head) {
     throw new Error("HEAD moved during the build; the IPA no longer matches it");
   }
-  altool("validate-app", credentials);
-  altool("upload-app", credentials);
+  altool("validate-app", release);
+  altool("upload-app", release);
 }
 
 const dryRun = process.argv.includes("--dry-run");
@@ -150,7 +152,7 @@ if (release.clean && run("git", ["status", "--porcelain"]) !== "") {
 }
 verify(release);
 if (dryRun) {
-  if (release.credentials.problems.length === 0) altool("validate-app", release.credentials);
+  if (release.credentials.problems.length === 0) altool("validate-app", release);
   console.log(`dry run: verified ${IPA}; nothing was uploaded`);
 } else {
   publish(release);

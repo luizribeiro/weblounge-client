@@ -154,6 +154,9 @@ Names and locations only; never copy a value into the repo or a session.
 - **App Store validation.** 90207: the app must not hold an empty folder (Tauri's
   `gen/apple/assets` held only `bundle.resources`). 90360: the notification extension needs
   `CFBundleDisplayName`. `release-ios.mjs` checks both before uploading.
+- **altool under the dev shell.** Run inside `nix develop` with its `DEVELOPER_DIR` and `SDKROOT`,
+  `altool --validate-app` reports a valid IPA as 90207 "does not contain a bundle executable";
+  `release-ios.mjs` runs it with the build's Xcode environment, as it does the build.
 - **The desktop fileset guard.** `nix/desktop.nix` lists every file the macOS build and its tests
   read. A new file under `apps/tauri/release/` that a listed module imports, or a new
   `*.test.mjs` there, must be added to it. Linux CI's `desktop-source` check only runs
