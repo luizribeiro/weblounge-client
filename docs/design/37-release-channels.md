@@ -99,7 +99,9 @@ source has no `.git`, and `github:` inputs carry no tags and no `revCount` (a `g
 - **Server:** each client pin (beta, release) is kept together with its version, for example
   `{ rev = "<sha>"; version = "0.2.0+14"; }`, and builds `clientPackages.app.withVersion version`.
   The pin bump runs `describe-version.mjs <sha>` in a client checkout and writes both at once.
-  The `github:` input stays; no `git+https` input is needed.
+  The `github:` input stays; no `git+https` input is needed. The push relay builds from the beta
+  (rolling) pin, never the release pin (Luiz, 2026-11-17), so it is at least as new as every
+  client that talks to it.
 - **Native:** both release scripts take the short version, the displayed version and the build
   number from the one commit they build (`HEAD`, which must be `origin/main`), so they cannot
   disagree. `crateVersion` and the `desktop-v`/`ios-v` tag helpers go away.
@@ -180,7 +182,5 @@ Homebrew macOS app.
 ## Open questions
 
 1. Should the sidebar or phone wordmark also say β on beta? Today only the title does.
-2. Does the push relay build from the beta pin or the release pin? The server session has asked
-   Luiz.
-3. One macOS build per release tag follows from the cask version being `X.Y.Z`. If Luiz wants
+2. One macOS build per release tag follows from the cask version being `X.Y.Z`. If Luiz wants
    macOS builds between tags, the cask version needs the build number too (`0.2.0,2711`).
