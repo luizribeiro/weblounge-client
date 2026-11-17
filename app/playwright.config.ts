@@ -282,6 +282,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-history-integrity",
+      testMatch: "**/history-integrity.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-members",
       testMatch: "**/mobile-member-drawer-follow.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },

@@ -271,6 +271,37 @@ export class IrcClient {
     return / timestamp=([^ ]+)/u.exec(response)?.[1];
   }
 
+  /** Every line one CHATHISTORY request's batch holds, oldest first. */
+  async chathistory(
+    subcommand: "BEFORE" | "BETWEEN" | "LATEST",
+    target: string,
+    references: readonly string[],
+    limit: number,
+  ): Promise<readonly string[]> {
+    this.send(
+      `CHATHISTORY ${subcommand} ${target} ${references.join(" ")} ${limit}`,
+    );
+    const start = await this.waitFor(
+      `CHATHISTORY ${subcommand} batch for ${target}`,
+      (line) =>
+        / BATCH \+\S+ chathistory /u.test(line) &&
+        line.toLowerCase().endsWith(` ${target.toLowerCase()}`),
+    );
+    const reference = / BATCH \+(\S+) /u.exec(start)?.[1] ?? "";
+    await this.waitFor(`end of CHATHISTORY batch ${reference}`, (line) =>
+      line.includes(` BATCH -${reference}`),
+    );
+    const inBatch = (line: string) =>
+      line.startsWith("@") &&
+      line
+        .slice(1, line.indexOf(" "))
+        .split(";")
+        .includes(`batch=${reference}`);
+    const lines = this.#lines.filter(inBatch);
+    this.#discardLines(inBatch);
+    return lines;
+  }
+
   async privmsgSplitConfirmed(
     channel: string,
     text: string,
