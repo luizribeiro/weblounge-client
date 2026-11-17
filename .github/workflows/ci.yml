@@ -2,8 +2,9 @@
 name: CI
 
 "on":
+  # Every branch, so a branch is green before main is fast-forwarded to it.
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
