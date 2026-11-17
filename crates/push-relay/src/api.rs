@@ -21,7 +21,7 @@ use url::Url;
 use crate::{
     Concierge, Database, Delivery, EndpointValidator, Error, PushSender, Result, Urgency,
     auth::verify_vapid,
-    db::Route,
+    db::{Activation, Route},
     outbound::PushOutcome,
     target::{ApnsEnvironment, ApnsTarget, PushTarget, WebPushTarget},
 };
@@ -414,10 +414,14 @@ async fn activate_route(
     Path(route): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let superseded = state
+    let activation = state
         .database
         .activate_route(route.clone(), bearer(&headers)?.to_owned())
         .await?;
+    let Activation::Activated { superseded } = activation else {
+        log_retired_routes(&[route], "probe-expired");
+        return Err(Error::NotFound);
+    };
     for superseded_route in superseded {
         tracing::info!(
             route = %id_prefix(&route),

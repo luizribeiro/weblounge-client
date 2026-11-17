@@ -52,6 +52,12 @@ pub(crate) struct RouteCredentials {
     pub created: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Activation {
+    Activated { superseded: Vec<String> },
+    ProbeExpired,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum Route {
     Probing,
@@ -368,9 +374,9 @@ impl Database {
         &self,
         route_id: String,
         secret: String,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Activation> {
         let path = Arc::clone(&self.path);
-        self.spawn(move || -> Result<Vec<String>> {
+        self.spawn(move || -> Result<Activation> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -392,10 +398,16 @@ impl Database {
             authenticate_device(&transaction, &device_id, &secret)?;
             if state == "active" {
                 transaction.commit()?;
-                return Ok(Vec::new());
+                return Ok(Activation::Activated {
+                    superseded: Vec::new(),
+                });
             }
             if state != "probing" {
                 return Err(Error::NotFound);
+            }
+            if expire_probing_route(&transaction, &route_id, unix_seconds())? {
+                transaction.commit()?;
+                return Ok(Activation::ProbeExpired);
             }
             let superseded = {
                 let mut statement = transaction.prepare(
@@ -415,7 +427,7 @@ impl Database {
                 [&route_id],
             )?;
             transaction.commit()?;
-            Ok(superseded)
+            Ok(Activation::Activated { superseded })
         })
         .await?
     }

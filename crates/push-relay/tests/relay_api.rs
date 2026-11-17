@@ -303,7 +303,14 @@ impl Harness {
     }
 
     async fn activate(&self, device: &Value, route: &Value) {
-        let response = call_json(
+        assert_eq!(
+            self.activation_status(device, route).await,
+            StatusCode::NO_CONTENT
+        );
+    }
+
+    async fn activation_status(&self, device: &Value, route: &Value) -> StatusCode {
+        call_json(
             &self.app,
             Method::PUT,
             &format!(
@@ -314,8 +321,8 @@ impl Harness {
             Value::Null,
             &[],
         )
-        .await;
-        assert_eq!(response.0, StatusCode::NO_CONTENT);
+        .await
+        .0
     }
 
     fn age_route(&self, route: &Value, age: Duration) {
@@ -1316,6 +1323,40 @@ async fn delivery_loop_retires_expired_probes_and_keeps_fresh_probes_and_active_
     );
     assert_eq!(
         harness.push(&stalled, &stalled_home, b"after sweep").await,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn activation_refuses_an_expired_probe_and_retires_it() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let other_home = SecretKey::random(&mut OsRng);
+    let expired = harness.create_route(&device, &home).await;
+    let within_limit = harness.create_route(&device, &other_home).await;
+    harness.age_route(&expired, Duration::from_mins(6));
+    harness.age_route(&within_limit, Duration::from_mins(4));
+
+    assert_eq!(
+        harness.activation_status(&device, &expired).await,
+        StatusCode::NOT_FOUND
+    );
+    harness.activate(&device, &within_limit).await;
+
+    assert_eq!(harness.route_state(&expired), None);
+    assert_eq!(
+        harness.route_state(&within_limit).as_deref(),
+        Some("active")
+    );
+    assert_eq!(
+        harness.dead_endpoints(&device, &home).await,
+        json!([{ "id": expired["id"], "endpoint": expired["endpoint"] }])
+    );
+    assert_eq!(
+        harness
+            .push(&expired, &home, b"after refused activation")
+            .await,
         StatusCode::NOT_FOUND
     );
 }
