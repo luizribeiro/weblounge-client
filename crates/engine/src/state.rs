@@ -537,6 +537,7 @@ pub(crate) struct NetworkModel {
     #[cfg(test)]
     name_rebuilds: usize,
     reported_offline: HashSet<papo::Nick>,
+    join_requests: HashSet<String>,
 }
 
 impl NetworkModel {
@@ -650,6 +651,7 @@ impl NetworkModel {
             #[cfg(test)]
             name_rebuilds: 0,
             reported_offline: HashSet::new(),
+            join_requests: HashSet::new(),
         }
     }
 
@@ -997,6 +999,7 @@ impl NetworkModel {
         nickname: Option<String>,
     ) -> EngineToUi {
         if state != NetworkConnectionState::Online {
+            self.join_requests.clear();
             self.abandon_pending_topic_cards();
         }
         self.network.state = state;
@@ -1014,14 +1017,11 @@ impl NetworkModel {
         channels.sort_by_key(|(channel, _)| channel.to_string());
         let mut events = Vec::new();
         let mut changed = false;
-        let mut joined = Vec::new();
         for (channel, topic) in channels {
+            let requested = self.join_requests.remove(&self.join_key(channel.as_str()));
             let key = NameKey::Channel(channel);
-            if let Some(id) = self.names.get(&key).copied() {
+            let id = if let Some(id) = self.names.get(&key).copied() {
                 if let Some(buffer) = self.buffers.get_mut(&id) {
-                    if buffer.projection.channel_status == Some(ChannelStatus::Kicked) {
-                        joined.push(id);
-                    }
                     let title = key.title();
                     if buffer.projection.topic != topic
                         || buffer.projection.channel_status != Some(ChannelStatus::Joined)
@@ -1035,14 +1035,14 @@ impl NetworkModel {
                         changed = true;
                     }
                 }
+                id
             } else {
                 let buffer = self.add_buffer(key, BufferKind::Channel, None, None, topic);
-                joined.push(buffer.id);
+                let id = buffer.id;
                 events.push(EngineToUi::BufferAdded { buffer });
-            }
-        }
-        for id in joined {
-            if let Some(buffer) = self.buffers.get_mut(&id) {
+                id
+            };
+            if requested && let Some(buffer) = self.buffers.get_mut(&id) {
                 buffer.topic_card = Some(PendingTopicCard::AwaitingJoin);
             }
         }
@@ -2335,6 +2335,19 @@ impl NetworkModel {
     ) -> Option<MessageId> {
         let order = self.allocate_order(None, received_at_ms);
         self.push_record_at(buffer_id, order, topic_card(channel), None, None)
+    }
+
+    /// Marks a JOIN this client is about to send, so its echo shows the topic card.
+    pub(crate) fn request_join(&mut self, channel: &str) {
+        self.join_requests.insert(self.join_key(channel));
+    }
+
+    pub(crate) fn forget_join_request(&mut self, channel: &str) {
+        self.join_requests.remove(&self.join_key(channel));
+    }
+
+    fn join_key(&self, channel: &str) -> String {
+        self.casemapping.fold(channel).into_owned()
     }
 
     fn abandon_pending_topic_cards(&mut self) {
@@ -8045,6 +8058,7 @@ mod tests {
     #[tokio::test]
     async fn a_first_join_shows_the_topic_card_once_after_sync() {
         let (client, mut events, mut wire, mut model) = registered().await;
+        model.request_join("#room");
 
         let lines = join_and_sync(
             &client,
@@ -8098,8 +8112,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_join_this_client_did_not_send_shows_no_topic_card() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_requested_join_into_a_restored_buffer_shows_the_topic_card() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+        let room = client
+            .state()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .channel("#room");
+        model.ensure_buffer(NameKey::Channel(room), None, None);
+        take_changed_items(&mut model);
+        model.request_join("#room");
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert!(matches!(lines.as_slice(), [LineEvent::TopicCard { .. }]));
+    }
+
+    #[tokio::test]
+    async fn a_forgotten_join_request_shows_no_topic_card() {
+        let (client, mut events, mut wire, mut model) = registered().await;
+        model.request_join("#room");
+        model.forget_join_request("#Room");
+
+        let lines = join_and_sync(
+            &client,
+            &mut events,
+            &mut wire,
+            &mut model,
+            Some("beta ships Friday"),
+        )
+        .await;
+
+        assert!(lines.is_empty());
+    }
+
+    #[tokio::test]
     async fn an_empty_topic_shows_no_card_on_join() {
         let (client, mut events, mut wire, mut model) = registered().await;
+        model.request_join("#room");
 
         let lines = join_and_sync(&client, &mut events, &mut wire, &mut model, None).await;
 
@@ -8109,6 +8182,7 @@ mod tests {
     #[tokio::test]
     async fn a_join_abandoned_by_a_disconnect_shows_no_card_on_the_reconnect_join() {
         let (client, mut events, mut wire, mut model) = registered().await;
+        model.request_join("#room");
         wire.server(":weblounge!u@host JOIN #room").await;
         let joined = next_event(&mut events, |event| match event {
             papo::Event::Joined(joined) => Some(joined),
@@ -8146,11 +8220,13 @@ mod tests {
     #[tokio::test]
     async fn rejoining_after_an_own_kick_shows_the_topic_card_again() {
         let (client, mut events, mut wire, mut model) = registered().await;
+        model.request_join("#room");
         join_and_sync(&client, &mut events, &mut wire, &mut model, Some("one")).await;
         wire.server(":mel!u@host KICK #room weblounge :break").await;
         let kicked = next_kick(&mut events).await;
         model.receive_kick(&kicked, true);
         take_changed_items(&mut model);
+        model.request_join("#ROOM");
 
         let lines = join_and_sync(&client, &mut events, &mut wire, &mut model, Some("two")).await;
 

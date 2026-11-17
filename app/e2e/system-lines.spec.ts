@@ -291,6 +291,37 @@ for (const [layout, viewport] of [
       await composer.press("Enter");
       await expect(cards).toHaveCount(2);
     });
+
+    test("shows no topic card when a reload or a fresh device opens a joined channel", async ({
+      baseURL,
+      browser,
+      page,
+      irc,
+    }) => {
+      const channel = irc.channelNamed("tf");
+      const operator = await irc.peer("tf-op", [channel]);
+      await operator.topic(channel, `fresh device topic ${irc.id}`);
+      await page.goto(irc.url());
+      await joinChannel(page, irc.channel, channel);
+      await expect(page.locator('[data-system-card="topic"]')).toHaveCount(1);
+      const breaker = `fresh breaker ${irc.id}`;
+      await operator.privmsgConfirmed(channel, breaker);
+      await expect(page.getByText(breaker, { exact: true })).toBeVisible();
+
+      await page.goto(irc.url());
+      await expectNoTopicCardIn(page, channel, breaker);
+
+      const device = await browser.newContext({
+        baseURL,
+        viewport,
+        ...(layout === "phone" ? { hasTouch: true, isMobile: true } : {}),
+      });
+      await irc.scope(device);
+      const fresh = await device.newPage();
+      await fresh.goto(irc.url());
+      await expectNoTopicCardIn(fresh, channel, breaker);
+      await device.close();
+    });
   });
 }
 
@@ -348,6 +379,22 @@ async function joinChannel(
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+}
+
+async function expectNoTopicCardIn(
+  page: Page,
+  channel: string,
+  breaker: string,
+): Promise<void> {
+  const row = page.locator("[data-buffer-id]").filter({ hasText: channel });
+  await expect(row.first()).toBeAttached();
+  const heading = page.getByRole("heading", { name: channel });
+  if (!(await heading.isVisible())) await row.first().click();
+  await expect(heading).toBeVisible();
+  await expect(page.getByText(breaker, { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeEnabled();
+  await expectSettled(page, { conversation: channel });
+  await expect(page.locator('[data-system-card="topic"]')).toHaveCount(0);
 }
 
 function systemLine(page: Page, verb: string, nicks: readonly string[]) {

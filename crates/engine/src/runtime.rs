@@ -1859,6 +1859,7 @@ impl Runtime {
                 if focused {
                     continue;
                 }
+                with_running_model(&state, instance, |model| model.request_join(&channel_name));
                 let result = match target.key {
                     Some(key) => {
                         client
@@ -1869,6 +1870,9 @@ impl Runtime {
                     None => client.join(target.channel).await,
                 };
                 if let Err(error) = result {
+                    with_running_model(&state, instance, |model| {
+                        model.forget_join_request(&channel_name);
+                    });
                     let Some((output, focused)) =
                         sync_joined_channel(&state, &client, instance, &command_id, &channel_name)
                     else {
@@ -4220,6 +4224,20 @@ fn target_sync_boundary(
 ) -> Option<SystemTime> {
     (complete && target_count < RECENT_TARGET_LIMIT && direct_count <= RECENT_DIRECT_LIMIT)
         .then_some(upper_bound)
+}
+
+fn with_running_model(
+    state: &Arc<Mutex<RuntimeState>>,
+    instance: u64,
+    update: impl FnOnce(&mut NetworkModel),
+) {
+    if let Some(running) = lock(state)
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    {
+        update(&mut running.model);
+    }
 }
 
 fn running_network_id(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> Option<NetworkId> {
