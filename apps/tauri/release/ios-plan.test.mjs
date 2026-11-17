@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildNumber,
+  iosBuildArgs,
+  iosBuildEnv,
   iosReleaseTag,
   staleBuild,
   unshippableVersion,
+  uploadArgs,
   uploadCredentials,
 } from "./ios-plan.mjs";
 
@@ -85,4 +88,67 @@ test("without a key id there is no key file to look for", () => {
   );
   assert.deepEqual(problems, ["APP_STORE_CONNECT_KEY_ID is not set"]);
   assert.deepEqual(lookedUp, []);
+});
+
+const devShell = {
+  PATH: "/nix/store/abc-cargo/bin:/nix/store/def-xcbuild/bin:/usr/bin",
+  DEVELOPER_DIR: "/nix/store/ghi-apple-sdk",
+  SDKROOT: "/nix/store/ghi-apple-sdk/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+  CC: "clang",
+  CXX: "clang++",
+  LD: "ld",
+  HOME: "/Users/luiz",
+  IN_NIX_SHELL: "impure",
+};
+
+test("the iOS build sees Xcode's toolchain, the rustup stand-in and the app identifier", () => {
+  assert.deepEqual(
+    iosBuildEnv(devShell, { toolDir: "/repo/apps/tauri/scripts/ios-path", appIdentifier: "org.weblounge.ios" }),
+    {
+      PATH: "/repo/apps/tauri/scripts/ios-path:/usr/bin:/nix/store/abc-cargo/bin:/nix/store/def-xcbuild/bin:/usr/bin",
+      HOME: "/Users/luiz",
+      IN_NIX_SHELL: "impure",
+      TAURI_WEBLOUNGE_APP_IDENTIFIER: "org.weblounge.ios",
+    },
+  );
+});
+
+test("an environment without PATH still finds the stand-in and Apple's tools", () => {
+  assert.equal(
+    iosBuildEnv({}, { toolDir: "/tools", appIdentifier: "org.weblounge.ios" }).PATH,
+    "/tools:/usr/bin",
+  );
+});
+
+test("builds the release identity for App Store Connect with the build number", () => {
+  assert.deepEqual(iosBuildArgs("2620"), [
+    "tauri",
+    "ios",
+    "build",
+    "--ci",
+    "--config",
+    "tauri.ios.release.conf.json",
+    "--config",
+    '{"bundle":{"iOS":{"bundleVersion":"2620"}}}',
+    "--export-method",
+    "app-store-connect",
+  ]);
+});
+
+test("uploads the IPA with the API key", () => {
+  assert.deepEqual(
+    uploadArgs({ ipa: "/tmp/weblounge.ipa", keyId: "2X9R4HXF34", issuer: "57246542" }),
+    [
+      "altool",
+      "--upload-app",
+      "--type",
+      "ios",
+      "-f",
+      "/tmp/weblounge.ipa",
+      "--apiKey",
+      "2X9R4HXF34",
+      "--apiIssuer",
+      "57246542",
+    ],
+  );
 });

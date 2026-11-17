@@ -44,3 +44,42 @@ export function uploadCredentials(env, keyFileExists) {
   ].filter(Boolean);
   return { keyId, issuer, problems };
 }
+
+// The dev shell points these at Nix's macOS SDK and toolchain, which know neither `iphoneos` nor
+// `iphonesimulator`, and puts xcbuild's `xcrun` before Apple's.
+const NIX_APPLE_OVERRIDES = ["DEVELOPER_DIR", "SDKROOT", "CC", "CXX", "LD"];
+
+export function iosBuildEnv(env, { toolDir, appIdentifier }) {
+  const inherited = Object.entries(env).filter(([name]) => !NIX_APPLE_OVERRIDES.includes(name));
+  return {
+    ...Object.fromEntries(inherited),
+    PATH: [toolDir, "/usr/bin", env.PATH].filter(Boolean).join(":"),
+    TAURI_WEBLOUNGE_APP_IDENTIFIER: appIdentifier,
+  };
+}
+
+export const iosBuildArgs = (build) => [
+  "tauri",
+  "ios",
+  "build",
+  "--ci",
+  "--config",
+  "tauri.ios.release.conf.json",
+  "--config",
+  JSON.stringify({ bundle: { iOS: { bundleVersion: build } } }),
+  "--export-method",
+  "app-store-connect",
+];
+
+export const uploadArgs = ({ ipa, keyId, issuer }) => [
+  "altool",
+  "--upload-app",
+  "--type",
+  "ios",
+  "-f",
+  ipa,
+  "--apiKey",
+  keyId,
+  "--apiIssuer",
+  issuer,
+];
