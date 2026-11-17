@@ -16,6 +16,7 @@ function setup(rail = false) {
         theme: "system",
         message_density: "cozy",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       }}
     />
   ));
@@ -76,6 +77,7 @@ describe("SettingsModal", () => {
           theme: "system",
           message_density: "cozy",
           unread_tab_indicator: true,
+          push_on_this_device: true,
         }}
       />
     ));

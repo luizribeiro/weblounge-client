@@ -667,6 +667,7 @@ describe("WorkerEngineClient", () => {
         theme: "lounge-night",
         message_density: "compact",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       },
     };
     port.emit({ type: "settings_changed", settings });
@@ -695,6 +696,7 @@ describe("WorkerEngineClient", () => {
             theme: "neon",
             message_density: "cozy",
             unread_tab_indicator: true,
+            push_on_this_device: true,
           },
         },
       }),

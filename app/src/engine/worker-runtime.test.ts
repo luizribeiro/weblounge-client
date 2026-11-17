@@ -223,6 +223,7 @@ it("answers a settings load to its tab and broadcasts settings changes", async (
       theme: "lounge",
       message_density: "cozy",
       unread_tab_indicator: true,
+      push_on_this_device: true,
     },
   };
 

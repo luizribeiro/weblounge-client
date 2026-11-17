@@ -14,6 +14,7 @@ const night: Settings = {
     theme: "lounge-night",
     message_density: "compact",
     unread_tab_indicator: true,
+    push_on_this_device: true,
   },
 };
 const lounge: Settings = {
@@ -21,6 +22,7 @@ const lounge: Settings = {
     theme: "lounge",
     message_density: "comfortable",
     unread_tab_indicator: true,
+    push_on_this_device: true,
   },
 };
 

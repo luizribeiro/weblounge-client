@@ -71,6 +71,8 @@ pub struct AppSettings {
     pub message_density: Density,
     /// Whether a browser tab shows unread messages in its icon and title.
     pub unread_tab_indicator: bool,
+    /// Whether this device registers for push once notifications are permitted.
+    pub push_on_this_device: bool,
 }
 
 impl Default for AppSettings {
@@ -79,6 +81,7 @@ impl Default for AppSettings {
             theme: ThemePreference::default(),
             message_density: Density::default(),
             unread_tab_indicator: true,
+            push_on_this_device: true,
         }
     }
 }
@@ -93,6 +96,8 @@ pub enum AppSetting {
     MessageDensity(Density),
     /// Whether a browser tab shows unread messages in its icon and title.
     UnreadTabIndicator(bool),
+    /// Whether this device registers for push once notifications are permitted.
+    PushOnThisDevice(bool),
 }
 
 /// One requested settings change, addressed by scope.
@@ -118,16 +123,18 @@ pub(crate) struct LoadedSettings {
 }
 
 impl AppSettings {
-    fn entries(self) -> [AppSetting; 3] {
+    fn entries(self) -> [AppSetting; 4] {
         let Self {
             theme,
             message_density,
             unread_tab_indicator,
+            push_on_this_device,
         } = self;
         [
             AppSetting::Theme(theme),
             AppSetting::MessageDensity(message_density),
             AppSetting::UnreadTabIndicator(unread_tab_indicator),
+            AppSetting::PushOnThisDevice(push_on_this_device),
         ]
     }
 
@@ -136,6 +143,7 @@ impl AppSettings {
             AppSetting::Theme(theme) => self.theme = theme,
             AppSetting::MessageDensity(density) => self.message_density = density,
             AppSetting::UnreadTabIndicator(shown) => self.unread_tab_indicator = shown,
+            AppSetting::PushOnThisDevice(on) => self.push_on_this_device = on,
         }
     }
 }
@@ -146,6 +154,7 @@ impl AppSetting {
             Self::Theme(_) => "theme",
             Self::MessageDensity(_) => "message_density",
             Self::UnreadTabIndicator(_) => "unread_tab_indicator",
+            Self::PushOnThisDevice(_) => "push_on_this_device",
         }
     }
 
@@ -153,7 +162,7 @@ impl AppSetting {
         match self {
             Self::Theme(theme) => serde_json::to_value(theme),
             Self::MessageDensity(density) => serde_json::to_value(density),
-            Self::UnreadTabIndicator(shown) => serde_json::to_value(shown),
+            Self::UnreadTabIndicator(on) | Self::PushOnThisDevice(on) => serde_json::to_value(on),
         }
     }
 
@@ -270,6 +279,7 @@ mod tests {
                 theme: ThemePreference::System,
                 message_density: Density::Cozy,
                 unread_tab_indicator: true,
+                push_on_this_device: true,
             })
         );
     }
@@ -295,6 +305,7 @@ mod tests {
             theme: ThemePreference::LoungeNight,
             message_density: Density::Compact,
             unread_tab_indicator: true,
+            push_on_this_device: true,
         };
         assert_eq!(changed, Settings { app: expected });
         assert_eq!(load(&storage).await.expect("reload"), stored(expected));
@@ -307,24 +318,47 @@ mod tests {
         );
     }
 
+    type Switch = (
+        fn(bool) -> AppSetting,
+        fn(&AppSettings) -> bool,
+        &'static str,
+    );
+
+    const SWITCHES: [Switch; 2] = [
+        (
+            AppSetting::UnreadTabIndicator,
+            |app| app.unread_tab_indicator,
+            "unread_tab_indicator",
+        ),
+        (
+            AppSetting::PushOnThisDevice,
+            |app| app.push_on_this_device,
+            "push_on_this_device",
+        ),
+    ];
+
     #[tokio::test]
-    async fn turning_off_the_unread_tab_indicator_persists() {
-        let storage = MemoryKv::default();
+    async fn turning_off_a_switch_persists_and_leaves_the_others_on() {
+        for (setting, read, key) in SWITCHES {
+            let storage = MemoryKv::default();
 
-        change(
-            &storage,
-            SettingChange::App(AppSetting::UnreadTabIndicator(false)),
-        )
-        .await
-        .expect("change unread tab indicator");
+            change(&storage, SettingChange::App(setting(false)))
+                .await
+                .expect("change switch");
 
-        let loaded = load(&storage).await.expect("reload");
-        assert!(!loaded.settings.app.unread_tab_indicator);
-        assert_eq!(loaded.settings.app.theme, ThemePreference::System);
+            let app = load(&storage).await.expect("reload").settings.app;
+            assert!(!read(&app));
+            for (_, other, other_key) in SWITCHES {
+                if other_key != key {
+                    assert!(other(&app), "{other_key} stays on when {key} turns off");
+                }
+            }
+            assert_eq!(app.theme, ThemePreference::System);
+        }
     }
 
     #[tokio::test]
-    async fn a_record_saved_before_the_tab_indicator_existed_loads_it_on() {
+    async fn a_record_saved_before_the_switches_existed_loads_them_on() {
         let storage = MemoryKv::default();
         seed(
             &storage,
@@ -340,26 +374,26 @@ mod tests {
                 theme: ThemePreference::LoungeNight,
                 message_density: Density::Compact,
                 unread_tab_indicator: true,
+                push_on_this_device: true,
             })
         );
     }
 
     #[tokio::test]
-    async fn a_non_boolean_unread_tab_indicator_falls_back_to_on() {
-        let storage = MemoryKv::default();
-        seed(
-            &storage,
-            r#"{"version":1,"fields":{"unread_tab_indicator":"no"}}"#,
-        )
-        .await;
+    async fn a_non_boolean_switch_falls_back_to_on() {
+        for (_, read, key) in SWITCHES {
+            let storage = MemoryKv::default();
+            seed(
+                &storage,
+                &format!(r#"{{"version":1,"fields":{{"{key}":"no"}}}}"#),
+            )
+            .await;
 
-        let loaded = load(&storage).await.expect("load");
+            let loaded = load(&storage).await.expect("load");
 
-        assert!(loaded.settings.app.unread_tab_indicator);
-        assert_eq!(
-            loaded.invalid_fields,
-            vec!["unread_tab_indicator".to_owned()]
-        );
+            assert!(read(&loaded.settings.app));
+            assert_eq!(loaded.invalid_fields, vec![key.to_owned()]);
+        }
     }
 
     #[tokio::test]
@@ -379,6 +413,7 @@ mod tests {
                 theme: ThemePreference::System,
                 message_density: Density::Comfortable,
                 unread_tab_indicator: true,
+                push_on_this_device: true,
             }
         );
         assert_eq!(loaded.invalid_fields, vec!["theme".to_owned()]);

@@ -5,21 +5,25 @@ const lounge = {
   theme: "lounge",
   message_density: "cozy",
   unread_tab_indicator: true,
+  push_on_this_device: true,
 };
 
 describe("decodeSettings", () => {
-  it("accepts every theme preference, density and tab indicator the engine sends", () => {
+  it("accepts every theme preference, density and switch the engine sends", () => {
     for (const theme of ["system", "lounge", "lounge-night"]) {
       for (const density of ["compact", "cozy", "comfortable"]) {
-        for (const shown of [true, false]) {
-          const settings = {
-            app: {
-              theme,
-              message_density: density,
-              unread_tab_indicator: shown,
-            },
-          };
-          expect(decodeSettings(settings)).toEqual(settings);
+        for (const tab of [true, false]) {
+          for (const push of [true, false]) {
+            const settings = {
+              app: {
+                theme,
+                message_density: density,
+                unread_tab_indicator: tab,
+                push_on_this_device: push,
+              },
+            };
+            expect(decodeSettings(settings)).toEqual(settings);
+          }
         }
       }
     }
@@ -34,6 +38,9 @@ describe("decodeSettings", () => {
     ).toBeUndefined();
     expect(
       decodeSettings({ app: { ...lounge, unread_tab_indicator: "yes" } }),
+    ).toBeUndefined();
+    expect(
+      decodeSettings({ app: { ...lounge, push_on_this_device: "yes" } }),
     ).toBeUndefined();
     expect(
       decodeSettings({ app: { theme: "lounge", message_density: "cozy" } }),

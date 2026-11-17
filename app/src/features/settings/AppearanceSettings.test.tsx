@@ -10,6 +10,7 @@ function setup(
     theme: "system",
     message_density: "cozy",
     unread_tab_indicator: true,
+    push_on_this_device: true,
   },
 ) {
   const onChange = vi.fn();
@@ -145,6 +146,7 @@ describe("AppearanceSettings", () => {
       theme: "lounge",
       message_density: "compact",
       unread_tab_indicator: true,
+      push_on_this_device: true,
     });
     expect(screen.getByRole("radio", { name: "Lounge" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "Compact" })).toBeChecked();
@@ -153,6 +155,7 @@ describe("AppearanceSettings", () => {
       theme: "lounge-night",
       message_density: "comfortable",
       unread_tab_indicator: true,
+      push_on_this_device: true,
     });
 
     expect(screen.getByRole("radio", { name: "Lounge Night" })).toBeChecked();

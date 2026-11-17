@@ -122,6 +122,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
         theme: "lounge",
         message_density: "comfortable",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       },
     },
   });
@@ -132,6 +133,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
         theme: "lounge-night",
         message_density: "compact",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       },
     },
   });
@@ -142,6 +144,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
         theme: "lounge",
         message_density: "comfortable",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       },
     ],
     [
@@ -149,6 +152,7 @@ it("loads appearance settings and follows changes from the engine", async () => 
         theme: "lounge-night",
         message_density: "compact",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       },
     ],
   ]);

@@ -8,6 +8,7 @@ const loaded: AppSettings = {
   theme: "lounge-night",
   message_density: "compact",
   unread_tab_indicator: true,
+  push_on_this_device: true,
 };
 
 describe("NotificationsSettings", () => {

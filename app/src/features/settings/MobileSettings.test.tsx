@@ -16,6 +16,7 @@ function setup(page: MobileSettingsPage) {
         theme: "system",
         message_density: "comfortable",
         unread_tab_indicator: true,
+        push_on_this_device: true,
       }}
     />
   ));

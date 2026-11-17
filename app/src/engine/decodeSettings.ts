@@ -34,10 +34,16 @@ export function decodeAppearance(value: unknown): Appearance | undefined {
 export function decodeSettings(value: unknown): Settings | undefined {
   if (!isRecord(value) || !isRecord(value.app)) return undefined;
   const appearance = decodeAppearance(value.app);
-  const { unread_tab_indicator } = value.app;
-  if (appearance === undefined || typeof unread_tab_indicator !== "boolean")
+  const { unread_tab_indicator, push_on_this_device } = value.app;
+  if (
+    appearance === undefined ||
+    typeof unread_tab_indicator !== "boolean" ||
+    typeof push_on_this_device !== "boolean"
+  )
     return undefined;
-  return { app: { ...appearance, unread_tab_indicator } };
+  return {
+    app: { ...appearance, unread_tab_indicator, push_on_this_device },
+  };
 }
 
 function everyValueOf<T extends string>() {

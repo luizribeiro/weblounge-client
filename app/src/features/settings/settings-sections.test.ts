@@ -13,6 +13,7 @@ const settings: AppSettings = {
   theme: "lounge",
   message_density: "comfortable",
   unread_tab_indicator: true,
+  push_on_this_device: true,
 };
 
 function shownIn(target: PlatformTarget, standalone = false): string[] {

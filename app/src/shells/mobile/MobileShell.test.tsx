@@ -52,6 +52,7 @@ it("pushes Settings and its Appearance page over Chats and pops them with Back",
           theme: "lounge-night",
           message_density: "cozy",
           unread_tab_indicator: true,
+          push_on_this_device: true,
         },
       }}
     />

@@ -17,4 +17,8 @@ message_density: Density,
 /**
  * Whether a browser tab shows unread messages in its icon and title.
  */
-unread_tab_indicator: boolean, };
+unread_tab_indicator: boolean,
+/**
+ * Whether this device registers for push once notifications are permitted.
+ */
+push_on_this_device: boolean, };
