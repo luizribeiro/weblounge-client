@@ -14,33 +14,53 @@ export interface SettledOptions {
   readonly conversation?: string;
 }
 
+interface SettledProbeInput {
+  readonly selectors: Readonly<Record<string, string>>;
+  readonly title: string | undefined;
+}
+
+/** Runs in the page: what is still in flight, after the frames that report it. */
+export async function pendingSettle({
+  selectors,
+  title,
+}: SettledProbeInput): Promise<string[]> {
+  // A scrollTop write dispatches its scroll event at the next frame, and the transcript marks
+  // itself scrolling in the frame after that.
+  await nextFrames(2);
+  const pending = Object.entries(selectors)
+    .filter(([, selector]) => document.querySelector(selector))
+    .map(([reason]) => reason);
+  if (title === undefined) return pending;
+  const shown = [
+    ...document.querySelectorAll("[data-conversation-title]"),
+  ].some(
+    (heading) =>
+      heading.textContent?.trim() === title &&
+      heading.checkVisibility({ visibilityProperty: true }) &&
+      heading.closest("[inert], [aria-hidden='true']") === null,
+  );
+  return shown ? pending : [...pending, `${title} not shown`];
+
+  function nextFrames(count: number): Promise<void> {
+    if (count === 0 || document.hidden) return Promise.resolve();
+    return new Promise((resolve) =>
+      requestAnimationFrame(() => resolve(nextFrames(count - 1))),
+    );
+  }
+}
+
+export function settleProbeInput(conversation?: string): SettledProbeInput {
+  return { selectors: inFlight, title: conversation };
+}
+
 export async function expectSettled(
   page: Page,
   { conversation }: SettledOptions = {},
 ): Promise<void> {
   await expect
-    .poll(
-      () =>
-        page.evaluate(
-          ({ selectors, title }) => {
-            const pending = Object.entries(selectors)
-              .filter(([, selector]) => document.querySelector(selector))
-              .map(([reason]) => reason);
-            if (title === undefined) return pending;
-            const shown = [
-              ...document.querySelectorAll("[data-conversation-title]"),
-            ].some(
-              (heading) =>
-                heading.textContent?.trim() === title &&
-                heading.checkVisibility({ visibilityProperty: true }) &&
-                heading.closest("[inert], [aria-hidden='true']") === null,
-            );
-            return shown ? pending : [...pending, `${title} not shown`];
-          },
-          { selectors: inFlight, title: conversation },
-        ),
-      { message: "the app is still settling" },
-    )
+    .poll(() => page.evaluate(pendingSettle, settleProbeInput(conversation)), {
+      message: "the app is still settling",
+    })
     .toEqual([]);
 }
 
