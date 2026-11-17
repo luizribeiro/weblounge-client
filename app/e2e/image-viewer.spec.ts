@@ -7,6 +7,10 @@ import {
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
+import {
+  emulateSeamlessMacApp,
+  expectClearOfWindowControls,
+} from "./window-controls";
 
 const screenshots =
   process.env.WEBLOUNGE_VIEWER_SHOTS ??
@@ -161,6 +165,26 @@ test.describe("full-size image viewer against local Ergo", () => {
         await page.mouse.click(40, 760);
         await expect(viewer).toHaveCount(0);
         await expect(slot).toBeFocused();
+        await nativeFeelAudit(page);
+      });
+    });
+
+    test("keeps its controls clear of the macOS traffic lights", async ({
+      page,
+      irc,
+    }) => {
+      await emulateSeamlessMacApp(page);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await withDirectPeer(page, irc, "lights", async (peer, suffix) => {
+        const url = `${E2E_FILEHOST_ORIGIN}/${suffix}/landscape.png`;
+        await peer.privmsgConfirmed(irc.account, url);
+        await (await loadedSlot(page, url)).click();
+        const viewer = await openViewer(page, peer.nickname);
+
+        await expectClearOfWindowControls(
+          viewer.getByText(peer.nickname, { exact: true }),
+        );
+        await resetNativeFeelLayoutShift(page);
         await nativeFeelAudit(page);
       });
     });

@@ -54,6 +54,13 @@
   opacity: 1;
 }
 
+:global(#root[data-window-controls="overlay"]) .controls {
+  padding-inline-start: calc(
+    var(--wl-safe-left) +
+    var(--wl-window-controls-inline)
+  );
+}
+
 .identity {
   align-items: baseline;
   display: flex;
