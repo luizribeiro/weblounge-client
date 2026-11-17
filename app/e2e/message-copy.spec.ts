@@ -6,6 +6,7 @@ import {
 } from "./native-feel-audit";
 import { productionMessageRow } from "./production-ergo";
 import { openConversation } from "./redaction";
+import { tokenColor } from "./token-color";
 
 const first = "nice, the second message has a few words";
 const second = "and this one follows it";
@@ -67,12 +68,30 @@ test.describe("desktop copying from the transcript", () => {
       await charPoint(messageText(page, second), 6),
     );
 
+    const selection = await tokenColor(page, "--wl-color-selection");
+    for (const text of [first, second]) {
+      const row = productionMessageRow(page, text);
+      await expect(row.locator("time [data-line]")).toHaveCSS(
+        "background-color",
+        selection,
+      );
+      await expect(
+        row
+          .locator("[data-message-chrome]")
+          .getByText(peer.nickname, { exact: true }),
+      ).toHaveCSS("background-color", selection);
+    }
     expect(await copySelection(page)).toMatch(
       new RegExp(
         `^${time} <${peer.nickname}> ${first}\\n${time} <${peer.nickname}> ${second}$`,
         "u",
       ),
     );
+
+    const firstText = await charPoint(messageText(page, first), 2);
+    await page.mouse.click(firstText.x, firstText.y);
+    await expect(page.locator("[data-copy-selected]")).toHaveCount(0);
+    await nativeFeelAudit(page);
   });
 
   test("copies only the triple-clicked message", async ({ page, irc }) => {

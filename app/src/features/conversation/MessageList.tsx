@@ -37,6 +37,7 @@ import {
 import { t } from "../../strings";
 import { BotIcon } from "../../ui/BotIcon";
 import { contextMenuRegistry } from "../../ui/context-menu";
+import { createCopiedRows } from "../../ui/copied-rows";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -422,6 +423,7 @@ export function MessageList(props: MessageListProps) {
     props.onToggleReaction === undefined ? undefined : reactionActions;
   const deletion = createMessageDeletion(() => props.onRedactMessage);
   const toolbars = createRowToolbars(deletion.menuRow);
+  const copiedRows = createCopiedRows();
   const confirmDelete = (
     messageId: number | undefined,
     invoker: HTMLElement,
@@ -1346,6 +1348,7 @@ export function MessageList(props: MessageListProps) {
         }}
         ref={(element) => {
           list = element;
+          copiedRows.track(element);
           observedScrollTop = element.scrollTop;
           element.addEventListener("keydown", markScrollKeyIntent);
           element.addEventListener("pointerdown", markPointerScrollIntent, {
@@ -1433,6 +1436,9 @@ export function MessageList(props: MessageListProps) {
                   <li
                     class={styles.virtualRow}
                     data-copy-row-index={virtualRow.index}
+                    data-copy-selected={
+                      copiedRows.includes(virtualRow.index) || undefined
+                    }
                     data-engine-order={formatEngineOrder(row()?.engineOrder)}
                     data-index={virtualRow.index}
                     data-line-spacing={lineRowSpacing(rows(), virtualRow.index)}

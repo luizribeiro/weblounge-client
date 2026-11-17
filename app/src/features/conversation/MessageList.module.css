@@ -423,3 +423,12 @@
 .list[data-presentation="mobile"] .actionMedia {
   padding-inline-start: 0;
 }
+
+.virtualRow[data-copy-selected] .time [data-line],
+.virtualRow[data-copy-selected] .nick {
+  background: var(--wl-color-selection);
+}
+.virtualRow[data-copy-selected] .time [data-line] {
+  color: var(--wl-color-selection-fg);
+  inline-size: fit-content;
+}
