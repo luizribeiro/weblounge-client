@@ -13,6 +13,8 @@ import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
+const desktop = { viewport: { width: 1_280, height: 800 } } as const;
+
 test.describe("transcript gap and boundary dividers", () => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -24,10 +26,7 @@ test.describe("transcript gap and boundary dividers", () => {
   );
 
   for (const layout of [
-    {
-      name: "desktop",
-      context: { viewport: { width: 1_280, height: 800 } },
-    },
+    { name: "desktop", context: desktop },
     {
       name: "phone",
       context: {
@@ -82,12 +81,8 @@ test.describe("transcript gap and boundary dividers", () => {
         await irc.forwarder.drop();
         const firstRetainedLine = await sendCappedGap(senders, channel, suffix);
 
-        await setPageHidden(page, true);
-        await setPageHidden(page, false);
-        await dispatchPersistedPageShow(page);
-        await expect.poll(() => currentNetworkState(page)).not.toBe("online");
-        await irc.forwarder.restore();
-        await expect.poll(() => currentNetworkState(page)).toBe("online");
+        await irc.forwarder.holdIncomingContaining(`missing ${suffix}`);
+        await reconnect(page, irc);
 
         const caughtUpList = activeMessageList(page);
         await scrollToTranscriptTop(caughtUpList);
@@ -95,11 +90,83 @@ test.describe("transcript gap and boundary dividers", () => {
         const expectedGap = `Messages may be missing · ${await formatLineTime(page, seedLine)} to ${await formatLineTime(page, firstRetainedLine)}`;
         await expect(gap).toHaveAttribute("aria-label", expectedGap);
         await captureDivider(gap, layout.name, "gap");
+
+        await expect.poll(() => irc.forwarder.isHoldingIncoming()).toBe(true);
+        await irc.forwarder.resumeIncoming();
+        await expect(gap).toHaveCount(0);
+        await expectEachOnce(page, [
+          seed,
+          ...cappedGapTexts(suffix).slice(0, 4),
+        ]);
+        await expectSettled(page, { conversation: channel });
       } finally {
         await page.context().close();
       }
     });
   }
+
+  test("fills the gap a failed catch-up leaves once it reconnects", async ({
+    baseURL,
+    browser,
+    irc,
+  }) => {
+    await setAppAlwaysOn(irc);
+    const channel = irc.channelNamed("failed");
+    const bot = await irc.peer("failed", [channel]);
+    const seed = `failed cursor ${irc.id}`;
+    await bot.privmsgConfirmed(channel, seed);
+    const page = await openApp(browser, baseURL, irc, desktop);
+    try {
+      await openChannel(page, irc, channel, false);
+      await expect(messageText(page, seed)).toBeVisible();
+
+      await irc.forwarder.drop();
+      const missed = [1, 2, 3].map((index) => `outage ${irc.id} ${index}`);
+      for (const text of missed) await bot.privmsgConfirmed(channel, text);
+      await irc.forwarder.holdIncomingContaining(`outage ${irc.id}`);
+      await reconnect(page, irc);
+      await expect.poll(() => irc.forwarder.isHoldingIncoming()).toBe(true);
+
+      await goOffline(page, irc);
+      const gap = activeMessageList(page).locator("[data-gap-row]");
+      await expect(gap).toHaveCount(1);
+      await irc.forwarder.resumeIncoming();
+      await reconnect(page, irc);
+
+      await expect(gap).toHaveCount(0);
+      await expectEachOnce(page, [seed, ...missed]);
+      await expectSettled(page, { conversation: channel });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("leaves no gap after an empty catch-up", async ({
+    baseURL,
+    browser,
+    irc,
+  }) => {
+    await setAppAlwaysOn(irc);
+    const channel = irc.channelNamed("empty");
+    const bot = await irc.peer("empty", [channel]);
+    const seed = `empty cursor ${irc.id}`;
+    await bot.privmsgConfirmed(channel, seed);
+    const page = await openApp(browser, baseURL, irc, desktop);
+    try {
+      await openChannel(page, irc, channel, false);
+      await expect(messageText(page, seed)).toBeVisible();
+
+      await goOffline(page, irc);
+      await reconnect(page, irc);
+      await expectSettled(page, { conversation: channel });
+      await expect(
+        activeMessageList(page).locator("[data-gap-row]"),
+      ).toHaveCount(0);
+      await expectEachOnce(page, [seed]);
+    } finally {
+      await page.context().close();
+    }
+  });
 });
 
 async function openApp(
@@ -149,24 +216,62 @@ async function runCommand(page: Page, command: string): Promise<void> {
   await composer.press("Enter");
 }
 
+const cappedGapLength = 102;
+const missedByCatchUp = 2;
+
+function cappedGapTexts(suffix: string): readonly string[] {
+  return Array.from(
+    { length: cappedGapLength },
+    (_, index) =>
+      `${index < missedByCatchUp ? "missing" : "retained"} ${suffix} ${index}`,
+  );
+}
+
 async function sendCappedGap(
   senders: readonly IrcClient[],
   channel: string,
   suffix: string,
 ): Promise<string> {
   let firstRetained: string | undefined;
-  for (let index = 0; index < 102; index += 1) {
+  for (const [index, text] of cappedGapTexts(suffix).entries()) {
     const sender = senders[index % senders.length];
     if (sender === undefined) throw new Error("gap sender pool is empty");
-    const disposition = index < 2 ? "missing" : "retained";
-    const line = await sender.privmsgConfirmed(
-      channel,
-      `${disposition} ${suffix} ${index}`,
-    );
-    if (index === 2) firstRetained = line;
+    const line = await sender.privmsgConfirmed(channel, text);
+    if (index === missedByCatchUp) firstRetained = line;
   }
   if (firstRetained === undefined) throw new Error("no retained gap boundary");
   return firstRetained;
+}
+
+async function goOffline(page: Page, irc: IrcTestAccount): Promise<void> {
+  await irc.forwarder.drop();
+  await returnToForeground(page);
+  await expect.poll(() => currentNetworkState(page)).not.toBe("online");
+}
+
+/** Coming back to the foreground probes a stranded socket and retries a waiting reconnect at once. */
+async function reconnect(page: Page, irc: IrcTestAccount): Promise<void> {
+  await returnToForeground(page);
+  await expect.poll(() => currentNetworkState(page)).not.toBe("online");
+  await irc.forwarder.restore();
+  await returnToForeground(page);
+  await expect.poll(() => currentNetworkState(page)).toBe("online");
+}
+
+async function returnToForeground(page: Page): Promise<void> {
+  await setPageHidden(page, true);
+  await setPageHidden(page, false);
+  await dispatchPersistedPageShow(page);
+}
+
+async function expectEachOnce(
+  page: Page,
+  texts: readonly string[],
+): Promise<void> {
+  const list = activeMessageList(page);
+  await scrollToTranscriptTop(list);
+  for (const text of texts)
+    await expect(list.getByText(text, { exact: true })).toHaveCount(1);
 }
 
 async function captureDivider(

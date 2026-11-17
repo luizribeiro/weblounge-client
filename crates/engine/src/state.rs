@@ -31,6 +31,11 @@ use crate::{
 #[cfg(test)]
 use crate::timeline::FixedOffsetCalendar;
 
+mod gap_fill;
+
+use gap_fill::GapFill;
+pub(crate) use gap_fill::{GapFetch, GapPage};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TimelineOrigin {
     Live,
@@ -225,6 +230,7 @@ struct BufferState {
     refresh_from_ms: Option<i64>,
     pending_lag_gap: Option<(i64, i64)>,
     pending_reconnect_gap: Option<(i64, i64)>,
+    gap_fill: GapFill,
     newest: Option<HistoryCursor>,
     pushed_history_pending: bool,
     pushed_history_retry_available: bool,
@@ -515,6 +521,7 @@ pub(crate) struct NetworkModel {
     next_message_id: u64,
     next_local_send_id: u64,
     next_sequence: u64,
+    next_gap_fill_attempt: u64,
     window_limit: usize,
     buffer_order: Vec<BufferId>,
     buffers: HashMap<BufferId, BufferState>,
@@ -607,6 +614,7 @@ impl NetworkModel {
             refresh_from_ms: None,
             pending_lag_gap: None,
             pending_reconnect_gap: None,
+            gap_fill: GapFill::Idle,
             newest: None,
             pushed_history_pending: false,
             pushed_history_retry_available: false,
@@ -629,6 +637,7 @@ impl NetworkModel {
             next_message_id: 1,
             next_local_send_id: 1,
             next_sequence: 1,
+            next_gap_fill_attempt: 0,
             window_limit,
             buffer_order: vec![server_id],
             buffers: HashMap::from([(server_id, server)]),
@@ -2666,6 +2675,7 @@ impl NetworkModel {
     }
 
     pub(crate) fn restart_inflight_history(&mut self) {
+        self.reset_gap_fills();
         for buffer in self.buffers.values_mut() {
             let next = match &buffer.history {
                 HistoryState::LoadingLatest => Some(HistoryState::QueuedLatest),
@@ -4208,6 +4218,7 @@ impl NetworkModel {
                 refresh_from_ms: None,
                 pending_lag_gap: None,
                 pending_reconnect_gap: None,
+                gap_fill: GapFill::Idle,
                 newest: None,
                 pushed_history_pending: false,
                 pushed_history_retry_available: false,
@@ -5591,7 +5602,7 @@ mod tests {
         );
     }
 
-    fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
+    pub(super) fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
         papo_testing::channel(state.casemapping(), name)
     }
 
@@ -5628,7 +5639,7 @@ mod tests {
         }
     }
 
-    fn model(limit: usize) -> (NetworkModel, papo::State) {
+    pub(super) fn model(limit: usize) -> (NetworkModel, papo::State) {
         (
             NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), limit),
             StateBuilder::new("weblounge").connected(true).build(),
@@ -6129,7 +6140,7 @@ mod tests {
             .expect("older page finishes");
     }
 
-    fn gaps(model: &NetworkModel, buffer_id: BufferId) -> Vec<(i64, i64)> {
+    pub(super) fn gaps(model: &NetworkModel, buffer_id: BufferId) -> Vec<(i64, i64)> {
         model.buffers[&buffer_id]
             .timeline
             .iter()

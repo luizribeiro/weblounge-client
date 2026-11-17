@@ -5263,7 +5263,17 @@ fn process_history(
         end,
     );
     output.extend(finished);
+    let gap_fill = catch_up_gap_fill(&mut running.model, load, &conversation);
     publish_history_turn(state, &shared_state, outbound, instance, output, read_flush);
+    if let Some(fetch) = gap_fill {
+        spawn_gap_fill(
+            shared_state,
+            outbound.clone(),
+            client.clone(),
+            instance,
+            fetch,
+        );
+    }
 }
 
 fn publish_history_turn(
@@ -6073,8 +6083,13 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
     tokio::spawn(future);
 }
 
+mod gap_fill;
+
+use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
+
 #[cfg(test)]
 mod tests {
+    mod gap_fill;
     mod redaction;
 
     use std::{
