@@ -1,4 +1,5 @@
-import type { BrowserContext, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { copiedText, prepareClipboard } from "./clipboard";
 import { messageId } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { longPressMessage } from "./message-sheet";
@@ -227,33 +228,6 @@ test("reacts from the sheet in a DM after a reconnect while its peer stays quiet
   await expectSettled(page, { conversation: peer.nickname });
   await nativeFeelAudit(page);
 });
-
-/**
- * Playwright can grant reading Chromium's clipboard; WebKit's stays write-only to tests, so there
- * the test records what the app hands the clipboard instead.
- */
-async function prepareClipboard(context: BrowserContext): Promise<void> {
-  if (isChromium(context)) {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    return;
-  }
-  await context.addInitScript(() => {
-    const clipboard = navigator.clipboard;
-    const write = clipboard.writeText.bind(clipboard);
-    clipboard.writeText = (text: string) => {
-      (window as Window & { __copiedText?: string }).__copiedText = text;
-      return write(text);
-    };
-  });
-}
-
-async function copiedText(page: Page): Promise<string | undefined> {
-  return isChromium(page.context())
-    ? page.evaluate(() => navigator.clipboard.readText())
-    : page.evaluate(
-        () => (window as Window & { __copiedText?: string }).__copiedText,
-      );
-}
 
 async function openChat(page: Page, irc: IrcTestAccount): Promise<void> {
   await page.goto(irc.url({ path: `/Local%20Ergo/${irc.channel.slice(1)}` }));
