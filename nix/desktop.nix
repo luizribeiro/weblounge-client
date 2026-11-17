@@ -43,6 +43,8 @@ rustPlatform.buildRustPackage {
       (root + "/release/plan.mjs")
       (root + "/release/plan.test.mjs")
       (root + "/release/identities.test.mjs")
+      (root + "/release/rustup-stand-in.test.mjs")
+      (root + "/scripts/ios-path/rustup")
     ];
   };
   sourceRoot = "source/apps/tauri";

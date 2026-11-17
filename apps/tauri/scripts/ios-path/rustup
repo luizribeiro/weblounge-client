@@ -1,0 +1,28 @@
+#!/bin/sh
+# Nix provides the Rust toolchain without rustup, but the Tauri CLI asks rustup which targets are
+# installed and adds missing ones during `ios init` and Xcode's Rust build step. The dev shell's
+# sysroot already carries the iOS targets.
+set -eu
+
+installed_targets() {
+  for lib in "$(rustc --print sysroot)"/lib/rustlib/*/lib; do
+    basename "$(dirname "$lib")"
+  done
+}
+
+case "$*" in
+  "target list --installed") installed_targets ;;
+  "target add "*)
+    shift 2
+    for target in "$@"; do
+      installed_targets | grep -qx "$target" || {
+        echo "rustup stand-in: the dev shell lacks the $target target" >&2
+        exit 1
+      }
+    done
+    ;;
+  *)
+    echo "rustup stand-in: unsupported: rustup $*" >&2
+    exit 1
+    ;;
+esac
