@@ -32,6 +32,11 @@ Mac, outside Nix: signing needs the login keychain's Developer ID identity and n
 the network and the stored `notarytool` profile `weblounge`, neither of which the sandbox may have.
 `--dry-run` stops before publishing and keeps the verified image.
 
+Superseded by design 37 (2026-11-17) for versions and tags: the version is the last `vX.Y.Z` tag
+(build number = commit count, shell `X.Y.Z+N`), step 1 refuses when the GitHub release of that
+tag exists instead of checking a `desktop-v` tag, step 2 builds `.#desktop` overridden with those
+versions, and step 6 creates the GitHub release on the existing `vX.Y.Z` tag (`--verify-tag`).
+
 1. Refuse to run unless the worktree is clean, `HEAD` is on `origin/main`, and the tag
    `desktop-v<version>` does not exist; `<version>` is the crate's, which `tauri.conf.json` and
    `Cargo.toml` must agree on.

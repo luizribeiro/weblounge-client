@@ -5,8 +5,15 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blockers, foreignLibraries, imageName, releaseTag } from "./plan.mjs";
-import { crateFile, crateVersion, gitState, run, step } from "./shell.mjs";
+import {
+  blockers,
+  desktopBuildArgs,
+  foreignLibraries,
+  imageName,
+  publishedBlocker,
+} from "./plan.mjs";
+import { releaseTag } from "./release-version.mjs";
+import { commitVersionOf, crateFile, gitState, repo, run, step } from "./shell.mjs";
 
 const IDENTITY = "Developer ID Application: LUIZ GUSTAVO CARDOSO RIBEIRO (JR4C2QJKWJ)";
 const NOTARY_PROFILE = "weblounge";
@@ -25,15 +32,30 @@ const forget = (app) => spawnSync(LSREGISTER, ["-u", app]);
 const copyBundle = (from, to) =>
   cpSync(from, to, { recursive: true, verbatimSymlinks: true });
 
+const SYSTEM = "aarch64-darwin";
+
+function githubReleaseExists(tag) {
+  const view = spawnSync("gh", ["release", "view", tag, "--json", "tagName"], {
+    cwd: repo,
+    encoding: "utf8",
+  });
+  if (view.status === 0) return true;
+  if (/release not found/i.test(view.stderr)) return false;
+  throw new Error(`cannot tell whether the GitHub release ${tag} exists: ${view.stderr.trim()}`);
+}
+
 function preflight() {
-  const version = crateVersion();
   const git = gitState();
   const head = git.head;
-  const problems = blockers({ ...git, tag: releaseTag(version) });
+  const release = { ...commitVersionOf(head), head };
+  const tag = releaseTag(release.version);
+  const problems = [...blockers(git), publishedBlocker(tag, githubReleaseExists(tag))].filter(
+    Boolean,
+  );
   if (problems.length > 0) {
-    throw new Error(`cannot release ${version}:\n- ${problems.join("\n- ")}`);
+    throw new Error(`cannot release ${release.display}:\n- ${problems.join("\n- ")}`);
   }
-  return { version, head };
+  return { ...release, tag };
 }
 
 const sign = (path, extra = []) =>
@@ -85,8 +107,8 @@ const staple = (path) => step("/usr/bin/xcrun", ["stapler", "staple", path]);
 
 // Stapling the app as well as the image lets a dragged-out or cask-installed copy pass Gatekeeper
 // on its first launch without reaching Apple.
-function notarizedApp(work) {
-  const built = run("nix", ["build", "--no-link", "--print-out-paths", ".#desktop"]);
+function notarizedApp(work, release) {
+  const built = run("nix", desktopBuildArgs({ repo, system: SYSTEM, ...release }));
   const app = join(work, APP);
   copyBundle(join(built, "Applications", APP), app);
   step("/bin/chmod", ["-R", "u+w", app]);
@@ -146,24 +168,21 @@ function verify(image) {
   }
 }
 
-// GitHub creates the tag together with the release, so a failed upload leaves no tag behind that
-// would block a retry.
-function publish(image, { version, head }) {
+function publish(image, { version, display, build, head, tag }) {
   if (run("git", ["rev-parse", "HEAD"]) !== head) {
     throw new Error("HEAD moved during the build; the image no longer matches it");
   }
-  const tag = releaseTag(version);
   step("gh", [
     "release",
     "create",
     tag,
     image,
-    "--target",
-    head,
+    "--verify-tag",
     "--title",
-    `weblounge desktop ${version}`,
+    `weblounge ${version}`,
     "--notes",
-    "Notarized macOS app (Apple silicon). Install with `brew install --cask luizribeiro/tap/weblounge`.",
+    `Notarized macOS app ${display} (build ${build}, ${head}; Apple silicon). ` +
+      "Install with `brew install --cask luizribeiro/tap/weblounge`.",
   ]);
 }
 
@@ -171,7 +190,7 @@ const dryRun = process.argv.includes("--dry-run");
 const release = preflight();
 const work = mkdtempSync(join(tmpdir(), "weblounge-release-"));
 try {
-  const app = notarizedApp(work);
+  const app = notarizedApp(work, release);
   const image = notarizedImage(work, app, release.version);
   verify(image);
   forget(app);

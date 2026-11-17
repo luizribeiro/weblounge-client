@@ -1,19 +1,21 @@
-export const TAG_PREFIX = "desktop-v";
+export const imageName = (version) => `weblounge-${version}.dmg`;
 
-export function releaseVersion({ cargoToml, tauriConf }) {
-  const crate = cargoToml.match(/^version = "([^"]+)"$/m)?.[1];
-  const bundle = JSON.parse(tauriConf).version;
-  if (!crate || crate !== bundle) {
-    throw new Error(
-      `Cargo.toml (${crate}) and tauri.conf.json (${bundle}) must name the same version`,
-    );
-  }
-  return crate;
+// The Nix build sees no tags, so the versions reach it as an override of the locked commit's flake.
+export function desktopBuildArgs({ repo, head, system, version, build, display }) {
+  const versions = `{ marketing = "${version}"; build = "${build}"; display = "${display}"; }`;
+  const desktop = `(builtins.getFlake "git+file://${repo}?rev=${head}").packages.${system}.desktop`;
+  return [
+    "build",
+    "--no-link",
+    "--print-out-paths",
+    "--expr",
+    `${desktop}.override { version = ${versions}; }`,
+  ];
 }
 
-export const releaseTag = (version) => `${TAG_PREFIX}${version}`;
-
-export const imageName = (version) => `weblounge-${version}.dmg`;
+export const publishedBlocker = (tag, published) =>
+  published &&
+  `the GitHub release ${tag} already exists: one macOS build per release tag, so cut a new tag`;
 
 export function blockers({ status, head, originMain, tags, tag }) {
   return [

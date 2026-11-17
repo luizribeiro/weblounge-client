@@ -2,70 +2,53 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   blockers,
+  desktopBuildArgs,
   foreignLibraries,
   imageName,
-  releaseTag,
-  releaseVersion,
+  publishedBlocker,
 } from "./plan.mjs";
 
-const cargoToml = (version) => `[package]
-name = "weblounge-desktop"
-version = "${version}"
-edition = "2024"
+test("names the image after the release version", () => {
+  assert.equal(imageName("0.2.0"), "weblounge-0.2.0.dmg");
+});
 
-[dependencies]
-serde = { version = "1", features = ["derive"] }
-`;
-const tauriConf = (version) =>
-  JSON.stringify({ productName: "weblounge", version, identifier: "org.weblounge.desktop" });
-
-test("the release version is the crate's when the bundle agrees", () => {
-  assert.equal(
-    releaseVersion({ cargoToml: cargoToml("0.2.1"), tauriConf: tauriConf("0.2.1") }),
-    "0.2.1",
+test("builds the locked commit's desktop package with the release's versions", () => {
+  const head = "d578b01f1c2e3d4c5b6a79881726354433221100";
+  assert.deepEqual(
+    desktopBuildArgs({
+      repo: "/Users/luiz/weblounge-client",
+      head,
+      system: "aarch64-darwin",
+      version: "0.2.0",
+      build: "2711",
+      display: "0.2.0+3",
+    }),
+    [
+      "build",
+      "--no-link",
+      "--print-out-paths",
+      "--expr",
+      `(builtins.getFlake "git+file:///Users/luiz/weblounge-client?rev=${head}")` +
+        ".packages.aarch64-darwin.desktop" +
+        '.override { version = { marketing = "0.2.0"; build = "2711"; display = "0.2.0+3"; }; }',
+    ],
   );
 });
 
-test("a crate and bundle that disagree refuse to release", () => {
-  assert.throws(
-    () => releaseVersion({ cargoToml: cargoToml("0.2.1"), tauriConf: tauriConf("0.2.0") }),
-    /Cargo.toml \(0.2.1\) and tauri.conf.json \(0.2.0\)/,
+test("a release tag already carrying a macOS build refuses another", () => {
+  assert.equal(publishedBlocker("v0.2.0", false), false);
+  assert.match(
+    publishedBlocker("v0.2.0", true),
+    /GitHub release v0\.2\.0 already exists: one macOS build per release tag/,
   );
-});
-
-test("dependency versions are not mistaken for the crate's", () => {
-  assert.throws(
-    () =>
-      releaseVersion({
-        cargoToml: 'serde = { version = "1" }\n',
-        tauriConf: tauriConf("1"),
-      }),
-    /Cargo.toml \(undefined\)/,
-  );
-});
-
-test("a package that inherits its version from a workspace refuses to release", () => {
-  assert.throws(
-    () =>
-      releaseVersion({
-        cargoToml: '[package]\nname = "weblounge-desktop"\nversion.workspace = true\n',
-        tauriConf: tauriConf("0.1.0"),
-      }),
-    /Cargo.toml \(undefined\)/,
-  );
-});
-
-test("names the tag and image after the version", () => {
-  assert.equal(releaseTag("0.1.0"), "desktop-v0.1.0");
-  assert.equal(imageName("0.1.0"), "weblounge-0.1.0.dmg");
 });
 
 const ready = {
   status: "",
   head: "b830efb5",
   originMain: "b830efb5",
-  tags: ["v0.1.0", "desktop-v0.0.9"],
-  tag: "desktop-v0.1.0",
+  tags: ["v0.2.0", "desktop-v0.1.3"],
+  tag: "v0.3.0",
 };
 
 test("a clean main at a new version can release", () => {
@@ -78,12 +61,12 @@ test("reports every reason a release cannot start", () => {
       ...ready,
       status: " M apps/tauri/src/main.rs\n",
       head: "765844c8",
-      tags: [...ready.tags, "desktop-v0.1.0"],
+      tags: [...ready.tags, "v0.3.0"],
     }),
     [
       "the worktree has uncommitted changes",
       "HEAD is not origin/main",
-      "desktop-v0.1.0 already exists",
+      "v0.3.0 already exists",
     ],
   );
 });
