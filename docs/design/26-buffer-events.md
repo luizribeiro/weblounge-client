@@ -22,7 +22,6 @@ Out of scope:
 
 - deleting your own messages, reply-quote updates and reaction UI around redaction;
 - replies, and message edits (papo has no edit API);
-- "load missing messages" for a gap;
 - your own user-mode changes;
 - away, account, host, real-name, MONITOR and CTCP lines (presence or nothing, never rows);
 - errors from your own commands (toasts, unchanged);
@@ -397,9 +396,12 @@ can settle a reconnect whose wall-clock end is later than every message. It runs
 3. the network reconnects without CHATHISTORY, or catch-up fails. Each joined channel, and each DM
    with rows, gets a gap from the disconnect to `Connected`.
 
-A filled gap makes no row. A gap clears when a later page's range covers it (in v1, only an older
-page reaching a gap at the top), and clearing the row recomputes the exact badge in the same
-operation. It leaves with eviction, PART or close. The marker is memory-only. After a relaunch the
+A filled gap makes no row. A gap clears when a later page's range covers it, and clearing the row
+recomputes the exact badge in the same operation. Gaps backfill themselves (B20): each catch-up
+page fetches one `CHATHISTORY BEFORE` page from the newest gap's newer edge, and a gap row the
+list mounts (in or near the viewport) asks for the next one; a page shrinks the gap to what lies
+before its oldest line or clears it. A failed fill leaves the gap for the next catch-up, and a
+page that makes no progress is not fetched again. It leaves with eviction, PART or close. The marker is memory-only. After a relaunch the
 transcript restarts from history, and only a new shortfall records a marker. Schema 8 drops the
 ambiguous schema-7 `gap_until` during migration; stub-cap gaps can be reconstructed by later stub
 eviction, while a beta transcript scalar with no restored range can no longer pin `99+`.
