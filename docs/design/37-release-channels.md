@@ -1,6 +1,7 @@
 # 37 — Release channels
 
-Status: channels decided by Luiz (2026-11-17); the mechanism below follows from them.
+Status: channels and version scheme (option A) decided by Luiz (2026-11-17); the mechanism below
+follows from them.
 Extends design 28 (desktop release) and design 33 (TestFlight).
 
 ## Problem
@@ -57,29 +58,90 @@ the browser tab and an installed PWA's window say "weblounge β", and the unread
 WKWebView's `document.title` is not shown. The sidebar and phone header wordmark stay
 "weblounge" (not asked for; see open questions).
 
-## Web release tags
+## Versions and tags (Luiz, 2026-11-17, option A)
 
-- Format `web-v<semver>`, e.g. `web-v0.1.0`, beside `desktop-v…` and `ios-v…+…`.
-- Web has its own version line. Native versions move only when app-built code changes (below),
-  while web releases follow page changes; sharing one number would force bumps on one side for
-  changes on the other. The web version lives only in the tag: no file in the tree carries it.
-- The first release is `web-v0.1.0`. Later cuts default to the next patch; `--minor` and
-  `--major` bump those parts.
+This replaces the separate `web-v`, `desktop-v` and `ios-v` lines, design 28's tag and design 33's
+decision 9. The commit-count proposal (`~/docs/weblounge/versioning.md`) was rejected for its big
+numbers; its compatibility rules (capabilities, floors, additive contracts, roll forward, 90 days)
+are kept and summarised in `docs/RELEASING.md`.
+
+- **One release line, `vX.Y.Z`,** shared by web, macOS and iOS. Only Luiz cuts these tags, with
+  the cut script below. The first is `v0.2.0` on 64b912c4, the irc.weblounge.org pin.
+- The old tags `web-v0.1.0` and `desktop-v0.1.0`..`desktop-v0.1.3` stay as history. Nothing
+  creates `web-v`, `desktop-v` or `ios-v` tags again.
+- **Displayed versions are git-describe style:** a build at a release tag shows `0.2.0`; a build
+  14 commits after it shows `0.2.0+14`. Beta pages and native builds usually carry the `+N`. The
+  native About line shows both builds in this form, page first: `0.2.0+14 · app 0.2.0+3`. The
+  native build number below is a separate, larger number shown only beside it.
+- **Native bundle versions:** CFBundleShortVersionString and the Homebrew cask version are the
+  last release (`0.2.0`). CFBundleVersion, the build number, is the commit count of the built
+  commit (`git rev-list --count`), which only grows on a linear main; it is shown only in About
+  and debug info.
+- No file in the tree carries the version. `Cargo.toml` and `tauri.conf.json` keep a placeholder
+  that the release scripts override, and nothing displays `CARGO_PKG_VERSION`.
+
+### How a build learns its version
+
+The version needs the last `v` tag and the commit count since it. Nix sees neither: a flake's
+source has no `.git`, and `github:` inputs carry no tags and no `revCount` (a `git+https` input adds
+`revCount`, which is the total count, still without tags). So the version is computed from git
+**outside** the build and passed in:
+
+- **One computation:** `describeVersion` in `apps/tauri/release/release-version.mjs` turns the
+  nearest `v` tag and the count since it into `X.Y.Z` or `X.Y.Z+N`. `git describe --tags --match
+  'v[0-9]*' --abbrev=0 <commit>` names the tag and `git rev-list --count <tag>..<commit>` gives the
+  count. `node apps/tauri/release/describe-version.mjs <commit>` prints it after fetching tags.
+- **Web:** the Vite build reads `WEBLOUNGE_VERSION` and defines it as `__BUILD_VERSION__`
+  (`null` when unset). The flake's `app` stays version-free, so CI and local builds carry none,
+  and offers `app.withVersion "<version>"`. The page's `versionFor` (design 38) shows it.
+- **Server:** each client pin (beta, release) is kept together with its version, for example
+  `{ rev = "<sha>"; version = "0.2.0+14"; }`, and builds `clientPackages.app.withVersion version`.
+  The pin bump runs `describe-version.mjs <sha>` in a client checkout and writes both at once.
+  The `github:` input stays; no `git+https` input is needed.
+- **Native:** both release scripts take the short version, the displayed version and the build
+  number from the one commit they build (`HEAD`, which must be `origin/main`), so they cannot
+  disagree. `crateVersion` and the `desktop-v`/`ios-v` tag helpers go away.
+- **iOS:** `release-ios.mjs` builds outside the Nix sandbox, so it passes the versions straight to
+  the build: the short version to agvtool (both bundles), the build number in Tauri's `--config`,
+  and `WEBLOUNGE_VERSION` in the build's environment.
+- **macOS:** `release.mjs` builds `.#desktop` through `override { version = { marketing, build,
+  display }; }`, which adds a Tauri `--config` for `version` and `bundle.macOS.bundleVersion` and
+  sets `WEBLOUNGE_VERSION`.
+- **Shell identity:** `shell.rs` publishes `WEBLOUNGE_VERSION` as `__WEBLOUNGE_SHELL__.version`,
+  or `"dev"` for a build that was not given one.
 
 ## Cutting a web release
 
-`node app/scripts/cut-web-release.mjs` from a checkout of main:
+`node app/scripts/cut-web-release.mjs [--patch|--major] [--execute]` from a checkout of main:
 
-1. Fetches `origin/main` and tags (`gitState`). Refuses when the tree is dirty, `HEAD` is not `origin/main`,
-   the tag exists, or the `CI` check run on `HEAD` is not a completed success (pending, failed
-   and missing all refuse).
-2. Prints the tag, the commit, the exact `git tag -a` and `git push origin <tag>` commands, and
-   the server pin: the flake input URL `github:luizribeiro/weblounge-client/<commit>` (and the
-   tag form) for irc.weblounge.org's client input.
-3. Creates and pushes the tag only with `--execute`. Without it, it changes nothing.
+1. Fetches `origin/main` and tags (`gitState`). Refuses when the tree is dirty, `HEAD` is not
+   `origin/main`, the tag exists, or the `CI` check run on `HEAD` is not a completed success
+   (pending, failed and missing all refuse).
+2. Bumps the highest `vX.Y.Z` tag: minor by default (`0.2.0` → `0.3.0`), or `--patch` (`0.2.1`)
+   or `--major` (`1.0.0`).
+3. Prints the tag, the commit, the exact `git tag -a` and `git push origin <tag>` commands, and
+   the server pin for irc.weblounge.org: the commit and its version (`0.3.0`).
+4. Creates and pushes the tag only with `--execute`. Without it, it changes nothing.
 
-The server then moves irc.weblounge.org's client input to that commit and deploys; beta keeps
-following main.
+The server then moves irc.weblounge.org's client pin to that commit and version and deploys. The
+release pin is always a tag's own commit, so it shows `0.3.0` with no `+N`. Beta keeps following
+main and from then on shows `0.3.0+N`.
+
+The script keeps its name, but the tag it cuts is the shared release: a native fix that needs a
+new short version (see below) is cut the same way, and irc.weblounge.org moves to it only when the
+server pin is bumped.
+
+## Native releases
+
+- `release.mjs` (macOS) and `release-ios.mjs` (TestFlight) build from `origin/main`'s `HEAD`,
+  which need not be a release tag. Neither creates a tag.
+- macOS publishes the GitHub release of the last tag, `vX.Y.Z`, on that existing tag
+  (`--verify-tag`), carrying `weblounge-X.Y.Z.dmg`; `desktop-release.yml` bumps the cask from it.
+  Because the cask version is `X.Y.Z`, there is one macOS build per release tag: the script
+  refuses when that GitHub release already exists, and a fix needs a new (patch) tag.
+- iOS uploads build `N` with short version `X.Y.Z`. App Store Connect refuses a reused build
+  number in `validate-app`, which both the dry run and the release run before uploading; a retry
+  needs a new commit on main.
 
 ## When a new TestFlight build is needed
 
@@ -96,7 +158,8 @@ Homebrew macOS app.
   `blockers` (tree, `HEAD`, tag), adding the CI check beside them in its own pure planning module
   (`app/scripts/web-release-plan.mjs`). Those helpers are not desktop-specific; they stay where
   they are rather than move for one more caller.
-- Designs 28 and 33 are unchanged: their tags, versions and scripts stay as they are.
+- The version tags above replace design 28's `desktop-v` tag and design 33's `ios-v` tag and
+  decision 9; their build, signing and upload steps are unchanged.
 - Out of scope: the server's vhost and pinning (the server repo), a channel badge in the sidebar,
   an App Store build loading irc.weblounge.org, automated web release notes.
 
@@ -104,10 +167,17 @@ Homebrew macOS app.
 
 - Unit: the decoder accepts `"beta"` and `"release"`, rejects other values, and treats absent as
   release; the title helper; the cut plan (version bumps, tag, blockers including every CI state,
-  printed commands, `--execute` gating).
+  printed commands, `--execute` gating); `describeVersion` at, after and with no release tag; the
+  native plans' versions, build numbers and Tauri `--config`.
+- Mac-only (Luiz's Mac session): a dry run of each native script shows the expected short version,
+  build number and shell `version`.
 - Playwright: a hosted spec serving `"channel": "beta"` sees the tab title "weblounge β"; the
   existing hosted specs (no channel) keep "weblounge".
 
 ## Open questions
 
 1. Should the sidebar or phone wordmark also say β on beta? Today only the title does.
+2. Does the push relay build from the beta pin or the release pin? The server session has asked
+   Luiz.
+3. One macOS build per release tag follows from the cask version being `X.Y.Z`. If Luiz wants
+   macOS builds between tags, the cask version needs the build number too (`0.2.0,2711`).
