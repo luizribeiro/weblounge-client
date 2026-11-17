@@ -1,0 +1,3 @@
+.chair {
+  mask: url("../assets/chair.svg") center / contain no-repeat;
+}

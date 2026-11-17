@@ -91,7 +91,6 @@
 .logoMark {
   background: var(--wl-color-panel);
   height: 27px;
-  mask: url("../../assets/chair.svg") center / contain no-repeat;
   width: 27px;
 }
 

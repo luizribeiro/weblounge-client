@@ -19,6 +19,7 @@ import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import { windowDragRegion } from "../../platform/window-controls";
 import { t, translate } from "../../strings";
+import { ChairMark } from "../../ui/ChairMark";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu";
@@ -291,13 +292,12 @@ export function Sidebar(props: SidebarProps) {
           data-connection-error={connection().error !== undefined || undefined}
           data-connection-logo="true"
         >
-          <span
-            aria-hidden="true"
-            class={styles.logoMark}
-            data-connection-logo-mark="true"
-          />
+          <ChairMark class={styles.logoMark} data-connection-logo-mark="true" />
           <span aria-hidden="true" data-connection-fill="true">
-            <span class={styles.logoMark} data-connection-logo-mark="true" />
+            <ChairMark
+              class={styles.logoMark}
+              data-connection-logo-mark="true"
+            />
           </span>
         </div>
         <div class={styles.brandText}>

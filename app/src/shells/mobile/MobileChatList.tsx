@@ -23,6 +23,7 @@ import {
 } from "../../features/notifications/NotificationPrompt";
 import { platformEnvironment } from "../../platform/environment";
 import { t } from "../../strings";
+import { ChairMark } from "../../ui/ChairMark";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
   connectionSweepAtRest,
@@ -177,13 +178,16 @@ export function MobileChatList(props: MobileChatListProps) {
           data-connection-error={connection().error !== undefined || undefined}
           data-connection-logo="true"
         >
-          <span
+          <ChairMark
             class={styles.logoMark}
             data-connection-logo-mark="true"
             data-mobile-logo-mark="true"
           />
           <span data-connection-fill="true">
-            <span class={styles.logoMark} data-connection-logo-mark="true" />
+            <ChairMark
+              class={styles.logoMark}
+              data-connection-logo-mark="true"
+            />
           </span>
         </span>
         <span class={styles.identity}>
