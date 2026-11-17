@@ -94,6 +94,33 @@ test.describe("desktop copying from the transcript", () => {
     await nativeFeelAudit(page);
   });
 
+  test("selects text when a drag starts on a link", async ({ page, irc }) => {
+    const peer = await irc.peer("copy-link");
+    const url = `http://127.0.0.1:4174/copy-${irc.id}`;
+    const linked = `see ${url} for details`;
+    await peer.privmsgConfirmed(irc.channel, linked);
+    await peer.privmsgConfirmed(irc.channel, second);
+    await openTranscript(page, irc.url(), irc.channel);
+
+    const link = productionMessageRow(page, linked).getByRole("link");
+    const popup = page.waitForEvent("popup");
+    await link.click();
+    await (await popup).close();
+    await drag(
+      page,
+      await charPoint(messageText(page, linked), linked.indexOf("127")),
+      await charPoint(messageText(page, second), 6),
+    );
+
+    expect(await copySelection(page)).toMatch(
+      new RegExp(
+        `^${time} <${peer.nickname}> ${linked}\\n${time} <${peer.nickname}> ${second}$`,
+        "u",
+      ),
+    );
+    await expect(link).toHaveAttribute("href", url);
+  });
+
   test("copies only the triple-clicked message", async ({ page, irc }) => {
     const peer = await irc.peer("copy-para");
     await peer.privmsgConfirmed(irc.channel, first);

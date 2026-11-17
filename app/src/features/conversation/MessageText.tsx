@@ -1,5 +1,6 @@
 import { createMemo, For, Match, Switch } from "solid-js";
 import { t } from "../../strings";
+import { selectFromLinkPress } from "./link-drag-selection";
 import styles from "./MessageList.module.css";
 import { tokenizeMessage } from "./message-tokenizer";
 import { nickColor } from "./nick-color";
@@ -40,6 +41,7 @@ export function MessageText(props: MessageTextProps) {
                   event.preventDefault();
                   props.onOpenChannel?.(token.value);
                 }}
+                onPointerDown={selectFromLinkPress}
               >
                 {token.value}
               </a>
@@ -55,6 +57,7 @@ export function MessageText(props: MessageTextProps) {
                   event.preventDefault();
                   props.onOpenExternal(token.href);
                 }}
+                onPointerDown={selectFromLinkPress}
                 rel="noopener noreferrer"
                 target="_blank"
               >

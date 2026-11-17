@@ -67,8 +67,13 @@ Desktop message and action rows also offer **Copy text** (Luiz, 2026-11-17) in t
 menu and the app's row right-click menu (a `chrome` context surface, see below), for every
 message, own or not. It writes the whole message text, plain, with
 newlines kept, the same text the phone sheet's Copy text writes. Delete message stays below it, for
-own messages only. Links inside message text set `draggable={false}`, so a drag that starts on a
-link selects text in WebKit (Safari, the Mac app) instead of dragging the link.
+own messages only.
+
+A drag that starts on a link inside message text selects text. Base CSS already turns link dragging
+off, but WebKit (Safari, the Mac app) never starts a selection from a press on an `a[href]`, so
+there a plain primary mouse press (no modifier keys) on a message link removes its `href` until the pointer is released; the
+click that follows still opens the link. Chromium selects from links already and opens a link only
+if it had its `href` when pressed, so it is left alone.
 
 The phone is unchanged by this decision: long press opens the sheet and its Copy text copies the
 whole message; there is no in-place selection, Select text mode or Copy link there.
@@ -94,7 +99,7 @@ subsystem 08.
 | Selection and I-beam | App root uses `user-select: none` and `cursor: default`; `Selectable` and editable controls opt into text selection/cursor. |
 | Tap highlight and touch callout | Clear `-webkit-tap-highlight-color` and disable callout on chrome; restore callout for selectable/editable content. |
 | Mouse focus flash | Suppress ordinary outlines and restore the token-driven ring only with `:focus-visible`. |
-| Image/link drag | Chrome assets and links inside message text set `draggable={false}` and base CSS disables WebKit user drag; a root `dragstart` fallback rejects chrome drags. |
+| Image/link drag | Chrome assets set `draggable={false}` and base CSS disables WebKit user drag; a root `dragstart` fallback rejects chrome drags. |
 | Rubber-band and pull-to-refresh | `html`, `body`, root, and app shell fill the viewport, do not page-scroll, and use `overscroll-behavior: none`; lists own scrolling. |
 | Mobile input zoom | Editable controls compute to at least `16px` under root `data-input="touch"`. |
 | Font layout shift | Task 4 self-hosts and preloads subsets with metric-matched fallbacks or `size-adjust`; the foundation uses the system stack and the audit observes font readiness. |
@@ -244,7 +249,7 @@ It asserts:
 - chrome right-click is prevented while selectable text right-click is not;
 - a pointer selection across two rows stays in the list and its `copy` payload is IRC-style text,
   with those rows' time and nick painted as selected;
-- chrome images and links, and links inside message text, are not draggable;
+- chrome images and links are not draggable;
 - cumulative layout shift stays at or below `0.01` through `document.fonts.ready`;
 - an instrumented five-second idle window executes no app `requestAnimationFrame`, timeout, or
   interval callbacks after startup settles, and no interval is registered unless its call site is
