@@ -1,0 +1,29 @@
+.overlay {
+  align-items: center;
+  background: var(--wl-color-overlay-scrim);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  pointer-events: none;
+  position: fixed;
+  z-index: 40;
+}
+
+.overlay::before {
+  border: 2px dashed var(--wl-color-accent);
+  border-radius: var(--wl-radius-palette);
+  content: "";
+  inset: 12px;
+  position: absolute;
+}
+
+.hint {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-control);
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-fg);
+  font-size: 13px;
+  margin: 0;
+  padding: 8px 14px;
+}

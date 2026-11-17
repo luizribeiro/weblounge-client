@@ -1,4 +1,5 @@
 import { createEffect, createSignal, splitProps } from "solid-js";
+import { ImageDropZone } from "../features/composer/ImageDropZone";
 import {
   selectBuffer as applyBufferSelection,
   type BufferSelection,
@@ -136,6 +137,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
           pathForBuffer={props.pathForBuffer}
         />
       )}
+      <ImageDropZone />
     </div>
   );
 }

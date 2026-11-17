@@ -335,7 +335,11 @@ export default defineConfig({
     },
     {
       name: "webkit-uploads",
-      testMatch: ["**/image-uploads.spec.ts", "**/file-command.spec.ts"],
+      testMatch: [
+        "**/image-uploads.spec.ts",
+        "**/file-command.spec.ts",
+        "**/image-drop.spec.ts",
+      ],
       use: { browserName: "webkit" },
     },
     {
