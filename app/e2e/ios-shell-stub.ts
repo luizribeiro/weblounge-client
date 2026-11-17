@@ -39,14 +39,23 @@ export async function installIosShellStub(
       let pushed: unknown[] = [];
       let currentPermission = initialPermission;
       let pushTarget: unknown = null;
-      const answers: Record<string, () => unknown> = {
+      const flagged = new Set<string>();
+      const clearFlag = (request: unknown) => {
+        flagged.delete((request as { routeId: string }).routeId);
+      };
+      const answers: Record<string, (request: unknown) => unknown> = {
         push_permission: () => currentPermission,
         request_push_permission: () => {
           currentPermission = granted;
           return currentPermission;
         },
         push_target: () => pushTarget,
-        create_route_keys: () => keys,
+        create_route_keys: (request) => {
+          clearFlag(request);
+          return keys;
+        },
+        drop_route_keys: clearFlag,
+        routes_needing_reregistration: () => [...flagged].sort(),
         take_pushed_messages: () => {
           const taken = pushed;
           pushed = [];
@@ -68,7 +77,7 @@ export async function installIosShellStub(
                 ({ identifier }) => !identifiers.includes(identifier),
               );
             }
-            return Promise.resolve(answers[command]?.() ?? null);
+            return Promise.resolve(answers[command]?.(request) ?? null);
           },
         }),
       });
@@ -79,6 +88,9 @@ export async function installIosShellStub(
         },
         queue: (message: unknown) => {
           pushed = [...pushed, message];
+        },
+        flagForReregistration: (routeId: string) => {
+          flagged.add(routeId);
         },
         issueToken: (target: unknown) => {
           pushTarget = target;
@@ -129,6 +141,18 @@ export async function issueApnsToken(
   await page.evaluate(
     (value) => Reflect.get(globalThis, "__iosShell").issueToken(value),
     target,
+  );
+}
+
+/** Flags `routeId` as the extension does when a push no longer decrypts with its keys. */
+export async function flagRouteForReregistration(
+  page: Page,
+  routeId: string,
+): Promise<void> {
+  await page.evaluate(
+    (value) =>
+      Reflect.get(globalThis, "__iosShell").flagForReregistration(value),
+    routeId,
   );
 }
 

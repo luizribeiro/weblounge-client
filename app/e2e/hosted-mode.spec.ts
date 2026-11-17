@@ -1,6 +1,8 @@
 import { devices, expect, type Page, type Route, test } from "@playwright/test";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 import {
+  dispatchShellEvent,
+  flagRouteForReregistration,
   installIosShellStub,
   issueApnsToken,
   nativeCalls,
@@ -1648,6 +1650,24 @@ test.describe("the iPhone app's push registration", () => {
     await expect
       .poll(() => relay.bodies("PUT /v1/devices/device-1/target"))
       .toEqual([{ target: rotated }]);
+
+    await flagRouteForReregistration(page, "route-ios");
+    await dispatchShellEvent(page, {
+      name: "weblounge:lifecycle",
+      detail: "foreground",
+    });
+
+    await expect
+      .poll(() => nativeCalls(page))
+      .toContainEqual({
+        command: "drop_route_keys",
+        request: { routeId: "route-ios" },
+      });
+    expect(await nativeCalls(page)).toContainEqual({
+      command: "create_route_keys",
+      request: expect.objectContaining({ routeId: "route-ios-2" }),
+    });
+    await expectEnsuredPush(page, "route-ios-2");
   });
 });
 

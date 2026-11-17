@@ -1175,6 +1175,7 @@ export function App(props: AppProps) {
       devices,
       routes: pushRegistrar.routes(),
       generateRouteKeys: pushRegistrar.generateRouteKeys,
+      routesNeedingReregistration: pushRegistrar.routesNeedingReregistration,
       routeContext: (networkId) => {
         const network = networks().find(
           (candidate) => candidate.id === networkId,
