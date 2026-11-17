@@ -38,8 +38,10 @@ A desktop pane is one self-contained box:
 │ transcript                             │ members (232px)  │
 │                                        │ OPERATORS — 2    │
 │                                        │ @ mel            │
-│ composer                               │ …                │
-└────────────────────────────────────────┴──────────────────┘
+│                                        │ …                │
+├────────────────────────────────────────┴──────────────────┤
+│ composer                                                  │  ← spans the whole pane
+└───────────────────────────────────────────────────────────┘
 ```
 
 - The **pane header spans the full pane width**, over the members panel. The Members button keeps
@@ -48,8 +50,11 @@ A desktop pane is one self-contained box:
   are on the header button, which also closes it. The panel keeps its accessible name
   "Members of #papo". The narrow-pane drawer has no header either (decision 2); the mobile drawer
   keeps its header (it needs a visible close).
-- The body is a two-column grid: `minmax(0, 1fr) var(--wl-size-members)`. The member column is
-  only rendered for a channel with its list shown inline.
+- The body is a grid with named areas: the conversation (transcript and composer notices) and the
+  member column side by side, `minmax(0, 1fr) var(--wl-size-members)`, above a composer row that
+  spans both columns (decision 14). The member column ends at the composer's top, so opening or
+  closing it never moves or resizes the composer. The member column is only rendered for a channel
+  with its list shown inline.
 - Single pane: the 48px main header (sidebar toggle, title, topic, Members). Multi-pane (later):
   the 38px compact header with the same Members button plus split/close (design 10).
 
@@ -191,7 +196,8 @@ Matches design 15's rules:
   follow visibility; Escape in the panel focuses the composer.
 - Playwright, local Ergo (extend `member-panel.spec.ts`, keep its ops/voice/bot groups and DM open):
   - geometry: the header's left and right edges equal the pane's; the panel's top equals the
-    header's bottom; panel 232px; transcript + panel fill the pane;
+    header's bottom; panel 232px; transcript + panel fill the pane; the panel's bottom is the
+    composer's top, and the composer's box is the same with the list open and closed;
   - toggle by button and Ctrl+.; the choice survives reload; `#a` shown and `#b` hidden stay so
     when switching between them; a never-toggled channel follows the last choice;
   - DM and server buffer: no button, no column, full-width transcript;
@@ -232,3 +238,7 @@ Matches design 15's rules:
 13. **Added 2026-11-15:** the narrow-pane drawer covers only the transcript, not the composer: its
     bottom follows the composer's top as drafts grow, and typing, clicking or sending in the
     composer no longer closes it.
+14. **Added 2026-11-17 (B30, feedback #25):** the inline member column also covers only the
+    transcript region: it starts at the pane header's bottom and ends at the composer's top. The
+    composer spans the whole pane width and stays in the same place, at the same size, whether the
+    list is open or not.
