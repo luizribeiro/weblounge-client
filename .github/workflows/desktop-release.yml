@@ -7,7 +7,7 @@ name: desktop-release
 
 jobs:
   version:
-    if: startsWith(github.event.release.tag_name, 'desktop-v')
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.tag.outputs.version }}
@@ -18,7 +18,7 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
           REPO: ${{ github.repository }}
         run: |
-          version=${TAG#desktop-v}
+          version=${TAG#v}
           downloads=https://github.com/$REPO/releases/download
           {
             echo "version=$version"
