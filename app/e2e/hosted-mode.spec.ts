@@ -2079,6 +2079,35 @@ async function installFakeEngine(
               "true",
           });
         }
+        if (
+          request?.type === "load_settings" ||
+          request?.type === "change_setting"
+        ) {
+          const stored = localStorage.getItem("e2e.settings");
+          const app = {
+            theme: "system",
+            message_density: "cozy",
+            unread_tab_indicator: true,
+            push_on_this_device: true,
+            ...(stored === null ? {} : JSON.parse(stored)),
+          };
+          if (request.type === "load_settings") {
+            this.emit({
+              type: "settings_loaded",
+              command_id: id,
+              settings: { app },
+            });
+          } else {
+            const { setting } = (
+              request as unknown as {
+                change: { setting: { key: string; value: unknown } };
+              }
+            ).change;
+            const changed = { ...app, [setting.key]: setting.value };
+            localStorage.setItem("e2e.settings", JSON.stringify(changed));
+            this.emit({ type: "settings_changed", settings: { app: changed } });
+          }
+        }
         if (request?.type === "dismiss_notification_prompt") {
           localStorage.setItem("e2e.notification-prompt-dismissed", "true");
         }

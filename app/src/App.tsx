@@ -1,4 +1,11 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import {
   type ActionId,
   ActionRegistry,
@@ -231,6 +238,7 @@ export function App(props: AppProps) {
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   const [pushSubscription, setPushSubscription] =
     createSignal<PushSubscriptionStatus>("pending");
+  const [pushSetupFailed, setPushSetupFailed] = createSignal(false);
   const [shownBufferIds, setShownBufferIds] = createSignal<ReadonlySet<number>>(
     new Set(),
   );
@@ -255,6 +263,9 @@ export function App(props: AppProps) {
     started: engineStarted,
     onAppearance: (appearance) => props.onAppearanceChange?.(appearance),
   });
+  const pushWanted = () =>
+    engineSettings.current()?.app.push_on_this_device === true;
+
   let reportedVisibility: VisibilityState | undefined;
   // Render visibility follows document.hidden alone: an unfocused window
   // is still on screen and must keep drawing.
@@ -276,6 +287,8 @@ export function App(props: AppProps) {
   let pushRefresh: Promise<void> | undefined;
   let pushTarget: DeviceTarget | undefined;
   let pushSetupGeneration = 0;
+  // Turning push back on waits for the previous off's relay cleanup, which shares the stores.
+  let pushStopping: Promise<void> = Promise.resolve();
   let notificationPromptLoadId: string | undefined;
   let notificationPromptReadDeadline: number | undefined;
   let loadedPromptConfig: string | undefined;
@@ -424,11 +437,27 @@ export function App(props: AppProps) {
         notificationPromptReadDeadline = undefined;
         setNotificationPromptDismissed(false);
       });
-    void pushRegistrar.permission().then((permission) => {
-      setNotificationPermission(permission);
-      if (permission === "granted") void startConfiguredPush(mountedClient);
-    });
+    void pushRegistrar.permission().then(setNotificationPermission);
   });
+  createEffect(
+    on(
+      [
+        engineStarted,
+        () => props.pushConfig,
+        pushWanted,
+        notificationPermission,
+      ],
+      ([started, config, wanted, permission]) => {
+        const mountedClient = client;
+        if (!started || config === undefined || mountedClient === undefined)
+          return;
+        if (wanted && permission === "granted")
+          void startConfiguredPush(mountedClient).catch(() => undefined);
+        else if (!wanted && engineSettings.current() !== undefined)
+          stopConfiguredPush();
+      },
+    ),
+  );
   const noticeActions = new ActionRegistry(
     {
       "buffer.open-direct": (context) => {
@@ -1064,9 +1093,44 @@ export function App(props: AppProps) {
 
   async function pushPermitted(): Promise<boolean> {
     return (
+      pushWanted() &&
       pushRegistrar.supported() &&
       (await pushRegistrar.permission()) === "granted"
     );
+  }
+
+  function resetPushSetup(): void {
+    pushSetupGeneration += 1;
+    if (foregroundLeaseHandoffTimer !== undefined) {
+      window.clearTimeout(foregroundLeaseHandoffTimer);
+      foregroundLeaseHandoffTimer = undefined;
+    }
+    pushOwner?.dispose();
+    foregroundLease?.release();
+    pushLeaseOwner?.dispose();
+    pushChannel?.close();
+    pushSynchronizer?.dispose();
+    foregroundLease?.dispose();
+    pushOwner = undefined;
+    pushLeaseOwner = undefined;
+    pushChannel = undefined;
+    pushSynchronizer = undefined;
+    foregroundLease = undefined;
+    pushStartup = undefined;
+    pushTarget = undefined;
+  }
+
+  function stopConfiguredPush(): void {
+    if (pushStartupKey === undefined) return;
+    const synchronizer = pushSynchronizer;
+    resetPushSetup();
+    pushStartupKey = undefined;
+    setPushSetupFailed(false);
+    setRelayPushStates(new Map());
+    const previous = pushStopping;
+    pushStopping = previous
+      .then(() => synchronizer?.signOut())
+      .catch(() => undefined);
   }
 
   async function startConfiguredPush(
@@ -1077,24 +1141,7 @@ export function App(props: AppProps) {
     if (config === undefined || session === undefined) return;
     const key = pushConfigKey(config);
     if (pushStartupKey !== key) {
-      pushSetupGeneration += 1;
-      if (foregroundLeaseHandoffTimer !== undefined) {
-        window.clearTimeout(foregroundLeaseHandoffTimer);
-        foregroundLeaseHandoffTimer = undefined;
-      }
-      pushOwner?.dispose();
-      foregroundLease?.release();
-      pushLeaseOwner?.dispose();
-      pushChannel?.close();
-      pushSynchronizer?.dispose();
-      foregroundLease?.dispose();
-      pushOwner = undefined;
-      pushLeaseOwner = undefined;
-      pushChannel = undefined;
-      pushSynchronizer = undefined;
-      foregroundLease = undefined;
-      pushStartup = undefined;
-      pushTarget = undefined;
+      resetPushSetup();
       pushStartupKey = key;
     }
     if (pushStartup !== undefined) return pushStartup;
@@ -1113,8 +1160,10 @@ export function App(props: AppProps) {
       }
     } catch (error: unknown) {
       if (pushStartup === attempt) pushStartup = undefined;
-      if (generation === pushSetupGeneration)
+      if (generation === pushSetupGeneration) {
         setPushSubscription("unavailable");
+        setPushSetupFailed(true);
+      }
       throw error;
     }
   }
@@ -1125,11 +1174,14 @@ export function App(props: AppProps) {
     session: HostedSession,
     generation: number,
   ): Promise<void> {
+    await pushStopping;
+    if (disposed || generation !== pushSetupGeneration) return;
     if (!(await pushPermitted())) {
       setPushSubscription("unavailable");
       return;
     }
     setPushSubscription("pending");
+    setPushSetupFailed(false);
     pushPendingClock.restartSetup();
     await waitForProductionServiceWorkerUpdate();
     if (disposed || generation !== pushSetupGeneration) return;
@@ -1204,6 +1256,7 @@ export function App(props: AppProps) {
         channel?.postMessage({ kind: "device", device });
       },
       onRouteDiagnostic: (diagnostic) => {
+        if (generation !== pushSetupGeneration) return;
         setRelayPushStates((current) =>
           new Map(current).set(diagnostic.networkId, diagnostic),
         );
@@ -1309,14 +1362,9 @@ export function App(props: AppProps) {
   }
 
   function turnOnNotifications(): void {
-    const permission = pushRegistrar.requestPermission();
-    void permission
-      .then(async (result) => {
-        setNotificationPermission(result);
-        if (result === "granted" && client !== undefined) {
-          await startConfiguredPush(client);
-        }
-      })
+    void pushRegistrar
+      .requestPermission()
+      .then(setNotificationPermission)
       .catch(() => undefined);
   }
 
