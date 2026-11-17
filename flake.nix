@@ -416,12 +416,17 @@
           mkdir -p $out/share/fonts/truetype
           cp ${pkgs.liberation_ttf}/share/fonts/truetype/LiberationMono-*.ttf $out/share/fonts/truetype/
         '';
-        e2eFontsConf = pkgs.makeFontsConf {
-          fontDirectories = [
-            pkgs.dejavu_fonts
-            liberationMono
-          ];
-        };
+        # CI builds unsandboxed, so any host font directory or host fontconfig
+        # file would make its rendering differ from a sandboxed local run.
+        e2eFontsConf = pkgs.writeText "e2e-fonts.conf" ''
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+          <fontconfig>
+            <cachedir prefix="xdg">fontconfig</cachedir>
+            <dir>${pkgs.dejavu_fonts}</dir>
+            <dir>${liberationMono}</dir>
+          </fontconfig>
+        '';
         e2eShardCount = 4;
         # Specs tagged @serial restart Ergo, show fixed names in committed
         # screenshots, sample animation frames that CPU contention drops, or
