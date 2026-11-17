@@ -25,6 +25,7 @@ export const messages = {
   "common.bot_icon": "bot",
   "common.cancel": "Cancel",
   "common.channel": "Channel",
+  "common.ok": "OK",
   "common.send": "Send",
   "common.retry": "Retry",
   "common.sign_in_again": "Sign in again",
