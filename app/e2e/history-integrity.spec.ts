@@ -5,13 +5,21 @@ import {
   expectChatRowMatchesServer,
   expectHistoryPageReceived,
   expectTranscriptMatchesServer,
+  historyPagesReceived,
 } from "./history-integrity";
-import { captureHistoryWire } from "./history-wire-fixture";
+import {
+  captureHistoryWire,
+  heldHistoryRequestCount,
+} from "./history-wire-fixture";
 import { type IrcClient, messageId, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { isPhoneViewport } from "./mobile-platform";
-import { closeAppUntilDetached } from "./page-lifecycle";
-import { useDedicatedWorker } from "./production-ergo";
+import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import {
+  closeAppUntilDetached,
+  dispatchPersistedPageShow,
+  setPageHidden,
+} from "./page-lifecycle";
 import { expectSettled } from "./settled";
 
 test.describe("history integrity against local Ergo", () => {
@@ -77,6 +85,79 @@ test.describe("history integrity against local Ergo", () => {
         irc,
         [channel, peer.nickname],
       );
+    });
+
+  test("a relaunch after more lines than one catch-up page shows them all", async ({
+    context,
+    page,
+    irc,
+  }) => {
+    const { keeper, channel, peer } = await alwaysOnRoom(irc, "long");
+    const app = await launch(page, irc, [channel]);
+    await peer.privmsgConfirmed(channel, `before the long absence ${irc.id}`);
+    await expect(chatRow(app, channel)).toBeVisible();
+    await closeAppUntilDetached(app, keeper);
+
+    await sendFromMany(irc, channel, longerThanOnePage);
+
+    await expectBuffersMatchServer(
+      await relaunch(context, irc, [channel], [channel]),
+      irc,
+      [channel],
+    );
+  });
+
+  test("an open app offline for more than one catch-up page shows every line", async ({
+    page,
+    irc,
+  }) => {
+    // B20: the reconnect catch-up leaves a "Messages may be missing" gap between the lines
+    // already loaded and its newest page, and nothing ever fills it.
+    test.fail();
+    const { keeper, channel, peer } = await alwaysOnRoom(irc, "away");
+    const app = await launch(page, irc, [channel]);
+    await sendEach(peer, [channel], 3, `before going offline ${irc.id}`);
+    await openConversation(app, channel);
+    await expectTranscriptMatchesServer(app, keeper, channel);
+    await leaveConversation(app, channel);
+
+    const pagesBefore = await historyPagesReceived(app, channel);
+    await irc.forwarder.drop();
+    await expect.poll(() => keeper.attachedClientCount()).toBe(1);
+    await sendFromMany(irc, channel, longerThanOnePage);
+    await irc.forwarder.restore();
+    await reconnectNow(app, keeper);
+    await expectHistoryPageReceived(app, channel, pagesBefore);
+
+    await expectBuffersMatchServer(app, irc, [channel]);
+  });
+
+  for (const interruption of ["unsent", "unanswered"] as const)
+    test(`a launch catch-up cut off while ${interruption} still shows every line`, async ({
+      context,
+      page,
+      irc,
+    }) => {
+      const { keeper, channel, peer } = await alwaysOnRoom(irc, "cut");
+      const app = await launch(page, irc, [channel]);
+      await peer.privmsgConfirmed(channel, `before closing ${irc.id}`);
+      await expect(chatRow(app, channel)).toBeVisible();
+      await closeAppUntilDetached(app, keeper);
+      await sendEach(peer, [channel], 3, `while closed ${irc.id}`);
+
+      const relaunched = await relaunchCutOff(
+        context,
+        irc,
+        channel,
+        keeper,
+        interruption,
+      );
+      await sendEach(peer, [channel], 3, `while cut off ${irc.id}`);
+      await irc.forwarder.restore();
+      await reconnectNow(relaunched, keeper);
+
+      await expectHistoryPageReceived(relaunched, channel);
+      await expectBuffersMatchServer(relaunched, irc, [channel]);
     });
 });
 
@@ -144,12 +225,16 @@ async function alwaysOnRoom(irc: IrcTestAccount, label: string): Promise<Room> {
   return { keeper, channel, peer };
 }
 
+type WireOptions = Parameters<typeof captureHistoryWire>[1];
+
 async function launch(
   page: Page,
   irc: IrcTestAccount,
   channels: readonly string[],
+  wire: WireOptions = {},
 ): Promise<Page> {
-  await useDedicatedWorker(page);
+  await captureHistoryWire(page, wire);
+  await installNativeFeelInstrumentation(page);
   await page.goto(irc.url({ autojoin: channels, path: homePath(page, irc) }));
   await expect(chatRow(page, irc.channel)).toBeVisible();
   return page;
@@ -168,11 +253,86 @@ async function relaunch(
   channels: readonly string[],
   caughtUp: readonly string[],
 ): Promise<Page> {
-  const page = await context.newPage();
-  await captureHistoryWire(page);
-  await launch(page, irc, channels);
+  const page = await openRelaunched(context, irc, channels);
   for (const target of caughtUp) await expectHistoryPageReceived(page, target);
   return page;
+}
+
+async function openRelaunched(
+  context: BrowserContext,
+  irc: IrcTestAccount,
+  channels: readonly string[],
+  wire: WireOptions = {},
+): Promise<Page> {
+  return launch(await context.newPage(), irc, channels, wire);
+}
+
+/**
+ * Relaunches the app and cuts its connection during the channel's launch catch-up: before the
+ * request goes out ("unsent") or as its reply starts to arrive ("unanswered").
+ */
+async function relaunchCutOff(
+  context: BrowserContext,
+  irc: IrcTestAccount,
+  channel: string,
+  sameAccount: IrcClient,
+  interruption: "unanswered" | "unsent",
+): Promise<Page> {
+  const attached = await sameAccount.attachedClientCount();
+  if (interruption === "unanswered")
+    await irc.forwarder.dropIncomingContaining(` chathistory ${channel}`);
+  const page = await openRelaunched(
+    context,
+    irc,
+    [channel],
+    interruption === "unsent"
+      ? { holdRequest: `CHATHISTORY LATEST ${channel} ` }
+      : {},
+  );
+  if (interruption === "unsent") {
+    await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
+    await expect
+      .poll(() => sameAccount.attachedClientCount())
+      .toBe(attached + 1);
+  }
+  await irc.forwarder.drop();
+  await expect.poll(() => sameAccount.attachedClientCount()).toBe(attached);
+  return page;
+}
+
+/** Returning to the foreground probes the connection instead of waiting out the backoff. */
+async function reconnectNow(page: Page, sameAccount: IrcClient): Promise<void> {
+  const attached = await sameAccount.attachedClientCount();
+  await setPageHidden(page, true);
+  await setPageHidden(page, false);
+  await dispatchPersistedPageShow(page);
+  await expect.poll(() => sameAccount.attachedClientCount()).toBe(attached + 1);
+}
+
+const longerThanOnePage = 128;
+const writerCount = 16;
+
+/** Many writers share the lines, since Ergo's fakelag slows any one writer's burst. */
+async function sendFromMany(
+  irc: IrcTestAccount,
+  channel: string,
+  total: number,
+): Promise<void> {
+  const writers = await Promise.all(
+    Array.from({ length: writerCount }, (_, index) =>
+      irc.peer(`w${index}`, [channel]),
+    ),
+  );
+  await Promise.all(
+    writers.map((writer, writerIndex) =>
+      sendEach(
+        writer,
+        [channel],
+        Math.ceil(total / writerCount),
+        `writer ${writerIndex} ${irc.id}`,
+      ),
+    ),
+  );
 }
 
 function justAfter(time: string): string {
