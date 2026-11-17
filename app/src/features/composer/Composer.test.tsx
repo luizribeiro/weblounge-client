@@ -558,6 +558,31 @@ it("hides an argument suggestion once a sent command empties the composer", asyn
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 });
 
+it("dismisses suggestions on a press outside the composer", () => {
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="#lounge"
+      completion={completion("hello am", [person("amartinez")], 6)}
+      draftKey="test:outside-press"
+      onRequestCandidates={() => {}}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "hello am" } });
+  fireEvent.pointerDown(screen.getByRole("option"));
+  fireEvent.pointerDown(input);
+  expect(screen.getByRole("listbox")).toBeVisible();
+
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(input).toHaveValue("hello am");
+
+  fireEvent.input(input, { target: { value: "hello ama" } });
+  expect(screen.getByRole("listbox")).toBeVisible();
+});
+
 it("submits when Enter would only add a completion separator", async () => {
   const onSend = vi.fn(() => true);
   render(() => (

@@ -8,7 +8,7 @@ import { expectSettled } from "./settled";
 test.describe("composer suggestion popup follows the composer text", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("closes the /msg nick popup whenever the composer empties", async ({
+  test("closes the /msg nick popup when the composer empties or on Escape or outside click", async ({
     page,
     irc,
   }) => {
@@ -72,6 +72,11 @@ test.describe("composer suggestion popup follows the composer text", () => {
     await composer.press("Enter");
     await peer.waitForPrivmsg(peer.nickname, "b29 hello", irc.account);
     await expectClosedOverEmptyComposer();
+
+    await showNickSuggestion();
+    await page.locator("[data-message-list]").click();
+    await expect(popup).toHaveCount(0);
+    await expect(composer).toHaveValue("/msg am");
     await nativeFeelAudit(page);
   });
 });

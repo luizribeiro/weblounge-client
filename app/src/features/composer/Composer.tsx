@@ -22,6 +22,7 @@ import {
 } from "../../platform/focus-without-pan";
 import { reportKeyboardInteraction } from "../../platform/keyboard-debug";
 import { t, translate } from "../../strings";
+import { onPointerDownOutside } from "../../ui/outside-pointer";
 import styles from "../conversation/SimpleComposer.module.css";
 import type { NetworkUploads } from "../uploads/types";
 import { AttachmentChip } from "./AttachmentChip";
@@ -82,6 +83,7 @@ interface TabCycle {
 
 export function Composer(props: ComposerProps) {
   const platform = platformEnvironment();
+  let wrap: HTMLDivElement | undefined;
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
   let imagePicker: HTMLInputElement | undefined;
@@ -378,6 +380,14 @@ export function Composer(props: ComposerProps) {
   createEffect(() => {
     setSelected(suggestions() === undefined ? -1 : 0);
   });
+  const dismissSuggestions = () => {
+    setDismissedInput(text());
+    setSelected(-1);
+  };
+  const suggesting = createMemo(() => suggestions() !== undefined);
+  createEffect(() => {
+    if (suggesting()) onPointerDownOutside(() => [wrap], dismissSuggestions);
+  });
   const request = (value: string, cursor: number, explicit: boolean) => {
     setCaret(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
@@ -468,8 +478,7 @@ export function Composer(props: ComposerProps) {
       return;
     if (event.key === "Escape" && suggestions() !== undefined) {
       event.preventDefault();
-      setDismissedInput(text());
-      setSelected(-1);
+      dismissSuggestions();
     } else if (
       event.key === "Escape" &&
       text() === "" &&
@@ -533,6 +542,7 @@ export function Composer(props: ComposerProps) {
   return (
     <div
       class={styles.wrap}
+      ref={wrap}
       data-composer="true"
       data-keyboard-focus-surface="true"
       onTouchCancel={() => {
@@ -642,8 +652,7 @@ export function Composer(props: ComposerProps) {
               }}
               onCompositionStart={() => {
                 composing = true;
-                setDismissedInput(text());
-                setSelected(-1);
+                dismissSuggestions();
               }}
               onInput={(event) => {
                 const value = event.currentTarget.value;
