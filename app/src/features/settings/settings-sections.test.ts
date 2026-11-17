@@ -5,7 +5,7 @@ import {
   installPlatformEnvironment,
   type PlatformTarget,
 } from "../../platform/environment";
-import type { PushSettings, PushSwitchStatus } from "./push-settings";
+import type { NotificationSwitch, PushSwitchStatus } from "./push-settings";
 import {
   shownSettingsSection,
   shownSettingsSections,
@@ -17,19 +17,22 @@ const settings: AppSettings = {
   ...switchesOn,
 };
 
-function push(status: PushSwitchStatus | undefined): PushSettings {
+function push(status: PushSwitchStatus | undefined): NotificationSwitch {
   return {
-    status,
-    blockedIn: "browser",
-    onToggle: () => {},
-    onRetry: () => {},
-    onOpenSystemSettings: undefined,
+    kind: "push",
+    push: {
+      status,
+      blockedIn: "browser",
+      onToggle: () => {},
+      onRetry: () => {},
+      onOpenSystemSettings: undefined,
+    },
   };
 }
 
 function shownIn(
   target: PlatformTarget,
-  pushRow: PushSettings | undefined,
+  notifications: NotificationSwitch | undefined,
   standalone = false,
 ): string[] {
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -39,7 +42,7 @@ function shownIn(
     removeEventListener: () => {},
   }));
   installPlatformEnvironment(document.body, window, { target });
-  return shownSettingsSections(pushRow).map(({ id }) => id);
+  return shownSettingsSections(notifications).map(({ id }) => id);
 }
 
 describe("settings sections", () => {

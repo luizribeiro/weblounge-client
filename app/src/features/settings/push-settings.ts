@@ -13,6 +13,12 @@ export interface PushSettings {
   readonly onOpenSystemSettings: (() => void) | undefined;
 }
 
+/** The one notification switch this host offers. */
+export type NotificationSwitch = {
+  readonly kind: "push";
+  readonly push: PushSettings;
+};
+
 export interface PushSwitchInputs {
   readonly enabled: boolean | undefined;
   readonly permission: NotificationPermission;

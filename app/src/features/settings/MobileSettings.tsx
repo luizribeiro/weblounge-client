@@ -3,7 +3,7 @@ import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import styles from "./MobileSettings.module.css";
-import type { PushSettings } from "./push-settings";
+import type { NotificationSwitch } from "./push-settings";
 import { SettingsRootRow } from "./SettingsRootRow";
 import {
   type SettingsSectionId,
@@ -17,7 +17,7 @@ interface MobileSettingsProps {
   readonly page: MobileSettingsPage;
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
-  readonly push?: PushSettings | undefined;
+  readonly notifications?: NotificationSwitch | undefined;
   readonly onBack: () => void;
   readonly onOpenPage: (page: MobileSettingsPage) => void;
 }
@@ -27,7 +27,7 @@ export function MobileSettings(props: MobileSettingsProps) {
   const section = () =>
     props.page === "root"
       ? undefined
-      : shownSettingsSection(props.page, props.push);
+      : shownSettingsSection(props.page, props.notifications);
   return (
     <section
       aria-labelledby={titleId}
@@ -54,11 +54,11 @@ export function MobileSettings(props: MobileSettingsProps) {
       <div class={styles.scroll} data-settings-layout="phone">
         <Show
           fallback={
-            <For each={shownSettingsSections(props.push)}>
+            <For each={shownSettingsSections(props.notifications)}>
               {(root) => (
                 <SettingsRootRow
                   onOpen={() => props.onOpenPage(root.id)}
-                  push={props.push}
+                  notifications={props.notifications}
                   section={root}
                   settings={props.settings}
                 />
@@ -71,7 +71,7 @@ export function MobileSettings(props: MobileSettingsProps) {
           {(page) => (
             <page.Page
               onChange={props.onChange}
-              push={props.push}
+              notifications={props.notifications}
               settings={props.settings}
             />
           )}

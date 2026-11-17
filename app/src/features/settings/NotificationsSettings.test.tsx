@@ -8,7 +8,11 @@ import {
   type PlatformTarget,
 } from "../../platform/environment";
 import { NotificationsSettings } from "./NotificationsSettings";
-import type { PushSettings, PushSwitchStatus } from "./push-settings";
+import type {
+  NotificationSwitch,
+  PushSettings,
+  PushSwitchStatus,
+} from "./push-settings";
 
 const loaded: AppSettings = {
   theme: "lounge-night",
@@ -26,21 +30,24 @@ function installTarget(target: PlatformTarget): void {
   installPlatformEnvironment(document.body, window, { target });
 }
 
-function pushSettings(
+function pushSwitch(
   status: PushSwitchStatus | undefined,
   overrides: Partial<PushSettings> = {},
-): PushSettings {
+): NotificationSwitch {
   return {
-    status,
-    blockedIn: "browser",
-    onToggle: vi.fn(),
-    onRetry: vi.fn(),
-    onOpenSystemSettings: undefined,
-    ...overrides,
+    kind: "push",
+    push: {
+      status,
+      blockedIn: "browser",
+      onToggle: vi.fn(),
+      onRetry: vi.fn(),
+      onOpenSystemSettings: undefined,
+      ...overrides,
+    },
   };
 }
 
-const pushSwitch = () =>
+const pushToggle = () =>
   screen.getByRole("switch", { name: "Push notifications" });
 
 describe("NotificationsSettings", () => {
@@ -91,13 +98,13 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings("on")}
+        notifications={pushSwitch("on")}
         settings={loaded}
       />
     ));
 
     expect(screen.getByRole("heading", { name: "This device" })).toBeVisible();
-    expect(pushSwitch()).toBeChecked();
+    expect(pushToggle()).toBeChecked();
     expect(
       screen.queryByRole("switch", { name: "Show unread in the tab" }),
     ).toBeNull();
@@ -109,19 +116,19 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings(status(), { onToggle })}
+        notifications={pushSwitch(status(), { onToggle })}
         settings={loaded}
       />
     ));
 
-    expect(pushSwitch()).not.toBeChecked();
-    expect(pushSwitch()).toHaveAccessibleDescription(
+    expect(pushToggle()).not.toBeChecked();
+    expect(pushToggle()).toHaveAccessibleDescription(
       "Get notified about direct messages and mentions on this device.",
     );
-    fireEvent.click(pushSwitch());
+    fireEvent.click(pushToggle());
     expect(onToggle).toHaveBeenLastCalledWith(true);
     setStatus("on");
-    fireEvent.click(pushSwitch());
+    fireEvent.click(pushToggle());
     expect(onToggle).toHaveBeenLastCalledWith(false);
   });
 
@@ -133,7 +140,7 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings("blocked", {
+        notifications={pushSwitch("blocked", {
           blockedIn: "ios",
           onOpenSystemSettings: opener(),
         })}
@@ -141,9 +148,9 @@ describe("NotificationsSettings", () => {
       />
     ));
 
-    expect(pushSwitch()).not.toBeChecked();
-    expect(pushSwitch()).toBeDisabled();
-    expect(pushSwitch()).toHaveAccessibleDescription(
+    expect(pushToggle()).not.toBeChecked();
+    expect(pushToggle()).toBeDisabled();
+    expect(pushToggle()).toHaveAccessibleDescription(
       /Blocked in iOS Settings → Notifications → weblounge/u,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
@@ -156,7 +163,7 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings("blocked")}
+        notifications={pushSwitch("blocked")}
         settings={loaded}
       />
     ));
@@ -171,13 +178,13 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings("failed", { onRetry })}
+        notifications={pushSwitch("failed", { onRetry })}
         settings={loaded}
       />
     ));
 
-    expect(pushSwitch()).toBeChecked();
-    expect(pushSwitch()).toHaveAccessibleDescription(
+    expect(pushToggle()).toBeChecked();
+    expect(pushToggle()).toHaveAccessibleDescription(
       /Couldn't turn on notifications/u,
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -188,11 +195,11 @@ describe("NotificationsSettings", () => {
     render(() => (
       <NotificationsSettings
         onChange={vi.fn()}
-        push={pushSettings(undefined)}
+        notifications={pushSwitch(undefined)}
         settings={undefined}
       />
     ));
 
-    expect(pushSwitch()).toBeDisabled();
+    expect(pushToggle()).toBeDisabled();
   });
 });

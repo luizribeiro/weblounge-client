@@ -6,7 +6,7 @@ import { AppearanceSettings, densityLabel } from "./AppearanceSettings";
 import { inBrowserTab } from "./in-browser-tab";
 import { NotificationsIcon } from "./NotificationsIcon";
 import { NotificationsSettings } from "./NotificationsSettings";
-import type { PushSettings, PushSwitchStatus } from "./push-settings";
+import type { NotificationSwitch, PushSwitchStatus } from "./push-settings";
 import type { SettingsPageProps } from "./settings-page-props";
 import { themeName } from "./ThemeCards";
 
@@ -21,9 +21,9 @@ export interface SettingsSectionDefinition {
   readonly Page: Component<SettingsPageProps>;
   readonly summary: (
     settings: AppSettings,
-    push?: PushSettings | undefined,
+    notifications?: NotificationSwitch | undefined,
   ) => string;
-  readonly shown: (push: PushSettings | undefined) => boolean;
+  readonly shown: (notifications: NotificationSwitch | undefined) => boolean;
 }
 
 const always = () => true;
@@ -37,9 +37,10 @@ const pushSummaries: Readonly<Record<PushSwitchStatus, MessageKey>> = {
 
 function notificationsSummary(
   settings: AppSettings,
-  push?: PushSettings | undefined,
+  notifications?: NotificationSwitch | undefined,
 ): string {
-  if (push?.status !== undefined) return t(pushSummaries[push.status]);
+  const status = notifications?.push.status;
+  if (status !== undefined) return t(pushSummaries[status]);
   return settings.unread_tab_indicator
     ? t("settings.notifications.summary.tab_on")
     : t("settings.notifications.summary.tab_off");
@@ -65,22 +66,22 @@ const sections: Readonly<Record<SettingsSectionId, SettingsSectionDefinition>> =
       Icon: NotificationsIcon,
       Page: NotificationsSettings,
       summary: notificationsSummary,
-      shown: (push) => push !== undefined || inBrowserTab(),
+      shown: (notifications) => notifications !== undefined || inBrowserTab(),
     },
   };
 
 export function shownSettingsSections(
-  push?: PushSettings | undefined,
+  notifications?: NotificationSwitch | undefined,
 ): readonly SettingsSectionDefinition[] {
   return settingsSectionIds
     .map((id) => sections[id])
-    .filter((section) => section.shown(push));
+    .filter((section) => section.shown(notifications));
 }
 
 export function shownSettingsSection(
   id: SettingsSectionId,
-  push?: PushSettings | undefined,
+  notifications?: NotificationSwitch | undefined,
 ): SettingsSectionDefinition | undefined {
   const section = sections[id];
-  return section.shown(push) ? section : undefined;
+  return section.shown(notifications) ? section : undefined;
 }

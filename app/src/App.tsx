@@ -56,7 +56,7 @@ import {
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
 import {
-  type PushSettings,
+  type NotificationSwitch,
   pushBlockedIn,
   pushSwitchStatus,
 } from "./features/settings/push-settings";
@@ -369,18 +369,21 @@ export function App(props: AppProps) {
     shellBridge === undefined
       ? undefined
       : () => void shellBridge.call("open_app_settings").catch(() => undefined);
-  const pushSettings = (): PushSettings | undefined =>
+  const notificationSwitch = (): NotificationSwitch | undefined =>
     canPushHere(notificationPromptConditions())
       ? {
-          status: pushSwitchStatus({
-            enabled: engineSettings.current()?.app.push_on_this_device,
-            permission: notificationPermission(),
-            failing: pushFailing(),
-          }),
-          blockedIn: pushBlockedIn(hostShell(), isIos(navigator)),
-          onToggle: setPushOnThisDevice,
-          onRetry: retryPush,
-          onOpenSystemSettings: openAppSettings,
+          kind: "push",
+          push: {
+            status: pushSwitchStatus({
+              enabled: engineSettings.current()?.app.push_on_this_device,
+              permission: notificationPermission(),
+              failing: pushFailing(),
+            }),
+            blockedIn: pushBlockedIn(hostShell(), isIos(navigator)),
+            onToggle: setPushOnThisDevice,
+            onRetry: retryPush,
+            onOpenSystemSettings: openAppSettings,
+          },
         }
       : undefined;
 
@@ -1738,7 +1741,7 @@ export function App(props: AppProps) {
             );
           }}
           onTurnOnNotifications={turnOnNotifications}
-          pushSettings={pushSettings()}
+          notificationSwitch={notificationSwitch()}
           settings={engineSettings.current()}
           onChangeSetting={engineSettings.change}
           pathForBuffer={pathForBuffer}

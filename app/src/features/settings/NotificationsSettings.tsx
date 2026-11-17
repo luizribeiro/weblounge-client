@@ -10,8 +10,8 @@ import type { SettingsPageProps } from "./settings-page-props";
 export function NotificationsSettings(props: SettingsPageProps) {
   return (
     <>
-      <Show when={props.push}>
-        {(push) => <PushSettingRow push={push()} />}
+      <Show when={props.notifications}>
+        {(notifications) => <PushSettingRow push={notifications().push} />}
       </Show>
       <Show when={inBrowserTab()}>
         <h3 class={styles.section}>{t("settings.browser_tab")}</h3>

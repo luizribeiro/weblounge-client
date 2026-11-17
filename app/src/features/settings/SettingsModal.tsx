@@ -10,7 +10,7 @@ import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import { trapTab } from "../../ui/focus-trap";
-import type { PushSettings } from "./push-settings";
+import type { NotificationSwitch } from "./push-settings";
 import styles from "./SettingsModal.module.css";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import {
@@ -21,7 +21,7 @@ import {
 interface SettingsModalProps {
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
-  readonly push?: PushSettings | undefined;
+  readonly notifications?: NotificationSwitch | undefined;
   readonly onClose: () => void;
   readonly rail?: boolean | undefined;
 }
@@ -29,7 +29,7 @@ interface SettingsModalProps {
 export function SettingsModal(props: SettingsModalProps) {
   const titleId = createUniqueId();
   const labelIdFor = (id: SettingsSectionId) => `${titleId}-${id}`;
-  const shown = createMemo(() => shownSettingsSections(props.push));
+  const shown = createMemo(() => shownSettingsSections(props.notifications));
   const sections = createMemo(() =>
     shown().map((section) => ({
       id: section.id,
@@ -109,7 +109,7 @@ export function SettingsModal(props: SettingsModalProps) {
               >
                 <section.Page
                   onChange={props.onChange}
-                  push={props.push}
+                  notifications={props.notifications}
                   settings={props.settings}
                 />
               </section>
