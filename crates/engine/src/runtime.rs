@@ -2102,9 +2102,16 @@ impl Runtime {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         let advance = running.model.prepare_latest_mark_read(buffer_id);
+        let peer = running.model.direct_peer(buffer_id);
         let Some(event) = running.model.close_direct(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
+        if let Some(peer) = peer {
+            let monitor = running.client.monitor();
+            spawn_task(async move {
+                _ = monitor.remove([peer]).await;
+            });
+        }
         let mut output = advance
             .map(|advance| record_read_advances(running, [advance]))
             .unwrap_or_default();
@@ -3997,19 +4004,49 @@ fn spawn_target_reconciliation(
                     .checked_sub(RECENT_DIRECT_WINDOW)
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             });
-        let Ok(recent) = client.recent_conversations(since, until).await else {
+        if let Ok(recent) = client.recent_conversations(since, until).await {
+            let complete = recent.len() < RECENT_TARGET_LIMIT;
+            let recent = recent
+                .into_iter()
+                .map(|recent| (recent.conversation, recent.latest_server_time))
+                .collect();
+            restore_target_rows(
+                &state, &outbound, &client, instance, recent, complete, until,
+            );
+        } else {
             fallback_target_reconciliation(&state, &outbound, &client, instance, network_id);
-            return;
-        };
-        let complete = recent.len() < RECENT_TARGET_LIMIT;
-        let recent = recent
-            .into_iter()
-            .map(|recent| (recent.conversation, recent.latest_server_time))
-            .collect();
-        restore_target_rows(
-            &state, &outbound, &client, instance, recent, complete, until,
-        );
+        }
+        monitor_shown_direct_peers(&state, &client, instance).await;
     });
+}
+
+/// Presence for a DM peer who shares no channel only arrives through `MONITOR`, so the peers of
+/// the shown DMs go out in one batch once the launch's history requests are queued.
+async fn monitor_shown_direct_peers(
+    state: &Arc<Mutex<RuntimeState>>,
+    client: &papo::Client,
+    instance: u64,
+) {
+    let mut peers = lock(state)
+        .network
+        .as_ref()
+        .filter(|running| running.instance == instance)
+        .map(|running| running.model.shown_direct_peers())
+        .unwrap_or_default();
+    peers.truncate(launch_monitor_budget(client.state().isupport().monitor()));
+    if !peers.is_empty() {
+        _ = client.monitor().add(peers).await;
+    }
+}
+
+/// Direct handles reserve their own `MONITOR` entries for messaging, so the launch batch takes at
+/// most half the server's list.
+const fn launch_monitor_budget(limit: Option<papo::isupport::LimitValue>) -> usize {
+    match limit {
+        Some(papo::isupport::LimitValue::Limited(limit)) => limit / 2,
+        Some(papo::isupport::LimitValue::Unlimited) => usize::MAX,
+        None => 0,
+    }
 }
 
 fn fallback_target_reconciliation(
@@ -5986,12 +6023,12 @@ mod tests {
         ReadRetryState, RunningNetwork, Runtime, RuntimeState,
         SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS, attach_shell, completion_context,
         connection_failure_notice, drain_events, fetch_history, finish_history_page,
-        flush_pending_sends, join_request_events, lock, next_connection_state,
-        permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, record_read_advances, restore_target_rows,
-        schedule_snapshot_write, spawn_history_fetch, spawn_online_direct_resolution,
-        spawn_read_marker_fetch, spawn_target_reconciliation, start_read_flush, state_limit_events,
-        target_sync_boundary, update_chat_list, utf16_len,
+        flush_pending_sends, join_request_events, launch_monitor_budget, lock,
+        monitor_shown_direct_peers, next_connection_state, permanent_mark_read_error,
+        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
+        record_read_advances, restore_target_rows, schedule_snapshot_write, spawn_history_fetch,
+        spawn_online_direct_resolution, spawn_read_marker_fetch, spawn_target_reconciliation,
+        start_read_flush, state_limit_events, target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -8081,7 +8118,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         enable_test_monitor(&mut events, &mut wire, 1).await;
-        let (state, outbound, mut receiver) = harness(client);
+        let (state, outbound, mut receiver) = harness(client.clone());
         lock(&state)
             .network
             .as_mut()
@@ -8128,6 +8165,39 @@ async fn delay(duration: Duration) {
             output.last(),
             Some(EngineToUi::CommandResult { .. })
         ));
+        assert_eq!(wire.next_sent().await, "MONITOR - alice");
+    }
+
+    #[tokio::test]
+    async fn closing_an_unresolved_direct_drops_its_peer_from_the_monitor_batch() {
+        let (client, _events, mut wire, nick) =
+            crate::direct_peer::test_support::monitoring_alice().await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        let alice = {
+            let mut runtime = lock(&state);
+            let model = &mut runtime
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model;
+            model.set_connection(crate::NetworkConnectionState::Online, None);
+            model
+                .open_direct(nick, DirectAvailability::Pending, &client.state())
+                .0
+        };
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        runtime.request(EngineRequestEnvelope {
+            id: "close-alice".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: alice,
+                input: "/close".into(),
+            },
+        });
+
         assert_eq!(wire.next_sent().await, "MONITOR - alice");
     }
 
@@ -10916,6 +10986,81 @@ async fn delay(duration: Duration) {
         .await;
         let latest = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room ").await;
         send_history_page(&mut wire, request_label(&latest), &[]).await;
+    }
+
+    #[tokio::test]
+    async fn reconciliation_monitors_every_shown_direct_peer_in_one_batch() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut wire).await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+
+        spawn_target_reconciliation(Arc::clone(&state), outbound, client, 1);
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        send_recent_targets(
+            &mut wire,
+            request_label(&targets),
+            &[
+                ("#room", "2026-10-30T12:00:03.000Z"),
+                ("alice", "2026-10-30T12:00:02.000Z"),
+                ("Bob", "2026-10-30T12:00:01.000Z"),
+            ],
+        )
+        .await;
+
+        let monitor = loop {
+            let line = wire.next_sent().await;
+            if line.contains(" CHATHISTORY LATEST ") {
+                send_history_page(&mut wire, request_label(&line), &[]).await;
+            } else if line.starts_with("MONITOR ") {
+                break line;
+            }
+        };
+        assert_eq!(monitor, "MONITOR + alice,Bob");
+    }
+
+    #[tokio::test]
+    async fn the_launch_monitor_batch_leaves_half_the_list_for_direct_handles() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 4).await;
+        let (state, _outbound, _receiver) = harness(client.clone());
+        for nick in ["alice", "bob", "carol"] {
+            wire.server(format!(":{nick}!u@h PRIVMSG weblounge :hi"))
+                .await;
+            let papo::Event::Message(message) = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Message(_))
+            })
+            .await
+            else {
+                panic!("message expected")
+            };
+            lock(&state)
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .open_direct(
+                    message.actor.nick().clone(),
+                    DirectAvailability::Pending,
+                    &client.state(),
+                );
+        }
+
+        monitor_shown_direct_peers(&state, &client, 1).await;
+
+        let sent = wire.next_sent().await;
+        assert!(
+            sent.starts_with("MONITOR + ") && sent.split(',').count() == 2,
+            "{sent}"
+        );
+        assert_eq!(launch_monitor_budget(None), 0);
     }
 
     #[tokio::test]

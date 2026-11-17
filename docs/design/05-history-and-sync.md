@@ -134,6 +134,16 @@ different open conversation, or an instance away from its live edge freezes the 
 current marker. A visible iOS standalone PWA is foreground even when WebKit reports false focus;
 `pageIsForeground` is the single definition for all of these decisions.
 
+DM presence on launch and reconnect (Luiz, 2026-11-17): once target reconciliation has queued the
+launch's history requests, the engine adds the peers of the shown DMs, in sidebar order and up to
+half the server's `MONITOR` limit so direct handles keep room, to papo's desired list in one call.
+papo batches that into `MONITOR +` lines within the server's limits and restores the list after each
+reconnect; closing a DM removes its peer. This spends one command after the app is interactive so a
+peer who shares no channel shows its presence without opening its DM. A pending direct handle stays
+pending when its peer comes online and resolves when it is used, so the batch costs no per-peer
+`WHO`. An always-on peer known only through `MONITOR` still reads online while away, because nothing
+reports its initial away state (papo decision 14).
+
 ## Boundaries
 
 This subsystem owns history request state, page cursors, history merge delivery, marker fetch/send,
@@ -159,9 +169,10 @@ notification policy, or background push delivery.
   retries after bounded backoff.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits. A stock-fakelag launch with seven channels, nine direct conversations and a
-  cached snapshot sends exactly 36 commands (`CHATHISTORY` 4, `MARKREAD` 2, `MONITOR` 0 and at most
-  seven `WHO`), proves client reconciliation requests do not add fakelag quanta behind one another,
-  and checks changed and unchanged list projections. The equivalent cold launch sends 48 commands;
+  cached snapshot sends at most 37 commands (`CHATHISTORY` 4, `MARKREAD` 2, one `MONITOR` batch
+  after the opened conversation's history request, and at most seven `WHO`), proves client
+  reconciliation requests do not add fakelag quanta behind one another, and checks changed and
+  unchanged list projections. The equivalent cold launch sends 49 commands, one of them `MONITOR`;
   its TARGETS plus 16 initial pages total 17 CHATHISTORY commands, one above the default budget.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
   asserting exact text, authorship, sender, server-time ordering, and a stable live-edge viewport

@@ -227,6 +227,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_pending_peer_reported_online_shows_online_without_resolving_its_handle() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            ":offline.test 730 weblounge :alice!~alice@cloak.example",
+            monitor_online,
+        )
+        .await;
+        let nick = peer
+            .model
+            .direct_peer(peer.alice)
+            .expect("alice is a direct");
+
+        assert!(peer.model.begin_online_direct_resolution(&nick).is_none());
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+    }
+
+    #[tokio::test]
     async fn a_peer_the_network_reports_nothing_about_has_no_presence() {
         let mut peer = Peer::monitored().await;
 

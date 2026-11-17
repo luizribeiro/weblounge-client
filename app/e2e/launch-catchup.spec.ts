@@ -127,6 +127,7 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", {
   await expect(
     bufferRow(page, bots[0]?.nickname ?? "missing"),
   ).toHaveAccessibleName(`${bots[0]?.nickname}, 2 unread, including mentions`);
+  await expect.poll(async () => (await sentCounts(page)).MONITOR).toBe(1);
   const measured = await page.evaluate(() => ({
     events: Reflect.get(globalThis, "launchCatchupEvents") as Array<{
       at: number;
@@ -168,11 +169,17 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", {
     histories.map(({ line }) => line).join("\n"),
   ).toBeLessThanOrEqual(4);
   expect(commandCounts.get("MARKREAD") ?? 0).toBeLessThanOrEqual(2);
-  expect(commandCounts.get("MONITOR") ?? 0).toBe(0);
+  const monitors = launchWire.filter(
+    (entry) =>
+      entry.direction === "sent" && wireCommand(entry.line) === "MONITOR",
+  );
+  const [monitor, ...extraMonitors] = monitors;
+  expect(extraMonitors).toEqual([]);
+  expect(monitor?.at).toBeGreaterThan(openedRequest.at);
   expect(commandCounts.get("WHO") ?? 0).toBeLessThanOrEqual(7);
   expect(
     [...commandCounts.values()].reduce((total, count) => total + count, 0),
-  ).toBeLessThanOrEqual(36);
+  ).toBeLessThanOrEqual(37);
   expect(histories.length).toBeLessThanOrEqual(4);
   expect(markerQueries.length).toBeLessThanOrEqual(2);
   const delayedClientReplies = clientReplies.filter(
@@ -416,21 +423,12 @@ test("records the sixteen-buffer cold-launch wire budget", async ({
   await page.goto(irc.url({ autojoin: channels }));
   await expect(bufferRow(page, bots[0]?.nickname ?? "missing")).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (Reflect.get(globalThis, "launchCatchupWire") as WireTrace[]).filter(
-            (entry) =>
-              entry.direction === "sent" &&
-              entry.line.includes(" CHATHISTORY "),
-          ).length,
-      ),
-    )
-    .toBe(17);
-  const wire = await page.evaluate(
-    () => Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
-  );
-  const counts = Object.fromEntries(countWireCommands(wire));
+    .poll(async () => {
+      const { CHATHISTORY, MONITOR } = await sentCounts(page);
+      return { CHATHISTORY, MONITOR };
+    })
+    .toEqual({ CHATHISTORY: 17, MONITOR: 1 });
+  const counts = await sentCounts(page);
   expect(counts).toEqual({
     AUTHENTICATE: 2,
     CAP: 3,
@@ -438,12 +436,13 @@ test("records the sixteen-buffer cold-launch wire budget", async ({
     ISUPPORT: 1,
     JOIN: 7,
     MARKREAD: 9,
+    MONITOR: 1,
     NAMES: 7,
     NICK: 1,
     USER: 1,
   });
   expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(
-    48,
+    49,
   );
 });
 
@@ -727,6 +726,13 @@ function historyReplyLatencies(wire: readonly WireTrace[]) {
         latency: reply.at - request.at,
       };
     });
+}
+
+async function sentCounts(page: Page): Promise<Record<string, number>> {
+  const wire = await page.evaluate(
+    () => Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
+  );
+  return Object.fromEntries(countWireCommands(wire));
 }
 
 function countWireCommands(wire: readonly WireTrace[]): Map<string, number> {

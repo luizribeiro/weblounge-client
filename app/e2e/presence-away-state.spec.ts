@@ -6,7 +6,7 @@ import {
 } from "./native-feel-audit";
 import { expectSettled } from "./settled";
 
-test.describe("presence of always-on peers against local Ergo", () => {
+test.describe("DM and member presence against local Ergo", () => {
   test("shows a detached peer away and a connected bot online after a relaunch, without opening their DMs", async ({
     page,
     irc,
@@ -61,6 +61,29 @@ test.describe("presence of always-on peers against local Ergo", () => {
       "false",
     );
     await expectSettled(page, { conversation: irc.channel });
+    await nativeFeelAudit(page);
+  });
+
+  test("shows a connected peer who shares no channel online after a relaunch, without opening its DM", async ({
+    page,
+    irc,
+  }) => {
+    const unshared = await irc.peer("iris", []);
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await unshared.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+      "data-presence",
+      "online",
+    );
+
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+      "data-presence",
+      "online",
+    );
     await nativeFeelAudit(page);
   });
 });

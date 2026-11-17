@@ -229,6 +229,15 @@ struct BufferState {
     pushed_history_retry_available: bool,
 }
 
+impl BufferState {
+    fn direct_nick(&self) -> Option<&papo::Nick> {
+        match self.key.as_ref()? {
+            NameKey::Direct(nick) => Some(nick),
+            NameKey::Channel(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PendingTopicCard {
     AwaitingJoin,
@@ -3325,10 +3334,9 @@ impl NetworkModel {
             .and_then(|buffer| buffer.direct.as_mut())?;
         let previous = match std::mem::replace(direct, DirectAvailability::Resolving) {
             DirectAvailability::Guarded(direct) => Some(direct),
-            DirectAvailability::Pending
-            | DirectAvailability::Resolving
-            | DirectAvailability::Failed => None,
-            current @ DirectAvailability::MonitorFull => {
+            DirectAvailability::Resolving | DirectAvailability::Failed => None,
+            // A pending handle resolves when it is used, so a peer reported online costs no WHO.
+            current @ (DirectAvailability::MonitorFull | DirectAvailability::Pending) => {
                 *direct = current;
                 return None;
             }
@@ -3415,13 +3423,21 @@ impl NetworkModel {
         })
     }
 
+    pub(crate) fn direct_peer(&self, buffer_id: BufferId) -> Option<papo::Nick> {
+        self.buffers.get(&buffer_id)?.direct_nick().cloned()
+    }
+
+    pub(crate) fn shown_direct_peers(&self) -> Vec<papo::Nick> {
+        self.buffer_order
+            .iter()
+            .filter_map(|buffer_id| self.buffers.get(buffer_id)?.direct_nick().cloned())
+            .collect()
+    }
+
     pub(crate) fn direct_trust_target(&self, buffer_id: BufferId) -> Option<papo::Nick> {
         let buffer = self.buffers.get(&buffer_id)?;
         buffer.direct_mismatch.as_ref()?;
-        let Some(NameKey::Direct(nick)) = buffer.key.as_ref() else {
-            return None;
-        };
-        Some(nick.clone())
+        buffer.direct_nick().cloned()
     }
 
     pub(crate) fn trust_direct_identity(
