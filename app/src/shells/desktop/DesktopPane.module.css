@@ -7,16 +7,29 @@
 }
 
 .paneBody {
+  --wl-composer-typing-inset: 0;
+  --wl-transcript-gutter: var(--wl-space-transcript-desktop-inline);
+
   display: grid;
   position: relative;
   flex: 1;
+  grid-template-areas:
+    "conversation"
+    "composer";
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
 
 .paneBody[data-members-inline] {
+  grid-template-areas:
+    "conversation members"
+    "composer composer";
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.paneBody > aside {
+  grid-area: members;
 }
 
 .drawerContent {
@@ -29,18 +42,16 @@
 }
 
 .conversationBody {
-  --wl-composer-typing-inset: 0;
-  --wl-transcript-gutter: var(--wl-space-transcript-desktop-inline);
-
   display: grid;
-  grid-template-rows: [transcript-start] minmax(0, 1fr) [transcript-end] auto;
+  grid-area: conversation;
+  grid-template-rows: [transcript-start] minmax(0, 1fr) [transcript-end];
   min-height: 0;
   min-width: 0;
   position: relative;
 }
 
 .conversationBody:has(> [data-direct-identity-banner]) {
-  grid-template-rows: auto [transcript-start] minmax(0, 1fr) [transcript-end] auto;
+  grid-template-rows: auto [transcript-start] minmax(0, 1fr) [transcript-end];
 }
 
 .conversationBody > :has(> [data-message-list]) {
@@ -56,7 +67,8 @@
   z-index: 3;
 }
 
-.conversationBody > [data-composer] {
+.paneBody > [data-composer] {
+  grid-area: composer;
   z-index: 4;
 }
 

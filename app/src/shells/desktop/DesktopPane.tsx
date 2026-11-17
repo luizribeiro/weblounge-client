@@ -224,15 +224,6 @@ function PaneConversation(props: DesktopPaneProps) {
               {t("engine.channel_rejoin_required", { target: buffer().title })}
             </p>
           )}
-          <Show when={buffer().id} keyed>
-            {(bufferId) => (
-              <PaneComposer
-                {...props}
-                bufferId={bufferId}
-                onSelectLast={() => messageList?.selectLastOwn()}
-              />
-            )}
-          </Show>
           <Show when={members.drawerShown()}>
             <OverlayDrawer
               appearance="docked"
@@ -256,6 +247,15 @@ function PaneConversation(props: DesktopPaneProps) {
             </OverlayDrawer>
           </Show>
         </div>
+        <Show when={buffer().id} keyed>
+          {(bufferId) => (
+            <PaneComposer
+              {...props}
+              bufferId={bufferId}
+              onSelectLast={() => messageList?.selectLastOwn()}
+            />
+          )}
+        </Show>
         <Show when={members.inlineShown() ? buffer().id : undefined} keyed>
           {(bufferId) => (
             <MembersOf

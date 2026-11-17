@@ -128,6 +128,35 @@ test.describe("per-pane desktop members against local Ergo", () => {
     await expect(membersOf(page, fourth)).toBeVisible();
   });
 
+  test("the inline list leaves the composer where it is", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const members = membersOf(page, irc.channel);
+    await expect(members).toHaveCount(0);
+    const closed = await paneBox(page, paneComposer);
+
+    await membersButton(page).click();
+    await expect(members).toBeVisible();
+    const open = await paneBox(page, paneComposer);
+    expect(open).toEqual(closed);
+    await expectPaneOwnsMembers(page, members);
+    const column = await members.boundingBox();
+    if (column === null) throw new Error("the member list has no box");
+    expect(Math.abs(column.y + column.height - open.top)).toBeLessThanOrEqual(
+      1,
+    );
+
+    await membersButton(page).click();
+    await expect(members).toHaveCount(0);
+    expect(await paneBox(page, paneComposer)).toEqual(closed);
+    await nativeFeelAudit(page);
+  });
+
   test("opens a member's DM in the pane, without a members column", async ({
     page,
     irc,

@@ -379,23 +379,17 @@ async function expectDesktopGeometry(
       if (bounds === undefined) throw new Error(`${selector} is missing`);
       return { left: bounds.left, right: bounds.right };
     };
-    return [
-      box("[data-main-header]"),
-      box("[data-message-list]"),
-      box("[data-composer]"),
-    ];
+    return {
+      composer: box("[data-composer]"),
+      header: box("[data-main-header]"),
+      transcript: box("[data-message-list]"),
+    };
   });
-  const [header, ...transcript] = boxes;
-  expect(Math.abs((header?.left ?? -1) - leftPanelWidth)).toBeLessThanOrEqual(
-    1,
-  );
-  expect(Math.abs((header?.right ?? -1) - viewportWidth)).toBeLessThanOrEqual(
-    1,
-  );
-  for (const box of transcript) {
+  const expectSpan = (box: { left: number; right: number }, right: number) => {
     expect(Math.abs(box.left - leftPanelWidth)).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(box.right - (viewportWidth - rightPanelWidth)),
-    ).toBeLessThanOrEqual(1);
-  }
+    expect(Math.abs(box.right - right)).toBeLessThanOrEqual(1);
+  };
+  expectSpan(boxes.header, viewportWidth);
+  expectSpan(boxes.composer, viewportWidth);
+  expectSpan(boxes.transcript, viewportWidth - rightPanelWidth);
 }
