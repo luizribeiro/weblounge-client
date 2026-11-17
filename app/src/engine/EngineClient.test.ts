@@ -858,6 +858,41 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(message);
   });
 
+  it("delivers push registration messages to a hidden page without a frame", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    client.setVisibility("hidden");
+    const messages = [
+      {
+        type: "push_route_required",
+        network_id: 1,
+        vapid: "home-vapid",
+        previous_route_id: null,
+      },
+      {
+        type: "push_state_changed",
+        network_id: 1,
+        state: { status: "registered", route_id: "route-1" },
+      },
+      {
+        type: "push_device_loaded",
+        command_id: "load-1",
+        credentials: {
+          relay: "https://push.weblounge.org",
+          device_id: "device-1",
+          secret: "device-secret",
+        },
+      },
+    ];
+
+    for (const message of messages) port.emit(message);
+
+    expect(frames).toHaveLength(0);
+    for (const message of messages)
+      expect(listener).toHaveBeenCalledWith(message);
+  });
+
   it("resolves an upload requested before the page was hidden", async () => {
     const { client, frames, port } = fixture();
     const resolution = requestReply(

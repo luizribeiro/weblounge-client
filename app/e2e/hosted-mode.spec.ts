@@ -21,6 +21,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { setPageHidden } from "./page-lifecycle";
 import {
   installPageNotificationRecorder,
   installPageNotificationStub,
@@ -2186,6 +2187,38 @@ test.describe("push settings states in a desktop browser", () => {
         ),
       )
       .toHaveLength(2);
+  });
+});
+
+test.describe("push registration while the page is hidden", () => {
+  test("activates a route the server registers after the page is hidden", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    await installNativeFeelInstrumentation(page);
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    await page.goto("/");
+    await expect
+      .poll(() => registrationSequence(page))
+      .toContain("ensure:route-ios");
+
+    await setPageHidden(page, true);
+    await page.evaluate(() => {
+      const complete = Reflect.get(globalThis, "completePushRegistration");
+      if (typeof complete !== "function")
+        throw new Error("push registration release is missing");
+      complete();
+    });
+
+    await expect
+      .poll(() => relay.calls())
+      .toContain("PUT /v1/routes/route-ios/active");
   });
 });
 

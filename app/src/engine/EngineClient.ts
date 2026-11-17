@@ -250,13 +250,7 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
-    if (
-      message.type === "notifiable_message_received" ||
-      message.type === "message_redacted" ||
-      message.type === "upload_resolved"
-    ) {
-      // The render queue holds events while the page is hidden. Alerts matter most then, and an
-      // upload sent just before backgrounding must not stall with its credential held here.
+    if (bypassesRenderQueue(message)) {
       this.#publish(message);
       return;
     }
@@ -402,6 +396,22 @@ export class WorkerEngineClient implements EngineClient {
     }
     for (const listener of this.#listeners) listener(message);
   }
+}
+
+/**
+ * The render queue holds events while the page is hidden or has no frames. Alerts matter most
+ * then, an upload sent just before backgrounding must not stall with its credential held here, and
+ * push registration must finish while the person is away, since that is when pushes are needed.
+ */
+function bypassesRenderQueue(message: EngineToUi): boolean {
+  return (
+    message.type === "notifiable_message_received" ||
+    message.type === "message_redacted" ||
+    message.type === "upload_resolved" ||
+    message.type === "push_route_required" ||
+    message.type === "push_state_changed" ||
+    message.type === "push_device_loaded"
+  );
 }
 
 /**
