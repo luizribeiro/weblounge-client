@@ -1,0 +1,38 @@
+.chord {
+  font-family: var(--wl-font-ui);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.caps {
+  align-items: center;
+  display: inline-flex;
+  gap: 3px;
+}
+
+/* Tinted from the text colour so caps stay visible on the selected row in every theme. */
+.key {
+  align-items: center;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-bottom-width: 2px;
+  border-radius: var(--wl-radius-control);
+  box-sizing: border-box;
+  display: inline-flex;
+  font: inherit;
+  height: 20px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 20px;
+  padding-inline: 5px;
+}
+
+.key[data-glyph="true"] {
+  font-size: 13px;
+  padding-inline: 0;
+}
+
+/* The UI fonts lack ⌘⌥⇧⌃, and their fallbacks draw them far smaller than the letters. */
+.key[data-modifier="true"] {
+  font-family: var(--wl-font-key-symbols);
+}
