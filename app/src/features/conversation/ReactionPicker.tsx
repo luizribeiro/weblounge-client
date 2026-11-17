@@ -4,6 +4,7 @@ import { t } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
 import { trapTab } from "../../ui/focus-trap";
 import { followAnchor } from "../../ui/follow-anchor";
+import { onPointerDownOutside } from "../../ui/outside-pointer";
 import { pickerPosition } from "./picker-position";
 import styles from "./ReactionPicker.module.css";
 import { ReactionPickerPanel } from "./ReactionPickerPanel";
@@ -36,13 +37,10 @@ export function ReactionPicker(props: {
       onCleanup(followAnchor(props.invoker, follow, close));
     }
     search?.focus({ preventScroll: true });
-    const dismiss = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (dialog?.contains(target) !== true && !props.invoker.contains(target))
-        props.onClose();
-    };
-    document.addEventListener("pointerdown", dismiss);
-    onCleanup(() => document.removeEventListener("pointerdown", dismiss));
+    onPointerDownOutside(
+      () => [dialog, props.invoker],
+      () => props.onClose(),
+    );
   });
 
   return (

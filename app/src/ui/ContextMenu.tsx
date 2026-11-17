@@ -3,6 +3,7 @@ import styles from "./ContextMenu.module.css";
 import type { ContextMenuRequest } from "./context-menu";
 import { returnFocus } from "./focus-return";
 import { followAnchor } from "./follow-anchor";
+import { onPointerDownOutside } from "./outside-pointer";
 
 export interface ContextMenuItem {
   readonly id: string;
@@ -24,9 +25,6 @@ export function ContextMenu(props: ContextMenuProps) {
   createEffect(() => {
     const request = props.request;
     if (request === undefined) return;
-    const dismiss = (event: PointerEvent) => {
-      if (menu?.contains(event.target as Node) !== true) props.onDismiss();
-    };
     const dismissFromKeyboard = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -34,12 +32,14 @@ export function ContextMenu(props: ContextMenuProps) {
       props.onDismiss();
       request.invoker.focus({ preventScroll: true });
     };
-    document.addEventListener("pointerdown", dismiss);
+    onPointerDownOutside(
+      () => [menu],
+      () => props.onDismiss(),
+    );
     document.addEventListener("keydown", dismissFromKeyboard, true);
-    onCleanup(() => {
-      document.removeEventListener("pointerdown", dismiss);
-      document.removeEventListener("keydown", dismissFromKeyboard, true);
-    });
+    onCleanup(() =>
+      document.removeEventListener("keydown", dismissFromKeyboard, true),
+    );
   });
 
   const dismiss = (restoreFocus: boolean) => {
