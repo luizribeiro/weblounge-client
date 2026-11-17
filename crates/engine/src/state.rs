@@ -7187,6 +7187,7 @@ mod tests {
                 raw_read_at_ms: Some(100),
                 pending_read_at_ms: None,
                 peer_pin: None,
+                peer_bot: false,
             }],
         ));
         let nick = nick_name(&state, "alice");
