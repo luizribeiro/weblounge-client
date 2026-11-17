@@ -19,6 +19,7 @@ export interface NotifiableMessage {
 export interface PageNotificationContext {
   networkLabel(networkId: number): string | undefined;
   pushDelivery(networkId: number): PushDelivery;
+  switchedOn(): boolean;
   pageForeground(): boolean;
   shownBufferIds(): ReadonlySet<number>;
   openRoute(route: string): void;
@@ -85,6 +86,7 @@ export class PageNotifications {
   #shouldPost(buffer: BufferProjection): boolean {
     return shouldPostPageNotification({
       pageNotificationsSupported: this.#api !== undefined,
+      switchedOn: this.#context.switchedOn(),
       permission: this.#api?.permission() ?? "default",
       pushDelivery: this.#context.pushDelivery(buffer.network_id),
       postingTab: this.#postingTab.held,

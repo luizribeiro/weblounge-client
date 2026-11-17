@@ -51,6 +51,7 @@ import {
   formatNotificationPromptVisibility,
   isIos,
   type NotificationPromptVisibility,
+  pageNotificationsSwitchedOn,
   shouldShowNotificationPrompt,
 } from "./features/notifications/notification-prompt-visibility";
 import { createEngineSettings } from "./features/settings/engine-settings";
@@ -603,6 +604,8 @@ export function App(props: AppProps) {
       networkLabel: (networkId) =>
         networks().find((network) => network.id === networkId)?.label,
       pushDelivery,
+      switchedOn: () =>
+        pageNotificationsSwitchedOn(notificationPromptConditions()),
       pageForeground: () => appIsForeground,
       shownBufferIds,
       openRoute: (route) => {

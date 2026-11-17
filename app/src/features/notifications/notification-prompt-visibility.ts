@@ -43,6 +43,17 @@ export function notificationSwitchKind(
   return conditions.pageNotifications ? "page" : undefined;
 }
 
+/** An unloaded setting counts as off here, so a saved off is never overridden at launch. */
+export function pageNotificationsSwitchedOn(
+  conditions: SwitchConditions &
+    Pick<NotificationPromptVisibility, "pageNotificationsOn">,
+): boolean {
+  return (
+    notificationSwitchKind(conditions) !== "page" ||
+    conditions.pageNotificationsOn === true
+  );
+}
+
 export function shouldShowNotificationPrompt(
   conditions: NotificationPromptVisibility,
 ): boolean {

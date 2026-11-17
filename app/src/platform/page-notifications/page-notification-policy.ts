@@ -17,6 +17,8 @@ export interface PushDeliveryConditions {
 
 export interface PagePostConditions {
   readonly pageNotificationsSupported: boolean;
+  /** The person's page notifications switch, where that switch applies to this host. */
+  readonly switchedOn: boolean;
   readonly permission: NotificationPermission;
   readonly pushDelivery: PushDelivery;
   readonly postingTab: boolean;
@@ -50,6 +52,7 @@ export function shouldPostPageNotification(
 ): boolean {
   return (
     conditions.pageNotificationsSupported &&
+    conditions.switchedOn &&
     conditions.permission === "granted" &&
     conditions.pushDelivery === "unavailable" &&
     conditions.postingTab &&

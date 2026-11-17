@@ -4,6 +4,7 @@ import {
   formatNotificationPromptVisibility,
   isIos,
   notificationSwitchKind,
+  pageNotificationsSwitchedOn,
   shouldShowNotificationPrompt,
 } from "./notification-prompt-visibility";
 
@@ -96,6 +97,23 @@ describe("notification prompt visibility", () => {
         supported: false,
         pushOnThisDevice: false,
       }),
+    ).toBe(true);
+  });
+
+  it("lets the page post only once its own switch is loaded and on", () => {
+    const pageOnly = { ...visible, supported: false };
+    expect(pageNotificationsSwitchedOn(pageOnly)).toBe(true);
+    expect(
+      pageNotificationsSwitchedOn({ ...pageOnly, pageNotificationsOn: false }),
+    ).toBe(false);
+    expect(
+      pageNotificationsSwitchedOn({
+        ...pageOnly,
+        pageNotificationsOn: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      pageNotificationsSwitchedOn({ ...visible, pageNotificationsOn: false }),
     ).toBe(true);
   });
 

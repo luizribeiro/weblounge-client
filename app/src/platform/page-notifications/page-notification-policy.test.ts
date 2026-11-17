@@ -18,6 +18,7 @@ const enabledPush: PushDeliveryConditions = {
 
 const macWrapperPage: PagePostConditions = {
   pageNotificationsSupported: true,
+  switchedOn: true,
   permission: "granted",
   pushDelivery: "unavailable",
   postingTab: true,
@@ -154,6 +155,12 @@ describe("shouldPostPageNotification", () => {
     ).toBe(false);
     expect(
       shouldPostPageNotification({ ...macWrapperPage, postingTab: false }),
+    ).toBe(false);
+  });
+
+  it("posts nothing while the person has switched page notifications off", () => {
+    expect(
+      shouldPostPageNotification({ ...macWrapperPage, switchedOn: false }),
     ).toBe(false);
   });
 });

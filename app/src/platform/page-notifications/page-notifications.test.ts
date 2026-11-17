@@ -51,6 +51,7 @@ interface Shown {
 function harness(
   overrides: Partial<{
     pushDelivery: PushDelivery;
+    switchedOn: boolean;
     foreground: boolean;
     shown: ReadonlySet<number>;
     supported: boolean;
@@ -62,6 +63,7 @@ function harness(
   const context: PageNotificationContext = {
     networkLabel: (networkId) => (networkId === 1 ? "weblounge" : undefined),
     pushDelivery: () => overrides.pushDelivery ?? "unavailable",
+    switchedOn: () => overrides.switchedOn ?? true,
     pageForeground: () => overrides.foreground ?? false,
     shownBufferIds: () => overrides.shown ?? new Set([7]),
     openRoute: (route) => opened.push(route),
@@ -106,6 +108,14 @@ describe("PageNotifications", () => {
 
   it("leaves the alert to Web Push when this device receives push", () => {
     const { notifications, shown } = harness({ pushDelivery: "active" });
+
+    notifications.handle({ buffer: directBuffer, message: peerMessage });
+
+    expect(shown).toEqual([]);
+  });
+
+  it("stays quiet while the person has switched page notifications off", () => {
+    const { notifications, shown } = harness({ switchedOn: false });
 
     notifications.handle({ buffer: directBuffer, message: peerMessage });
 
