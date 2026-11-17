@@ -37,30 +37,47 @@ pub(crate) async fn send(
 }
 
 pub(crate) fn sends_unlabelled(state: &papo::State, nick: &str) -> bool {
-    state.isupport().saferate() && state.supports(papo::Feature::EchoMessages) && is_service(nick)
+    state.isupport().saferate()
+        && state.supports(papo::Feature::EchoMessages)
+        && service_name(nick).is_some()
 }
 
-fn is_service(nick: &str) -> bool {
+/// Ergo's own spelling of a service nick typed in any case. papo matches the nick in a WHO reply
+/// exactly, and Ergo replies with its spelling, so `chanserv` would never resolve.
+pub(crate) fn canonical(state: &papo::State, nick: String) -> String {
+    match service_name(&nick) {
+        Some(service) if sends_unlabelled(state, service) => service.to_owned(),
+        _ => nick,
+    }
+}
+
+fn service_name(nick: &str) -> Option<&'static str> {
     ERGO_SERVICES
-        .iter()
-        .any(|service| service.eq_ignore_ascii_case(nick))
+        .into_iter()
+        .find(|service| service.eq_ignore_ascii_case(nick))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_service;
+    use super::service_name;
 
     #[test]
-    fn recognises_ergo_services_in_any_case() {
-        for nick in ["ChanServ", "chanserv", "NICKSERV", "HostServ", "histserv"] {
-            assert!(is_service(nick), "{nick}");
+    fn spells_ergo_services_typed_in_any_case_as_ergo_does() {
+        for (typed, service) in [
+            ("ChanServ", "ChanServ"),
+            ("chanserv", "ChanServ"),
+            ("NICKSERV", "NickServ"),
+            ("HostServ", "HostServ"),
+            ("histserv", "HistServ"),
+        ] {
+            assert_eq!(service_name(typed), Some(service), "{typed}");
         }
     }
 
     #[test]
     fn leaves_people_and_lookalikes_guarded() {
         for nick in ["alice", "ChanServ_", "Chan", "OperServ", "BotServ", ""] {
-            assert!(!is_service(nick), "{nick}");
+            assert_eq!(service_name(nick), None, "{nick}");
         }
     }
 }

@@ -1993,6 +1993,7 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let snapshot = client.state();
+            let nick = crate::services::canonical(&snapshot, nick);
             let known_nick = snapshot.name_rules().map(|rules| rules.nick(nick.clone()));
             let known = lock(&state)
                 .network
@@ -8504,6 +8505,19 @@ async fn delay(duration: Duration) {
             sent_direct_privmsg("ChanServ", &ERGO_CAPS, "SAFERATE").await,
             ("PRIVMSG ChanServ :REGISTER #room".to_owned(), false)
         );
+    }
+
+    #[tokio::test]
+    async fn an_ergo_service_typed_in_lower_case_resolves_as_ergo_spells_it() {
+        let mut sends = DirectSends::connect(&ERGO_CAPS, "SAFERATE").await;
+
+        assert_eq!(
+            sends
+                .submit(BufferId(1), "/msg chanserv REGISTER #room", "ChanServ")
+                .await,
+            ("PRIVMSG ChanServ :REGISTER #room".to_owned(), false)
+        );
+        assert_eq!(sends.direct_buffer("ChanServ"), BufferId(2));
     }
 
     #[tokio::test]
