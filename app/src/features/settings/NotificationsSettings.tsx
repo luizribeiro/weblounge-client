@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 import { t } from "../../strings";
 import { inBrowserTab } from "./in-browser-tab";
-import { PushSettingRow } from "./PushSettingRow";
+import { NotificationSwitchRow } from "./NotificationSwitchRow";
 import { SettingRow } from "./SettingRow";
 import { SettingSwitch } from "./SettingSwitch";
 import styles from "./SettingsHeading.module.css";
@@ -11,7 +11,9 @@ export function NotificationsSettings(props: SettingsPageProps) {
   return (
     <>
       <Show when={props.notifications}>
-        {(notifications) => <PushSettingRow push={notifications().push} />}
+        {(notifications) => (
+          <NotificationSwitchRow notifications={notifications()} />
+        )}
       </Show>
       <Show when={inBrowserTab()}>
         <h3 class={styles.section}>{t("settings.browser_tab")}</h3>
