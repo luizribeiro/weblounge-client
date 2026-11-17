@@ -1,10 +1,16 @@
 import type { Page } from "@playwright/test";
+import { copiedText, prepareClipboard } from "./clipboard";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
-import { choose, settingsScreenshot } from "./settings-fixture";
+import {
+  choose,
+  expectAboutFacts,
+  expectCopyDebugInfo,
+  settingsScreenshot,
+} from "./settings-fixture";
 import { expectSettled } from "./settled";
 import { expectHeaderButtonsAtEnd } from "./sidebar-geometry";
 
@@ -83,6 +89,7 @@ test.describe("desktop Settings against local Ergo", () => {
     const dialog = page.getByRole("dialog", { name: "Settings" });
     const appearance = dialog.getByRole("button", { name: "Appearance" });
     const notifications = dialog.getByRole("button", { name: "Notifications" });
+    const about = dialog.getByRole("button", { name: "About" });
     const tabSwitch = dialog.getByRole("switch", {
       name: "Show unread in the tab",
     });
@@ -110,10 +117,12 @@ test.describe("desktop Settings against local Ergo", () => {
     await expect(notifications).toBeFocused();
     await expect(notifications).toHaveAttribute("aria-current", "page");
     await page.keyboard.press("ArrowDown");
+    await expect(about).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     await expect(appearance).toBeFocused();
     await expect(appearance).toHaveAttribute("aria-current", "page");
     await page.keyboard.press("End");
-    await expect(notifications).toBeFocused();
+    await expect(about).toBeFocused();
 
     await page.reload();
     await settingsButton(page).click();
@@ -124,6 +133,38 @@ test.describe("desktop Settings against local Ergo", () => {
     await expect(tabSwitch).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
+
+  test("shows the build in About and copies it as debug info", async ({
+    context,
+    irc,
+    page,
+  }) => {
+    await prepareClipboard(context);
+    await installNativeFeelInstrumentation(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    await openHome(page, irc);
+    await settingsButton(page).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    await dialog.getByRole("button", { name: "About" }).click();
+    const about = dialog.getByRole("region", { name: "About" });
+    const facts = await expectAboutFacts(about, "Browser tab");
+    await expectSettled(page);
+    await nativeFeelAudit(page);
+    await settingsScreenshot(dialog, "about-desktop-light");
+
+    await expectCopyDebugInfo(
+      page,
+      about,
+      facts,
+      (button) => button.click(),
+      () => copiedText(page),
+    );
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectTheme(page, "lounge-night");
+    await settingsScreenshot(dialog, "about-desktop-dark");
     await nativeFeelAudit(page);
   });
 

@@ -13,7 +13,7 @@ DM.
 
 1. **Where.** A third Settings section, **About**, after Appearance and Notifications, shown on
    every platform: the desktop modal (and its folded rail) and the phone Settings root. On the
-   phone root its summary is the version and channel ("68ea9a3 · Beta").
+   phone root its summary is the version ("68ea9a3"); the section-summary signature has no channel, and the page names it.
 2. **What it shows** (Luiz: no more than this):
    - a big brand mark at the top: the chair glyph (`assets/chair.svg`, masked like the sidebar
      logo) in its tile, and the app name below it, which is `appTitle(channel)` from design 37

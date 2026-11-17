@@ -345,7 +345,6 @@ export const messages = {
   "settings.about.platform.ios_app": "iOS app {version}",
   "settings.about.platform.macos_app": "Mac app {version}",
   "settings.about.platform.native": "Native app",
-  "settings.about.summary": "{version} · {channel}",
   "settings.about.user_agent": "User agent",
   "settings.about.version": "Version",
   "settings.appearance": "Appearance",

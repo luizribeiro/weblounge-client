@@ -46,7 +46,7 @@ describe("MobileSettings", () => {
       [...document.querySelectorAll("[data-section]")].map(
         (row) => (row as HTMLElement).dataset.section,
       ),
-    ).toEqual(["appearance", "notifications"]);
+    ).toEqual(["appearance", "notifications", "about"]);
     fireEvent.click(
       screen.getByRole("button", {
         name: /^Notifications\s*Unread in the tab$/,

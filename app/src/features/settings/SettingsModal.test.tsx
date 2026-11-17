@@ -108,7 +108,7 @@ describe("SettingsModal", () => {
     );
   });
 
-  it("lists only Appearance where no notification setting applies", () => {
+  it("lists Appearance and About where no notification setting applies", () => {
     installPlatformEnvironment(document.body, window, {
       target: "tauri-desktop",
     });
@@ -118,7 +118,7 @@ describe("SettingsModal", () => {
       screen
         .getByRole("navigation", { name: "Settings sections" })
         .querySelectorAll("button"),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Notifications" })).toBeNull();
   });
 

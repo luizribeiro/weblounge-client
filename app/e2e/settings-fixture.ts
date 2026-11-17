@@ -62,3 +62,53 @@ export async function openNotificationSettings(page: Page): Promise<void> {
     dialog.getByRole("region", { name: "Notifications" }),
   ).toBeVisible();
 }
+
+type AboutFacts = Readonly<Record<string, string>>;
+
+const fullCommitTail = "[0-9a-f]{33}";
+
+export async function expectAboutFacts(
+  about: Locator,
+  platform: string,
+): Promise<AboutFacts> {
+  await expect(
+    about.getByRole("heading", { name: "weblounge", exact: true }),
+  ).toBeVisible();
+  const labels = await about.locator("dt").allInnerTexts();
+  const values = await about.locator("dd").allInnerTexts();
+  const facts = Object.fromEntries(
+    labels.map((label, index) => [label, values[index] ?? ""]),
+  );
+  expect(labels).toEqual(["Version", "Commit", "Built", "Channel", "Platform"]);
+  expect(facts.Version).toMatch(/^(?:[0-9a-f]{7}|ci|dirty)$/u);
+  expect(facts.Commit).toBe(facts.Version);
+  expect(facts.Built).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/u);
+  expect(facts.Channel).toBe("Release");
+  expect(facts.Platform).toBe(platform);
+  return facts;
+}
+
+export async function expectCopyDebugInfo(
+  page: Page,
+  about: Locator,
+  facts: AboutFacts,
+  press: (button: Locator) => Promise<void>,
+  copied: () => Promise<string | undefined>,
+): Promise<void> {
+  const userAgent = await page.evaluate(() => navigator.userAgent);
+  await press(about.getByRole("button", { name: "Copy debug info" }));
+  await expect(about.getByRole("status")).toHaveText("Copied");
+  await expect
+    .poll(async () => (await copied())?.split("\n"))
+    .toEqual([
+      "weblounge debug info",
+      `Version: ${facts.Version}`,
+      expect.stringMatching(
+        new RegExp(`^Commit: ${facts.Commit}(?:${fullCommitTail})?$`, "u"),
+      ),
+      `Built: ${facts.Built}`,
+      `Channel: ${facts.Channel}`,
+      `Platform: ${facts.Platform}`,
+      `User agent: ${userAgent}`,
+    ]);
+}

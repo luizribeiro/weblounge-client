@@ -1,11 +1,17 @@
 import type { Page } from "@playwright/test";
+import { copiedText, prepareClipboard } from "./clipboard";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
-import { choice, settingsScreenshot } from "./settings-fixture";
+import {
+  choice,
+  expectAboutFacts,
+  expectCopyDebugInfo,
+  settingsScreenshot,
+} from "./settings-fixture";
 import { expectSettled } from "./settled";
 
 async function openChats(
@@ -81,6 +87,41 @@ test.describe("Settings in the installed phone app", () => {
       0,
     );
     await expectSettled(page);
+    await nativeFeelAudit(page);
+  });
+
+  test("shows the build in About and copies it as debug info", async ({
+    context,
+    page,
+  }) => {
+    await prepareClipboard(context);
+    await page.reload();
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await openSettings(page);
+    const row = page.getByRole("button", { name: /^About/u });
+    await expect(row).toContainText(/About\s*(?:[0-9a-f]{7}|ci|dirty)$/u);
+    await row.tap();
+    await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
+    await expectSettled(page);
+    const about = settingsPage(page);
+    const facts = await expectAboutFacts(about, "Installed web app");
+    await nativeFeelAudit(page);
+    await settingsScreenshot(about, "about-phone-light");
+
+    await expectCopyDebugInfo(
+      page,
+      about,
+      facts,
+      (button) => button.tap(),
+      () => copiedText(page),
+    );
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      "lounge-night",
+    );
+    await settingsScreenshot(about, "about-phone-dark");
     await nativeFeelAudit(page);
   });
 

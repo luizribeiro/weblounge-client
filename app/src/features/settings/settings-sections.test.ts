@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildVersion } from "../../build-version";
 import { switchesOn } from "../../engine/app-settings-fixture";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import {
@@ -58,29 +59,39 @@ function shownIn(
 
 describe("settings sections", () => {
   it("offers Notifications in a browser tab for its tab row", () => {
-    expect(shownIn("web", undefined)).toEqual(["appearance", "notifications"]);
-    expect(shownIn("web", undefined, true)).toEqual(["appearance"]);
-    expect(shownIn("tauri-desktop", undefined)).toEqual(["appearance"]);
-    expect(shownIn("tauri-mobile", undefined)).toEqual(["appearance"]);
+    expect(shownIn("web", undefined)).toEqual([
+      "appearance",
+      "notifications",
+      "about",
+    ]);
+    expect(shownIn("web", undefined, true)).toEqual(["appearance", "about"]);
+    expect(shownIn("tauri-desktop", undefined)).toEqual([
+      "appearance",
+      "about",
+    ]);
+    expect(shownIn("tauri-mobile", undefined)).toEqual(["appearance", "about"]);
   });
 
   it("offers Notifications wherever push works, installed or not", () => {
     const row = push("off");
-    expect(shownIn("web", row, true)).toEqual(["appearance", "notifications"]);
-    expect(shownIn("tauri-desktop", row)).toEqual([
-      "appearance",
-      "notifications",
-    ]);
-    expect(shownIn("tauri-mobile", row)).toEqual([
-      "appearance",
-      "notifications",
-    ]);
+    const all = ["appearance", "notifications", "about"];
+    expect(shownIn("web", row, true)).toEqual(all);
+    expect(shownIn("tauri-desktop", row)).toEqual(all);
+    expect(shownIn("tauri-mobile", row)).toEqual(all);
+  });
+
+  it("summarises About with the build version", () => {
+    shownIn("web", undefined);
+    expect(shownSettingsSection("about")?.summary(settings)).toBe(
+      buildVersion.version,
+    );
   });
 
   it("offers Notifications in the Mac app for its page notifications row", () => {
     expect(shownIn("tauri-desktop", page("on"))).toEqual([
       "appearance",
       "notifications",
+      "about",
     ]);
   });
 

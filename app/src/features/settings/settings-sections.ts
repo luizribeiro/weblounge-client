@@ -1,6 +1,9 @@
 import type { Component } from "solid-js";
+import { buildVersion } from "../../build-version";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import { type MessageKey, t } from "../../strings";
+import { AboutIcon } from "./AboutIcon";
+import { AboutSettings } from "./AboutSettings";
 import { AppearanceIcon } from "./AppearanceIcon";
 import { AppearanceSettings, densityLabel } from "./AppearanceSettings";
 import { inBrowserTab } from "./in-browser-tab";
@@ -14,7 +17,7 @@ import type {
 import type { SettingsPageProps } from "./settings-page-props";
 import { themeName } from "./ThemeCards";
 
-const settingsSectionIds = ["appearance", "notifications"] as const;
+const settingsSectionIds = ["appearance", "notifications", "about"] as const;
 
 export type SettingsSectionId = (typeof settingsSectionIds)[number];
 
@@ -96,6 +99,14 @@ const sections: Readonly<Record<SettingsSectionId, SettingsSectionDefinition>> =
       Page: NotificationsSettings,
       summary: notificationsSummary,
       shown: (notifications) => notifications !== undefined || inBrowserTab(),
+    },
+    about: {
+      id: "about",
+      label: "settings.about",
+      Icon: AboutIcon,
+      Page: AboutSettings,
+      summary: () => buildVersion.version,
+      shown: always,
     },
   };
 
