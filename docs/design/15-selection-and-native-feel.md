@@ -71,8 +71,10 @@ own messages only.
 
 A drag that starts on a link inside message text selects text. Base CSS already turns link dragging
 off, but WebKit (Safari, the Mac app) never starts a selection from a press on an `a[href]`, so
-there a plain primary mouse press (no modifier keys) on a message link removes its `href` until the pointer is released; the
-click that follows still opens the link. Chromium selects from links already and opens a link only
+there a plain primary mouse press (no modifier keys) on a message link removes its `href` until the
+press ends (release, cancel, blur, hidden page, or a move showing the button already up after a
+release outside the window), with `role="link"` meanwhile so assistive technology still sees a
+link. The click that follows still opens the link. Chromium selects from links already and opens a link only
 if it had its `href` when pressed, so it is left alone.
 
 The phone is unchanged by this decision: long press opens the sheet and its Copy text copies the

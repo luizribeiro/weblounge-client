@@ -122,6 +122,42 @@ test.describe("desktop copying from the transcript", () => {
     await expect(link).toHaveAttribute("href", url);
   });
 
+  test("keeps a pressed link a link and restores it wherever the press ends", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("copy-press");
+    const url = `http://127.0.0.1:4174/press-${irc.id}`;
+    const linked = `read ${url} first`;
+    await peer.privmsgConfirmed(irc.channel, linked);
+    await openTranscript(page, irc.url(), irc.channel);
+    const link = productionMessageRow(page, linked).getByRole("link", {
+      name: url,
+    });
+    const point = await charPoint(
+      messageText(page, linked),
+      linked.indexOf("127"),
+    );
+
+    await page.mouse.move(point.x, point.y);
+    for (const button of ["middle", "right"] as const) {
+      await page.mouse.down({ button });
+      await expect(link).toHaveAttribute("href", url);
+      await page.mouse.up({ button });
+    }
+    await page.keyboard.down("Shift");
+    await page.mouse.down();
+    await expect(link).toHaveAttribute("href", url);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+
+    await page.mouse.down();
+    await expect(link).toBeVisible();
+    await page.mouse.move(-20, point.y, { steps: 4 });
+    await page.mouse.up();
+    await expect(link).toHaveAttribute("href", url);
+  });
+
   test("copies only the triple-clicked message", async ({ page, irc }) => {
     const peer = await irc.peer("copy-para");
     await peer.privmsgConfirmed(irc.channel, first);

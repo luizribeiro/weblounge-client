@@ -13,9 +13,11 @@ it("lets a primary mouse press on a link start a WebKit selection, then restores
 
   press(link, { pointerType: "mouse", button: 0 });
   expect(link.hasAttribute("href")).toBe(false);
+  expect(link).toHaveAttribute("role", "link");
 
   window.dispatchEvent(new PointerEvent("pointerup"));
   expect(link.getAttribute("href")).toBe(href);
+  expect(link).not.toHaveAttribute("role");
 });
 
 it("restores the link when the press is cancelled", () => {
@@ -38,6 +40,28 @@ it("restores the link when the window loses focus mid-press", () => {
   expect(link.getAttribute("href")).toBe(href);
 });
 
+it("restores the link when the page is hidden mid-press", () => {
+  vendor("Apple Computer, Inc.");
+  const link = messageLink();
+
+  press(link, { pointerType: "mouse", button: 0 });
+  document.dispatchEvent(new Event("visibilitychange"));
+
+  expect(link.getAttribute("href")).toBe(href);
+});
+
+it("keeps the link removed while the drag holds the button, and restores it once released outside", () => {
+  vendor("Apple Computer, Inc.");
+  const link = messageLink();
+  press(link, { pointerType: "mouse", button: 0 });
+
+  window.dispatchEvent(new PointerEvent("pointermove", { buttons: 1 }));
+  expect(link.hasAttribute("href")).toBe(false);
+
+  window.dispatchEvent(new PointerEvent("pointermove", { buttons: 0 }));
+  expect(link.getAttribute("href")).toBe(href);
+});
+
 it("restores the link once, so a later press can drop it again", () => {
   vendor("Apple Computer, Inc.");
   const link = messageLink();
@@ -53,12 +77,13 @@ it("restores the link once, so a later press can drop it again", () => {
   expect(link.getAttribute("href")).toBe("https://example.com/changed");
 });
 
-it("leaves touch, secondary-button and modified presses alone", () => {
+it("leaves touch, middle, secondary and modified presses alone", () => {
   vendor("Apple Computer, Inc.");
   const link = messageLink();
 
   for (const init of [
     { pointerType: "touch", button: 0 },
+    { pointerType: "mouse", button: 1 },
     { pointerType: "mouse", button: 2 },
     { pointerType: "mouse", button: 0, metaKey: true },
     { pointerType: "mouse", button: 0, ctrlKey: true },
@@ -68,6 +93,7 @@ it("leaves touch, secondary-button and modified presses alone", () => {
     press(link, init);
 
   expect(link.getAttribute("href")).toBe(href);
+  expect(link).not.toHaveAttribute("role");
 });
 
 it("leaves Chromium's link presses alone", () => {
