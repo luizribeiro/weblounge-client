@@ -15,12 +15,11 @@ export const releaseTag = (version) => `${TAG_PREFIX}${version}`;
 
 export const imageName = (version) => `weblounge-${version}.dmg`;
 
-export function blockers({ status, head, originMain, tags, version }) {
+export function blockers({ status, head, originMain, tags, tag }) {
   return [
     status.trim() !== "" && "the worktree has uncommitted changes",
     head !== originMain && "HEAD is not origin/main",
-    tags.includes(releaseTag(version)) &&
-      `${releaseTag(version)} already exists; bump the version first`,
+    tags.includes(tag) && `${tag} already exists`,
   ].filter(Boolean);
 }
 

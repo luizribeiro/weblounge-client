@@ -49,7 +49,7 @@ function preflight() {
     head,
     originMain: run("git", ["rev-parse", "origin/main"]),
     tags: run("git", ["tag", "--list"]).split("\n"),
-    version,
+    tag: releaseTag(version),
   });
   if (problems.length > 0) {
     throw new Error(`cannot release ${version}:\n- ${problems.join("\n- ")}`);

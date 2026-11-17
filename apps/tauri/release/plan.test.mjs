@@ -65,7 +65,7 @@ const ready = {
   head: "b830efb5",
   originMain: "b830efb5",
   tags: ["v0.1.0", "desktop-v0.0.9"],
-  version: "0.1.0",
+  tag: "desktop-v0.1.0",
 };
 
 test("a clean main at a new version can release", () => {
@@ -83,12 +83,20 @@ test("reports every reason a release cannot start", () => {
     [
       "the worktree has uncommitted changes",
       "HEAD is not origin/main",
-      "desktop-v0.1.0 already exists; bump the version first",
+      "desktop-v0.1.0 already exists",
     ],
   );
 });
 
-const otool = (...libraries) =>
+test("blocks on whichever tag the release would create", () => {
+  assert.deepEqual(
+    blockers({ ...ready, tags: [...ready.tags, "ios-v0.1.0+2620"], tag: "ios-v0.1.0+2620" }),
+    ["ios-v0.1.0+2620 already exists"],
+  );
+  assert.deepEqual(blockers({ ...ready, tag: "ios-v0.1.0+2621" }), []);
+});
+
+const otool =(...libraries) =>
   [
     "/Volumes/weblounge/weblounge.app/Contents/MacOS/weblounge-desktop:",
     ...libraries.map((path) => `\t${path} (compatibility version 1.0.0, current version 1.0.0)`),
