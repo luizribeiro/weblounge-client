@@ -48,6 +48,7 @@ pub(crate) const fn may_change(event: &papo::Event) -> bool {
             | papo::Event::Parted(_)
             | papo::Event::Kicked(_)
             | papo::Event::ChannelSynced(_)
+            | papo::Event::MembersRefreshed(_)
     )
 }
 

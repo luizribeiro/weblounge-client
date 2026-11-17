@@ -7451,6 +7451,58 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn a_channel_who_reply_marks_a_shared_direct_peer_away() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["away-notify"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        for line in [
+            ":weblounge!u@h JOIN #room",
+            ":offline.test 353 weblounge = #room :weblounge alice",
+            ":offline.test 366 weblounge #room :End of NAMES",
+        ] {
+            wire.server(line).await;
+        }
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let nick = client
+            .state()
+            .user("alice")
+            .map(|user| user.nick().clone())
+            .expect("alice shares #room");
+        let alice = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .0;
+
+        for line in [
+            ":offline.test 352 weblounge #room ~alice cloak.example offline.test alice G :0 Alice",
+            ":offline.test 315 weblounge #room :End of WHO list",
+        ] {
+            wire.server(line).await;
+        }
+        let refreshed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::MembersRefreshed(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, refreshed);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == alice && buffer.peer_presence == Some(crate::PeerPresence::Away)
+        )));
+    }
+
+    #[tokio::test]
     async fn a_bot_tagged_direct_message_marks_the_direct_as_a_bot() {
         let (client, mut events, mut wire, nick) =
             crate::direct_peer::test_support::monitoring_alice().await;
