@@ -5243,7 +5243,6 @@ fn process_history(
     let conversation = page.conversation.clone();
     let (item_count, end) = (page.items.len(), page.end);
     let bounds = history_page_bounds(&page);
-    let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
         .network
@@ -5253,9 +5252,44 @@ fn process_history(
         return;
     };
     let load = running.model.history_load(&conversation);
+    let mut output = receive_history_items(running, client, page.items);
+    let read_flush = start_read_flush(running);
+    let finished = finish_history_page(
+        &mut running.model,
+        load,
+        &conversation,
+        bounds,
+        item_count,
+        end,
+    );
+    output.extend(finished);
+    publish_history_turn(state, &shared_state, outbound, instance, output, read_flush);
+}
+
+fn publish_history_turn(
+    guard: MutexGuard<'_, RuntimeState>,
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    output: Vec<EngineToUi>,
+    read_flush: Option<(papo::Client, u64)>,
+) {
+    send_events(outbound, finish_timeline_turn(guard, output));
+    update_chat_list(state, outbound, instance);
+    if let Some((client, instance)) = read_flush {
+        spawn_read_flush(Arc::clone(state), outbound.clone(), client, instance);
+    }
+}
+
+fn receive_history_items(
+    running: &mut RunningNetwork,
+    client: &papo::Client,
+    items: Vec<papo::Event>,
+) -> Vec<EngineToUi> {
+    let snapshot = client.state();
     let mut output = Vec::new();
     let mut read_advances = Vec::new();
-    for item in page.items {
+    for item in items {
         match item {
             papo::Event::Message(message) => {
                 let (received, advance) =
@@ -5284,22 +5318,7 @@ fn process_history(
         }
     }
     output.extend(record_read_advances(running, read_advances));
-    let read_flush = start_read_flush(running);
-    let finished = finish_history_page(
-        &mut running.model,
-        load,
-        &conversation,
-        bounds,
-        item_count,
-        end,
-    );
-    output.extend(finished);
-    let output = finish_timeline_turn(state, output);
-    send_events(outbound, output);
-    update_chat_list(&shared_state, outbound, instance);
-    if let Some((client, instance)) = read_flush {
-        spawn_read_flush(shared_state, outbound.clone(), client, instance);
-    }
+    output
 }
 
 fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
