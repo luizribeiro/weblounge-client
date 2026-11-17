@@ -21,6 +21,7 @@ import {
   setPageHidden,
 } from "./page-lifecycle";
 import { expectSettled } from "./settled";
+import { closeFromSidebar, openFromSwitcher } from "./sidebar-rows";
 
 test.describe("history integrity against local Ergo", () => {
   test.skip(
@@ -188,6 +189,28 @@ test.describe("history integrity against local Ergo", () => {
       ...channels,
       ...writers.map((writer) => writer.nickname),
     ]);
+  });
+
+  test("a DM opened from the switcher after a live line shows its history", async ({
+    page,
+    irc,
+  }) => {
+    test.skip(isPhoneViewport(page), "the switcher is a desktop keyboard path");
+    const { keeper, peer } = await alwaysOnRoom(irc, "switch");
+    const app = await launch(page, irc, []);
+    await sendEach(peer, [irc.account], 3, `earlier direct ${irc.id}`);
+    await openConversation(app, peer.nickname);
+    await expectTranscriptMatchesServer(app, keeper, peer.nickname);
+    await closeFromSidebar(app, chatRow(app, peer.nickname), peer.nickname);
+    await app.goto(irc.url({ path: homePath(app, irc) }));
+    await expect(chatRow(app, irc.channel)).toBeVisible();
+
+    await peer.privmsgConfirmed(irc.account, `live direct ${irc.id}`);
+    await expect(chatRow(app, peer.nickname)).toBeVisible();
+    await expectChatRowMatchesServer(app, keeper, peer.nickname, irc.account);
+    await openFromSwitcher(app, peer.nickname);
+    await expectSettled(app, { conversation: peer.nickname });
+    await expectTranscriptMatchesServer(app, keeper, peer.nickname);
   });
 
   test("deletions and reactions leave the transcript matching the server", async ({
