@@ -35,6 +35,7 @@ import type { ToggleBufferReaction } from "../../features/conversation/reaction-
 import type { RedactBufferMessage } from "../../features/conversation/redact-target";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
+import type { PushSettings } from "../../features/settings/push-settings";
 import { SettingsModal } from "../../features/settings/SettingsModal";
 import {
   Sidebar,
@@ -147,6 +148,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
+  readonly pushSettings?: PushSettings | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -580,6 +582,7 @@ export function DesktopShell(props: DesktopShellProps) {
         <SettingsModal
           onChange={(change) => props.onChangeSetting?.(change)}
           onClose={closeSettings}
+          push={props.pushSettings}
           rail={platform.environment().desktopPanels === "overlay"}
           settings={props.settings?.app}
         />

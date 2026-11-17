@@ -3,6 +3,7 @@ import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import styles from "./MobileSettings.module.css";
+import type { PushSettings } from "./push-settings";
 import { SettingsRootRow } from "./SettingsRootRow";
 import {
   type SettingsSectionId,
@@ -16,6 +17,7 @@ interface MobileSettingsProps {
   readonly page: MobileSettingsPage;
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
+  readonly push?: PushSettings | undefined;
   readonly onBack: () => void;
   readonly onOpenPage: (page: MobileSettingsPage) => void;
 }
@@ -23,7 +25,9 @@ interface MobileSettingsProps {
 export function MobileSettings(props: MobileSettingsProps) {
   const titleId = createUniqueId();
   const section = () =>
-    props.page === "root" ? undefined : shownSettingsSection(props.page);
+    props.page === "root"
+      ? undefined
+      : shownSettingsSection(props.page, props.push);
   return (
     <section
       aria-labelledby={titleId}
@@ -50,10 +54,11 @@ export function MobileSettings(props: MobileSettingsProps) {
       <div class={styles.scroll} data-settings-layout="phone">
         <Show
           fallback={
-            <For each={shownSettingsSections()}>
+            <For each={shownSettingsSections(props.push)}>
               {(root) => (
                 <SettingsRootRow
                   onOpen={() => props.onOpenPage(root.id)}
+                  push={props.push}
                   section={root}
                   settings={props.settings}
                 />
@@ -64,7 +69,11 @@ export function MobileSettings(props: MobileSettingsProps) {
           when={section()}
         >
           {(page) => (
-            <page.Page onChange={props.onChange} settings={props.settings} />
+            <page.Page
+              onChange={props.onChange}
+              push={props.push}
+              settings={props.settings}
+            />
           )}
         </Show>
       </div>

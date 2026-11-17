@@ -20,6 +20,7 @@ import {
   MobileSettings,
   type MobileSettingsPage,
 } from "../../features/settings/MobileSettings";
+import type { PushSettings } from "../../features/settings/push-settings";
 import type { NetworkUploads } from "../../features/uploads/types";
 import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
@@ -78,6 +79,7 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
+  readonly pushSettings?: PushSettings | undefined;
 }
 
 interface MobileScreenProps extends MobileShellData {
@@ -195,6 +197,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onChange={(change) => props.onChangeSetting?.(change)}
           onOpenPage={(page) => props.onOpenSettings?.(page)}
           page={props.screen.page}
+          push={props.pushSettings}
           settings={props.settings?.app}
         />
       ) : buffer() !== undefined ? (
