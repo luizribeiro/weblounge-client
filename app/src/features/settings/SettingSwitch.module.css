@@ -18,6 +18,10 @@
   justify-content: flex-end;
 }
 
+.switch:disabled {
+  opacity: 0.5;
+}
+
 .switch:focus-visible {
   outline: 2px solid var(--wl-color-focus-ring);
   outline-offset: 2px;

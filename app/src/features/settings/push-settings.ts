@@ -1,3 +1,5 @@
+import type { HostShell } from "../../platform/host-shell";
+
 export type PushSwitchStatus = "off" | "on" | "blocked" | "failed";
 
 export type PushBlockedIn = "ios" | "macos" | "browser";
@@ -15,6 +17,38 @@ export interface PushSwitchInputs {
   readonly enabled: boolean | undefined;
   readonly permission: NotificationPermission;
   readonly failing: boolean;
+}
+
+/** On means the person chose push; a failing registration is still their choice. */
+export function pushSwitchChecked(
+  status: PushSwitchStatus | undefined,
+): boolean | undefined {
+  return status === undefined
+    ? undefined
+    : status === "on" || status === "failed";
+}
+
+export type PushNote =
+  | {
+      readonly kind: "blocked";
+      readonly in: PushBlockedIn;
+      readonly openSettings: boolean;
+    }
+  | { readonly kind: "failed" };
+
+export function pushNote(push: PushSettings): PushNote | undefined {
+  if (push.status === "blocked")
+    return {
+      kind: "blocked",
+      in: push.blockedIn,
+      openSettings: push.onOpenSystemSettings !== undefined,
+    };
+  return push.status === "failed" ? { kind: "failed" } : undefined;
+}
+
+export function pushBlockedIn(shell: HostShell, ios: boolean): PushBlockedIn {
+  if (shell === "macos-app") return "macos";
+  return ios ? "ios" : "browser";
 }
 
 export function pushSwitchStatus(

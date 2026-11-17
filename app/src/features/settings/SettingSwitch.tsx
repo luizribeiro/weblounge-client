@@ -4,6 +4,7 @@ interface SettingSwitchProps {
   readonly labelledBy: string;
   readonly describedBy?: string | undefined;
   readonly checked: boolean | undefined;
+  readonly disabled?: boolean | undefined;
   readonly onChange: (checked: boolean) => void;
 }
 
@@ -14,7 +15,7 @@ export function SettingSwitch(props: SettingSwitchProps) {
       aria-describedby={props.describedBy}
       aria-labelledby={props.labelledBy}
       class={styles.switch}
-      disabled={props.checked === undefined}
+      disabled={props.checked === undefined || props.disabled === true}
       onClick={() => props.onChange(props.checked !== true)}
       role="switch"
       type="button"

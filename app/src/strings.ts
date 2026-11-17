@@ -340,12 +340,28 @@ export const messages = {
   "settings.message_density.description":
     "Spacing, text size and avatar size in the conversation.",
   "settings.notifications": "Notifications",
+  "settings.notifications.summary.push_blocked": "Push blocked",
+  "settings.notifications.summary.push_failed": "Couldn't turn on",
+  "settings.notifications.summary.push_off": "Push off",
+  "settings.notifications.summary.push_on": "Push on",
   "settings.notifications.summary.tab_off": "Unread hidden from the tab",
   "settings.notifications.summary.tab_on": "Unread in the tab",
+  "settings.push": "Push notifications",
+  "settings.push.blocked.browser": "Blocked in this site's browser settings",
+  "settings.push.blocked.ios":
+    "Blocked in iOS Settings → Notifications → weblounge",
+  "settings.push.blocked.macos":
+    "Blocked in System Settings → Notifications → weblounge",
+  "settings.push.description":
+    "Get notified about direct messages and mentions on this device.",
+  "settings.push.failed": "Couldn't turn on notifications",
+  "settings.push.open_settings": "Open Settings",
+  "settings.push.retry": "Retry",
   "settings.sections": "Settings sections",
   "settings.theme": "Theme",
   "settings.theme.system": "System",
   "settings.theme.system_description": "Matches your device",
+  "settings.this_device": "This device",
   "settings.unread_tab_indicator": "Show unread in the tab",
   "settings.unread_tab_indicator.description":
     "Turns the tab icon red and counts unread direct messages and mentions in its title.",
