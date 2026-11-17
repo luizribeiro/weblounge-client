@@ -156,6 +156,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: F42 done (feedback #3): omnibar chords are readable keycaps, one cap per key at
+  12px, 3px apart, tinted from the row's text colour, with `⌘⌥⇧⌃` in the system font; the
+  shortcut slot is 116px so Linux `Ctrl Shift ,` fits. Design 14 §Omnibar rows.
 - 2026-11-17: image drag and drop (part of F9, #feedback item 4, design 31 "Drag and drop"): a
   file dropped anywhere on the window attaches to the open conversation's composer through the
   same check as paste and `/file` (one `attachableImage`, now with a 50 MB ceiling), with a subtle
