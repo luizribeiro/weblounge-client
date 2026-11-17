@@ -24,7 +24,9 @@ pub fn configure<'a>(
         .title(title)
         .visible(false)
         .inner_size(1280.0, 840.0)
-        .min_inner_size(400.0, 480.0);
+        .min_inner_size(400.0, 480.0)
+        // The native handler consumes file drops before the page's drop zone can see them.
+        .disable_drag_drop_handler();
     #[cfg(target_os = "macos")]
     let builder = super::title_bar::overlay(builder);
     builder
