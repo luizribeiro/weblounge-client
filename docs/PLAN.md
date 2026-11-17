@@ -33,6 +33,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DL7: which shell tablets and iPad (with trackpad) get; mobile shell for now. Design 09, design 10.
 - DL8: small unanswered design questions: copying a partly selected message (whole row or substring), notice form `-nick- text` vs `<nick>` (design 15); whether durable drafts roam through an account service, and `/topic` with no text (design 13); account-wide push lease vs activity-based lease (design 23 decision 6).
 - DL9: papo gaps, on the papo agenda: typed `mute`, `BanTarget`, `motd()`/`whowas()`, typed CTCP are "later" in papo; search waits (soju-only); stabilise `unstable` in the order bouncer, persistence, webpush; ordered endpoint failover; filehost EXTJWT. `docs/design/commands-catalog.md` §Gaps, design 03.
+- DL10: should the sidebar and phone header wordmark also say "weblounge β" on beta? Only the tab and window title do today. Design 37.
 
 #### Features
 - F1: buffer events 6 (invites with Join, renames, notes), 8 (tombstones, "Unverified", "Not sent, Retry"), 9 (server buffer). Design 26.
@@ -127,6 +128,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - SV2: command-budget bump (CHATHISTORY/MARKREAD 256, WHO/MONITOR 64) against Ergo's default fakelag needs Luiz's OK and an Ergo restart; the matching papo fakelag proposal is not delivered. Memory.
 - SV3: ask the weblounge-server session for a weblounge-client variant of the concierge/scrubber e2e (`tests/e2e/clients/`). Design 31.
 - SV4: Ergo DM history is disabled on weblounge, so client-side search cannot cover DMs; a link-preview proxy has no standard and would be an SSRF surface. `docs/design/commands-catalog.md` gap 5.
+- SV5: serve `"channel": "beta"` in beta.weblounge.org's `/config.json` (irc.weblounge.org may send `"release"` or nothing), and pin irc.weblounge.org's client input to the commit `node app/scripts/cut-web-release.mjs` prints for `web-v0.1.0`, cut from main by Luiz. Design 37.
 
 #### Device checks
 - V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
@@ -144,6 +146,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: release channels (design 37): irc.weblounge.org serves a hand-cut `web-v<semver>`
+  release, beta.weblounge.org every green main commit; the native apps load beta and need a new
+  TestFlight build only when app-built code changes. The hosted config's optional `channel`
+  ("beta" | "release", absent is release) titles beta's tab "weblounge β", and
+  `app/scripts/cut-web-release.mjs` plans the tag (first `web-v0.1.0`) after checking the tree is
+  clean, `HEAD` is `origin/main` and CI is green, tagging and pushing only with `--execute`.
 - 2026-11-17: a Push notifications switch in Settings → Notifications (design 36), shown wherever
   the page can push (desktop browsers, the iPhone home-screen app, the iOS app, the Mac app);
   "Show unread in the tab" stays browser-tab only and the section shows if any row applies. The
