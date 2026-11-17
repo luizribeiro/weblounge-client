@@ -1,6 +1,7 @@
 interface Box {
   readonly top: number;
   readonly bottom: number;
+  readonly left: number;
   readonly right: number;
 }
 
@@ -17,11 +18,14 @@ interface Viewport {
 const gap = 6;
 const inset = 8;
 
-/** Opens below its invoker, right-aligned, and flips above when the viewport runs out. */
+export type PickerAlignment = "start" | "end";
+
+/** Opens below its invoker, aligned to its `align` edge, and flips above when the viewport runs out. */
 export function pickerPosition(
   invoker: Box,
   picker: Size,
   viewport: Viewport,
+  align: PickerAlignment = "end",
 ): { readonly left: number; readonly top: number } {
   const below = invoker.bottom + gap;
   const above = invoker.top - gap - picker.height;
@@ -29,7 +33,7 @@ export function pickerPosition(
   const top = fitsBelow || above < inset ? below : above;
   return {
     left: clamp(
-      invoker.right - picker.width,
+      align === "end" ? invoker.right - picker.width : invoker.left,
       inset,
       viewport.innerWidth - picker.width - inset,
     ),
