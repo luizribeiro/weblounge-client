@@ -1,7 +1,9 @@
 import { onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { t } from "../../strings";
+import { returnFocus } from "../../ui/focus-return";
 import { trapTab } from "../../ui/focus-trap";
+import { followAnchor } from "../../ui/follow-anchor";
 import { pickerPosition } from "./picker-position";
 import styles from "./ReactionPicker.module.css";
 import { ReactionPickerPanel } from "./ReactionPickerPanel";
@@ -17,7 +19,7 @@ export function ReactionPicker(props: {
   let search: HTMLInputElement | undefined;
 
   const close = () => {
-    props.invoker.focus({ preventScroll: true });
+    returnFocus(props.invoker);
     props.onClose();
   };
   const pick = (reaction: string) => {
@@ -27,7 +29,12 @@ export function ReactionPicker(props: {
   };
 
   onMount(() => {
-    if (dialog !== undefined) place(dialog, props.invoker);
+    if (dialog !== undefined) {
+      const opened = dialog;
+      const follow = () => place(opened, props.invoker);
+      follow();
+      onCleanup(followAnchor(props.invoker, follow, close));
+    }
     search?.focus({ preventScroll: true });
     const dismiss = (event: PointerEvent) => {
       const target = event.target as Node;

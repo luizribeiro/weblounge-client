@@ -79,6 +79,35 @@ test.describe("row toolbars on desktop against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("keeps the reaction picker on its button as the transcript scrolls", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await openWithPeer(page, irc, "picker");
+    await openConversation(page, irc.channel);
+    await sendLines(peer, irc.channel, 20, "before");
+    await peer.privmsgConfirmed(irc.channel, "pick on me");
+    await sendLines(peer, irc.channel, 2, "after");
+    await expectSettled(page);
+    const row = productionMessageRow(page, "pick on me");
+
+    await row.hover();
+    const add = row.getByRole("button", { name: "Add reaction" });
+    await add.click();
+    const picker = page.getByRole("dialog", { name: "Add reaction" });
+    await expect(picker).toBeVisible();
+    const gap = () => verticalGap(add, picker);
+    const opened = await gap();
+
+    await wheelTranscript(page, -40, { x: 0.2, y: 0.2 });
+    await expect.poll(gap).toBe(opened);
+    await expect(picker).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect(add).toBeFocused();
+  });
+
   test("leaves no reaction bar behind when an outside click closes the picker", async ({
     page,
     irc,
