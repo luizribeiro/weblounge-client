@@ -399,6 +399,7 @@ test.describe("connection resilience against local Ergo", () => {
       await setPageHidden(page, true);
       await setPageHidden(page, false);
       await dispatchPersistedPageShow(page);
+      await waitForForegroundProbeToGiveUp(page, testInfo.project.name);
       await expectTransientConnectionPresentation(page, mobile);
       await irc.forwarder.restore();
       dropped = false;
