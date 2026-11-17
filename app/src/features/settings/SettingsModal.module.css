@@ -105,6 +105,11 @@
   width: 100%;
 }
 
+:global(#root[data-desktop-panels="overlay"][data-window-controls="overlay"])
+  .head {
+  padding-inline-start: var(--wl-window-controls-inline);
+}
+
 .modal:focus-visible {
   outline: none;
 }

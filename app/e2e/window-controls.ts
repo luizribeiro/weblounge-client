@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { emulateMacApp } from "./sidebar-rows";
 
 export interface WindowCall {
@@ -80,4 +80,17 @@ export function windowCalls(page: Page): Promise<readonly WindowCall[]> {
   return page.evaluate(
     () => (window as unknown as FakeWindowState).__windowCalls,
   );
+}
+
+export async function expectClearOfWindowControls(
+  locator: Locator,
+): Promise<void> {
+  await expect
+    .poll(() =>
+      locator.evaluate((element, band) => {
+        const box = element.getBoundingClientRect();
+        return box.left < band.inlineStart && box.top < band.blockSize;
+      }, windowControls),
+    )
+    .toBe(false);
 }

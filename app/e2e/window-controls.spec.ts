@@ -8,6 +8,7 @@ import {
 import { expectSettled } from "./settled";
 import {
   emulateSeamlessMacApp,
+  expectClearOfWindowControls,
   releaseFullScreenAnswers,
   setFakeFullScreen,
   windowCalls,
@@ -143,6 +144,31 @@ test.describe("seamless macOS title bar against local Ergo", () => {
       drawerRow.getByRole("button", { name: "Settings" }),
     ).toBeVisible();
   });
+
+  for (const width of [600, 800]) {
+    test(`keeps Settings' header clear of the traffic lights at ${width}px`, async ({
+      page,
+      irc,
+    }) => {
+      await openSeamless(page, irc.url(), irc.channel);
+      await chrome(page)
+        .lightsRow.getByRole("button", { name: "Settings" })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Settings" });
+      await expect(dialog).toBeVisible();
+      await page.setViewportSize({ width, height: 600 });
+      await expectSettled(page);
+
+      await expectClearOfWindowControls(
+        dialog.getByRole("heading", { name: "Settings" }),
+      );
+      await expectClearOfWindowControls(
+        dialog.getByRole("button", { name: "Close settings" }),
+      );
+      await resetNativeFeelLayoutShift(page);
+      await nativeFeelAudit(page);
+    });
+  }
 
   test("matches the window's appearance and background to the theme", async ({
     page,
