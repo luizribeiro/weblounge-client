@@ -67,6 +67,30 @@ test("shows ChanServ's reply to a line typed in its conversation", async ({
   await expectChanServReply(page, HELP_REPLY);
 });
 
+test("registers through a ChanServ conversation reopened from Jump to after a relaunch", async ({
+  page,
+  irc,
+}) => {
+  await page.goto(irc.url());
+  await queryChanServ(page, irc.channel);
+  await sendToChanServ(page, "HELP");
+  await expectChanServReply(page, HELP_REPLY);
+  await page.goto(irc.url());
+  await openChannel(page, irc.channel);
+  await page.keyboard.press("Control+K");
+  const query = page.getByRole("combobox", { name: "Jump to" });
+  await query.fill("ChanServ");
+  await expect(page.getByRole("option", { name: /ChanServ/u })).toHaveCount(1);
+  await query.press("Enter");
+  await expect(page.getByRole("heading", { name: "ChanServ" })).toBeVisible();
+  await sendToChanServ(page, `REGISTER ${irc.channel}`);
+
+  await expectChanServReply(
+    page,
+    `Channel ${irc.channel} successfully registered`,
+  );
+});
+
 async function openChannel(page: Page, channel: string): Promise<void> {
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await page.getByRole("button", { name: channel, exact: true }).click();
