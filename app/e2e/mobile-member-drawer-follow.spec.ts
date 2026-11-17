@@ -97,6 +97,7 @@ test.describe("mobile member drawer follows navigation", () => {
       name: `Message ${homeChannel}`,
     });
     await retainedComposer.fill(`/join ${otherChannel}`);
+    await holdNextPush(page);
     await retainedComposer.press("Enter");
     const incoming = page.locator("[data-mobile-chat]").filter({
       has: page.getByRole("heading", { name: otherChannel }),
@@ -108,6 +109,8 @@ test.describe("mobile member drawer follows navigation", () => {
       .evaluate((button: HTMLButtonElement) => button.click());
     await expectOpenDrawer(page, otherChannel, otherNick, homeNick);
     await closeDrawer(page);
+    await releaseHeldPush(page);
+    await expect(page.locator("[data-mobile-chat]")).toHaveCount(1);
 
     await page.goto(irc.url({ path: homePath }));
     await expect(
@@ -160,6 +163,48 @@ async function expectOpenDrawer(
   ).toBeVisible();
   await expect(drawer.getByText(absentNick, { exact: true })).toHaveCount(0);
   await expect(drawer.locator("[data-member-following]")).toHaveCount(0);
+}
+
+type HeldPushWindow = Window & { heldPush?: Animation[] };
+
+/* The push lasts 280ms, less than a loaded CI round trip, so the test freezes
+ * it to inspect both stacked screens. A zero playback rate keeps the
+ * transition "running", which the shell reads as still moving. */
+async function holdNextPush(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const held = window as HeldPushWindow;
+    const freezeTransform = (screen: Node) => {
+      if (!(screen instanceof HTMLElement) || !screen.dataset.motion)
+        return false;
+      const transforms = screen
+        .getAnimations()
+        .filter(
+          (animation) =>
+            (animation as CSSTransition).transitionProperty === "transform",
+        );
+      for (const animation of transforms) animation.playbackRate = 0;
+      if (transforms.length > 0) held.heldPush = transforms;
+      return transforms.length > 0;
+    };
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => freezeTransform(record.target)))
+        observer.disconnect();
+    });
+    observer.observe(document.body, {
+      attributeFilter: ["data-motion", "style"],
+      subtree: true,
+    });
+  });
+}
+
+async function releaseHeldPush(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => (window as HeldPushWindow).heldPush !== undefined,
+  );
+  await page.evaluate(() => {
+    for (const animation of (window as HeldPushWindow).heldPush ?? [])
+      animation.playbackRate = 1;
+  });
 }
 
 async function closeDrawer(page: Page): Promise<void> {
