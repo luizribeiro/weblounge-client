@@ -270,7 +270,9 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
   Connect role). The first build of each version goes through Beta App Review (usually within a
   day), which needs a beta description, a feedback email, and a **demo weblounge account** for
   reviewers, because the app is unusable without signing in. Builds expire after 90 days.
-- **Versioning**: `CFBundleShortVersionString` is the crate version, shared with the desktop
+- **Versioning**: superseded by design 37 (2026-11-17): the short version is the last `vX.Y.Z`
+  tag, the shell shows `X.Y.Z+N`, and no `ios-v` tag is created; the build number is unchanged.
+  The original text: `CFBundleShortVersionString` is the crate version, shared with the desktop
   wrapper since it is one crate. `CFBundleVersion` must grow with every upload, so it is
   `git rev-list --count HEAD` on `origin/main`, passed as Tauri's `bundle.iOS.bundleVersion`
   (an inline `--config`). Tauri hands it to `agvtool new-version -all`, which writes it into both

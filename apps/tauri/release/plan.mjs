@@ -19,7 +19,7 @@ export function blockers({ status, head, originMain, tags, tag }) {
   return [
     status.trim() !== "" && "the worktree has uncommitted changes",
     head !== originMain && "HEAD is not origin/main",
-    tags.includes(tag) && `${tag} already exists`,
+    tag !== undefined && tags.includes(tag) && `${tag} already exists`,
   ].filter(Boolean);
 }
 

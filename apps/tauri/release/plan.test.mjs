@@ -88,12 +88,10 @@ test("reports every reason a release cannot start", () => {
   );
 });
 
-test("blocks on whichever tag the release would create", () => {
-  assert.deepEqual(
-    blockers({ ...ready, tags: [...ready.tags, "ios-v0.1.0+2620"], tag: "ios-v0.1.0+2620" }),
-    ["ios-v0.1.0+2620 already exists"],
-  );
-  assert.deepEqual(blockers({ ...ready, tag: "ios-v0.1.0+2621" }), []);
+test("a release that creates no tag is held back only by the tree and HEAD", () => {
+  const untagged = { status: "", head: "b830efb5", originMain: "b830efb5", tags: ["v0.2.0"] };
+  assert.deepEqual(blockers(untagged), []);
+  assert.deepEqual(blockers({ ...untagged, head: "765844c8" }), ["HEAD is not origin/main"]);
 });
 
 const otool =(...libraries) =>

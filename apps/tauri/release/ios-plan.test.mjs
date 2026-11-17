@@ -2,58 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   altoolArgs,
-  buildNumber,
   iosBuildArgs,
   iosBuildEnv,
-  iosReleaseTag,
   ipaProblems,
-  staleBuild,
-  unshippableVersion,
   uploadCredentials,
 } from "./ios-plan.mjs";
-
-test("names the tag after the version and the build", () => {
-  assert.equal(iosReleaseTag("0.1.3", "2620"), "ios-v0.1.3+2620");
-});
-
-test("the build number is the commit count", () => {
-  assert.equal(buildNumber("2620\n"), "2620");
-});
-
-test("a commit count that is not a positive number is no build number", () => {
-  for (const count of ["", "0", "-3", "12a", "fatal: bad revision"]) {
-    assert.throws(() => buildNumber(count), /is not a build number/);
-  }
-});
-
-const tags = ["desktop-v0.1.3", "ios-v0.1.2+2580", "ios-v0.1.3+2600", "v0.1.0"];
-
-test("a build above every uploaded one is fresh", () => {
-  assert.equal(staleBuild({ tags, build: "2620" }), false);
-  assert.equal(staleBuild({ tags: ["desktop-v0.1.3"], build: "1" }), false);
-});
-
-test("a build at or below an uploaded one is stale, whatever the version", () => {
-  assert.equal(
-    staleBuild({ tags, build: "2600" }),
-    "build 2600 is not above the last uploaded build 2600; release from origin/main",
-  );
-  assert.match(staleBuild({ tags: ["ios-v0.0.9+3000"], build: "2620" }), /last uploaded build 3000/);
-});
-
-test("tags that name no uploaded build are ignored", () => {
-  assert.equal(
-    staleBuild({ tags: ["ios-v0.1.3", "ios-v0.1.3+abc", "desktop-v0.1.3+9999"], build: "1" }),
-    false,
-  );
-});
-
-test("only plain integer versions ship to App Store Connect", () => {
-  for (const version of ["0.1.3", "1.0", "2"]) assert.equal(unshippableVersion(version), false);
-  for (const version of ["0.1.3-beta.1", "0.1.3.4", "v0.1.3"]) {
-    assert.match(unshippableVersion(version), /is not an App Store version/);
-  }
-});
 
 const credentials = {
   APP_STORE_CONNECT_KEY_ID: "2X9R4HXF34",
@@ -102,21 +55,32 @@ const devShell = {
   IN_NIX_SHELL: "impure",
 };
 
-test("the iOS build sees Xcode's toolchain, the rustup stand-in and the app identifier", () => {
-  assert.deepEqual(
-    iosBuildEnv(devShell, { toolDir: "/repo/apps/tauri/scripts/ios-path", appIdentifier: "org.weblounge.ios" }),
-    {
-      PATH: "/repo/apps/tauri/scripts/ios-path:/usr/bin:/nix/store/abc-cargo/bin:/nix/store/def-xcbuild/bin:/usr/bin",
-      HOME: "/Users/luiz",
-      IN_NIX_SHELL: "impure",
-      TAURI_WEBLOUNGE_APP_IDENTIFIER: "org.weblounge.ios",
-    },
+const release = {
+  toolDir: "/repo/apps/tauri/scripts/ios-path",
+  appIdentifier: "org.weblounge.ios",
+  display: "0.2.0+3",
+};
+
+test("the iOS build sees Xcode's toolchain, the rustup stand-in, the app identifier and the version", () => {
+  assert.deepEqual(iosBuildEnv(devShell, release), {
+    PATH: "/repo/apps/tauri/scripts/ios-path:/usr/bin:/nix/store/abc-cargo/bin:/nix/store/def-xcbuild/bin:/usr/bin",
+    HOME: "/Users/luiz",
+    IN_NIX_SHELL: "impure",
+    TAURI_WEBLOUNGE_APP_IDENTIFIER: "org.weblounge.ios",
+    TAURI_WEBLOUNGE_VERSION: "0.2.0+3",
+  });
+});
+
+test("an iOS build without a shell version refuses to start", () => {
+  assert.throws(
+    () => iosBuildEnv(devShell, { ...release, display: undefined }),
+    /needs the version the shell shows/,
   );
 });
 
 test("an environment without PATH still finds the stand-in and Apple's tools", () => {
   assert.equal(
-    iosBuildEnv({}, { toolDir: "/tools", appIdentifier: "org.weblounge.ios" }).PATH,
+    iosBuildEnv({}, { ...release, toolDir: "/tools" }).PATH,
     "/tools:/usr/bin",
   );
 });
@@ -161,7 +125,7 @@ const bundle = (identifier, entitlements, keys) => ({
     CFBundlePackageType: "APPL",
     ...keys,
     CFBundleIdentifier: identifier,
-    CFBundleShortVersionString: "0.1.3",
+    CFBundleShortVersionString: "0.2.0",
     CFBundleVersion: "2620",
     WebloungeAppGroup: "group.org.weblounge.ios",
     WebloungeKeychainGroup: "JR4C2QJKWJ.org.weblounge.ios",
@@ -183,7 +147,7 @@ const exported = {
   }),
   emptyDirectories: [],
 };
-const expected = { appIdentifier: "org.weblounge.ios", version: "0.1.3", build: "2620" };
+const expected = { appIdentifier: "org.weblounge.ios", version: "0.2.0", build: "2620" };
 
 test("an App Store IPA with the extension and production push passes", () => {
   assert.deepEqual(ipaProblems(exported, expected), []);
@@ -199,7 +163,7 @@ test("reports a development push environment and a dev extension", () => {
           info: {
             ...exported.extension.info,
             CFBundleIdentifier: "org.weblounge.ios.dev.notifications",
-            CFBundleVersion: "0.1.3",
+            CFBundleVersion: "0.2.0",
             WebloungeAppGroup: "group.org.weblounge.ios.dev",
           },
           entitlements: {
@@ -212,7 +176,7 @@ test("reports a development push environment and a dev extension", () => {
     ),
     [
       "extension CFBundleIdentifier is org.weblounge.ios.dev.notifications, not org.weblounge.ios.notifications",
-      "extension CFBundleVersion is 0.1.3, not 2620",
+      "extension CFBundleVersion is 0.2.0, not 2620",
       "extension WebloungeAppGroup is group.org.weblounge.ios.dev, not group.org.weblounge.ios",
       "extension application groups lacks group.org.weblounge.ios",
       "extension keychain groups lacks JR4C2QJKWJ.org.weblounge.ios",
