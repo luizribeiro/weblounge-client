@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { screenshotWithInter } from "./inter-font";
+import type { IrcClient } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -153,9 +154,7 @@ test.describe("phone conversation closing against local Ergo", () => {
     await openChannel(page, irc, channel);
     const peer = await irc.peer("tapper", [channel]);
     await backToChats(page, channel);
-    await peer.privmsgConfirmed(irc.account, "tap close");
-    const directRow = rowFor(page, peer.nickname);
-    await expect(directRow).toBeVisible();
+    const directRow = await receiveDirect(page, irc, peer, "tap close");
 
     await revealActions(wrapperFor(directRow));
     await tapAction(page, wrapperFor(directRow), "Close");
@@ -191,9 +190,12 @@ test.describe("phone conversation closing against local Ergo", () => {
     await installNativeFeelInstrumentation(page);
     await page.goto(irc.url());
     await expect(rowFor(page, irc.channel)).toBeVisible();
-    await peer.privmsgConfirmed(irc.account, "close me from the list");
-    const directRow = rowFor(page, peer.nickname);
-    await expect(directRow).toBeVisible();
+    const directRow = await receiveDirect(
+      page,
+      irc,
+      peer,
+      "close me from the list",
+    );
 
     await revealActions(wrapperFor(directRow));
     await tapAction(page, wrapperFor(directRow), "Close");
@@ -214,22 +216,27 @@ test.describe("phone conversation closing against local Ergo", () => {
     await installNativeFeelInstrumentation(page);
     await page.goto(irc.url());
     await expect(rowFor(page, irc.channel)).toBeVisible();
-    await peer.privmsgConfirmed(irc.account, "close me with a command");
-    await rowFor(page, peer.nickname).click();
+    const directRow = await receiveDirect(
+      page,
+      irc,
+      peer,
+      "close me with a command",
+    );
+    await directRow.click();
     const composer = page.getByRole("textbox", {
       name: `Message ${peer.nickname}`,
     });
     await composer.fill("/close");
     await composer.press("Enter");
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expect(rowFor(page, peer.nickname)).toHaveCount(0);
+    await expect(directRow).toHaveCount(0);
     await page.getByRole("button", { name: "Undo" }).click();
 
     await expect(
       page.getByRole("heading", { name: peer.nickname }),
     ).toBeVisible();
     await backToChatList(page, peer.nickname);
-    await expect(rowFor(page, peer.nickname)).toBeVisible();
+    await expect(directRow).toBeVisible();
     await nativeFeelAudit(page);
   });
 
@@ -354,6 +361,21 @@ async function touchMoveCancelled(
   const cancelled = await touch("touchmove", moved);
   await pointer(wrapper, "pointerup", left, gestureStartTimeStamp + 400, down);
   return cancelled;
+}
+
+// An incoming DM lands at the top of the activity-sorted list and pushes the rows below
+// it down without input, which the layout-shift audit would count against the test.
+async function receiveDirect(
+  page: Page,
+  irc: IrcTestAccount,
+  peer: IrcClient,
+  text: string,
+): Promise<Locator> {
+  await peer.privmsgConfirmed(irc.account, text);
+  const row = rowFor(page, peer.nickname);
+  await expect(row).toBeVisible();
+  await resetNativeFeelLayoutShift(page);
+  return row;
 }
 
 async function revealActions(wrapper: Locator): Promise<void> {
