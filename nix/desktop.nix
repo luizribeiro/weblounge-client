@@ -44,6 +44,8 @@ rustPlatform.buildRustPackage {
       (root + "/release/plan.test.mjs")
       (root + "/release/identities.test.mjs")
       (root + "/release/rustup-stand-in.test.mjs")
+      (root + "/release/snapshot.mjs")
+      (root + "/release/snapshot.test.mjs")
       (root + "/scripts/ios-path/rustup")
     ];
   };
