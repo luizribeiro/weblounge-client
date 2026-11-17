@@ -213,6 +213,39 @@ test.describe("history integrity against local Ergo", () => {
     await expectTranscriptMatchesServer(app, keeper, peer.nickname);
   });
 
+  test("own lines queued while offline show once, in order, after reconnecting", async ({
+    context,
+    page,
+    irc,
+  }) => {
+    // B33: the queued lines go out before the reconnect's CHATHISTORY TARGETS, so the channel's
+    // newest activity falls after the query's end and the peer's offline line is never fetched.
+    test.fail();
+    const { keeper, channel, peer } = await alwaysOnRoom(irc, "queued");
+    const app = await launch(page, irc, [channel]);
+    await peer.privmsgConfirmed(channel, `before offline ${irc.id}`);
+    await openConversation(app, channel);
+    // Chromium's offline emulation drops frames on a socket it leaves open, which a real network
+    // never does, so the socket is cut as well.
+    await context.setOffline(true);
+    await irc.forwarder.drop();
+    await expect.poll(() => keeper.attachedClientCount()).toBe(1);
+    await expectAppOffline(app);
+    for (let index = 0; index < 3; index += 1)
+      await sendFromComposer(app, channel, `queued ${index} ${irc.id}`);
+    await peer.privmsgConfirmed(channel, `while offline ${irc.id}`);
+    await irc.forwarder.restore();
+    await context.setOffline(false);
+    await reconnectNow(app, keeper);
+    await expect(
+      app.locator('[data-message-row][data-delivery="optimistic"]'),
+    ).toHaveCount(0);
+
+    await expectTranscriptMatchesServer(app, keeper, channel);
+    await leaveConversation(app, channel);
+    await expectChatRowMatchesServer(app, keeper, channel, irc.account);
+  });
+
   test("deletions and reactions leave the transcript matching the server", async ({
     context,
     page,
@@ -386,6 +419,15 @@ async function relaunchCutOff(
   return page;
 }
 
+/**
+ * Waits for the app to know the device is offline: only then does it queue a line instead of
+ * sending it on the dead socket, where its fate is unknown and it fails by design.
+ */
+async function expectAppOffline(page: Page): Promise<void> {
+  await expect(page.locator("[data-network-state]").first()).toBeAttached();
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(0);
+}
+
 /** Returning to the foreground probes the connection instead of waiting out the backoff. */
 async function reconnectNow(page: Page, sameAccount: IrcClient): Promise<void> {
   const attached = await sameAccount.attachedClientCount();
@@ -464,4 +506,17 @@ async function changeLines(
     await sender.reactionConfirmed(target, messageId(reacted.line), "👍");
     await sender.redactConfirmed(target, messageId(deleted.line));
   }
+}
+
+async function sendFromComposer(
+  page: Page,
+  title: string,
+  text: string,
+): Promise<void> {
+  const composer = page.getByRole("textbox", { name: `Message ${title}` });
+  await composer.fill(text);
+  await composer.press("Enter");
+  await expect(
+    page.locator("[data-message-row]").filter({ hasText: text }),
+  ).toHaveCount(1);
 }
