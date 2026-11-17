@@ -359,6 +359,7 @@ export function App(props: AppProps) {
     display: platformEnvironment().environment().display,
     nativePush: pushRegistrar.native,
     pushOnThisDevice: engineSettings.current()?.app.push_on_this_device,
+    pageNotificationsOn: engineSettings.current()?.app.page_notifications,
   });
   const notificationPromptVisible = () =>
     shouldShowNotificationPrompt(notificationPromptConditions());

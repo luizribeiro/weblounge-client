@@ -3,6 +3,7 @@ import {
   canPushHere,
   formatNotificationPromptVisibility,
   isIos,
+  notificationSwitchKind,
   shouldShowNotificationPrompt,
 } from "./notification-prompt-visibility";
 
@@ -16,6 +17,7 @@ const visible = {
   display: "browser" as const,
   nativePush: false,
   pushOnThisDevice: true,
+  pageNotificationsOn: true,
 };
 
 describe("notification prompt visibility", () => {
@@ -36,8 +38,8 @@ describe("notification prompt visibility", () => {
     ["iOS is running in a browser", { ios: true }],
     ["push was turned off on this device", { pushOnThisDevice: false }],
     [
-      "push was turned off where only the page can notify",
-      { supported: false, pushOnThisDevice: false },
+      "page notifications were turned off where only the page can notify",
+      { supported: false, pageNotificationsOn: false },
     ],
   ])("hides when %s", (_name, changed) => {
     expect(shouldShowNotificationPrompt({ ...visible, ...changed })).toBe(
@@ -49,7 +51,7 @@ describe("notification prompt visibility", () => {
     expect(
       formatNotificationPromptVisibility({ ...visible, dismissed: undefined }),
     ).toBe(
-      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true / native=false / push=on",
+      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser / page=true / native=false / push=on / page_switch=on",
     );
   });
 
@@ -82,6 +84,36 @@ describe("notification prompt visibility", () => {
     expect(
       shouldShowNotificationPrompt({ ...visible, supported: false, ios: true }),
     ).toBe(true);
+  });
+
+  it("follows only the switch that applies to this host", () => {
+    expect(
+      shouldShowNotificationPrompt({ ...visible, pageNotificationsOn: false }),
+    ).toBe(true);
+    expect(
+      shouldShowNotificationPrompt({
+        ...visible,
+        supported: false,
+        pushOnThisDevice: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("offers push where it works, else the page's switch, else none", () => {
+    expect(notificationSwitchKind(visible)).toBe("push");
+    expect(notificationSwitchKind({ ...visible, supported: false })).toBe(
+      "page",
+    );
+    expect(notificationSwitchKind({ ...visible, configured: false })).toBe(
+      "page",
+    );
+    expect(
+      notificationSwitchKind({
+        ...visible,
+        supported: false,
+        pageNotifications: false,
+      }),
+    ).toBeUndefined();
   });
 
   it("shows in an installed iOS home-screen app", () => {

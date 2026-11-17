@@ -11,15 +11,19 @@ export interface NotificationPromptVisibility {
   readonly nativePush: boolean;
   /** This device's push setting; undefined until the engine's settings load. */
   readonly pushOnThisDevice: boolean | undefined;
+  /** This device's page notifications setting; undefined until the engine's settings load. */
+  readonly pageNotificationsOn: boolean | undefined;
 }
 
+export type NotificationSwitchKind = "push" | "page";
+
+type HostConditions = Pick<
+  NotificationPromptVisibility,
+  "configured" | "supported" | "ios" | "display" | "nativePush"
+>;
+
 /** Whether this host can receive push at all, before any permission or setting. */
-export function canPushHere(
-  conditions: Pick<
-    NotificationPromptVisibility,
-    "configured" | "supported" | "ios" | "display" | "nativePush"
-  >,
-): boolean {
+export function canPushHere(conditions: HostConditions): boolean {
   return (
     conditions.configured &&
     (conditions.nativePush ||
@@ -28,18 +32,40 @@ export function canPushHere(
   );
 }
 
+type SwitchConditions = HostConditions &
+  Pick<NotificationPromptVisibility, "pageNotifications">;
+
+/** The one notification switch this host offers: push where it works, else the page's own. */
+export function notificationSwitchKind(
+  conditions: SwitchConditions,
+): NotificationSwitchKind | undefined {
+  if (canPushHere(conditions)) return "push";
+  return conditions.pageNotifications ? "page" : undefined;
+}
+
 export function shouldShowNotificationPrompt(
   conditions: NotificationPromptVisibility,
 ): boolean {
   return (
     conditions.permission === "default" &&
     conditions.dismissed === false &&
-    conditions.pushOnThisDevice !== false &&
-    (canPushHere(conditions) ||
-      (conditions.configured &&
-        !conditions.supported &&
-        conditions.pageNotifications))
+    promptFitsSwitch(conditions)
   );
+}
+
+function promptFitsSwitch(conditions: NotificationPromptVisibility): boolean {
+  switch (notificationSwitchKind(conditions)) {
+    case "push":
+      return conditions.pushOnThisDevice !== false;
+    case "page":
+      return (
+        conditions.configured &&
+        !conditions.supported &&
+        conditions.pageNotificationsOn !== false
+      );
+    case undefined:
+      return false;
+  }
 }
 
 export function formatNotificationPromptVisibility(
@@ -54,11 +80,12 @@ export function formatNotificationPromptVisibility(
     `display=${conditions.display}`,
     `page=${conditions.pageNotifications}`,
     `native=${conditions.nativePush}`,
-    `push=${pushSettingLabel(conditions.pushOnThisDevice)}`,
+    `push=${switchLabel(conditions.pushOnThisDevice)}`,
+    `page_switch=${switchLabel(conditions.pageNotificationsOn)}`,
   ].join(" / ");
 }
 
-function pushSettingLabel(on: boolean | undefined): string {
+function switchLabel(on: boolean | undefined): string {
   if (on === undefined) return "pending";
   return on ? "on" : "off";
 }
