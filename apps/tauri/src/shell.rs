@@ -19,9 +19,19 @@ const KIND: &str = "macos-app";
 #[cfg(target_os = "ios")]
 const KIND: &str = "ios-app";
 
+// Tauri passes only `TAURI_`-prefixed variables through Xcode to the iOS build.
+const GIVEN_VERSION: Option<&str> = option_env!("TAURI_WEBLOUNGE_VERSION");
+
+const fn shell_version(given: Option<&'static str>) -> &'static str {
+    match given {
+        Some(version) if !version.is_empty() => version,
+        _ => "dev",
+    }
+}
+
 const SHELL: Shell = Shell {
     kind: KIND,
-    version: env!("CARGO_PKG_VERSION"),
+    version: shell_version(GIVEN_VERSION),
     #[cfg(target_os = "macos")]
     window_controls: crate::window::title_bar::WINDOW_CONTROLS,
 };
@@ -44,8 +54,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identifies_the_crate_version() {
-        assert_eq!(parsed_identity()["version"], env!("CARGO_PKG_VERSION"));
+    fn identifies_the_version_the_build_was_given() {
+        assert_eq!(parsed_identity()["version"], shell_version(GIVEN_VERSION));
+    }
+
+    #[test]
+    fn a_release_build_shows_its_describe_style_version() {
+        assert_eq!(shell_version(Some("0.2.0+3")), "0.2.0+3");
+    }
+
+    #[test]
+    fn a_build_given_no_version_is_dev() {
+        assert_eq!(shell_version(None), "dev");
+        assert_eq!(shell_version(Some("")), "dev");
     }
 
     #[cfg(target_os = "macos")]

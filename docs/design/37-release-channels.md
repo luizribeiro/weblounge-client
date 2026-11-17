@@ -105,12 +105,13 @@ source has no `.git`, and `github:` inputs carry no tags and no `revCount` (a `g
   disagree. `crateVersion` and the `desktop-v`/`ios-v` tag helpers go away.
 - **iOS:** `release-ios.mjs` builds outside the Nix sandbox, so it passes the versions straight to
   the build: the short version to agvtool (both bundles), the build number in Tauri's `--config`,
-  and `WEBLOUNGE_VERSION` in the build's environment.
+  and the displayed version as `TAURI_WEBLOUNGE_VERSION` in the build's environment.
 - **macOS:** `release.mjs` builds `.#desktop` through `override { version = { marketing, build,
   display }; }`, which adds a Tauri `--config` for `version` and `bundle.macOS.bundleVersion` and
-  sets `WEBLOUNGE_VERSION`.
-- **Shell identity:** `shell.rs` publishes `WEBLOUNGE_VERSION` as `__WEBLOUNGE_SHELL__.version`,
-  or `"dev"` for a build that was not given one.
+  sets `TAURI_WEBLOUNGE_VERSION`.
+- **Shell identity:** `shell.rs` publishes `TAURI_WEBLOUNGE_VERSION` as
+  `__WEBLOUNGE_SHELL__.version`, or `"dev"` for a build that was not given one. The shell's
+  variable is `TAURI_`-prefixed because Tauri passes only those through Xcode to the iOS build.
 
 ## Cutting a web release
 
