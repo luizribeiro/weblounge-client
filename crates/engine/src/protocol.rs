@@ -424,6 +424,10 @@ pub struct NetworkProjection {
     pub label: String,
     /// Current nickname.
     pub nickname: String,
+    /// Casefolded account this connection is logged in to, once the server has said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub account: Option<String>,
     /// Current connection state.
     pub state: NetworkConnectionState,
     /// Origin of the file host the network advertises, whose images display inline.

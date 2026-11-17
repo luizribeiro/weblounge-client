@@ -4656,6 +4656,12 @@ fn process_connected(
     running
         .model
         .set_filehost_origin(filehost::origin(snapshot));
+    running.model.set_account(
+        snapshot
+            .account()
+            .name()
+            .map(|account| account.key().to_owned()),
+    );
     project_own_change_actions(&mut running.model, Some(snapshot));
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
@@ -12510,6 +12516,31 @@ async fn delay(duration: Duration) {
                             && network.filehost_origin.as_deref() == expected
                 )),
                 "{isupport:?} should project {expected:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn connected_projects_the_logged_in_account() {
+        for (logged_in, expected) in [(true, Some("account")), (false, None)] {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            register_connection(&mut wire, &[], "", logged_in).await;
+            let connected = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            let (state, outbound, mut receiver) = harness(client.clone());
+            process_event(&state, &outbound, &client, 1, connected);
+
+            assert!(
+                collect(&mut receiver).iter().any(|event| matches!(
+                    event,
+                    EngineToUi::NetworkStateChanged { network }
+                        if network.state == crate::NetworkConnectionState::Online
+                            && network.account.as_deref() == expected
+                )),
+                "logged in {logged_in} should project {expected:?}"
             );
         }
     }

@@ -1049,6 +1049,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.label !== "string" ||
     typeof value.nickname !== "string" ||
+    !(value.account === undefined || typeof value.account === "string") ||
     !(
       value.filehost_origin === undefined ||
       typeof value.filehost_origin === "string"
@@ -1065,6 +1066,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     id: value.id,
     label: value.label,
     nickname: value.nickname,
+    ...(typeof value.account === "string" ? { account: value.account } : {}),
     state,
     ...(typeof value.filehost_origin === "string"
       ? { filehost_origin: value.filehost_origin }

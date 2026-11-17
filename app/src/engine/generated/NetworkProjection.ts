@@ -19,6 +19,10 @@ label: string,
  */
 nickname: string,
 /**
+ * Casefolded account this connection is logged in to, once the server has said.
+ */
+account?: string,
+/**
  * Current connection state.
  */
 state: NetworkConnectionState,

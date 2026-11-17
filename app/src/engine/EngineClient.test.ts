@@ -496,10 +496,20 @@ describe("WorkerEngineClient", () => {
       type: "network_state_changed",
       network: { ...network, filehost_origin: "https://files.example.test" },
     });
+    port.emit({
+      type: "network_state_changed",
+      network: { ...network, account: "weblounge" },
+    });
     expect(() =>
       port.emit({
         type: "network_state_changed",
         network: { ...network, filehost_origin: 42 },
+      }),
+    ).toThrow("invalid engine message");
+    expect(() =>
+      port.emit({
+        type: "network_state_changed",
+        network: { ...network, account: 7 },
       }),
     ).toThrow("invalid engine message");
     frames[0]?.(0);
@@ -509,6 +519,10 @@ describe("WorkerEngineClient", () => {
       {
         type: "network_state_changed",
         network: { ...network, filehost_origin: "https://files.example.test" },
+      },
+      {
+        type: "network_state_changed",
+        network: { ...network, account: "weblounge" },
       },
     ]);
   });

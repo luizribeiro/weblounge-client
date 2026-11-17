@@ -606,6 +606,7 @@ impl NetworkModel {
                 id,
                 label,
                 nickname,
+                account: None,
                 state: NetworkConnectionState::Connecting,
                 filehost_origin: None,
                 can_react: false,
@@ -679,6 +680,10 @@ impl NetworkModel {
 
     pub(crate) fn set_filehost_origin(&mut self, origin: Option<String>) {
         self.network.filehost_origin = origin;
+    }
+
+    pub(crate) fn set_account(&mut self, account: Option<String>) {
+        self.network.account = account;
     }
 
     pub(crate) const fn can_redact(&self) -> bool {
