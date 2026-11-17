@@ -1,4 +1,4 @@
-import type { BrowserContext, Locator, Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { messageId } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { longPressMessage } from "./message-sheet";
@@ -8,6 +8,7 @@ import {
 } from "./native-feel-audit";
 import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { productionMessageRow } from "./production-ergo";
+import { expectConfirmedOwn } from "./reaction-chip";
 import { expectSettled } from "./settled";
 import { isChromium, tap, touchDown } from "./touch";
 
@@ -258,10 +259,4 @@ async function openChat(page: Page, irc: IrcTestAccount): Promise<void> {
   await page.goto(irc.url({ path: `/Local%20Ergo/${irc.channel.slice(1)}` }));
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expectSettled(page, { conversation: irc.channel });
-}
-
-async function expectConfirmedOwn(chip: Locator, count: string): Promise<void> {
-  await expect(chip).toHaveAttribute("data-reaction-own", "true");
-  await expect(chip).not.toHaveAttribute("data-reaction-delivery");
-  await expect(chip).toContainText(count);
 }

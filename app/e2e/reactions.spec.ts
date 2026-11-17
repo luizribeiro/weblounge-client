@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import {
   IrcClient,
   isolatedPassword,
@@ -12,6 +12,7 @@ import {
 } from "./native-feel-audit";
 import { dispatchPersistedPageShow } from "./page-lifecycle";
 import { productionMessageRow, useDedicatedWorker } from "./production-ergo";
+import { expectConfirmedOwn } from "./reaction-chip";
 import { expectSettled } from "./settled";
 
 test.skip(
@@ -78,10 +79,10 @@ test("toggles your reaction from a chip through sending, confirmation and reload
   await expect(chip).toContainText("2");
   await bot.waitForReaction(irc.channel, id, "👍", irc.account);
   await irc.forwarder.resumeIncoming();
-  await expectConfirmedOwn(chip);
+  await expectConfirmedOwn(chip, "2");
 
   await openOnline(page, irc);
-  await expectConfirmedOwn(chip);
+  await expectConfirmedOwn(chip, "2");
   await chip.click();
   await bot.waitForReaction(irc.channel, id, "👍", irc.account, "unreact");
   await expect(chip).not.toHaveAttribute("data-reaction-own");
@@ -114,7 +115,7 @@ test("shows a refused own reaction as failed and retries it from the chip", asyn
   await bot.mode(irc.channel, "-m");
   await chip.click();
   await bot.waitForReaction(irc.channel, id, "👍", irc.account);
-  await expectConfirmedOwn(chip);
+  await expectConfirmedOwn(chip, "2");
 });
 
 test("reacts from the hover toolbar and its keyboard path without moving the transcript", async ({
@@ -325,12 +326,6 @@ async function expectIdle(page: Page) {
 async function openOnline(page: Page, irc: IrcTestAccount) {
   await page.goto(irc.url());
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-}
-
-async function expectConfirmedOwn(chip: Locator) {
-  await expect(chip).toHaveAttribute("data-reaction-own", "true");
-  await expect(chip).not.toHaveAttribute("data-reaction-delivery");
-  await expect(chip).toContainText("2");
 }
 
 async function expectAtLiveEdge(page: Page) {
