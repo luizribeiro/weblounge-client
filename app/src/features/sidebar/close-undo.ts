@@ -3,6 +3,7 @@ import { type Accessor, createSignal, onCleanup } from "solid-js";
 export interface ClosedConversation {
   readonly networkId: number;
   readonly title: string;
+  readonly wasOpen: boolean;
 }
 
 export interface CloseUndo {

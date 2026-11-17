@@ -1858,6 +1858,7 @@ export function App(props: AppProps) {
               targetNick: nick,
             });
           }}
+          onReopenDirect={openDirect}
           onDeferDirectIdentity={(bufferId) => {
             if (client === undefined) return;
             void client.send({

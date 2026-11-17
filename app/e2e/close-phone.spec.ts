@@ -87,7 +87,6 @@ test.describe("phone conversation closing against local Ergo", () => {
     await expect(toast).toBeVisible();
     await captureThemes(page, shell, "undo-toast", browserName);
     await toast.getByRole("button", { name: "Undo" }).click();
-    await backToChats(page, peer.nickname);
     await expect(directRow()).toBeVisible();
 
     const channelRow = rowFor(page, channel);
@@ -181,6 +180,32 @@ test.describe("phone conversation closing against local Ergo", () => {
     await expectSettled(page);
     await expect(directRow).toHaveCount(0);
     await expect(channelRow).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
+
+  test("undo of a DM closed from the chat list keeps the chat list", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("from-list");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expect(rowFor(page, irc.channel)).toBeVisible();
+    await peer.privmsgConfirmed(irc.account, "close me from the list");
+    const directRow = rowFor(page, peer.nickname);
+    await expect(directRow).toBeVisible();
+
+    await revealActions(wrapperFor(directRow));
+    await tapAction(page, wrapperFor(directRow), "Close");
+    await expect(directRow).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    await expect(directRow).toBeVisible();
+    await expectSettled(page);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Back to chats" }),
+    ).toHaveCount(0);
     await nativeFeelAudit(page);
   });
 

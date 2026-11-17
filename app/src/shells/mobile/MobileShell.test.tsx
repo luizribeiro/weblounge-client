@@ -295,7 +295,7 @@ it("closes a direct from its phone action sheet and offers Undo", async () => {
     vi.fn(() => ({ matches: true }) as MediaQueryList),
   );
   const send = vi.fn(async () => true);
-  const openDirect = vi.fn();
+  const reopenDirect = vi.fn();
   render(() => (
     <MobileShell
       buffers={[buffer]}
@@ -306,7 +306,7 @@ it("closes a direct from its phone action sheet and offers Undo", async () => {
       networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
       onLoadHistory={() => {}}
       onMarkRead={() => {}}
-      onOpenDirect={openDirect}
+      onReopenDirect={reopenDirect}
       onRequestCompletion={() => {}}
       onSelectBuffer={() => {}}
       onSend={send}
@@ -321,7 +321,42 @@ it("closes a direct from its phone action sheet and offers Undo", async () => {
   expect(sheet).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Closed chat with mel");
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-  expect(openDirect).toHaveBeenCalledWith(1, "mel");
+  expect(reopenDirect).toHaveBeenCalledWith(1, "mel", false);
+});
+
+it("returns to a direct closed with /close when Undo is pressed", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  const send = vi.fn(async () => true);
+  const reopenDirect = vi.fn();
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={buffer.id}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onReopenDirect={reopenDirect}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={send}
+    />
+  ));
+
+  const composer = screen.getByRole("textbox", { name: "Message mel" });
+  fireEvent.input(composer, { target: { value: "/close" } });
+  fireEvent.keyDown(composer, { key: "Enter" });
+
+  await waitFor(() => expect(send).toHaveBeenCalledWith(2, "/close"));
+  fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+  expect(reopenDirect).toHaveBeenCalledWith(1, "mel", true);
 });
 
 it("confirms channel Leave from the row sheet and chat details", async () => {

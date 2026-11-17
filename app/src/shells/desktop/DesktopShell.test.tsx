@@ -120,7 +120,7 @@ it("places the notification prompt above the desktop channel list", () => {
 
 it("closes a direct downward, keeps sidebar focus, and offers Undo", async () => {
   const send = vi.fn(async () => true);
-  const openDirect = vi.fn();
+  const reopenDirect = vi.fn();
   render(() => (
     <DesktopShell
       activeBufferId={direct.id}
@@ -133,7 +133,7 @@ it("closes a direct downward, keeps sidebar focus, and offers Undo", async () =>
       networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
       onLoadHistory={() => {}}
       onMarkRead={() => {}}
-      onOpenDirect={openDirect}
+      onReopenDirect={reopenDirect}
       onRequestCompletion={() => {}}
       onSend={send}
     />
@@ -150,8 +150,35 @@ it("closes a direct downward, keeps sidebar focus, and offers Undo", async () =>
   expect(screen.getByText("Closed chat with mel")).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-  expect(openDirect).toHaveBeenCalledWith(1, "mel");
+  expect(reopenDirect).toHaveBeenCalledWith(1, "mel", true);
   expect(screen.queryByText("Closed chat with mel")).not.toBeInTheDocument();
+});
+
+it("keeps the open conversation when Undo restores a direct closed from the list", async () => {
+  const reopenDirect = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel, direct]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onReopenDirect={reopenDirect}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close conversation with mel" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+  expect(reopenDirect).toHaveBeenCalledWith(1, "mel", false);
 });
 
 it("resolves a cached direct through normal history", () => {

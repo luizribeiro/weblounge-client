@@ -7,6 +7,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { expectSettled } from "./settled";
 import { rowName } from "./sidebar-rows";
 
 const screenshots = path.join(process.cwd(), "..", "screenshots", "close");
@@ -125,6 +126,61 @@ test.describe("desktop conversation closing against local Ergo", () => {
     await confirmation.getByRole("button", { name: "Leave" }).click();
     await parted;
     await expect(channelRow).toHaveCount(0);
+  });
+
+  test("undo of a DM closed from the list keeps the open conversation", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("from-list");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await page.getByRole("button", { name: irc.channel, exact: true }).click();
+    await peer.privmsgConfirmed(irc.account, "close me from the list");
+    const directRow = page.getByRole("button", {
+      name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+    });
+    await directRow.hover();
+    await page
+      .getByRole("button", { name: `Close conversation with ${peer.nickname}` })
+      .click();
+    await expect(directRow).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    await expect(directRow).toBeVisible();
+    await expectSettled(page);
+    await expect(
+      page.getByRole("heading", { name: irc.channel }),
+    ).toBeVisible();
+    await expect(directRow).not.toHaveAttribute("aria-current", "page");
+    await nativeFeelAudit(page);
+  });
+
+  test("undo of a DM closed with /close reopens it", async ({ page, irc }) => {
+    const peer = await irc.peer("by-command");
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expect(
+      page.getByRole("button", { name: irc.channel, exact: true }),
+    ).toBeVisible();
+    await peer.privmsgConfirmed(irc.account, "close me with a command");
+    const directRow = page.getByRole("button", {
+      name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+    });
+    await directRow.click();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${peer.nickname}`,
+    });
+    await composer.fill("/close");
+    await composer.press("Enter");
+    await expect(directRow).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: peer.nickname }),
+    ).toBeVisible();
+    await expect(directRow).toHaveAttribute("aria-current", "page");
+    await nativeFeelAudit(page);
   });
 
   test("middle-click closes a DM with undo, asks before leaving a channel, and ignores the network row", async ({

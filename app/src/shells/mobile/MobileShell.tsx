@@ -67,6 +67,9 @@ interface MobileShellProps extends MobileShellData {
     | ((request: { readonly bufferId: number }) => void)
     | undefined;
   readonly initialBufferId?: number | undefined;
+  readonly onReopenDirect?:
+    | ((networkId: number, nick: string, focus: boolean) => void)
+    | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
   readonly onFocusedBufferChange?:
     | ((bufferId: number | undefined) => void)
@@ -270,15 +273,22 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
+  const isViewing = (bufferId: number) => {
+    const active = stack().active;
+    return active.kind === "chat" && active.bufferId === bufferId;
+  };
   const closeUndo = createCloseUndo((closed) =>
-    props.onOpenDirect?.(closed.networkId, closed.title),
+    props.onReopenDirect?.(closed.networkId, closed.title, closed.wasOpen),
   );
   const closeDirect = async (buffer: BufferProjection): Promise<boolean> => {
+    const wasOpen = isViewing(buffer.id);
     if (!(await props.onSend(buffer.id, "/close"))) return false;
-    const active = stack().active;
-    if (active.kind === "chat" && active.bufferId === buffer.id)
-      replaceWithRoot();
-    closeUndo.record({ networkId: buffer.network_id, title: buffer.title });
+    if (isViewing(buffer.id)) replaceWithRoot();
+    closeUndo.record({
+      networkId: buffer.network_id,
+      title: buffer.title,
+      wasOpen,
+    });
     return true;
   };
   const send = (bufferId: number, text: string): Promise<boolean> => {

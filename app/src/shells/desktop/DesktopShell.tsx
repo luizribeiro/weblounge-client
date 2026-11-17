@@ -142,6 +142,9 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
+  readonly onReopenDirect?:
+    | ((networkId: number, nick: string, focus: boolean) => void)
+    | undefined;
   readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onTrustDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
@@ -289,7 +292,7 @@ export function DesktopShell(props: DesktopShellProps) {
     }
   };
   const closeUndo = createCloseUndo((closed) =>
-    props.onOpenDirect?.(closed.networkId, closed.title),
+    props.onReopenDirect?.(closed.networkId, closed.title, closed.wasOpen),
   );
   const closeDirect = async (
     buffer: BufferProjection,
@@ -299,11 +302,16 @@ export function DesktopShell(props: DesktopShellProps) {
     ),
     retainFocus = false,
   ): Promise<boolean> => {
+    const wasOpen = buffer.id === activeBufferId();
     if (!(await props.onSend(buffer.id, "/close"))) return false;
     setRetainSidebarFocus(retainFocus);
     showBuffer(nextBufferId);
     if (retainFocus) queueMicrotask(() => setRetainSidebarFocus(false));
-    closeUndo.record({ networkId: buffer.network_id, title: buffer.title });
+    closeUndo.record({
+      networkId: buffer.network_id,
+      title: buffer.title,
+      wasOpen,
+    });
     return true;
   };
   const moveBuffer = (offset: -1 | 1) => {

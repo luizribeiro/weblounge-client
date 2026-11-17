@@ -2,8 +2,8 @@ import { createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ClosedConversation, createCloseUndo } from "./close-undo";
 
-const ana: ClosedConversation = { networkId: 1, title: "ana" };
-const mel: ClosedConversation = { networkId: 1, title: "mel" };
+const ana: ClosedConversation = { networkId: 1, title: "ana", wasOpen: true };
+const mel: ClosedConversation = { networkId: 1, title: "mel", wasOpen: false };
 
 function mount() {
   const reopened: ClosedConversation[] = [];
