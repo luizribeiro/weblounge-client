@@ -21,6 +21,15 @@ export class Forwarder {
     await this.#post("/resume-incoming");
   }
 
+  /** Holds this test's incoming traffic from the next line containing `text` until `resumeIncoming`. */
+  async holdIncomingContaining(text: string): Promise<void> {
+    await this.#post("/hold-incoming", { contains: text });
+  }
+
+  async isHoldingIncoming(): Promise<boolean> {
+    return (await this.#request("GET", "/held")) === "true";
+  }
+
   async dropIncomingContaining(text: string): Promise<void> {
     await this.#post("/drop-incoming", { contains: text });
   }
@@ -38,7 +47,16 @@ export class Forwarder {
     await this.#post("/clear-text-rewrites");
   }
 
-  async #post(
+  #post(
+    path: string,
+    parameters: Readonly<Record<string, string>> = {},
+    body?: string,
+  ): Promise<string> {
+    return this.#request("POST", path, parameters, body);
+  }
+
+  async #request(
+    method: "GET" | "POST",
     path: string,
     parameters: Readonly<Record<string, string>> = {},
     body?: string,
@@ -50,7 +68,7 @@ export class Forwarder {
     for (const [name, value] of Object.entries(parameters))
       url.searchParams.set(name, value);
     const response = await fetch(url, {
-      method: "POST",
+      method,
       ...(body === undefined ? {} : { body }),
     });
     if (!response.ok)

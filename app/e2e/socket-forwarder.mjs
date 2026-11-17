@@ -21,6 +21,7 @@ const controlPort = Number(
 
 const connections = new Set();
 const incomingTimeRewrites = [];
+const incomingHolds = [];
 const dropped = new ScopedFlag();
 const incomingPaused = new ScopedFlag();
 
@@ -41,6 +42,7 @@ const server = net.createServer((client) => {
     injectedOpcode: 0x81,
     incomingTimeRewriter: undefined,
     recentIncoming: Buffer.alloc(0),
+    held: undefined,
   };
   connection.incomingTimeRewriter = new WebSocketIrcTimeRewriter(
     incomingTimeRewrites,
@@ -58,6 +60,7 @@ const server = net.createServer((client) => {
   });
   upstream.on("data", (data) => {
     observeIncomingProtocol(connection, data);
+    if (holdIfArmed(connection, data)) return;
     const target = connection.dropIncomingContaining;
     if (target !== undefined) {
       const candidate = Buffer.concat([connection.recentIncoming, data]);
@@ -70,8 +73,7 @@ const server = net.createServer((client) => {
         Math.max(0, candidate.length - target.length + 1),
       );
     }
-    const rewritten = connection.incomingTimeRewriter.push(data);
-    if (rewritten.length > 0) client.write(rewritten);
+    deliverIncoming(connection, data);
   });
   client.on("close", () => closeConnection(connection));
   client.on("error", () => closeConnection(connection));
@@ -83,6 +85,30 @@ const server = net.createServer((client) => {
     if (!connection.silent) closeConnection(connection);
   });
 });
+
+function deliverIncoming(connection, data) {
+  const rewritten = connection.incomingTimeRewriter.push(data);
+  if (rewritten.length > 0) connection.client.write(rewritten);
+}
+
+/** Holds the first incoming chunk that matches an armed hold, and everything after it, until resumed. */
+function holdIfArmed(connection, data) {
+  if (connection.held !== undefined) return false;
+  const index = incomingHolds.findIndex(
+    (hold) => inScope(connection.scope, hold.scope) && data.includes(hold.text),
+  );
+  if (index < 0) return false;
+  incomingHolds.splice(index, 1);
+  connection.held = data;
+  connection.upstream?.pause();
+  return true;
+}
+
+function releaseHeldIncoming(connection) {
+  if (connection.held === undefined) return;
+  deliverIncoming(connection, connection.held);
+  connection.held = undefined;
+}
 
 function identifyScope(connection, data) {
   const head = Buffer.concat([connection.requestHead, data]);
@@ -117,6 +143,11 @@ const control = http.createServer((request, response) => {
     response.end("ok");
     return;
   }
+  if (request.method === "GET" && url.pathname === "/held") {
+    const held = selected().some((connection) => connection.held !== undefined);
+    response.end(String(held));
+    return;
+  }
   if (request.method !== "POST") {
     response.writeHead(404).end();
     return;
@@ -144,8 +175,21 @@ const control = http.createServer((request, response) => {
   }
   if (url.pathname === "/resume-incoming") {
     incomingPaused.set(scope, false);
-    for (const connection of selected()) connection.upstream?.resume();
+    for (const connection of selected()) {
+      releaseHeldIncoming(connection);
+      connection.upstream?.resume();
+    }
     response.end("resumed");
+    return;
+  }
+  if (url.pathname === "/hold-incoming") {
+    const contains = url.searchParams.get("contains");
+    if (contains === null || contains.length === 0) {
+      response.writeHead(400).end("missing contains");
+      return;
+    }
+    incomingHolds.push({ text: Buffer.from(contains), scope });
+    response.end("armed");
     return;
   }
   if (url.pathname === "/inject") {

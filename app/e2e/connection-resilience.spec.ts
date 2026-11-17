@@ -12,8 +12,13 @@ import { type IrcClient, messageId, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
-import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
 import { dispatchPersistedPageShow, setPageHidden } from "./page-lifecycle";
+import { expectSettled } from "./settled";
+import { armMessageTime } from "./time-rewrite";
 import { visibleMessageAnchor } from "./visible-message-anchor";
 
 test.describe("connection resilience against local Ergo", () => {
@@ -185,6 +190,53 @@ test.describe("connection resilience against local Ergo", () => {
       order.indexOf(texts[1] ?? ""),
     );
     await expectShellToRemain(page, channel);
+  });
+
+  test("keeps offline sends in send order while the first ones confirm", async ({
+    context,
+    page,
+    irc,
+  }, testInfo) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    await installNativeFeelInstrumentation(page);
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    await context.setOffline(true);
+    await expectTransientConnectionPresentation(
+      page,
+      isMobile(testInfo.project.name),
+    );
+    const texts = sendOrderTexts("offline");
+    await sendInARow(composer, texts);
+    await expectSendOrder(page, texts, ["optimistic", "optimistic"]);
+
+    await irc.forwarder.holdIncomingContaining(` :${texts[1]}`);
+    await context.setOffline(false);
+    await setPageHidden(page, false);
+    await dispatchPersistedPageShow(page);
+    await expectSendOrderWhileSecondEchoIsHeld(page, irc, texts);
+  });
+
+  test("keeps quick sends in send order while the server clock runs ahead", async ({
+    page,
+    irc,
+  }, testInfo) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    await installNativeFeelInstrumentation(page);
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    const texts = sendOrderTexts("online");
+    const serverNow = Date.now() + 60_000;
+    for (const [index, text] of texts.entries())
+      await armMessageTime(text, serverNow + index);
+    await irc.forwarder.holdIncomingContaining(` :${texts[1]}`);
+
+    await sendInARow(composer, texts);
+    await expectSendOrderWhileSecondEchoIsHeld(page, irc, texts);
   });
 
   test("bounds a send queued on a silently dead resumed socket", async ({
@@ -743,6 +795,55 @@ async function sendAndExpectEcho(
 ): Promise<void> {
   await bot.privmsgConfirmed(channel, prefix);
   await expect(page.getByText(prefix, { exact: true })).toHaveCount(1);
+}
+
+function sendOrderTexts(prefix: string): readonly [string, string] {
+  const stamp = Date.now();
+  return [`${prefix} first ${stamp}`, `${prefix} second ${stamp}`];
+}
+
+async function sendInARow(
+  composer: Locator,
+  texts: readonly string[],
+): Promise<void> {
+  for (const text of texts) {
+    await composer.fill(text);
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+  }
+}
+
+async function expectSendOrderWhileSecondEchoIsHeld(
+  page: Page,
+  irc: IrcTestAccount,
+  texts: readonly string[],
+): Promise<void> {
+  await expect.poll(() => irc.forwarder.isHoldingIncoming()).toBe(true);
+  await expectSendOrder(page, texts, ["confirmed", "optimistic"]);
+
+  await irc.forwarder.resumeIncoming();
+  await expectSendOrder(page, texts, ["confirmed", "confirmed"]);
+  await expectSettled(page, { conversation: irc.channel });
+  await nativeFeelAudit(page);
+}
+
+async function expectSendOrder(
+  page: Page,
+  texts: readonly string[],
+  deliveries: readonly string[],
+): Promise<void> {
+  await expect
+    .poll(() =>
+      page.locator("[data-message-row]").evaluateAll(
+        (rows, sent) =>
+          rows
+            .map((row) => (row as HTMLElement).dataset)
+            .filter((data) => sent.includes(data.messageText ?? ""))
+            .map((data) => `${data.messageText} ${data.delivery}`),
+        texts,
+      ),
+    )
+    .toEqual(texts.map((text, index) => `${text} ${deliveries[index]}`));
 }
 
 function messageRow(page: Page, text: string, delivery: string) {
