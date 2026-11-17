@@ -1,4 +1,10 @@
-import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
+import {
+  type Accessor,
+  batch,
+  createEffect,
+  createSignal,
+  onCleanup,
+} from "solid-js";
 import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import type { MessageProjection } from "../../engine/protocol";
 
@@ -12,13 +18,15 @@ interface ReadDwellOptions {
   readonly visible: Accessor<boolean>;
 }
 
-export function createReadDwell(options: ReadDwellOptions): void {
+export function createReadDwell(options: ReadDwellOptions): Accessor<boolean> {
   const [eligibleBufferId, setEligibleBufferId] = createSignal<number>();
   const [dwelledBufferId, setDwelledBufferId] = createSignal<number>();
+  const [dwelling, setDwelling] = createSignal(false);
   let dwellTimer: number | undefined;
   const clearDwellTimer = () => {
     if (dwellTimer !== undefined) window.clearTimeout(dwellTimer);
     dwellTimer = undefined;
+    setDwelling(false);
   };
 
   createEffect(() => {
@@ -60,11 +68,16 @@ export function createReadDwell(options: ReadDwellOptions): void {
       return;
     }
     if (dwellTimer !== undefined) return;
+    setDwelling(true);
     dwellTimer = window.setTimeout(() => {
       dwellTimer = undefined;
-      if (eligibleBufferId() === bufferId) setDwelledBufferId(bufferId);
+      batch(() => {
+        if (eligibleBufferId() === bufferId) setDwelledBufferId(bufferId);
+        setDwelling(false);
+      });
     }, 500);
   });
+  return dwelling;
 }
 
 export function newestCommittedMessageId(

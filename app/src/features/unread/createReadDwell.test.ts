@@ -293,3 +293,50 @@ it("does not mark a pane away from its live edge", () => {
   vi.advanceTimersByTime(500);
   expect(markRead).not.toHaveBeenCalled();
 });
+
+it("reports the dwell as pending until its mark-read is sent", () => {
+  const markRead = vi.fn();
+  let dwelling: (() => boolean) | undefined;
+
+  render(() => {
+    dwelling = createReadDwell({
+      atLiveEdge: () => true,
+      bufferId: () => 2,
+      foreground: () => true,
+      foregroundExitEpoch: noForegroundExit,
+      newestCommittedMessageId: () => 8,
+      onMarkRead: markRead,
+      visible: () => true,
+    });
+    return undefined;
+  });
+
+  expect(dwelling?.()).toBe(true);
+  vi.advanceTimersByTime(499);
+  expect(dwelling?.()).toBe(true);
+  vi.advanceTimersByTime(1);
+  expect(markRead).toHaveBeenCalledWith(2, 8);
+  expect(dwelling?.()).toBe(false);
+});
+
+it("stops reporting a dwell that loses the live edge", () => {
+  const [atLiveEdge, setAtLiveEdge] = createSignal(true);
+  let dwelling: (() => boolean) | undefined;
+
+  render(() => {
+    dwelling = createReadDwell({
+      atLiveEdge,
+      bufferId: () => 2,
+      foreground: () => true,
+      foregroundExitEpoch: noForegroundExit,
+      newestCommittedMessageId: () => 8,
+      onMarkRead: () => {},
+      visible: () => true,
+    });
+    return undefined;
+  });
+
+  expect(dwelling?.()).toBe(true);
+  setAtLiveEdge(false);
+  expect(dwelling?.()).toBe(false);
+});
