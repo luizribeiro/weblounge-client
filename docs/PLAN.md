@@ -44,7 +44,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F7: natural-size cache in the engine's `Space::Cache` (needs a protocol request and records) and `filehost_origin` persisted in the chat-list snapshot. Design 30 §Later.
 - F8: UI to forget remembered upload hosts (`ForgetUploadApprovals` exists, nothing calls it), in Networks settings. Design 31.
 - F9: uploads beyond v1: Attach button (the `/file` picker is done), drag and drop, several images, arbitrary files, offline outbox, native Tauri uploader, `NSCameraUsageDescription` for the iOS app's picker (design 33). Design 31 §Out of scope, design 13.
-- F10: Settings beyond slice 1: Networks, Notifications, keyboard rebinding, quiet hours and per-sender rules, per-network overrides, search, import/export, cross-device sync, onboarding, native macOS Settings window, push-permission toggle. Design 29 §Out of scope.
+- F10: Settings beyond slice 1: Networks, Notifications, keyboard rebinding, quiet hours and per-sender rules, per-network overrides, search, import/export, cross-device sync, onboarding, native macOS Settings window. Design 29 §Out of scope. (The push switch is done, design 36.)
 - F11: link previews (cards, proxy, per-channel toggle, Tauri direct fetch, link shimming of outbound clicks, IRCv3 previews extension); paused, and the "images from other sites" switch is left out of Settings. Memory, design 30, design 29.
 - F12: animate phone chat-list reorders (row slides to top); parked as finicky. If revisited: moved row, new row, off-screen row, bursts, reduced motion. Memory.
 - F13: keyboard follow-ups: rebinding and conflict UI, context-menu projections, native mobile shortcut bridges, optional Vim preset; palette commands with typed arguments stay hidden. Design 14 §Later, Known limits.
@@ -92,6 +92,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - B9: the engine keeps its own "MONITOR offline" memory because papo keeps a held-direct-handle peer in monitor_online; `presence()` in newer papo replaces it; away for MONITOR-only peers needs extended-monitor. Waits on papo.
 - B10: Chromium appears to apply a tagged persistent notification's `close()` asynchronously to whatever notification holds that tag (close-then-show of one tag lost the new one in 6 of 1600 tries locally). So closing a read conversation's notification (page `closeReadConversationNotifications` or worker `tidyReadNotifications`) could drop a new unread push for that tag shown just after the close was issued. Unconfirmed in the app; a fix would serialize closes and shows per tag in the worker. `app/e2e/push-notifications.spec.ts` `replaceWithConversationNotification`.
 - B11: after a reconnect every DM's peer handle stays pending until the peer is seen again (a line, a MONITOR online, or an own message), which may be behind the wrong desktop presence dots Luiz reported; deleting in a DM that cannot be resolved still does nothing, and reacting or messaging a peer who is offline fails, because papo's guarded direct needs the peer's current identity. `crates/engine/src/state.rs` `action_target`.
+- B12: push registration that fails without a relay or engine error is still silent: an iPhone app whose APNs token never arrives (`push_target` stays null) shows push as on, and turning push off while the relay is unreachable leaves the relay device in place (the home `UNREGISTER` still stops pushes). Relay 501/4xx/unreachable, engine failures and a rejected Web Push `subscribe()` now show "Couldn't turn on notifications" with Retry (design 36), which covers the 2026-11-16 iOS case. Needs a device check of the iOS app against the real relay.
 
 #### Test flakes
 - T1: `spacing-audit.spec.ts:133` opens at the top of the transcript instead of the live edge (2 in ~80 main runs); under 10x CPU throttle three later steps also fail. Failures attach `transcript-geometry`; hypothesis: TanStack drops the in-flight `scrollToEnd` and MessageList never re-issues it.
@@ -143,6 +144,16 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-17: a Push notifications switch in Settings → Notifications (design 36), shown wherever
+  the page can push (desktop browsers, the iPhone home-screen app, the iOS app, the Mac app);
+  "Show unread in the tab" stays browser-tab only and the section shows if any row applies. The
+  choice is the per-device engine setting `push_on_this_device` (on by default); off removes this
+  device's routes (home `UNREGISTER`, relay `DELETE /v1/devices/{id}`) and hides the prompt, on
+  asks for permission when needed and registers again. Denied permission shows the switch off and
+  disabled with where to unblock it, plus Open Settings in the iOS app (`open_app_settings`). A
+  registration that keeps failing (third failed attempt, or at once for an unretried failure)
+  shows "Couldn't turn on notifications" with Retry, which skips the relay backoff. Journeys in
+  `hosted-mode.spec.ts` ("push settings"); the stub answers `open_app_settings`. Follow-up B12.
 - 2026-11-16: reactions in a DM work after a reconnect while the peer stays quiet (they resolve
   the peer when sent, as a queued message does), and a reaction in a DM that cannot be sent to
   shows the failed chip instead of doing nothing. `reactions.spec.ts`, `reactions-phone.spec.ts`.
