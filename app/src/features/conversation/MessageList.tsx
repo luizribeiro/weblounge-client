@@ -113,6 +113,7 @@ import {
   systemLineSummaryText,
   systemLineWords,
 } from "./timeline/system-line-words";
+import { UnverifiedSenderMark } from "./UnverifiedSenderMark";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
@@ -1854,7 +1855,10 @@ function MessageRow(props: {
                 onOpenDirect={props.onOpenDirect}
                 value={message.author}
               />
-              <UnverifiedSenderMark message={message} />{" "}
+              <UnverifiedSenderMark
+                presentation={props.presentation ?? "desktop"}
+                reason={message.unverified_sender}
+              />{" "}
               <MessageText
                 authors={props.nickLookup}
                 onOpenChannel={props.onOpenChannel}
@@ -1913,7 +1917,10 @@ function MessageRow(props: {
                 }
               />
             )}
-            <UnverifiedSenderMark message={message} />
+            <UnverifiedSenderMark
+              presentation={props.presentation ?? "desktop"}
+              reason={message.unverified_sender}
+            />
           </Line>
           <div class={styles.content}>
             {isRedacted(message.kind) ? (
@@ -1982,19 +1989,6 @@ function MessageImage(props: {
       )}
     </Show>
   );
-}
-
-function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
-  return props.message.unverified_sender !== undefined ? (
-    <span
-      aria-label={t("messages.unverified_sender")}
-      class={styles.unverifiedMark}
-      role="img"
-      title={t("messages.unverified_sender")}
-    >
-      ?
-    </span>
-  ) : null;
 }
 
 function LocalNoticeRow(props: {

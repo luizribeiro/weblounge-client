@@ -52,11 +52,6 @@
 .server {
   color: var(--wl-color-muted);
 }
-.unverified {
-  color: var(--wl-color-error);
-  font-family: var(--wl-font-mono);
-  font-weight: 700;
-}
 .row[data-unverified-sender="true"] {
   box-shadow: inset 3px 0 var(--wl-color-error);
 }

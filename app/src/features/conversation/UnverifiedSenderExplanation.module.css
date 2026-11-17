@@ -1,0 +1,19 @@
+.explanation {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--wl-font-ui);
+  gap: 6px;
+  outline: none;
+}
+.title {
+  color: var(--wl-color-error);
+  font-size: 13px;
+  font-weight: 650;
+  margin: 0;
+}
+.body {
+  color: var(--wl-color-fg);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}

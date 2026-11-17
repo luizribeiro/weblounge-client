@@ -15,6 +15,7 @@ import type { PeerPresence } from "./generated/PeerPresence";
 import type { PushState } from "./generated/PushState";
 import type { TypingProjection } from "./generated/TypingProjection";
 import type { UiToEngine } from "./generated/UiToEngine";
+import type { UnverifiedSender } from "./generated/UnverifiedSender";
 
 export type {
   BufferProjection,
@@ -34,6 +35,7 @@ export type {
   PushState,
   TypingProjection,
   UiToEngine,
+  UnverifiedSender,
 };
 
 // Batch 3 removes this compatibility shape when MessageList renders system rows directly.

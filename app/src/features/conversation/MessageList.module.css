@@ -94,12 +94,6 @@
 .unverified {
   box-shadow: inset 3px 0 var(--wl-color-error);
 }
-.unverifiedMark {
-  color: var(--wl-color-error);
-  font-family: var(--wl-font-mono);
-  font-weight: 700;
-  margin-inline-start: 4px;
-}
 .time {
   color: var(--wl-color-muted);
   font-family: var(--wl-font-mono);
@@ -356,14 +350,6 @@
 .list[data-presentation="mobile"] .nick {
   direction: inherit;
   overflow: visible;
-  white-space: nowrap;
-}
-.list[data-presentation="mobile"] .unverifiedMark {
-  block-size: 1px;
-  clip-path: inset(50%);
-  inline-size: 1px;
-  overflow: hidden;
-  position: absolute;
   white-space: nowrap;
 }
 .list[data-presentation="mobile"] .content {

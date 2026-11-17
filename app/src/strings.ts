@@ -318,6 +318,17 @@ export const messages = {
   "messages.topic.set_by": "set by {setter}",
   "messages.topic.title": "Topic",
   "messages.unverified_sender": "Unverified sender",
+  "messages.unverified_sender.cannot_verify":
+    "weblounge can't check this sender against the account you talked to before, so it may be someone else using the nick.",
+  "messages.unverified_sender.different_account":
+    "This nick is logged in to a different account than before, so it may be someone else.",
+  "messages.unverified_sender.hint": "Unverified sender. Click to see why.",
+  "messages.unverified_sender.no_account":
+    "This nick isn't logged in to a registered account, so weblounge can't confirm it's the same person as before.",
+  "messages.unverified_sender.notification_mismatch":
+    "The notification for this message named a different sender than the server's copy, so it may be someone else.",
+  "messages.unverified_sender.unproven_account":
+    "This nick is logged in, but this connection can't prove which account it is, so weblounge can't confirm it's the same person as before.",
   "members.close_drawer": "Close member list",
   "members.filter": "Filter members",
   "members.group.away": "Away",

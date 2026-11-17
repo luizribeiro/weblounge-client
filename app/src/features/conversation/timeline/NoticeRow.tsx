@@ -1,9 +1,9 @@
-import { t } from "../../../strings";
 import { formatTime } from "../../../ui/format-time";
 import { EventIcon } from "../../../ui/icons/EventIcon";
 import { Selectable } from "../../../ui/Selectable";
 import { MessageText, Nickname } from "../MessageText";
 import type { NickDisplay } from "../nick-lookup";
+import { UnverifiedSenderMark } from "../UnverifiedSenderMark";
 import styles from "./NoticeRow.module.css";
 import type { IrcNoticeMessage } from "./notice-message";
 
@@ -29,15 +29,10 @@ export function NoticeRow(props: {
         title={props.message.author}
         value={props.message.author}
       />
-      {props.message.unverified_sender !== undefined && (
-        <span
-          aria-label={t("messages.unverified_sender")}
-          class={styles.unverified}
-          role="img"
-        >
-          ?
-        </span>
-      )}
+      <UnverifiedSenderMark
+        presentation={props.presentation}
+        reason={props.message.unverified_sender}
+      />
     </>
   );
   const text = (

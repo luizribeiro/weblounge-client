@@ -1,0 +1,50 @@
+.mark {
+  display: inline-flex;
+  margin-inline-start: 4px;
+  position: relative;
+}
+.button {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-error);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--wl-font-mono);
+  font-weight: 700;
+  line-height: inherit;
+  padding: 0 2px;
+  position: relative;
+}
+.button::after {
+  content: "";
+  inset: -8px -6px;
+  position: absolute;
+}
+.tooltip {
+  background: var(--wl-color-fg);
+  border-radius: var(--wl-radius-control);
+  bottom: calc(100% + 4px);
+  box-shadow: var(--wl-effect-tooltip-shadow);
+  color: var(--wl-color-bg);
+  display: none;
+  font-family: var(--wl-font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  left: 0;
+  line-height: 1.35;
+  padding: 6px 9px;
+  pointer-events: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 5;
+}
+.mark:not([data-hint-dismissed]):is(:hover, :has(.button:focus-visible))
+  .button[aria-expanded="false"]
+  + .tooltip {
+  display: block;
+}
+.mark[data-presentation="mobile"] .button::after {
+  inset: -12px -14px;
+}
