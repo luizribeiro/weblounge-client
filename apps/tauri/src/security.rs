@@ -108,8 +108,8 @@ mod tests {
     /// The match stops compiling when the bridge gains a command, so its grant is decided here.
     fn every_native_command() -> HashSet<NativeCommand> {
         use NativeCommand::{
-            CreateRouteKeys, DeliveredNotifications, DropRouteKeys, OpenAppSettings, PushPermission,
-            PushTarget, RemoveDeliveredNotifications, RequestPushPermission,
+            CreateRouteKeys, DeliveredNotifications, DropRouteKeys, OpenAppSettings,
+            PushPermission, PushTarget, RemoveDeliveredNotifications, RequestPushPermission,
             RoutesNeedingReregistration, SetBadge, TakePushedMessages, WriteNotificationCounts,
         };
         let all = [
