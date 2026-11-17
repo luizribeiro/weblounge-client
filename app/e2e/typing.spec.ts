@@ -6,7 +6,7 @@ import {
 } from "./engine-clock";
 import { expect, test } from "./irc-fixture";
 import { emulateStandalone } from "./mobile-platform";
-import { expectSettled } from "./settled";
+import { backToChatList, expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
 
 interface Box {
@@ -196,8 +196,7 @@ test.describe("typing indicators", () => {
       await expect(
         page.getByRole("heading", { name: sender.nickname }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await backToChatList(page, sender.nickname);
       await expectSettled(page);
       const echoedIncoming = await sender.privmsgConfirmed(
         irc.account,
@@ -237,8 +236,7 @@ test.describe("typing indicators", () => {
     expectNewestRowAgainstComposer(emptyGeometry, "nobody typing");
 
     if (mobile) {
-      await page.getByRole("button", { name: "Back to chats" }).click();
-      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await backToChatList(page, conversation);
       await expectSettled(page);
       await startEngineClock(page);
       const firstActive = await sender.typingConfirmed(irc.account, "active");
@@ -414,8 +412,7 @@ test.describe("typing indicators", () => {
       .filter({ hasText: unreadChannel })
       .first();
     await expect(row).toHaveAttribute("aria-label", unreadChannel);
-    await page.getByRole("button", { name: "Back to chats" }).click();
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await backToChatList(page, unreadChannel);
 
     const unread = Array.from(
       { length: 3 },

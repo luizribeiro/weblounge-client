@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./irc-fixture";
+import { backToChatList, backToChats } from "./settled";
 
 test.describe("mobile member drawer follows navigation", () => {
   test.skip(
@@ -28,7 +29,7 @@ test.describe("mobile member drawer follows navigation", () => {
     await openChat(page, homeChannel);
     await expectDrawer(page, homeChannel, homeNick, otherNick);
     await closeDrawer(page);
-    await backToChats(page);
+    await backToChatList(page, homeChannel);
 
     await openChat(page, otherChannel);
     await expectDrawer(page, otherChannel, otherNick, homeNick);
@@ -57,16 +58,16 @@ test.describe("mobile member drawer follows navigation", () => {
       page.getByRole("heading", { name: otherChannel }),
     ).toBeVisible();
 
-    await backToChats(page);
+    await backToChatList(page, otherChannel);
     await openChat(page, homeChannel);
     await expectDrawer(page, homeChannel, homeNick, otherNick);
     await closeDrawer(page);
-    await backToChats(page);
+    await backToChatList(page, homeChannel);
 
     await openChat(page, otherChannel);
     await expectDrawer(page, otherChannel, otherNick, homeNick);
     await closeDrawer(page);
-    await backToChats(page);
+    await backToChatList(page, otherChannel);
 
     await openChat(page, homeChannel);
     await expectDrawer(page, homeChannel, homeNick, otherNick);
@@ -77,11 +78,11 @@ test.describe("mobile member drawer follows navigation", () => {
       })
       .click();
     await expect(page.getByRole("heading", { name: homeNick })).toBeVisible();
-    await page.getByRole("button", { name: "Back to chats" }).click();
+    await backToChats(page, homeNick);
     await expect(
       page.getByRole("heading", { name: homeChannel }),
     ).toBeVisible();
-    await backToChats(page);
+    await backToChatList(page, homeChannel);
     await openChat(page, otherChannel);
     await expectDrawer(page, otherChannel, otherNick, homeNick);
     await closeDrawer(page);
@@ -126,11 +127,6 @@ function requireMobileMembersProject(projectName: string): void {
 async function openChat(page: Page, title: string): Promise<void> {
   await page.getByRole("button", { exact: true, name: title }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-}
-
-async function backToChats(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Back to chats" }).click();
-  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 }
 
 async function expectDrawer(

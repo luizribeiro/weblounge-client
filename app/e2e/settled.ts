@@ -53,3 +53,11 @@ export async function backToChats(
   await expectSettled(page, { conversation });
   await page.getByRole("button", { name: "Back to chats" }).click();
 }
+
+export async function backToChatList(
+  page: Page,
+  conversation: string,
+): Promise<void> {
+  await backToChats(page, conversation);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+}

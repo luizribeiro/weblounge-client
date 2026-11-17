@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./irc-fixture";
+import { backToChatList } from "./settled";
 
 test.describe("unread badge colours against local Ergo", () => {
   test.skip(
@@ -35,8 +36,7 @@ test.describe("unread badge colours against local Ergo", () => {
       ];
 
       await page.getByRole("button", { name: irc.channel }).click();
-      await mobile.getByRole("button", { name: "Back to chats" }).click();
-      await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
+      await backToChatList(mobile, mobileChannel);
 
       const desktopRow = page.locator(
         `[data-buffer-id][aria-label^="${desktopChannel},"]`,
