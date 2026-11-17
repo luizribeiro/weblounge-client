@@ -6,6 +6,7 @@ import type {
   UploadOptions,
   UploadResult,
 } from "../uploads/types";
+import { maxImageBytes } from "./attachable-image";
 import { Composer } from "./Composer";
 import {
   composerGeometryChangeEvent,
@@ -62,10 +63,16 @@ function renderComposer(
   return { onSend, input: screen.getByLabelText("Message #lounge") };
 }
 
-function pasteImage(target: HTMLElement, text = "") {
+// A macrotask runs only after every microtask the attach check queued.
+function settleAttach(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function pasteImage(target: HTMLElement, text = "", size?: number) {
   const file = new File([new Uint8Array([0x89, 0x50])], "image.png", {
     type: "image/png",
   });
+  if (size !== undefined) Object.defineProperty(file, "size", { value: size });
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
     value: {
@@ -75,13 +82,14 @@ function pasteImage(target: HTMLElement, text = "") {
     },
   });
   target.dispatchEvent(event);
+  await settleAttach();
   return { file, event };
 }
 
-it("attaches a pasted image as a chip without uploading it", () => {
+it("attaches a pasted image as a chip without uploading it", async () => {
   const uploads = new ControlledUploads();
   const { input } = renderComposer(uploads);
-  const { event } = pasteImage(input);
+  const { event } = await pasteImage(input);
 
   expect(event.defaultPrevented).toBe(true);
   expect(screen.getByText("Image · 2 B")).toBeTruthy();
@@ -91,9 +99,9 @@ it("attaches a pasted image as a chip without uploading it", () => {
   expect(uploads.calls).toEqual([]);
 });
 
-it("lets copied text paste through beside the image", () => {
+it("lets copied text paste through beside the image", async () => {
   const { input } = renderComposer(new ControlledUploads());
-  const { event } = pasteImage(input, "from a web page");
+  const { event } = await pasteImage(input, "from a web page");
   expect(event.defaultPrevented).toBe(false);
   expect(screen.getByText("Image · 2 B")).toBeTruthy();
 });
@@ -101,7 +109,7 @@ it("lets copied text paste through beside the image", () => {
 it("uploads on Enter, shows progress and busy Send, then sends caption and URL", async () => {
   const uploads = new ControlledUploads();
   const { input, onSend } = renderComposer(uploads);
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.input(input, { target: { value: "look" } });
   fireEvent.keyDown(input, { key: "Enter" });
 
@@ -128,7 +136,7 @@ it("uploads on Enter, shows progress and busy Send, then sends caption and URL",
 it("shows a failure with Retry and keeps the text", async () => {
   const uploads = new ControlledUploads();
   const { input, onSend } = renderComposer(uploads);
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.input(input, { target: { value: "caption" } });
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(uploads.calls).toHaveLength(1));
@@ -143,13 +151,13 @@ it("shows a failure with Retry and keeps the text", async () => {
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it("removes the attachment with × or Escape in an empty composer", () => {
+it("removes the attachment with × or Escape in an empty composer", async () => {
   const { input } = renderComposer(new ControlledUploads());
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.click(screen.getByLabelText("Remove image"));
   expect(document.querySelector("[data-attachment-chip]")).toBeNull();
 
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.input(input, { target: { value: "x" } });
   fireEvent.keyDown(input, { key: "Escape" });
   expect(document.querySelector("[data-attachment-chip]")).not.toBeNull();
@@ -158,9 +166,17 @@ it("removes the attachment with × or Escape in an empty composer", () => {
   expect(document.querySelector("[data-attachment-chip]")).toBeNull();
 });
 
-it("leaves the paste alone on a network without uploads", () => {
+it("notes a pasted image over the ceiling instead of attaching it", async () => {
+  const { input } = renderComposer(new ControlledUploads());
+  const { file } = await pasteImage(input, "", maxImageBytes + 1);
+  expect(file.size).toBe(maxImageBytes + 1);
+  expect(screen.getByText("Image is too large (max 50.0 MB).")).toBeTruthy();
+  expect(document.querySelector("[data-attachment-chip]")).toBeNull();
+});
+
+it("leaves the paste alone on a network without uploads", async () => {
   const { input } = renderComposer(undefined);
-  const { event } = pasteImage(input);
+  const { event } = await pasteImage(input);
   expect(event.defaultPrevented).toBe(false);
   expect(screen.getByText("This network doesn’t accept uploads.")).toBeTruthy();
   expect(document.querySelector("[data-attachment-chip]")).toBeNull();
@@ -171,7 +187,7 @@ it("leaves the paste alone on a network without uploads", () => {
 it("asks before sending the password to another site and passes the answer", async () => {
   const uploads = new ControlledUploads();
   const { input } = renderComposer(uploads);
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(uploads.calls).toHaveLength(1));
 
@@ -187,8 +203,10 @@ it("asks before sending the password to another site and passes the answer", asy
   expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
-it("announces the chip's geometry change before and after it renders", () => {
+it("announces the chip's geometry change before and after it renders", async () => {
   const { input } = renderComposer(new ControlledUploads());
+  // The mount's own autosize announces its height first.
+  await settleAttach();
   const seen: string[] = [];
   const record = (event: Event) =>
     seen.push(
@@ -197,7 +215,7 @@ it("announces the chip's geometry change before and after it renders", () => {
   input.addEventListener(composerGeometryWillChangeEvent, record);
   input.addEventListener(composerGeometryChangeEvent, record);
 
-  pasteImage(input);
+  await pasteImage(input);
   fireEvent.click(screen.getByLabelText("Remove image"));
 
   expect(seen).toEqual([
@@ -284,8 +302,7 @@ it("drops a pick still being read when the conversation changes", async () => {
   release(
     new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer,
   );
-  // A macrotask runs only after every microtask the pick's reading queued.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleAttach();
   expect(document.querySelector("[data-attachment-chip]")).toBeNull();
   expect(screen.queryByRole("status")).toBeNull();
 });
@@ -296,7 +313,7 @@ it("notes a picked file that is not an image", async () => {
   typeAndEnter(input, "/file");
   choose([new File(["%PDF-1.7\n"], "notes.pdf", { type: "application/pdf" })]);
   await waitFor(() =>
-    expect(screen.getByText("Can’t read this image.")).toBeTruthy(),
+    expect(screen.getByText("Only images can be sent.")).toBeTruthy(),
   );
   expect(document.querySelector("[data-attachment-chip]")).toBeNull();
 });
@@ -326,10 +343,10 @@ it("opens the picker once from a tap on the phone Send button", () => {
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it("keeps an earlier image when the picker is cancelled", () => {
+it("keeps an earlier image when the picker is cancelled", async () => {
   const clicks = pickerClicks();
   const { input } = renderComposer(new ControlledUploads());
-  pasteImage(input);
+  await pasteImage(input);
   typeAndEnter(input, "/file");
   expect(clicks).toHaveBeenCalledTimes(1);
   choose([]);

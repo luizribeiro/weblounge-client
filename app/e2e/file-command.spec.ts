@@ -116,7 +116,7 @@ test.describe("/file against local Ergo", () => {
         await (await chooser).setFiles(file);
       };
       await pick({ name: "notes", mimeType: "", buffer: Buffer.from("%PDF") });
-      await expect(page.getByText("Can’t read this image.")).toBeVisible();
+      await expect(page.getByText("Only images can be sent.")).toBeVisible();
       await expect(page.locator("[data-attachment-chip]")).toHaveCount(0);
 
       await pick({
@@ -125,7 +125,7 @@ test.describe("/file against local Ergo", () => {
         buffer: await readFile(landscape),
       });
       await expectPickedChip(page);
-      await expect(page.getByText("Can’t read this image.")).toHaveCount(0);
+      await expect(page.getByText("Only images can be sent.")).toHaveCount(0);
     });
   });
 

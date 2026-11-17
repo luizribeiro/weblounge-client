@@ -1,6 +1,7 @@
 import type { CommandSpec } from "../../engine/protocol";
 import { t } from "../../strings";
 import type { UploadFailure } from "../uploads/types";
+import { type ImageRejection, maxImageBytes } from "./attachable-image";
 import { commandForInput } from "./command-input";
 
 export type AttachmentFailure =
@@ -51,14 +52,27 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
+export function imageRejectionMessage(reason: ImageRejection): string {
+  switch (reason) {
+    case "not_image":
+      return t("upload.rejected.not_image");
+    case "too_large":
+      return tooLargeMessage(maxImageBytes);
+    case "unreadable":
+      return t("upload.failed.undecodable");
+  }
+}
+
+function tooLargeMessage(limit: number | undefined): string {
+  return limit === undefined
+    ? t("upload.failed.too_large")
+    : t("upload.failed.too_large_limit", { limit: formatBytes(limit) });
+}
+
 export function failureMessage(failure: AttachmentFailure): string {
   switch (failure.kind) {
     case "too_large":
-      return failure.limit === undefined
-        ? t("upload.failed.too_large")
-        : t("upload.failed.too_large_limit", {
-            limit: formatBytes(failure.limit),
-          });
+      return tooLargeMessage(failure.limit);
     case "failed":
       return failure.detail === undefined
         ? t("upload.failed.generic")

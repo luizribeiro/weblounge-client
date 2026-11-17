@@ -3,11 +3,13 @@ import { Portal } from "solid-js/web";
 import { t } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import styles from "../conversation/SimpleComposer.module.css";
+import type { ImageRejection } from "./attachable-image";
+import { imageRejectionMessage } from "./attachment";
 import type { AttachmentController } from "./attachment-controller";
 import { InlineConfirmation } from "./InlineConfirmation";
 
-/** Why an image was not attached: no file host, or a picked file that is not an image. */
-export type UploadNote = "unavailable" | "unreadable";
+/** Why an image was not attached: no file host, or a file the attach check refused. */
+export type UploadNote = "unavailable" | ImageRejection;
 
 interface UploadOverlaysProps {
   readonly attachments: AttachmentController;
@@ -59,10 +61,7 @@ export function UploadOverlays(props: UploadOverlaysProps) {
 }
 
 function noteText(note: UploadNote): string {
-  switch (note) {
-    case "unavailable":
-      return t("upload.unavailable");
-    case "unreadable":
-      return t("upload.failed.undecodable");
-  }
+  return note === "unavailable"
+    ? t("upload.unavailable")
+    : imageRejectionMessage(note);
 }

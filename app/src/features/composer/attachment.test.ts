@@ -5,6 +5,7 @@ import {
   captionTakesImage,
   failureMessage,
   formatBytes,
+  imageRejectionMessage,
   messageWithImage,
 } from "./attachment";
 
@@ -73,5 +74,15 @@ describe("labels and failures", () => {
     expect(failureMessage({ kind: "command" })).toBe(
       "Send commands without an image.",
     );
+  });
+});
+
+describe("imageRejectionMessage", () => {
+  it("explains each reason the attach check refuses a file", () => {
+    expect(imageRejectionMessage("not_image")).toBe("Only images can be sent.");
+    expect(imageRejectionMessage("too_large")).toBe(
+      "Image is too large (max 50.0 MB).",
+    );
+    expect(imageRejectionMessage("unreadable")).toBe("Can’t read this image.");
   });
 });

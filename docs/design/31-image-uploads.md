@@ -238,7 +238,7 @@ app.
   `attachFile`, which runs one new check, `attachableImage` (`features/composer/attachable-image.ts`,
   replacing the picker's `pickedImage`), and then the controller's `attach`, so the chip, U2 to U8
   and the replace question are the same. A file typed `image/*` passes, a file typed as anything else is
-  `not_image`, an untyped file is typed by its sniffed bytes or is `unreadable`, and a file over
+  `not_image`, an untyped file is typed by its sniffed bytes (no known signature is `not_image`, a failed read `unreadable`), and a file over
   `maxImageBytes` (50 MB, a client ceiling that keeps decoding and re-encoding in memory bounds;
   the file host's own limit still answers with `413` and the shrink retry) is `too_large`. This also refuses a pasted image over 50 MB, which
   used to fail only at upload; the chip's `too_large` text for a host's `413` is unchanged. Paste and
@@ -271,7 +271,7 @@ app.
   |---|---|
   | several files (v1 sends one image) | Drop one image at a time. |
   | `not_image` | Only images can be sent. |
-  | `too_large` | Image is too large (max 50 MB). |
+  | `too_large` | Image is too large (max 50.0 MB). |
   | `unreadable` | Can't read this image. |
   | no target | Open a channel or direct message first. |
   | `closed` (server buffer, kicked, unavailable) | You can't send messages here. |

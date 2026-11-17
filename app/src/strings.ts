@@ -112,6 +112,7 @@ export const messages = {
   "upload.failed.detail": "Upload failed: {detail}",
   "upload.failed.command": "Send commands without an image.",
   "upload.failed.send": "Couldn’t send. Try again.",
+  "upload.rejected.not_image": "Only images can be sent.",
   "typing.and": "and",
   "typing.are_typing": "are typing…",
   "typing.is_typing": "is typing…",

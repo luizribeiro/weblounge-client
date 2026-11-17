@@ -25,6 +25,7 @@ import { t, translate } from "../../strings";
 import styles from "../conversation/SimpleComposer.module.css";
 import type { NetworkUploads } from "../uploads/types";
 import { AttachmentChip } from "./AttachmentChip";
+import { attachableImage, type ImageRejection } from "./attachable-image";
 import { createAttachmentController } from "./attachment-controller";
 import { imageFromClipboard } from "./clipboard-image";
 import { bareCommandForInput, commandForInput } from "./command-input";
@@ -36,7 +37,6 @@ import {
 } from "./geometry";
 import { ImagePicker } from "./ImagePicker";
 import { InlineConfirmation } from "./InlineConfirmation";
-import { pickedImage } from "./picked-image";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
@@ -309,19 +309,26 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (!image.hasText) event.preventDefault();
-    attachImage(image.file);
+    void attachNoting(image.file);
   };
   const attachImage = (file: File) => {
     setUploadNote(undefined);
     attachments.attach(file);
   };
-  const attachPicked = async (file: File) => {
+  /** The one attach path for every file; it answers why a file was refused. */
+  const attachFile = async (
+    file: File,
+  ): Promise<ImageRejection | undefined> => {
     const buffer = currentBuffer;
-    const image = await pickedImage(file);
-    if (buffer !== currentBuffer) return;
-    if (image === undefined) setUploadNote("unreadable");
-    else attachImage(image);
-    focusAfterOverlay();
+    const checked = await attachableImage(file);
+    if (buffer !== currentBuffer) return undefined;
+    if (checked.kind === "rejected") return checked.reason;
+    attachImage(checked.file);
+    return undefined;
+  };
+  const attachNoting = async (file: File) => {
+    const rejection = await attachFile(file);
+    if (rejection !== undefined) setUploadNote(rejection);
   };
   // Safari opens a file picker only inside the user's gesture, so this runs synchronously from
   // Enter or Send, before anything reaches the engine.
@@ -533,7 +540,7 @@ export function Composer(props: ComposerProps) {
       )}
       <TypingIndicator typers={props.typers ?? []} />
       <ImagePicker
-        onPick={(file) => void attachPicked(file)}
+        onPick={(file) => void attachNoting(file).then(focusAfterOverlay)}
         inputRef={(input) => {
           imagePicker = input;
         }}
