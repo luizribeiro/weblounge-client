@@ -24,8 +24,28 @@ The message list owns cross-row selection, so a drag can include adjacent conten
 spill into the surrounding header, composer, or sidebar.
 
 The message list handles `copy` when a non-collapsed selection intersects its registered rows. It
-maps the selection endpoints to stable row IDs, takes the inclusive rows from message data, and
-writes `text/plain`; it never serializes `innerText` or cloned DOM. The pure model is:
+maps the selection's start and end to rows. An endpoint row the selection reaches without selecting
+any of its text does not count: WebKit's triple-click ends at offset 0 of the next row, and that row
+must not be copied.
+
+- **One row** (Luiz, 2026-11-17): a selection inside one row's `Selectable` text copies exactly
+  the selected text as `text/plain`, with its newlines kept and no `[time] <nick>` prefix. The list
+  writes the selection's text clamped to that row's `Selectable` content (a `Range` over the
+  `white-space: pre-wrap` text, so newlines survive in every engine) rather than leaving native
+  copy, which would add `text/html`. A double-clicked word copies that word; a triple-click, or any
+  selection of a whole row's text, copies the bare text. This applies to any row kind with
+  `Selectable` text (messages, actions, system lines).
+- **Several rows**: the list takes the rows between the remaining endpoints, inclusive, from
+  message data and writes one log line per row; it never serializes `innerText` or cloned DOM for
+  this case. While a selection spans two
+  or more rows, those rows' message time and nick paint with the `::selection` tokens, so the
+  attribution that will be copied looks selected. The time and nick stay outside `Selectable`
+  (they are chrome and keep `user-select: none`); the list derives the spanned row range on
+  `selectionchange` and each rendered row in that range gets `data-copy-selected`, so a row
+  virtualised in during the selection paints the same way. Action rows have no time or nick
+  column (their `* nick` is already `Selectable`), and dividers have nothing to paint.
+
+The pure model is:
 
 ```ts
 export type CopyRow =
@@ -37,10 +57,21 @@ serializeCopyRows(rows: readonly CopyRow[]): string;
 ```
 
 Messages, including mentions, serialize as `[22:01] <luiz> text`; actions as
-`* tomo is grabbing coffee`; dividers as `--- Today ---`. The initial debug view derives
+`* tomo is grabbing coffee`; dividers as `--- Today ---`. Newlines inside a message flatten to
+spaces only in these log lines. The initial debug view derives
 message rows from `MessageProjection`; final message rows will carry their already-derived display
 kind from the engine. An empty range leaves native copy alone. Copying an input always remains
 native.
+
+Desktop message and action rows also offer **Copy text** (Luiz, 2026-11-17) in the row's More (⋯)
+menu and the app's row right-click menu (a `chrome` context surface, see below), for every
+message, own or not. It writes the whole message text, plain, with
+newlines kept, the same text the phone sheet's Copy text writes. Delete message stays below it, for
+own messages only. Links inside message text set `draggable={false}`, so a drag that starts on a
+link selects text in WebKit (Safari, the Mac app) instead of dragging the link.
+
+The phone is unchanged by this decision: long press opens the sheet and its Copy text copies the
+whole message; there is no in-place selection, Select text mode or Copy link there.
 
 ## Context surfaces
 
@@ -63,7 +94,7 @@ subsystem 08.
 | Selection and I-beam | App root uses `user-select: none` and `cursor: default`; `Selectable` and editable controls opt into text selection/cursor. |
 | Tap highlight and touch callout | Clear `-webkit-tap-highlight-color` and disable callout on chrome; restore callout for selectable/editable content. |
 | Mouse focus flash | Suppress ordinary outlines and restore the token-driven ring only with `:focus-visible`. |
-| Image/link drag | Chrome assets set `draggable={false}` and base CSS disables WebKit user drag; a root `dragstart` fallback rejects chrome drags. |
+| Image/link drag | Chrome assets and links inside message text set `draggable={false}` and base CSS disables WebKit user drag; a root `dragstart` fallback rejects chrome drags. |
 | Rubber-band and pull-to-refresh | `html`, `body`, root, and app shell fill the viewport, do not page-scroll, and use `overscroll-behavior: none`; lists own scrolling. |
 | Mobile input zoom | Editable controls compute to at least `16px` under root `data-input="touch"`. |
 | Font layout shift | Task 4 self-hosts and preloads subsets with metric-matched fallbacks or `size-adjust`; the foundation uses the system stack and the audit observes font readiness. |
@@ -211,8 +242,9 @@ It asserts:
 - every audited descendant outside `Selectable` or an editable control computes to
   `user-select: none`, and chrome never computes to a text cursor;
 - chrome right-click is prevented while selectable text right-click is not;
-- a pointer selection across two rows stays in the list and its `copy` payload is IRC-style text;
-- chrome images and links are not draggable;
+- a pointer selection across two rows stays in the list and its `copy` payload is IRC-style text,
+  with those rows' time and nick painted as selected;
+- chrome images and links, and links inside message text, are not draggable;
 - cumulative layout shift stays at or below `0.01` through `document.fonts.ready`;
 - an instrumented five-second idle window executes no app `requestAnimationFrame`, timeout, or
   interval callbacks after startup settles, and no interval is registered unless its call site is
@@ -240,10 +272,13 @@ selection.
 ## Testing
 
 Component tests cover `Selectable`, `Line`, context resolution, and handler cleanup. Pure unit
-tests cover messages, actions, dividers, mentions, empty input, and newline normalization in the
-serializer. The debug message list wires real row data into the copy handler. Playwright covers
+tests cover messages, actions, dividers, mentions, empty input, and newline flattening in the
+multi-row serializer, and the copy handler's endpoint trimming and one-row text. The debug message list wires real row data into the copy handler. Playwright covers
 computed styles, pointer selection/copy, context menus, CLS, idle, hidden catch-up, and the built
-app. Every later user-visible UI task keeps this audit green.
+app. `message-copy.spec.ts` drives copying in Chromium and WebKit desktop: a partial selection
+in one message, a double-clicked word, a selection across two messages with their time and nick painted, a WebKit triple-click, a
+drag that starts on a link, and Copy text on own, peer and multi-line messages. Every later
+user-visible UI task keeps this audit green.
 
 ## Later
 
@@ -256,6 +291,4 @@ app. Every later user-visible UI task keeps this audit green.
 
 ## Questions for Luiz
 
-1. Should copying one partially selected message serialize the whole IRC row, as this foundation
-   does, or preserve only the selected substring?
-2. When final message kinds land, should notices use `-nick- text` or the ordinary `<nick>` form?
+1. When final message kinds land, should notices use `-nick- text` or the ordinary `<nick>` form?
