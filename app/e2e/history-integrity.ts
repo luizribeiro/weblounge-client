@@ -57,7 +57,8 @@ export async function serverHistory(
 
 function parseServerMessage(line: string): ServerMessage {
   const [, prefix = "", body = ""] =
-    /^(?:@\S+ )?:(\S+) (?:PRIVMSG|NOTICE) \S+ :(.*)$/u.exec(line) ?? [];
+    /^(?:@\S+ )?:(\S+) (?:PRIVMSG|NOTICE) (?:[^\s:]\S* )?:(.*)$/u.exec(line) ??
+    [];
   return {
     msgid: messageId(line),
     author: prefix.split("!")[0] ?? "",
@@ -101,7 +102,9 @@ export function transcriptMismatch(
       message.timeMs < (shownMessages[index - 1]?.timeMs ?? 0),
   );
   return {
-    missing: expected.filter((msgid) => !shownSet.has(msgid)),
+    missing: server.flatMap((message) =>
+      shownSet.has(message.msgid) ? [] : [`${message.msgid} "${message.text}"`],
+    ),
     unexpected: [
       ...shown.filter((msgid) => !expectedSet.has(msgid)),
       ...tombstones.filter((msgid) => expectedSet.has(msgid)),
@@ -147,13 +150,17 @@ export async function expectTranscriptMatchesServer(
   truth: IrcClient,
   target: string,
 ): Promise<void> {
-  const server = await serverHistory(truth, target);
-  expect(server.length, `server history of ${target}`).toBeGreaterThan(0);
+  expect(
+    (await serverHistory(truth, target)).length,
+    `server history of ${target}`,
+  ).toBeGreaterThan(0);
   await expect
     .poll(
       async () => {
         await loadAllOlderHistory(page);
-        return transcriptMismatch(await readTranscript(page), server);
+        const rows = await readTranscript(page);
+        // Read after the rows: a line the app confirms meanwhile is then already on the server.
+        return transcriptMismatch(rows, await serverHistory(truth, target));
       },
       { message: `transcript of ${target} matches server history` },
     )
@@ -267,7 +274,39 @@ export async function expectChatRowMatchesServer(
   target: string,
   ownNick: string,
 ): Promise<void> {
+  const row = chatRow(page, target);
+  await expect
+    .poll(() => chatRowMismatch(page, row, truth, target, ownNick), {
+      message: `chat-list row of ${target} matches the server`,
+    })
+    .toBe("match");
+}
+
+async function chatRowMismatch(
+  page: Page,
+  row: Locator,
+  truth: IrcClient,
+  target: string,
+  ownNick: string,
+): Promise<string> {
   const server = await serverHistory(truth, target);
+  const expected = await expectedBadge(server, truth, target, ownNick);
+  const badge = row.locator("[data-badge-kind]");
+  const shown = (await badge.count()) === 0 ? "" : await badge.innerText();
+  if (shown !== expected) return `badge shows "${shown}", server "${expected}"`;
+  if (!isPhoneViewport(page) || server.length === 0) return "match";
+  const preview = await row.innerText();
+  return newestTexts(server).some((text) => preview.includes(text))
+    ? "match"
+    : `preview "${preview}" is not the newest server line`;
+}
+
+async function expectedBadge(
+  server: readonly ServerMessage[],
+  truth: IrcClient,
+  target: string,
+  ownNick: string,
+): Promise<string> {
   const marker = await truth.readMarker(target);
   const markerMs = marker === undefined ? undefined : Date.parse(marker);
   const unread = server.filter(
@@ -275,14 +314,16 @@ export async function expectChatRowMatchesServer(
       message.author.toLowerCase() !== ownNick.toLowerCase() &&
       (markerMs === undefined || message.timeMs > markerMs),
   ).length;
-  const row = chatRow(page, target);
-  const badge = row.locator("[data-badge-kind]");
-  if (unread === 0) await expect(badge).toHaveCount(0);
-  else
-    await expect(badge).toHaveText(unread > badgeCap ? "99+" : String(unread));
-  const newest = server.at(-1);
-  if (isPhoneViewport(page) && newest !== undefined)
-    await expect(row).toContainText(newest.text);
+  if (unread === 0) return "";
+  return unread > badgeCap ? "99+" : String(unread);
+}
+
+/** Lines sharing the newest millisecond have no defined order, so any of them may be the preview. */
+function newestTexts(server: readonly ServerMessage[]): string[] {
+  const newestMs = Math.max(...server.map((message) => message.timeMs));
+  return server
+    .filter((message) => message.timeMs === newestMs)
+    .map((message) => message.text);
 }
 
 export function chatRow(page: Page, title: string): Locator {
