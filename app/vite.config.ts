@@ -14,6 +14,7 @@ import { type Plugin, build as viteBuild } from "vite";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
 import { E2E_CONTENT_SECURITY_POLICY } from "./csp.ts";
+import { buildVersionFromEnv } from "./src/build-version-input.ts";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 import { messages } from "./src/strings.ts";
 
@@ -68,6 +69,7 @@ export default defineConfig(({ mode }) => {
       __BUILD_ID__: JSON.stringify(buildId(wasmPath)),
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+      __BUILD_VERSION__: JSON.stringify(buildVersionFromEnv(mode, process.env)),
       __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __HISTORY_WIRE_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __STORAGE_WRITE_TEST_ENABLED__: JSON.stringify(performanceHarness),

@@ -3,6 +3,7 @@
 declare const __BUILD_ID__: string;
 declare const __BUILD_SHA__: string;
 declare const __BUILD_TIMESTAMP__: string;
+declare const __BUILD_VERSION__: string | null;
 declare const __KEYBOARD_MOTION_TEST_ENABLED__: boolean;
 declare const __HISTORY_WIRE_TEST_ENABLED__: boolean;
 declare const __STORAGE_WRITE_TEST_ENABLED__: boolean;

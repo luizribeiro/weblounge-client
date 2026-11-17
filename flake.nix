@@ -369,6 +369,8 @@
           installPhase = ''
             cp -r app/dist $out
           '';
+          # A flake input has no tags, so the server passes the version describe-version.mjs prints (design 37).
+          passthru.withVersion = version: app.overrideAttrs { WEBLOUNGE_VERSION = version; };
         };
         checkApp = app.overrideAttrs {
           # Revision metadata does not change the behavior exercised by CI.
