@@ -141,8 +141,17 @@ papo batches that into `MONITOR +` lines within the server's limits and restores
 reconnect; closing a DM removes its peer. This spends one command after the app is interactive so a
 peer who shares no channel shows its presence without opening its DM. A pending direct handle stays
 pending when its peer comes online and resolves when it is used, so the batch costs no per-peer
-`WHO`. An always-on peer known only through `MONITOR` still reads online while away, because nothing
-reports its initial away state (papo decision 14).
+`WHO`.
+
+A DM peer's presence has three states: unknown (no dot), online and away; a peer the network
+reports offline, or no longer vouches for, is unknown too. Being visible (a shared channel or a
+`MONITOR` online reply) is not enough to show a dot, because with always-on and auto-away a
+detached peer is still connected (Luiz, feedback #20). The peer becomes online or away only once
+its away state is reported: a channel `WHO` reply, `RPL_AWAY` or `away-notify`, a `WHOIS`, or a
+line from the peer this connection (sending implies an attached client, so not away). A reconnect
+resets every peer to unknown. A peer known only through `MONITOR` therefore stays unknown until it
+speaks or changes its away state, because nothing reports its initial away state (papo decision
+14). The member list keeps grouping members whose away state is unknown under Online.
 
 ## Boundaries
 
