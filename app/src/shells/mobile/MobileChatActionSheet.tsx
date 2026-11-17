@@ -1,8 +1,8 @@
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
+import { MobileSheet } from "../../ui/MobileSheet";
 import styles from "./MobileChatActionSheet.module.css";
 import { MobileChatRow } from "./MobileChatRow";
-import { MobileSheet } from "./MobileSheet";
 
 interface MobileChatActionSheetProps {
   readonly buffer: BufferProjection;

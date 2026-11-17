@@ -1,5 +1,5 @@
 import { type JSX, onCleanup, onMount } from "solid-js";
-import { trapTab } from "../../ui/focus-trap";
+import { trapTab } from "./focus-trap";
 import styles from "./MobileSheet.module.css";
 
 interface MobileSheetProps {

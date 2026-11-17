@@ -6,8 +6,8 @@ import { ReactionPickerPanel } from "../../features/conversation/ReactionPickerP
 import { ownReactions } from "../../features/conversation/reaction-target";
 import { t } from "../../strings";
 import { AddReactionIcon } from "../../ui/icons/AddReactionIcon";
+import { MobileSheet } from "../../ui/MobileSheet";
 import styles from "./MobileMessageActionSheet.module.css";
-import { MobileSheet } from "./MobileSheet";
 import type { MessageSheetAction } from "./message-sheet-actions";
 
 interface MobileMessageActionSheetProps {

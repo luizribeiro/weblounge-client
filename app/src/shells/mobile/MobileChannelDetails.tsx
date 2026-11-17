@@ -1,6 +1,6 @@
 import { t } from "../../strings";
+import { MobileSheet } from "../../ui/MobileSheet";
 import styles from "./MobileChannelDetails.module.css";
-import { MobileSheet } from "./MobileSheet";
 
 interface MobileChannelDetailsProps {
   readonly title: string;
