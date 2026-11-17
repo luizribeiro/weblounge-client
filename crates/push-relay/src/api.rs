@@ -30,6 +30,7 @@ const MAX_HOME_BODY: usize = 2_800;
 const MAX_TTL: u32 = 28 * 24 * 60 * 60;
 const MAX_DEAD_ENDPOINT_ACKS: usize = 5;
 const LEASE_TTL: Duration = Duration::from_secs(75);
+const PROBE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const MIN_APNS_TOKEN_LENGTH: usize = 64;
 const MAX_APNS_TOKEN_LENGTH: usize = 200;
 
@@ -706,6 +707,19 @@ async fn deliver_push(
     }
 }
 
+async fn retire_expired_probes(state: &AppState) {
+    match state.database.retire_expired_probes().await {
+        Ok(expired) => log_retired_routes(&expired, "probe-expired"),
+        Err(error) => error.warn_if_internal(),
+    }
+}
+
+fn log_retired_routes(routes: &[String], reason: &str) {
+    for route in routes {
+        tracing::info!(route = %id_prefix(route), reason, "route retired");
+    }
+}
+
 async fn deliver_held_pushes(state: AppState) {
     loop {
         let notified = state.delivery_wakeup.notified();
@@ -763,19 +777,22 @@ async fn deliver_held_pushes(state: AppState) {
                 continue;
             }
         }
-        match state.database.next_held_deadline(now).await {
+        retire_expired_probes(&state).await;
+        let wait = match state.database.next_held_deadline(now).await {
             Ok(Some(deadline)) => {
-                let wait = u64::try_from(deadline.saturating_sub(now)).unwrap_or_default();
-                tokio::select! {
-                    () = tokio::time::sleep(Duration::from_millis(wait)) => {}
-                    () = notified => {}
-                }
+                let until_deadline =
+                    u64::try_from(deadline.saturating_sub(now)).unwrap_or_default();
+                Duration::from_millis(until_deadline).min(PROBE_SWEEP_INTERVAL)
             }
-            Ok(None) => notified.await,
+            Ok(None) => PROBE_SWEEP_INTERVAL,
             Err(error) => {
                 error.warn_if_internal();
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                Duration::from_secs(1)
             }
+        };
+        tokio::select! {
+            () = tokio::time::sleep(wait) => {}
+            () = notified => {}
         }
     }
 }

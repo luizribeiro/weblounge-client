@@ -460,6 +460,19 @@ impl Database {
         .await?
     }
 
+    pub(crate) async fn retire_expired_probes(&self) -> Result<Vec<String>> {
+        let path = Arc::clone(&self.path);
+        self.spawn(move || -> Result<Vec<String>> {
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let expired = expire_probing_routes(&transaction, unix_seconds())?;
+            transaction.commit()?;
+            Ok(expired)
+        })
+        .await?
+    }
+
     pub(crate) async fn mark_device_dead(&self, device_id: String) -> Result<()> {
         let path = Arc::clone(&self.path);
         self.spawn(move || -> Result<()> {
@@ -1128,7 +1141,7 @@ fn expire_probing_route(
     Ok(expired)
 }
 
-fn expire_probing_routes(transaction: &rusqlite::Transaction<'_>, now: i64) -> Result<()> {
+fn expire_probing_routes(transaction: &rusqlite::Transaction<'_>, now: i64) -> Result<Vec<String>> {
     let routes = {
         let mut statement = transaction.prepare(
             "SELECT id FROM routes WHERE state = 'probing' AND created_at <= ?1 ORDER BY id",
@@ -1139,10 +1152,10 @@ fn expire_probing_routes(transaction: &rusqlite::Transaction<'_>, now: i64) -> R
             })?
             .collect::<rusqlite::Result<Vec<String>>>()?
     };
-    for route in routes {
-        retire_route(transaction, &route)?;
+    for route in &routes {
+        retire_route(transaction, route)?;
     }
-    Ok(())
+    Ok(routes)
 }
 
 fn gc_device_if_empty(transaction: &rusqlite::Transaction<'_>, device_id: &str) -> Result<()> {

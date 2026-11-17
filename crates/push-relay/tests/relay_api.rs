@@ -23,6 +23,7 @@ use p256::{
     elliptic_curve::sec1::ToEncodedPoint as _,
 };
 use rand_core::OsRng;
+use rusqlite::OptionalExtension as _;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -315,6 +316,55 @@ impl Harness {
         )
         .await;
         assert_eq!(response.0, StatusCode::NO_CONTENT);
+    }
+
+    fn age_route(&self, route: &Value, age: Duration) {
+        rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database")
+            .execute(
+                "UPDATE routes SET created_at = unixepoch() - ?2 WHERE id = ?1",
+                rusqlite::params![
+                    route["id"].as_str().expect("route id"),
+                    i64::try_from(age.as_secs()).expect("route age"),
+                ],
+            )
+            .expect("age route");
+    }
+
+    fn route_state(&self, route: &Value) -> Option<String> {
+        rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database")
+            .query_row(
+                "SELECT state FROM routes WHERE id = ?1",
+                [route["id"].as_str().expect("route id")],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("route state")
+    }
+
+    async fn dead_endpoints(&self, device: &Value, home: &SecretKey) -> Value {
+        let response = call_json(
+            &self.app,
+            Method::GET,
+            &dead_endpoints_path(device, home),
+            device["secret"].as_str(),
+            Value::Null,
+            &[],
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::OK);
+        response.1["endpoints"].clone()
+    }
+
+    async fn wait_for_dead_endpoints(&self, device: &Value, home: &SecretKey, expected: &Value) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while self.dead_endpoints(device, home).await != *expected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("dead endpoints");
     }
 
     fn seed_active_routes(&self, routes: &[&Value]) {
@@ -1209,13 +1259,7 @@ async fn target_upsert_keeps_routes_live_and_expired_probes_turn_into_dead_endpo
         StatusCode::CREATED
     );
 
-    rusqlite::Connection::open(harness.temporary.path().join("relay.sqlite3"))
-        .expect("relay database")
-        .execute(
-            "UPDATE routes SET created_at = unixepoch() - 301 WHERE id = ?1",
-            [route["id"].as_str().expect("route id")],
-        )
-        .expect("age probing route");
+    harness.age_route(&route, Duration::from_mins(6));
     assert_eq!(
         harness.push(&route, &home, b"expired probe").await,
         StatusCode::NOT_FOUND
@@ -1232,6 +1276,47 @@ async fn target_upsert_keeps_routes_live_and_expired_probes_turn_into_dead_endpo
     assert_eq!(
         dead.1["endpoints"],
         json!([{ "id": route["id"], "endpoint": route["endpoint"] }])
+    );
+}
+
+#[tokio::test]
+async fn delivery_loop_retires_expired_probes_and_keeps_fresh_probes_and_active_routes() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let stalled_home = SecretKey::random(&mut OsRng);
+    let fresh_home = SecretKey::random(&mut OsRng);
+    let active_home = SecretKey::random(&mut OsRng);
+    let stalled = harness.create_route(&device, &stalled_home).await;
+    let fresh = harness.create_route(&device, &fresh_home).await;
+    let active = harness.create_route(&device, &active_home).await;
+    harness.activate(&device, &active).await;
+    harness.age_route(&stalled, Duration::from_mins(6));
+    harness.age_route(&fresh, Duration::from_mins(1));
+    harness.age_route(&active, Duration::from_hours(25));
+
+    harness.renew_lease(&device, "sweep-wakeup-tab").await;
+
+    harness
+        .wait_for_dead_endpoints(
+            &device,
+            &stalled_home,
+            &json!([{ "id": stalled["id"], "endpoint": stalled["endpoint"] }]),
+        )
+        .await;
+    assert_eq!(harness.route_state(&stalled), None);
+    assert_eq!(harness.route_state(&fresh).as_deref(), Some("probing"));
+    assert_eq!(harness.route_state(&active).as_deref(), Some("active"));
+    assert_eq!(
+        harness.dead_endpoints(&device, &fresh_home).await,
+        json!([])
+    );
+    assert_eq!(
+        harness.dead_endpoints(&device, &active_home).await,
+        json!([])
+    );
+    assert_eq!(
+        harness.push(&stalled, &stalled_home, b"after sweep").await,
+        StatusCode::NOT_FOUND
     );
 }
 
