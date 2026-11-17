@@ -364,11 +364,18 @@ canvas shows it unread. It uses its msgid, or a `local:` id. System lines are ne
 
 `day` follows `primary_ms`.
 
-**Topic card on join only.** A channel buffer holds `topic_card: Option<OrderKey>`. An own
-`Joined` sets it only when the join creates the buffer or ends a `Kicked` status.
+**Topic card on join only.** Luiz decided on 2026-11-17: the card appears only right after the
+user joins the channel in this client, from `/join`, a join action or accepting an invite (all of
+which send `/join`). The network model holds the set of channels this client sent a JOIN for
+(`request_join`, folded by casemapping); a failed JOIN forgets its entry and a disconnect clears
+the set. A channel buffer holds `topic_card: Option<OrderKey>`, which an own `Joined` sets only
+when its channel is in that set; the entry is consumed then.
 
-- A reconnect rejoin finds the buffer already `Joined`, since a disconnect is not a departure.
-  Buffers restored from the chat-list snapshot also count as existing. Neither gets a card.
+- Every JOIN this client did not send gets no card: a reconnect rejoin, a bouncer replaying its
+  joined channels to a fresh device or browser, autojoin on connect, and buffers restored from the
+  chat-list snapshot or reloaded from history. `/cycle` sends its JOIN directly and gets none.
+- So a topic-change line already on screen never has a card next to it unless the user has just
+  joined.
 - On `ChannelSynced`, a pending card becomes a `TopicCard` record when `Channel::topic()` is
   non-empty, with `topic_set_by` and `topic_set_at`. The field then clears.
 - `/topic` without text inserts a card at once, replacing `append_notice(NoticeKind::Topic)`
@@ -521,7 +528,8 @@ Rows wrap and never have a fixed height.
 - Day breaks with a fixed-offset calendar.
 - One QUIT on #a and #b gives a row in both; one NICK fans out to channels and the DM.
 - Budgets: a join flood never evicts chat.
-- Topic card: first join, rejoin after kick, reconnect, snapshot restore, `/topic`.
+- Topic card: first join, rejoin after kick, a JOIN this client did not send, a forgotten
+  request, reconnect, snapshot restore, `/topic`.
 - Gap: each trigger, the lagged-then-reconnect merge, clearing, and a filled reconnect giving none.
 - Tombstone: live, history, early redaction, another user's redaction, preview rewrite.
 
@@ -686,7 +694,7 @@ None.
   system budgets.
 - A day change breaks a run; there is no time window. Engine-local lines are anchored to server
   time.
-- Your own JOIN and PART make no line. The topic card is shown for a real join only.
+- Your own JOIN and PART make no line. The topic card is shown only for a JOIN this client sent.
 - Your own nick change appears in the server buffer and every shared channel.
 - The invite to you is the one system item with an unread stub.
 - Redaction removes the deleted text everywhere and leaves read facts unchanged.
