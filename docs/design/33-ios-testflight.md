@@ -272,14 +272,29 @@ result goes in this doc. Push alone justifies the app, so a 60 Hz result doesn't
   reviewers, because the app is unusable without signing in. Builds expire after 90 days.
 - **Versioning**: `CFBundleShortVersionString` is the crate version, shared with the desktop
   wrapper since it is one crate. `CFBundleVersion` must grow with every upload, so it is
-  `git rev-list --count HEAD` on `origin/main` (Tauri's `bundle.iOS.bundleVersion`; key name
-  **[unverified]**). Tag `ios-v<version>+<build>`.
-- **Release script**: `apps/tauri/release/release-ios.mjs` on the Mac, outside Nix like design
-  28. It reuses `plan.mjs`'s preconditions (clean worktree, `HEAD` on `origin/main`, tag free,
-  versions agree), runs `cargo tauri ios build --export-method app-store-connect` with
-  `TAURI_WEBLOUNGE_APP_IDENTIFIER` set (see the NSE), uploads the IPA with
-  `xcrun altool --upload-app` and the API key, then tags. The first build may simply go through
-  Xcode's Organizer.
+  `git rev-list --count HEAD` on `origin/main`, passed as Tauri's `bundle.iOS.bundleVersion`
+  (an inline `--config`). Tauri hands it to `agvtool new-version -all`, which writes it into both
+  the app's and the NSE's Info.plist; the script runs `agvtool new-marketing-version` with the
+  crate version first, because Tauri sets only the app's short version. Tag
+  `ios-v<version>+<build>`.
+- **Release script**: `nix develop -c node apps/tauri/release/release-ios.mjs [--dry-run]` on the
+  Mac (the dev shell for cargo and the Tauri CLI, but not the Nix sandbox, as in design 28). It
+  reuses `plan.mjs`'s preconditions (clean worktree, `HEAD` on `origin/main`, tag free, versions
+  agree) and adds an App Store short version (up to three integers), a build number above every
+  `ios-v*` tag's and the upload credentials
+  (`APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and
+  `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`). It runs
+  `cargo tauri ios build --export-method app-store-connect` with the release `--config` and
+  `TAURI_WEBLOUNGE_APP_IDENTIFIER` set (see the NSE), then puts back the `gen/apple` files the
+  build rewrote. It checks the IPA's signature, both bundles' identifiers, versions, App Group and
+  keychain group, and `aps-environment = production`, uploads it with
+  `xcrun altool --upload-app` and the API key, then pushes the tag. `--dry-run` reports what a
+  release would refuse instead of stopping, builds and checks the IPA, and uploads and tags
+  nothing.
+- **Privacy manifests**: the app's binary calls `stat`, `fstat` and `lstat` (Rust std and Tauri)
+  and the NSE's `fstat`, so both manifests declare file timestamps (`C617.1`). Neither uses
+  `mach_absolute_time`, `systemUptime` or the disk-space APIs (checked with `nm -u` on a release
+  build).
 
 ## Building on the Mac
 
@@ -288,12 +303,15 @@ iOS builds run from the dev shell, with three differences from the macOS build:
 - **Xcode's SDKs, not Nix's.** The dev shell points `DEVELOPER_DIR` and `SDKROOT` at Nix's macOS
   SDK and puts xcbuild's `xcrun` first on `PATH`; neither knows `iphoneos` or `iphonesimulator`,
   so `cc` build scripts (e.g. `objc2-exception-helper`) fail. iOS commands therefore run under
-  `env -u DEVELOPER_DIR -u SDKROOT PATH="/usr/bin:$PATH"`, which puts Apple's `xcrun` first. A
-  wrapper script for local builds and the release script will own this (neither exists yet).
-- **No `rustup`.** `cargo tauri ios init` runs `rustup target add` for every iOS target and fails
-  without it. The dev shell already provides `aarch64-apple-ios` and `aarch64-apple-ios-sim`, so
-  the planned wrapper puts a `rustup` stand-in on `PATH` that answers `target list --installed`
-  from the sysroot and accepts `target add`. `x86_64-apple-ios` (Intel simulators) isn't needed.
+  `env -u DEVELOPER_DIR -u SDKROOT -u CC -u CXX -u LD PATH="/usr/bin:$PATH"`, which puts Apple's
+  `xcrun` first. The release script applies this through `iosBuildEnv` in
+  `release/ios-plan.mjs`.
+- **No `rustup`.** `cargo tauri ios init` and Xcode's Rust build step (`cargo tauri ios
+  xcode-script`) ask `rustup target list --installed` and run `rustup target add` for a missing
+  target, so they fail without it. The dev shell already provides `aarch64-apple-ios` and
+  `aarch64-apple-ios-sim`, so `apps/tauri/scripts/ios-path/rustup`, first on `PATH`, answers from
+  the sysroot and accepts `target add` only for a target it already has. `x86_64-apple-ios`
+  (Intel simulators) isn't needed.
 - **Tools on `PATH`.** `tauri ios init` needs `xcodegen` and `cocoapods`, and installs missing ones
   through Homebrew or `sudo gem`; the darwin dev shell provides both. `libimobiledevice` is only
   needed to deploy to a device from the CLI, which Xcode does without it.
