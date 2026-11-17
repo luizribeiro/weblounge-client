@@ -12,18 +12,17 @@ describe("decodeSettings", () => {
   it("accepts every theme preference, density and switch the engine sends", () => {
     for (const theme of ["system", "lounge", "lounge-night"]) {
       for (const density of ["compact", "cozy", "comfortable"]) {
-        for (const tab of [true, false]) {
-          for (const push of [true, false]) {
-            const settings = {
-              app: {
-                theme,
-                message_density: density,
-                unread_tab_indicator: tab,
-                push_on_this_device: push,
-              },
-            };
-            expect(decodeSettings(settings)).toEqual(settings);
-          }
+        for (const [tab, push, page] of switchCombinations()) {
+          const settings = {
+            app: {
+              theme,
+              message_density: density,
+              unread_tab_indicator: tab,
+              push_on_this_device: push,
+              page_notifications: page,
+            },
+          };
+          expect(decodeSettings(settings)).toEqual(settings);
         }
       }
     }
@@ -41,6 +40,9 @@ describe("decodeSettings", () => {
     ).toBeUndefined();
     expect(
       decodeSettings({ app: { ...lounge, push_on_this_device: "yes" } }),
+    ).toBeUndefined();
+    expect(
+      decodeSettings({ app: { ...lounge, page_notifications: 1 } }),
     ).toBeUndefined();
     expect(
       decodeSettings({ app: { theme: "lounge", message_density: "cozy" } }),
@@ -68,3 +70,11 @@ describe("decodeAppearance", () => {
     expect(decodeAppearance("lounge")).toBeUndefined();
   });
 });
+
+function switchCombinations(): [boolean, boolean, boolean][] {
+  return [0, 1, 2, 3, 4, 5, 6, 7].map((bits) => [
+    (bits & 1) !== 0,
+    (bits & 2) !== 0,
+    (bits & 4) !== 0,
+  ]);
+}

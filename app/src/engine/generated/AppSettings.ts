@@ -21,4 +21,8 @@ unread_tab_indicator: boolean,
 /**
  * Whether this device registers for push once notifications are permitted.
  */
-push_on_this_device: boolean, };
+push_on_this_device: boolean,
+/**
+ * Whether the open page shows notifications where this device can't push.
+ */
+page_notifications: boolean, };

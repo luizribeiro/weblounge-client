@@ -2695,6 +2695,7 @@ async function installFakeEngine(
             message_density: "cozy",
             unread_tab_indicator: true,
             push_on_this_device: true,
+            page_notifications: true,
             ...(stored === null ? {} : JSON.parse(stored)),
           };
           if (request.type === "load_settings") {

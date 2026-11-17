@@ -73,6 +73,8 @@ pub struct AppSettings {
     pub unread_tab_indicator: bool,
     /// Whether this device registers for push once notifications are permitted.
     pub push_on_this_device: bool,
+    /// Whether the open page shows notifications where this device can't push.
+    pub page_notifications: bool,
 }
 
 impl Default for AppSettings {
@@ -82,6 +84,7 @@ impl Default for AppSettings {
             message_density: Density::default(),
             unread_tab_indicator: true,
             push_on_this_device: true,
+            page_notifications: true,
         }
     }
 }
@@ -98,6 +101,8 @@ pub enum AppSetting {
     UnreadTabIndicator(bool),
     /// Whether this device registers for push once notifications are permitted.
     PushOnThisDevice(bool),
+    /// Whether the open page shows notifications where this device can't push.
+    PageNotifications(bool),
 }
 
 /// One requested settings change, addressed by scope.
@@ -123,18 +128,20 @@ pub(crate) struct LoadedSettings {
 }
 
 impl AppSettings {
-    fn entries(self) -> [AppSetting; 4] {
+    fn entries(self) -> [AppSetting; 5] {
         let Self {
             theme,
             message_density,
             unread_tab_indicator,
             push_on_this_device,
+            page_notifications,
         } = self;
         [
             AppSetting::Theme(theme),
             AppSetting::MessageDensity(message_density),
             AppSetting::UnreadTabIndicator(unread_tab_indicator),
             AppSetting::PushOnThisDevice(push_on_this_device),
+            AppSetting::PageNotifications(page_notifications),
         ]
     }
 
@@ -144,6 +151,7 @@ impl AppSettings {
             AppSetting::MessageDensity(density) => self.message_density = density,
             AppSetting::UnreadTabIndicator(shown) => self.unread_tab_indicator = shown,
             AppSetting::PushOnThisDevice(on) => self.push_on_this_device = on,
+            AppSetting::PageNotifications(on) => self.page_notifications = on,
         }
     }
 }
@@ -155,6 +163,7 @@ impl AppSetting {
             Self::MessageDensity(_) => "message_density",
             Self::UnreadTabIndicator(_) => "unread_tab_indicator",
             Self::PushOnThisDevice(_) => "push_on_this_device",
+            Self::PageNotifications(_) => "page_notifications",
         }
     }
 
@@ -162,7 +171,9 @@ impl AppSetting {
         match self {
             Self::Theme(theme) => serde_json::to_value(theme),
             Self::MessageDensity(density) => serde_json::to_value(density),
-            Self::UnreadTabIndicator(on) | Self::PushOnThisDevice(on) => serde_json::to_value(on),
+            Self::UnreadTabIndicator(on)
+            | Self::PushOnThisDevice(on)
+            | Self::PageNotifications(on) => serde_json::to_value(on),
         }
     }
 
@@ -280,6 +291,7 @@ mod tests {
                 message_density: Density::Cozy,
                 unread_tab_indicator: true,
                 push_on_this_device: true,
+                page_notifications: true,
             })
         );
     }
@@ -306,6 +318,7 @@ mod tests {
             message_density: Density::Compact,
             unread_tab_indicator: true,
             push_on_this_device: true,
+            page_notifications: true,
         };
         assert_eq!(changed, Settings { app: expected });
         assert_eq!(load(&storage).await.expect("reload"), stored(expected));
@@ -324,7 +337,7 @@ mod tests {
         &'static str,
     );
 
-    const SWITCHES: [Switch; 2] = [
+    const SWITCHES: [Switch; 3] = [
         (
             AppSetting::UnreadTabIndicator,
             |app| app.unread_tab_indicator,
@@ -334,6 +347,11 @@ mod tests {
             AppSetting::PushOnThisDevice,
             |app| app.push_on_this_device,
             "push_on_this_device",
+        ),
+        (
+            AppSetting::PageNotifications,
+            |app| app.page_notifications,
+            "page_notifications",
         ),
     ];
 
@@ -375,6 +393,7 @@ mod tests {
                 message_density: Density::Compact,
                 unread_tab_indicator: true,
                 push_on_this_device: true,
+                page_notifications: true,
             })
         );
     }
@@ -414,6 +433,7 @@ mod tests {
                 message_density: Density::Comfortable,
                 unread_tab_indicator: true,
                 push_on_this_device: true,
+                page_notifications: true,
             }
         );
         assert_eq!(loaded.invalid_fields, vec!["theme".to_owned()]);

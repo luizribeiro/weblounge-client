@@ -31,19 +31,25 @@ export function decodeAppearance(value: unknown): Appearance | undefined {
   return { theme, message_density };
 }
 
+type Switches = Omit<AppSettings, keyof Appearance>;
+
 export function decodeSettings(value: unknown): Settings | undefined {
   if (!isRecord(value) || !isRecord(value.app)) return undefined;
   const appearance = decodeAppearance(value.app);
-  const { unread_tab_indicator, push_on_this_device } = value.app;
+  const switches = decodeSwitches(value.app);
+  if (appearance === undefined || switches === undefined) return undefined;
+  return { app: { ...appearance, ...switches } };
+}
+
+function decodeSwitches(app: Record<string, unknown>): Switches | undefined {
+  const { unread_tab_indicator, push_on_this_device, page_notifications } = app;
   if (
-    appearance === undefined ||
     typeof unread_tab_indicator !== "boolean" ||
-    typeof push_on_this_device !== "boolean"
+    typeof push_on_this_device !== "boolean" ||
+    typeof page_notifications !== "boolean"
   )
     return undefined;
-  return {
-    app: { ...appearance, unread_tab_indicator, push_on_this_device },
-  };
+  return { unread_tab_indicator, push_on_this_device, page_notifications };
 }
 
 function everyValueOf<T extends string>() {
