@@ -532,6 +532,32 @@ it("sends typed arguments instead of a stale command suggestion", async () => {
   await waitFor(() => expect(input).toHaveValue(""));
 });
 
+it("hides an argument suggestion once a sent command empties the composer", async () => {
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="#lounge"
+      completion={completion(
+        "/msg a",
+        [person("amartinez")],
+        5,
+        "cmd.msg.usage",
+        "",
+        " ",
+      )}
+      draftKey="test:sent-argument-completion"
+      onRequestCandidates={() => {}}
+      onSend={() => true}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/msg amartinez hello" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  await waitFor(() => expect(input).toHaveValue(""));
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+});
+
 it("submits when Enter would only add a completion separator", async () => {
   const onSend = vi.fn(() => true);
   render(() => (

@@ -65,6 +65,15 @@ interface ComposerProps {
   readonly uploads?: NetworkUploads | undefined;
 }
 
+interface ComposerInput {
+  readonly text: string;
+  readonly caret: number;
+}
+
+function caretAtEnd(text: string): ComposerInput {
+  return { text, caret: text.length };
+}
+
 interface TabCycle {
   readonly result: CompletionResult;
   readonly index: number;
@@ -83,9 +92,15 @@ export function Composer(props: ComposerProps) {
   const touchFocus = new TouchTapGesture();
   let currentBuffer = props.bufferId;
   let currentDraftKey = props.draftKey;
-  const [text, setText] = createSignal(readDraft(currentDraftKey));
+  const [input, setInput] = createSignal(
+    caretAtEnd(readDraft(currentDraftKey)),
+  );
+  const text = createMemo(() => input().text);
+  const completionCursor = () => input().caret;
+  const setText = (value: string) => setInput(caretAtEnd(value));
+  const setCaret = (caret: number) =>
+    setInput((current) => ({ ...current, caret }));
   const [selected, setSelected] = createSignal(-1);
-  const [completionCursor, setCompletionCursor] = createSignal(text().length);
   const [dismissedInput, setDismissedInput] = createSignal<string>();
   const [pendingConfirmation, setPendingConfirmation] =
     createSignal<CommandSpec>();
@@ -244,12 +259,16 @@ export function Composer(props: ComposerProps) {
     tabCycle = undefined;
   });
 
-  const update = (value: string, preserveTabCycle = false) => {
+  const update = (
+    value: string,
+    caret = value.length,
+    preserveTabCycle = false,
+  ) => {
     if (!preserveTabCycle) {
       pendingTabInput = undefined;
       tabCycle = undefined;
     }
-    setText(value);
+    setInput({ text: value, caret });
     setPendingConfirmation(undefined);
     setUploadNote(undefined);
     setSelected(-1);
@@ -360,7 +379,7 @@ export function Composer(props: ComposerProps) {
     setSelected(suggestions() === undefined ? -1 : 0);
   });
   const request = (value: string, cursor: number, explicit: boolean) => {
-    setCompletionCursor(cursor);
+    setCaret(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
   };
   const applyTabCycle = (index: number) => {
@@ -372,7 +391,7 @@ export function Composer(props: ComposerProps) {
     const next = `${result.input.slice(0, result.replace_start)}${replacement}${result.input.slice(result.replace_end)}`;
     const cursor = result.replace_start + replacement.length;
     tabCycle = { result, index, currentInput: next };
-    update(next, true);
+    update(next, cursor, true);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -393,7 +412,7 @@ export function Composer(props: ComposerProps) {
     if (!acceptSeparatorOnly && next.trimEnd() === currentText.trimEnd())
       return false;
     const cursor = result.replace_start + replacement.length;
-    update(next);
+    update(next, cursor);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -618,7 +637,7 @@ export function Composer(props: ComposerProps) {
               onCompositionEnd={(event) => {
                 composing = false;
                 const value = event.currentTarget.value;
-                update(value);
+                update(value, event.currentTarget.selectionStart);
                 request(value, event.currentTarget.selectionStart, false);
               }}
               onCompositionStart={() => {
@@ -628,7 +647,7 @@ export function Composer(props: ComposerProps) {
               }}
               onInput={(event) => {
                 const value = event.currentTarget.value;
-                update(value);
+                update(value, event.currentTarget.selectionStart);
                 if (!composing) {
                   request(value, event.currentTarget.selectionStart, false);
                 }
