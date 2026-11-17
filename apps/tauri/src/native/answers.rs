@@ -1,6 +1,6 @@
 //! The Swift side's raw answers, and how each becomes the bridge type the page receives.
 
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use weblounge_native_bridge::{
     ApnsEnvironment, ApnsToken, DeliveredNotification, PushTarget, PushedMessage,
@@ -65,15 +65,19 @@ pub struct Drained {
 impl Drained {
     /// The queue is already emptied, so a record that fails validation is dropped.
     pub fn into_messages(self) -> Vec<PushedMessage> {
-        self.messages
-            .into_iter()
-            .filter_map(|record| {
-                serde_json::from_value(record)
-                    .inspect_err(|error| eprintln!("dropped a pushed message: {error}"))
-                    .ok()
-            })
-            .collect()
+        valid_entries(self.messages, "pushed message")
     }
+}
+
+fn valid_entries<T: DeserializeOwned>(values: Vec<Value>, what: &str) -> Vec<T> {
+    values
+        .into_iter()
+        .filter_map(|value| {
+            serde_json::from_value(value)
+                .inspect_err(|error| eprintln!("dropped a {what}: {error}"))
+                .ok()
+        })
+        .collect()
 }
 
 #[cfg(test)]
