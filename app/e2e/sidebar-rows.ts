@@ -1,4 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
+import type { IrcClient } from "./irc-client";
 import { expect, type IrcTestAccount } from "./irc-fixture";
 
 export async function emulatePlatform(
@@ -77,6 +78,12 @@ export function rowName(
     `^${escapeRegex(title)}${badgePart}(?:${peerPresenceSuffix})?$`,
     "u",
   );
+}
+
+export function directRow(page: Page, peer: IrcClient): Locator {
+  return page.getByRole("button", {
+    name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
+  });
 }
 
 export function escapeRegex(value: string): string {

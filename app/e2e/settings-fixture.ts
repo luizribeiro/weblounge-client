@@ -48,3 +48,17 @@ export async function choosePhoneAppearance(
   await page.getByRole("button", { name: "Back to chats" }).tap();
   await expect(page.getByRole("region", { name: "Chats" })).toBeVisible();
 }
+
+export async function openNotificationSettings(page: Page): Promise<void> {
+  await page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const section = dialog.getByRole("button", { name: "Notifications" });
+  await section.click();
+  await expect(section).toHaveAttribute("aria-current", "page");
+  await expect(
+    dialog.getByRole("region", { name: "Notifications" }),
+  ).toBeVisible();
+}

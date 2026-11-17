@@ -3,7 +3,6 @@ import path from "node:path";
 import type { BrowserContext, Page } from "@playwright/test";
 import type { TabIcon } from "../src/features/unread/tab-indicator";
 import { tabIconHref } from "../src/platform/tab-indicator-writer";
-import type { IrcClient } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -15,8 +14,12 @@ import {
   setPageFocused,
   setPageHidden,
 } from "./page-lifecycle";
-import { settingsScreenshot } from "./settings-fixture";
+import {
+  openNotificationSettings,
+  settingsScreenshot,
+} from "./settings-fixture";
 import { expectSettled } from "./settled";
+import { directRow } from "./sidebar-rows";
 
 const screenshots = path.join(
   process.cwd(),
@@ -202,26 +205,6 @@ async function whileOffline(
     await dispatchPersistedPageShow(page);
   }
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-}
-
-async function openNotificationSettings(page: Page): Promise<void> {
-  await page
-    .getByRole("complementary", { name: "Channel list" })
-    .getByRole("button", { name: "Settings" })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Settings" });
-  const section = dialog.getByRole("button", { name: "Notifications" });
-  await section.click();
-  await expect(section).toHaveAttribute("aria-current", "page");
-  await expect(
-    dialog.getByRole("region", { name: "Notifications" }),
-  ).toBeVisible();
-}
-
-function directRow(page: Page, peer: IrcClient) {
-  return page.getByRole("button", {
-    name: new RegExp(`^${peer.nickname}(?:,|$)`, "u"),
-  });
 }
 
 async function expectTab(
