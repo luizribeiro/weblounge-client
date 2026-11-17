@@ -760,6 +760,220 @@ describe("push state synchronization", () => {
     );
   });
 
+  describe("registration trouble", () => {
+    const relayDown = { ok: false, error: { kind: "unavailable" } } as const;
+
+    async function failEnsure(current: ReturnType<typeof fixture>) {
+      current.relay.ensureRoute.mockResolvedValueOnce(relayDown);
+      const retry = current.retries.at(-1);
+      if (retry === undefined) requireRoute(current.engine);
+      else retry();
+      await current.synchronizer.settled();
+    }
+
+    const lastFailing = (current: ReturnType<typeof fixture>) =>
+      current.diagnostics.mock.lastCall?.[0]?.failing;
+
+    it("says nothing for two failed attempts and fails on the third, still retrying", async () => {
+      const current = fixture();
+
+      await failEnsure(current);
+      expect(lastFailing(current)).toBe(false);
+      await failEnsure(current);
+      expect(lastFailing(current)).toBe(false);
+      await failEnsure(current);
+
+      expect(current.diagnostics).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          state: "none",
+          lastError: "ensure: unavailable",
+          failing: true,
+        }),
+      );
+      expect(current.retries).toHaveLength(3);
+    });
+
+    it("clears once a later attempt gets through", async () => {
+      const current = fixture();
+      for (let attempt = 0; attempt < 3; attempt += 1)
+        await failEnsure(current);
+
+      current.retries.at(-1)?.();
+      await current.synchronizer.settled();
+
+      expect(current.diagnostics).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: "probing", failing: false }),
+      );
+      expect(current.engine.requests.at(-1)?.request.type).toBe("ensure_push");
+    });
+
+    it("fails at once on a request the relay rejects as invalid", async () => {
+      const current = fixture();
+      current.relay.ensureRoute.mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "invalid_request" },
+      });
+
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      expect(lastFailing(current)).toBe(true);
+      expect(current.retries).toHaveLength(0);
+    });
+
+    it("fails at once when the relay refuses to create the device", async () => {
+      const current = fixture();
+      current.relay.createDevice.mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "invalid_request" },
+      });
+
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      expect(current.diagnostics).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          lastError: "device: invalid_request",
+          failing: true,
+        }),
+      );
+    });
+
+    async function failActivation(
+      current: ReturnType<typeof fixture>,
+      kind: "invalid_request" | "unavailable" | "dead_route",
+    ) {
+      current.relay.activateRoute.mockResolvedValueOnce({
+        ok: false,
+        error: { kind },
+      });
+      current.engine.emit({
+        type: "push_state_changed",
+        network_id: 1,
+        state: { status: "registered", route_id: "route-1" },
+      });
+      await current.synchronizer.settled();
+    }
+
+    it("fails at once when activation is refused, and backs off when it is down", async () => {
+      const refused = fixture();
+      requireRoute(refused.engine);
+      await refused.synchronizer.settled();
+      await failActivation(refused, "invalid_request");
+      expect(lastFailing(refused)).toBe(true);
+
+      const down = fixture();
+      requireRoute(down.engine);
+      await down.synchronizer.settled();
+      await failActivation(down, "unavailable");
+      expect(lastFailing(down)).toBe(false);
+      down.relay.activateRoute.mockClear();
+      down.retries.at(-1)?.();
+      await down.synchronizer.settled();
+      expect(down.relay.activateRoute).toHaveBeenCalledWith(
+        expect.anything(),
+        "route-1",
+      );
+    });
+
+    it("rotates a dead route quietly instead of failing", async () => {
+      const current = fixture();
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      await failActivation(current, "dead_route");
+
+      expect(current.diagnostics).toHaveBeenCalledWith(
+        expect.objectContaining({ state: "dead", failing: false }),
+      );
+      expect(lastFailing(current)).toBe(false);
+    });
+
+    it("leaves an expired session to hosted sign-in", async () => {
+      const current = fixture();
+      current.relay.ensureRoute.mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "unauthorized" },
+      });
+
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      expect(lastFailing(current)).toBe(false);
+      expect(current.authorizationRequired).toHaveBeenCalledOnce();
+    });
+
+    it("fails at once when the home forbids push", async () => {
+      const current = fixture();
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      current.engine.emit({
+        type: "push_state_changed",
+        network_id: 1,
+        state: {
+          status: "failed",
+          route_id: "route-1",
+          reason: "web_push_forbidden",
+        },
+      });
+      await current.synchronizer.settled();
+
+      expect(lastFailing(current)).toBe(true);
+    });
+
+    it("counts a home's repeated failures like the relay's", async () => {
+      const current = fixture();
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        current.engine.emit({
+          type: "push_state_changed",
+          network_id: 1,
+          state: {
+            status: "failed",
+            route_id: "route-1",
+            reason: "connection",
+          },
+        });
+        await current.synchronizer.settled();
+      }
+
+      expect(current.diagnostics).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          lastError: "engine: connection",
+          failing: true,
+        }),
+      );
+    });
+
+    it("retries now on request and starts counting again", async () => {
+      const current = fixture();
+      for (let attempt = 0; attempt < 3; attempt += 1)
+        await failEnsure(current);
+      current.relay.ensureRoute.mockResolvedValueOnce(relayDown);
+
+      current.synchronizer.retryNow();
+      await current.synchronizer.settled();
+
+      expect(current.relay.ensureRoute).toHaveBeenCalledTimes(4);
+      expect(lastFailing(current)).toBe(false);
+    });
+
+    it("starts counting again when the home asks for a route", async () => {
+      const current = fixture();
+      for (let attempt = 0; attempt < 3; attempt += 1)
+        await failEnsure(current);
+      current.relay.ensureRoute.mockResolvedValueOnce(relayDown);
+
+      requireRoute(current.engine);
+      await current.synchronizer.settled();
+
+      expect(lastFailing(current)).toBe(false);
+    });
+  });
+
   it("cleans legacy records into the connect-time unregister list", async () => {
     const current = fixture();
     const { deviceId: _deviceId, ...legacy } = route({

@@ -61,12 +61,18 @@ export interface PushRouteDiagnostic {
   readonly state: PushRelayRouteState;
   readonly routeIdPrefix?: string;
   readonly lastError?: string;
+  /** Registration keeps failing, so the person should hear about it. */
+  readonly failing: boolean;
 }
 
 interface PushRouteContext {
   readonly networkLabel: string;
   readonly nickname: string;
 }
+
+// The first two backoff retries (relayRetryDelay's 0.5–1s and 1–2s) still read as starting up;
+// a third failed attempt in a row is when the person should be told.
+const failingAfterFailedAttempts = 3;
 
 interface ConnectRecovery {
   invalidRotations: number;
@@ -136,6 +142,7 @@ export class PushSynchronizer {
         limitRetries: 0,
       });
       this.#cancelRetry(message.network_id);
+      this.#retryAttempts.delete(message.network_id);
       this.#enqueue(() =>
         this.#withHomeLock(message.vapid, () =>
           this.#ensureHome(message.network_id, false),
@@ -206,6 +213,15 @@ export class PushSynchronizer {
       await this.#reregisterFlaggedRoutes();
     });
     await this.settled();
+  }
+
+  /** Tries every home again now instead of waiting for its backoff. */
+  retryNow(): void {
+    for (const networkId of this.#homes.keys()) {
+      this.#cancelRetry(networkId);
+      this.#retryAttempts.delete(networkId);
+      this.#enqueue(() => this.#ensureHomeLocked(networkId));
+    }
   }
 
   async unregisterNetwork(networkId: number): Promise<void> {
@@ -279,15 +295,13 @@ export class PushSynchronizer {
     if (home === undefined || context === undefined || this.#disposed) return;
     const deviceResult = await this.#ensureDevice();
     if (!deviceResult.ok) {
-      this.#publish(
+      this.#relayFailed(
         networkId,
         "none",
         undefined,
-        relayError("device", deviceResult.error),
+        "device",
+        deviceResult.error,
       );
-      if (temporaryRelayFailure(deviceResult.error)) {
-        this.#scheduleRetry(networkId, undefined, deviceResult.error);
-      }
       return;
     }
     const device = deviceResult.value;
@@ -334,14 +348,13 @@ export class PushSynchronizer {
       if (ensured.error.kind === "unauthorized") {
         this.#onAuthorizationRequired();
       }
-      this.#publish(
+      this.#relayFailed(
         networkId,
         current === undefined ? "none" : "probing",
         current?.routeId,
-        relayError("ensure", ensured.error),
+        "ensure",
+        ensured.error,
       );
-      if (temporaryRelayFailure(ensured.error))
-        this.#scheduleRetry(networkId, undefined, ensured.error);
       return;
     }
     const route =
@@ -412,8 +425,14 @@ export class PushSynchronizer {
       return true;
     } catch {
       for (const endpoint of unregister) this.#legacyEndpoints.add(endpoint);
-      this.#publish(networkId, "probing", route.routeId, "engine: request");
       this.#scheduleRetry(networkId);
+      this.#publish(
+        networkId,
+        "probing",
+        route.routeId,
+        "engine: request",
+        this.#retriesExhausted(networkId),
+      );
       return false;
     }
   }
@@ -441,28 +460,28 @@ export class PushSynchronizer {
       this.#retryAttempts.delete(networkId);
       return;
     }
-    this.#publish(
-      networkId,
-      activated.error.kind === "dead_route" ? "dead" : "probing",
-      routeId,
-      relayError("activate", activated.error),
-    );
+    const lastError = relayError("activate", activated.error);
     if (activated.error.kind === "dead_route") {
+      this.#publish(networkId, "dead", routeId, lastError);
       await this.#withHomeLock(route.vapid, () =>
         this.#ensureHome(networkId, true),
       );
     } else if (activated.error.kind === "gone") {
+      this.#publish(networkId, "probing", routeId, lastError);
       await this.#devices.clear(this.#relayOrigin);
       await this.#withHomeLock(route.vapid, () =>
         this.#ensureHome(networkId, false),
       );
-    } else if (activated.error.kind === "unauthorized") {
-      this.#onAuthorizationRequired();
-    } else if (temporaryRelayFailure(activated.error)) {
-      this.#scheduleRetry(
+    } else {
+      if (activated.error.kind === "unauthorized")
+        this.#onAuthorizationRequired();
+      this.#relayFailed(
         networkId,
-        () => this.#activate(networkId, routeId),
+        "probing",
+        routeId,
+        "activate",
         activated.error,
+        () => this.#activate(networkId, routeId),
       );
     }
   }
@@ -528,11 +547,23 @@ export class PushSynchronizer {
         await this.#relay.deleteRoute(asRelayDevice(device), route.routeId);
       }
       await this.#routes.delete(route.vapid);
-      this.#publish(networkId, "dead", route.routeId, `engine: ${reason}`);
+      this.#publish(
+        networkId,
+        "dead",
+        route.routeId,
+        `engine: ${reason}`,
+        true,
+      );
       return;
     }
-    this.#publish(networkId, "probing", route.routeId, `engine: ${reason}`);
     this.#scheduleRetry(networkId);
+    this.#publish(
+      networkId,
+      "probing",
+      route.routeId,
+      `engine: ${reason}`,
+      this.#retriesExhausted(networkId),
+    );
   }
 
   async #ensureDevice(): Promise<RelayResult<RelayDevice>> {
@@ -684,21 +715,46 @@ export class PushSynchronizer {
     const cancel = this.#retry(
       () => {
         this.#cancelRetries.delete(networkId);
-        this.#enqueue(
-          work ??
-            (() => {
-              const home = this.#homes.get(networkId);
-              return home === undefined
-                ? Promise.resolve()
-                : this.#withHomeLock(home, () =>
-                    this.#ensureHome(networkId, false),
-                  );
-            }),
-        );
+        this.#enqueue(work ?? (() => this.#ensureHomeLocked(networkId)));
       },
       relayRetryDelay(attempt, failure?.retryAfterMs, this.#random),
     );
     this.#cancelRetries.set(networkId, cancel);
+  }
+
+  #ensureHomeLocked(networkId: number): Promise<void> {
+    const home = this.#homes.get(networkId);
+    return home === undefined
+      ? Promise.resolve()
+      : this.#withHomeLock(home, () => this.#ensureHome(networkId, false));
+  }
+
+  /** Backs off and retries a temporary failure; any other failure is final at once. */
+  #relayFailed(
+    networkId: number,
+    state: PushRelayRouteState,
+    routeId: string | undefined,
+    operation: string,
+    failure: RelayFailure,
+    retry?: () => Promise<void>,
+  ): void {
+    const temporary = temporaryRelayFailure(failure);
+    if (temporary) this.#scheduleRetry(networkId, retry, failure);
+    this.#publish(
+      networkId,
+      state,
+      routeId,
+      relayError(operation, failure),
+      temporary
+        ? this.#retriesExhausted(networkId)
+        : failure.kind !== "unauthorized",
+    );
+  }
+
+  #retriesExhausted(networkId: number): boolean {
+    return (
+      (this.#retryAttempts.get(networkId) ?? 0) >= failingAfterFailedAttempts
+    );
   }
 
   #cancelRetry(networkId: number): void {
@@ -711,12 +767,14 @@ export class PushSynchronizer {
     state: PushRelayRouteState,
     routeId?: string,
     lastError?: string,
+    failing = false,
   ): void {
     this.#onRouteDiagnostic({
       networkId,
       state,
       ...(routeId === undefined ? {} : { routeIdPrefix: routeId.slice(0, 8) }),
       ...(lastError === undefined ? {} : { lastError }),
+      failing,
     });
   }
 }

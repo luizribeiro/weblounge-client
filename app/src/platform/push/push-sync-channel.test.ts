@@ -29,3 +29,21 @@ it("rejects malformed cross-tab push credentials", () => {
     }),
   ).toBeUndefined();
 });
+
+it("carries whether a route is failing, reading a missing flag as not", () => {
+  const diagnostic = {
+    networkId: 1,
+    state: "probing",
+    lastError: "ensure: unavailable",
+  };
+
+  expect(
+    decodePushSyncMessage({
+      kind: "diagnostic",
+      value: { ...diagnostic, failing: true },
+    }),
+  ).toEqual({ kind: "diagnostic", value: { ...diagnostic, failing: true } });
+  expect(
+    decodePushSyncMessage({ kind: "diagnostic", value: diagnostic }),
+  ).toEqual({ kind: "diagnostic", value: { ...diagnostic, failing: false } });
+});

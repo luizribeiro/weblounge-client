@@ -20,7 +20,11 @@ export function decodePushSyncMessage(
     return { kind: "device", device: value.device };
   }
   if (value.kind === "diagnostic" && isPushDiagnostic(value.value)) {
-    return { kind: "diagnostic", value: value.value };
+    // A tab still on the build before `failing` existed sends none.
+    return {
+      kind: "diagnostic",
+      value: { ...value.value, failing: value.value.failing === true },
+    };
   }
   return undefined;
 }
@@ -33,7 +37,12 @@ function isRelayDevice(value: unknown): value is RelayDevice {
   );
 }
 
-function isPushDiagnostic(value: unknown): value is PushRouteDiagnostic {
+function isPushDiagnostic(value: unknown): value is Omit<
+  PushRouteDiagnostic,
+  "failing"
+> & {
+  readonly failing?: unknown;
+} {
   return (
     isRecord(value) &&
     typeof value.networkId === "number" &&

@@ -30,9 +30,25 @@ it("formats prompt inputs and every typed engine and relay route state", () => {
     ],
   ]);
   const relay = new Map<number, PushRouteDiagnostic>([
-    [1, { networkId: 1, state: "active", routeIdPrefix: "register" }],
-    [2, { networkId: 2, state: "probing", routeIdPrefix: "persiste" }],
-    [3, { networkId: 3, state: "none" }],
+    [
+      1,
+      {
+        networkId: 1,
+        state: "active",
+        routeIdPrefix: "register",
+        failing: false,
+      },
+    ],
+    [
+      2,
+      {
+        networkId: 2,
+        state: "probing",
+        routeIdPrefix: "persiste",
+        failing: false,
+      },
+    ],
+    [3, { networkId: 3, state: "none", failing: false }],
     [
       4,
       {
@@ -40,6 +56,7 @@ it("formats prompt inputs and every typed engine and relay route state", () => {
         state: "dead",
         routeIdPrefix: "failed-r",
         lastError: "activate: dead_route",
+        failing: false,
       },
     ],
   ]);
