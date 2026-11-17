@@ -1636,23 +1636,7 @@ test.describe("the iPhone app's push registration", () => {
           }),
         },
       });
-    await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const requests = Reflect.get(globalThis, "hostedEngineRequests");
-          return Array.isArray(requests) ? requests : [];
-        }),
-      )
-      .toContainEqual(
-        expect.objectContaining({
-          type: "ensure_push",
-          route: expect.objectContaining({
-            route_id: "route-ios",
-            p256dh: stubRouteKeys.p256dh,
-            auth: stubRouteKeys.auth,
-          }),
-        }),
-      );
+    await expectEnsuredPush(page, "route-ios");
     expect(
       (await commands(page)).filter(
         (command) => command === "request_push_permission",
@@ -1671,8 +1655,40 @@ async function commands(page: Page): Promise<string[]> {
   return (await nativeCalls(page)).map(({ command }) => command);
 }
 
+async function expectEnsuredPush(page: Page, routeId: string): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const requests = Reflect.get(globalThis, "hostedEngineRequests");
+        return Array.isArray(requests) ? requests : [];
+      }),
+    )
+    .toContainEqual(
+      expect.objectContaining({
+        type: "ensure_push",
+        route: expect.objectContaining({
+          route_id: routeId,
+          p256dh: stubRouteKeys.p256dh,
+          auth: stubRouteKeys.auth,
+        }),
+      }),
+    );
+}
+
 async function routeApnsRelay(page: Page, origin: string) {
   const requests: { readonly call: string; readonly body: unknown }[] = [];
+  let createdRoutes = 0;
+  const relayRoute = (body: unknown) => {
+    const kept =
+      typeof body === "object" && body !== null && "my_route_id" in body
+        ? String(body.my_route_id)
+        : undefined;
+    if (kept === undefined) createdRoutes += 1;
+    const id =
+      kept ??
+      (createdRoutes === 1 ? "route-ios" : `route-ios-${createdRoutes}`);
+    return { id, endpoint: `https://push.weblounge.org/v1/r/${id}` };
+  };
   const cors = {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
@@ -1685,16 +1701,14 @@ async function routeApnsRelay(page: Page, origin: string) {
       return;
     }
     const call = `${request.method()} ${new URL(request.url()).pathname}`;
-    requests.push({ call, body: request.postDataJSON() });
-    const answers: Record<string, unknown> = {
-      "POST /v1/devices": { id: "device-1", secret: "device-secret" },
-      "POST /v1/devices/device-1/routes": {
-        id: "route-ios",
-        endpoint: "https://push.weblounge.org/v1/r/route-ios",
-      },
-      "GET /v1/devices/device-1/dead-endpoints": { endpoints: [] },
+    const body: unknown = request.postDataJSON();
+    requests.push({ call, body });
+    const answers: Record<string, () => unknown> = {
+      "POST /v1/devices": () => ({ id: "device-1", secret: "device-secret" }),
+      "POST /v1/devices/device-1/routes": () => relayRoute(body),
+      "GET /v1/devices/device-1/dead-endpoints": () => ({ endpoints: [] }),
     };
-    const answer = answers[call];
+    const answer = answers[call]?.();
     await route.fulfill(
       answer === undefined
         ? { status: 204, headers: cors }
