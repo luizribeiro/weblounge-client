@@ -8,6 +8,7 @@ const inFlight = {
   "keyboard geometry": "#root[data-keyboard-watch]",
   "chats scroll restore": "[data-restoring-scroll]",
   "transcript scroll": "[data-message-list][data-scrolling]",
+  "read dwell": "[data-read-dwell]",
 } as const;
 
 export interface SettledOptions {

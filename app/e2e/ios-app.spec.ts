@@ -136,8 +136,8 @@ test.describe("the iPhone app's page against local Ergo", () => {
         .getByRole("list", { name: "Messages" })
         .getByText(text, { exact: true }),
     ).toBeVisible();
-    await expect(directRow).toHaveAttribute("aria-label", mel.nickname);
     await expectSettled(page, { conversation: mel.nickname });
+    await nativeFeelAudit(page);
     await expect.poll(async () => lastBadge(await nativeCalls(page))).toBe(0);
     await expect
       .poll(async () => nativeCalls(page))

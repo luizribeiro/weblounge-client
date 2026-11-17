@@ -137,7 +137,7 @@ export function MobileConversation(props: MobileConversationProps) {
       ? newestCommittedMessageId(props.messages)
       : newestCommittedTimelineMessageId(props.timeline.items),
   );
-  createReadDwell({
+  const readDwelling = createReadDwell({
     atLiveEdge,
     bufferId,
     foreground: () => props.foreground !== false,
@@ -159,6 +159,7 @@ export function MobileConversation(props: MobileConversationProps) {
     <section
       class={styles.chat}
       data-mobile-chat={props.buffer.id}
+      data-read-dwell={readDwelling() ? "" : undefined}
       data-network-state={
         props.network === undefined
           ? undefined

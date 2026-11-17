@@ -440,7 +440,7 @@ export function DesktopShell(props: DesktopShellProps) {
     if (current === "sidebar" && sidebarInline()) closeDrawer();
   });
 
-  createReadDwell({
+  const readDwelling = createReadDwell({
     atLiveEdge,
     bufferId: activeBufferId,
     foreground: () => props.foreground !== false,
@@ -507,7 +507,12 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   return (
-    <div class={styles.shell} data-desktop-shell="true" ref={shellElement}>
+    <div
+      class={styles.shell}
+      data-desktop-shell="true"
+      data-read-dwell={readDwelling() ? "" : undefined}
+      ref={shellElement}
+    >
       {sidebarDocked() && sidebarView()}
       <main
         class={styles.main}
