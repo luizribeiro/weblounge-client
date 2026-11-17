@@ -24,7 +24,7 @@ const faviconTiles = {
   disconnected: "#8C8F87",
 };
 // Local builds wear a yellow tile so they are never mistaken for the installed release.
-const devColors = { tile: "#E8B530", mark: brandColors.felt };
+const devColors = { tile: "#E8B530", mark: "#000000" };
 const appIdentities = [
   { directory: resolve(appDirectory, "../apps/tauri/icons") },
   {
