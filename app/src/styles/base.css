@@ -177,22 +177,10 @@ textarea:focus-visible {
   );
 }
 
-[data-connection-brand][data-connection-progress]
-  [data-connection-logo]
-  > [data-connection-logo-mark] {
-  background: color-mix(
-    in srgb,
-    var(--wl-connection-fg) 34%,
-    var(--wl-connection-bg)
-  );
-}
-
 [data-connection-fill] {
-  align-items: center;
   background: var(--wl-connection-fg);
   display: none;
   inset: 0;
-  justify-content: center;
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent,
@@ -215,7 +203,7 @@ textarea:focus-visible {
 }
 
 [data-connection-brand][data-connection-progress] [data-connection-fill] {
-  display: flex;
+  display: block;
 }
 
 [data-connection-shimmer][data-connection-progress][data-connection-title],

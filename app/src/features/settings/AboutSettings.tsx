@@ -36,9 +36,7 @@ export function AboutSettings() {
   return (
     <>
       <div class={styles.brand}>
-        <span aria-hidden="true" class={styles.tile}>
-          <ChairMark class={styles.mark} />
-        </span>
+        <ChairMark class={styles.tile} />
         <h3 class={styles.name}>{appTitle(channel())}</h3>
       </div>
       <dl class={styles.facts}>

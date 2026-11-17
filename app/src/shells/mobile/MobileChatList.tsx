@@ -172,24 +172,14 @@ export function MobileChatList(props: MobileChatListProps) {
         onAnimationIteration={progress.handleAnimationIteration}
         ref={header}
       >
-        <span
-          aria-hidden="true"
+        <ChairMark
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
           data-connection-logo="true"
+          data-mobile-logo-mark="true"
         >
-          <ChairMark
-            class={styles.logoMark}
-            data-connection-logo-mark="true"
-            data-mobile-logo-mark="true"
-          />
-          <span data-connection-fill="true">
-            <ChairMark
-              class={styles.logoMark}
-              data-connection-logo-mark="true"
-            />
-          </span>
-        </span>
+          <span data-connection-fill="true" />
+        </ChairMark>
         <span class={styles.identity}>
           <h1 data-connection-title="true">
             <Line>{t("common.weblounge")}</Line>

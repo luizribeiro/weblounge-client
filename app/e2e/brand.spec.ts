@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the chair glyph instead of a flat mask", async ({ page }) => {
+test("cuts the chair out of the tile so the panel shows through", async ({
+  page,
+}) => {
   await page.goto("/");
-  const mark = page.locator("[data-sidebar] span[aria-hidden='true']").first();
-  const chip = mark.locator("..");
+  const chip = page.locator("[data-sidebar] [data-connection-logo]");
   await expect(chip).toBeVisible();
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   await expect
@@ -16,9 +17,9 @@ test("renders the chair glyph instead of a flat mask", async ({ page }) => {
     )
     .toBe(true);
   const screenshot = await chip.screenshot();
-  const panel = await mark.evaluate(
-    (element) => getComputedStyle(element).backgroundColor,
-  );
+  const panel = await page
+    .locator("[data-sidebar]")
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
   const panelPixels = await page.evaluate(
     async ({ png, panelColor }) => {
       const bytes = Uint8Array.from(atob(png), (character) =>
@@ -61,16 +62,20 @@ test.describe("mobile header brand", () => {
     viewport: { width: 402, height: 874 },
   });
 
-  test("loads its chair from a same-origin asset", async ({ page }) => {
+  test("cuts its chair from a same-origin asset", async ({ page }) => {
     await page.goto("/");
 
     const mark = page.locator("[data-mobile-logo-mark]");
     await expect(mark).toBeVisible();
-    const mask = await mark.evaluate(
-      (element) => getComputedStyle(element).maskImage,
-    );
-    expect(mask).not.toContain("data:");
-    const url = /^url\(["']?([^"')]+)["']?\)$/u.exec(mask)?.[1];
+    const mask = await mark.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { composite: style.maskComposite, image: style.maskImage };
+    });
+    expect(mask.image).not.toContain("data:");
+    expect(mask.composite).toMatch(/^exclude\b/u);
+    const url = /^url\(["']?([^"')]+)["']?\), linear-gradient\(/u.exec(
+      mask.image,
+    )?.[1];
     expect(url).toBeDefined();
     expect(new URL(url ?? "").pathname).toMatch(
       process.env.WEBLOUNGE_E2E_DEV === "1"

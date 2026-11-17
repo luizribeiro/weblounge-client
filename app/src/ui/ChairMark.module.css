@@ -1,3 +1,10 @@
-.chair {
-  mask: url("../assets/chair.svg") center / contain no-repeat;
+.tile {
+  -webkit-mask:
+    url("../assets/chair.svg") center / 71% no-repeat,
+    linear-gradient(var(--wl-color-fg) 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    url("../assets/chair.svg") center / 71% no-repeat,
+    linear-gradient(var(--wl-color-fg) 0 0);
+  mask-composite: exclude;
 }

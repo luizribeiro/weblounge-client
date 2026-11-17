@@ -4,13 +4,15 @@ import styles from "./ChairMark.module.css";
 type ChairMarkProps = JSX.HTMLAttributes<HTMLSpanElement>;
 
 export function ChairMark(props: ChairMarkProps) {
-  const [local, attributes] = splitProps(props, ["class"]);
+  const [local, attributes] = splitProps(props, ["class", "children"]);
 
   return (
     <span
       aria-hidden="true"
       {...attributes}
-      class={[styles.chair, local.class].filter(Boolean).join(" ")}
-    />
+      class={[styles.tile, local.class].filter(Boolean).join(" ")}
+    >
+      {local.children}
+    </span>
   );
 }

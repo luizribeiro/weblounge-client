@@ -72,26 +72,16 @@
 }
 
 .logo {
-  align-items: center;
   background: var(--wl-color-panel-fg);
   border-radius: var(--wl-radius-icon);
-  color: var(--wl-color-panel);
-  display: flex;
   flex: 0 0 38px;
   height: 38px;
-  justify-content: center;
   overflow: hidden;
   position: relative;
 }
 
 .logo[data-connection-error] {
   background: var(--wl-color-error);
-}
-
-.logoMark {
-  background: var(--wl-color-panel);
-  height: 27px;
-  width: 27px;
 }
 
 .brandText {

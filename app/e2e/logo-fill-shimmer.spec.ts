@@ -45,6 +45,8 @@ for (const shell of ["desktop", "mobile"] as const) {
           scale: "css",
         });
       }
+      for (const frame of frames)
+        expect(chairPixel(frame)).toEqual(backgroundPixel(frame));
       expect(frames.map((frame) => frame.progress)).toEqual(
         [...frames.map((frame) => frame.progress)].sort((a, b) => a - b),
       );
@@ -213,6 +215,25 @@ async function decodeScreenshot(
     return [...context.getImageData(0, 0, canvas.width, canvas.height).data];
   }, image.toString("base64"));
   return { ...geometry, pixels };
+}
+
+function pixelAt(frame: Frame, x: number, y: number): readonly number[] {
+  const offset = (y * frame.width + x) * 4;
+  return frame.pixels.slice(offset, offset + 3);
+}
+
+function backgroundPixel(frame: Frame): readonly number[] {
+  return pixelAt(frame, frame.logo.x, frame.logo.y);
+}
+
+// (10, 10) of chair.svg's 16-unit box is inside the seat; the cutout is 71% of the tile.
+function chairPixel(frame: Frame): readonly number[] {
+  const seat = 0.5 + ((10 - 8) / 16) * 0.71;
+  return pixelAt(
+    frame,
+    Math.round(frame.logo.x + frame.logo.width * seat),
+    Math.round(frame.logo.y + frame.logo.height * seat),
+  );
 }
 
 function firstChangedFrame(changes: readonly number[]): number {

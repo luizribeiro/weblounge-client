@@ -287,19 +287,13 @@ export function Sidebar(props: SidebarProps) {
         onAnimationIteration={progress.handleAnimationIteration}
         ref={brand}
       >
-        <div
+        <ChairMark
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
           data-connection-logo="true"
         >
-          <ChairMark class={styles.logoMark} data-connection-logo-mark="true" />
-          <span aria-hidden="true" data-connection-fill="true">
-            <ChairMark
-              class={styles.logoMark}
-              data-connection-logo-mark="true"
-            />
-          </span>
-        </div>
+          <span data-connection-fill="true" />
+        </ChairMark>
         <div class={styles.brandText}>
           <h1 data-connection-title="true">
             <Line>{t("common.weblounge")}</Line>

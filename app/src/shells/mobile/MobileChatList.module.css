@@ -27,25 +27,16 @@
 }
 
 .logo {
-  align-items: center;
   background: var(--wl-color-fg);
   border-radius: var(--wl-radius-icon);
-  display: flex;
   flex: 0 0 36px;
   height: 36px;
-  justify-content: center;
   overflow: hidden;
   position: relative;
 }
 
 .logo[data-connection-error] {
   background: var(--wl-color-error);
-}
-
-.logoMark {
-  background: var(--wl-color-surface);
-  height: 26px;
-  width: 26px;
 }
 
 .identity {
