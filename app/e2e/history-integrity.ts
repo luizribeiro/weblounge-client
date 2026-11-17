@@ -27,7 +27,8 @@ export interface TranscriptMismatch {
   readonly missing: readonly string[];
   readonly unexpected: readonly string[];
   readonly duplicated: readonly string[];
-  readonly outOfOrder: boolean;
+  /** The first pair of rows shown out of server-time order. */
+  readonly firstOutOfOrder: string | null;
   readonly gaps: readonly string[];
   readonly pending: readonly string[];
 }
@@ -73,7 +74,11 @@ function withoutAction(body: string): string {
     : body;
 }
 
-/** What the transcript must show: the server's msgids, in order, each once, and nothing else. */
+/**
+ * What the transcript must show: the server's msgids, each once, in server-time order, and nothing
+ * else. Ergo can store a line a millisecond before an earlier-stamped one, so its history sequence
+ * is not itself in time order; lines that share a millisecond may show in either order.
+ */
 export function transcriptMismatch(
   rows: readonly TranscriptRow[],
   server: readonly ServerMessage[],
@@ -89,7 +94,12 @@ export function transcriptMismatch(
   const counts = new Map<string, number>();
   for (const msgid of shown) counts.set(msgid, (counts.get(msgid) ?? 0) + 1);
   const shownSet = new Set(shown);
-  const inOrder = shown.filter((msgid) => expectedSet.has(msgid));
+  const byMsgid = new Map(server.map((message) => [message.msgid, message]));
+  const shownMessages = shown.flatMap((msgid) => byMsgid.get(msgid) ?? []);
+  const inversion = shownMessages.findIndex(
+    (message, index) =>
+      message.timeMs < (shownMessages[index - 1]?.timeMs ?? 0),
+  );
   return {
     missing: expected.filter((msgid) => !shownSet.has(msgid)),
     unexpected: [
@@ -99,19 +109,31 @@ export function transcriptMismatch(
     duplicated: [...counts].flatMap(([msgid, count]) =>
       count > 1 ? [msgid] : [],
     ),
-    outOfOrder:
-      inOrder.join(" ") !==
-      expected.filter((msgid) => shownSet.has(msgid)).join(" "),
+    firstOutOfOrder:
+      inversion === -1 ? null : describeInversion(inversion, shownMessages),
     gaps: rows.flatMap((row) => (row.kind === "gap" ? [row.label] : [])),
     pending: rows.flatMap((row) => (row.kind === "pending" ? [row.text] : [])),
   };
+}
+
+function describeInversion(
+  index: number,
+  shown: readonly ServerMessage[],
+): string {
+  return shown
+    .slice(index - 1, index + 1)
+    .map(
+      (message) =>
+        `"${message.text}" ${new Date(message.timeMs).toISOString()}`,
+    )
+    .join(" before ");
 }
 
 export const matchingTranscript: TranscriptMismatch = {
   missing: [],
   unexpected: [],
   duplicated: [],
-  outOfOrder: false,
+  firstOutOfOrder: null,
   gaps: [],
   pending: [],
 };
@@ -275,23 +297,31 @@ export function chatRow(page: Page, title: string): Locator {
 }
 
 /**
- * Waits until the engine has received one whole CHATHISTORY page for a target, so that opening
- * the buffer afterwards shows what that page left behind. Needs `captureHistoryWire`.
+ * Waits until the engine has received more whole CHATHISTORY pages for a target than `seen`, so
+ * that opening the buffer afterwards shows what the page left behind. Needs `captureHistoryWire`.
  */
 export async function expectHistoryPageReceived(
   page: Page,
   target: string,
+  seen = 0,
 ): Promise<void> {
   await expect
-    .poll(() => page.evaluate(historyPageReceived, target), {
+    .poll(() => historyPagesReceived(page, target), {
       message: `a history page for ${target} arrives`,
     })
-    .toBe(true);
+    .toBeGreaterThan(seen);
 }
 
-function historyPageReceived(target: string): boolean {
+export function historyPagesReceived(
+  page: Page,
+  target: string,
+): Promise<number> {
+  return page.evaluate(countHistoryPages, target);
+}
+
+function countHistoryPages(target: string): number {
   const timeline: unknown = Reflect.get(globalThis, "historyWireTimeline");
-  if (!Array.isArray(timeline)) return false;
+  if (!Array.isArray(timeline)) return 0;
   const received = timeline.flatMap((entry: unknown) =>
     typeof entry === "object" &&
     entry !== null &&
@@ -302,15 +332,18 @@ function historyPageReceived(target: string): boolean {
       ? [entry.line]
       : [],
   );
-  const start = received.find(
-    (line) =>
-      / BATCH \+\S+ chathistory /u.test(line) &&
-      line.toLowerCase().endsWith(` ${target.toLowerCase()}`),
-  );
-  const reference =
-    start === undefined ? undefined : / BATCH \+(\S+) /u.exec(start)?.[1];
-  return (
-    reference !== undefined &&
-    received.some((line) => line.includes(` BATCH -${reference}`))
-  );
+  const openFor = new Map<string, boolean>();
+  let completed = 0;
+  for (const line of received) {
+    const opened = / BATCH \+(\S+) chathistory /u.exec(line)?.[1];
+    if (opened !== undefined)
+      openFor.set(
+        opened,
+        line.toLowerCase().endsWith(` ${target.toLowerCase()}`),
+      );
+    const closed = / BATCH -(\S+)/u.exec(line)?.[1];
+    if (closed !== undefined && openFor.get(closed) === true) completed += 1;
+    if (closed !== undefined) openFor.delete(closed);
+  }
+  return completed;
 }

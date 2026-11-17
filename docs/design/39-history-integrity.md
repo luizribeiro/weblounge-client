@@ -15,7 +15,9 @@ that all of them broke, on every path that can break it.
 For every buffer the user opens and scrolls back through to the start of server history:
 
 1. **Transcript.** The transcript's message rows, read top to bottom, carry exactly the msgids the
-   server's `CHATHISTORY` returns for that target, in the same order, each once. The only
+   server's `CHATHISTORY` returns for that target, each once, in server-time order. (Not in the
+   server's own sequence: Ergo can store a line a millisecond before an earlier-stamped one, and
+   lines that share a millisecond may show in either order.) The only
    exception is an explicit gap row ("Messages may be missing"), and only while it is
    backfilling: the check waits for the transcript to match, so a gap that never fills fails it.
    Two row kinds are handled explicitly. A deleted message's tombstone row is the one allowed
@@ -58,8 +60,8 @@ row before opening and the transcript after, for every buffer involved.
 | --- | --- | --- |
 | Two devices share one read marker; one reads ahead while the other is closed, then the closed one relaunches. | launch catch-up cursor | B28 (fixed) |
 | Lines arrive while the app is closed; relaunch from the cached chat list, with and without pushed lines drained into the cache. | snapshot restore, push merge | B27 |
-| Offline for longer than one catch-up page (more than 100 lines). | bounded catch-up gap | B20 |
-| The connection drops while the catch-up page is in flight; the catch-up request fails. | restarted and failed catch-up | B27 follow-up |
+| Closed, or open but offline, for longer than one catch-up page (more than 100 lines). | bounded catch-up gap | B20 (open app) |
+| The connection drops before the launch catch-up request goes out, or as its reply arrives. | restarted and failed catch-up | B27 follow-up |
 | Many lines across several channels and DMs while the page is hidden. | busy launch, per-buffer pages | |
 | A DM opened from the ⌘K switcher after a live line created it. | live-seeded DM window | B27 |
 | Own lines queued while offline, then sent on reconnect. | send ordering | B26 |
