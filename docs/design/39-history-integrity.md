@@ -78,12 +78,13 @@ CI stays green and the test starts failing (and the annotation comes off) once t
 
 `crates/engine/src/runtime/tests/history_integrity.rs` drives the engine runtime over papo's test
 wire against a scripted server that answers `CHATHISTORY` from an oracle message list. Proptest
-generates interleavings of live lines, lines sent while disconnected, reconnects, other devices'
-read markers and catch-up page limits; after each run the test pages back to the start and checks
-that the buffer's message rows plus its explicit gaps cover the oracle exactly: every oracle
-message is shown once and in order, or its server time falls inside a gap row's `from_ms..to_ms`,
-and nothing else is shown. Proptest's default case count and its regression file keep failing
-seeds reproducible.
+generates interleavings of history before the join, live lines arriving while the latest or an
+older page is in flight, other devices' read markers, older-page loads and server page caps
+smaller than the engine's request; after each run the test pages back to the start and checks
+that the buffer's message rows are exactly the oracle, once each and in order, with no gap row
+(on one connection nothing can be missed). Proptest's regression file keeps failing seeds
+reproducible. The test wire is one connection, so reconnects, relaunches and pushed lines, the
+paths where a gap row is legitimate, are left to the browser scenarios.
 
 ## Out of scope
 

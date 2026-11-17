@@ -2597,6 +2597,19 @@ impl NetworkModel {
             .collect()
     }
 
+    #[cfg(test)]
+    pub(crate) fn projected_gaps(&self, buffer_id: BufferId) -> Vec<(i64, i64)> {
+        self.buffers
+            .get(&buffer_id)
+            .into_iter()
+            .flat_map(|buffer| buffer.timeline.iter())
+            .filter_map(|record| match &record.body {
+                RecordBody::Gap(gap) => Some((gap.from_ms, gap.to_ms)),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn request_history(
         &mut self,
         buffer_id: BufferId,

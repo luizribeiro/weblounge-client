@@ -6109,6 +6109,7 @@ use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
 #[cfg(test)]
 mod tests {
     mod gap_fill;
+    mod history_integrity;
     mod redaction;
 
     use std::{
