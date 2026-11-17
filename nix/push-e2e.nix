@@ -1,5 +1,6 @@
 {
   checkApp,
+  e2eFontsConf,
   grep ? null,
   papo-test-infra,
   pkgs,
@@ -479,7 +480,7 @@ pkgs.testers.runNixOSTest {
         PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu-24.04 \
         PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
         __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json \
-        FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }} \
+        FONTCONFIG_FILE=${e2eFontsConf} \
         WEBLOUNGE_PUSH_FULL_E2E=1 \
         WEBLOUNGE_E2E_EXTERNAL_SERVER=1 \
         WEBLOUNGE_E2E_BASE_URL=https://app.test \

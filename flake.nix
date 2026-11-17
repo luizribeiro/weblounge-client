@@ -409,6 +409,19 @@
         pushE2eApp = checkApp.overrideAttrs {
           WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
         };
+        # WebKit lays out a fixed-height line on its primary font's metrics, and
+        # when no family of the app's mono stack is installed that font has none,
+        # so the e2e fonts must include one of the stack's families.
+        liberationMono = pkgs.runCommand "liberation-mono" { } ''
+          mkdir -p $out/share/fonts/truetype
+          cp ${pkgs.liberation_ttf}/share/fonts/truetype/LiberationMono-*.ttf $out/share/fonts/truetype/
+        '';
+        e2eFontsConf = pkgs.makeFontsConf {
+          fontDirectories = [
+            pkgs.dejavu_fonts
+            liberationMono
+          ];
+        };
         e2eShardCount = 4;
         # Specs tagged @serial restart Ergo, show fixed names in committed
         # screenshots, sample animation frames that CPU contention drops, or
@@ -431,7 +444,7 @@
           PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
-          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+          FONTCONFIG_FILE = e2eFontsConf;
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_ERGO = "1";
@@ -509,7 +522,7 @@
           PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
-          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+          FONTCONFIG_FILE = e2eFontsConf;
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_DEV = "1";
           buildPhase = ''
@@ -535,7 +548,7 @@
           PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
-          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+          FONTCONFIG_FILE = e2eFontsConf;
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_APP_ONLY = "1";
@@ -568,6 +581,7 @@
         pushE2e = pkgs.lib.makeOverridable (import ./nix/push-e2e.nix) {
           checkApp = pushE2eApp;
           inherit
+            e2eFontsConf
             papo-test-infra
             pkgs
             previousApp
