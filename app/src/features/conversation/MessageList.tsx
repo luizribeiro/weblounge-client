@@ -60,11 +60,12 @@ import {
 } from "../composer/geometry";
 import { InlineImage } from "./InlineImage";
 import { inlineImageUrl } from "./inline-image-url";
-import {
-  createMessageDeletion,
-  type MessageRowDeletion,
-} from "./MessageDeletion";
 import styles from "./MessageList.module.css";
+import {
+  createMessageMenu,
+  hasMessageMenu,
+  type MessageRowMenu,
+} from "./MessageMenu";
 import { MessageReactions } from "./MessageReactions";
 import { MessageText, Nickname } from "./MessageText";
 import {
@@ -421,8 +422,8 @@ export function MessageList(props: MessageListProps) {
   );
   const rowReactions = () =>
     props.onToggleReaction === undefined ? undefined : reactionActions;
-  const deletion = createMessageDeletion(() => props.onRedactMessage);
-  const toolbars = createRowToolbars(deletion.menuRow);
+  const messageMenu = createMessageMenu(() => props.onRedactMessage);
+  const toolbars = createRowToolbars(messageMenu.menuRow);
   const copiedRows = createCopiedRows();
   const confirmDelete = (
     messageId: number | undefined,
@@ -431,7 +432,7 @@ export function MessageList(props: MessageListProps) {
     const message = orderedMessages().find(
       (candidate) => candidate.id === messageId,
     );
-    if (message !== undefined) deletion.confirm(message, invoker);
+    if (message !== undefined) messageMenu.confirmDelete(message, invoker);
   };
   const setLiveEdge = (live: boolean) => {
     if (scrollLiveEdgeFrame !== undefined) {
@@ -1468,7 +1469,7 @@ export function MessageList(props: MessageListProps) {
                       onMessageActions={props.onMessageActions}
                       heldMessageId={props.heldMessageId}
                       reactions={rowReactions()}
-                      deletion={deletion.rows()}
+                      menu={messageMenu.row()}
                       presentation={props.presentation}
                       row={row()}
                       toolbars={toolbars}
@@ -1480,7 +1481,7 @@ export function MessageList(props: MessageListProps) {
           </ol>
         </div>
       </div>
-      {deletion.view()}
+      {messageMenu.view()}
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">
           {t(unseen() === 1 ? "messages.jump.one" : "messages.jump.many", {
@@ -1545,7 +1546,7 @@ function TimelineRowView(props: {
   readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
-  readonly deletion?: MessageRowDeletion | undefined;
+  readonly menu?: MessageRowMenu | undefined;
   readonly row: TimelineRow | undefined;
   readonly toolbars: RowToolbars;
 }) {
@@ -1632,7 +1633,7 @@ function TimelineRowView(props: {
                 onMessageActions={props.onMessageActions}
                 held={props.heldMessageId === row.message.id}
                 reactions={props.reactions}
-                deletion={props.deletion}
+                menu={props.menu}
                 presentation={props.presentation}
                 startsMobileGroup={row.startsMobileGroup}
                 toolbars={props.toolbars}
@@ -1706,7 +1707,7 @@ function MessageRow(props: {
   readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
-  readonly deletion?: MessageRowDeletion | undefined;
+  readonly menu?: MessageRowMenu | undefined;
   readonly startsMobileGroup: boolean;
   readonly toolbars: RowToolbars;
 }) {
@@ -1735,18 +1736,16 @@ function MessageRow(props: {
   const react = reactionTarget(message, props.reactions?.toggle);
   const desktop = props.presentation !== "mobile";
   const hoverToolbarReact = desktop ? react : undefined;
-  const deletion = createMemo(() => {
-    const current = props.deletion;
-    return desktop &&
-      current !== undefined &&
-      canRedact(message, current.redact)
+  const menu = createMemo(() => {
+    const current = props.menu;
+    return desktop && current !== undefined && hasMessageMenu(message)
       ? current
       : undefined;
   });
   const [rowElement, setRowElement] = createSignal<HTMLElement>();
   createEffect(() => {
     const row = rowElement();
-    const current = deletion();
+    const current = menu();
     if (row === undefined || current === undefined) return;
     onCleanup(
       contextMenuRegistry.register(row, {
@@ -1757,7 +1756,7 @@ function MessageRow(props: {
     );
   });
   const openMoreMenu = () => {
-    const current = deletion();
+    const current = menu();
     const row = rowElement();
     if (current === undefined || row === undefined) return undefined;
     return (anchor: HTMLElement) => {
@@ -1805,9 +1804,7 @@ function MessageRow(props: {
         });
       }}
       tabindex={
-        hoverToolbarReact === undefined && deletion() === undefined
-          ? undefined
-          : 0
+        hoverToolbarReact === undefined && menu() === undefined ? undefined : 0
       }
     >
       <Show
@@ -1877,7 +1874,7 @@ function MessageRow(props: {
           <RowStatus
             message={message}
             onRetry={props.onRetry}
-            redact={props.deletion?.redact}
+            redact={props.menu?.redact}
           />
         </>
       ) : (
@@ -1948,7 +1945,7 @@ function MessageRow(props: {
           <RowStatus
             message={message}
             onRetry={props.onRetry}
-            redact={props.deletion?.redact}
+            redact={props.menu?.redact}
           />
         </>
       )}

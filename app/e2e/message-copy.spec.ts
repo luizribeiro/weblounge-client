@@ -1,11 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
+import { copiedText, prepareClipboard } from "./clipboard";
 import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
 import { productionMessageRow } from "./production-ergo";
-import { openConversation } from "./redaction";
+import { composer, openConversation } from "./redaction";
 import { tokenColor } from "./token-color";
 
 const first = "nice, the second message has a few words";
@@ -131,6 +132,52 @@ test.describe("desktop copying from the transcript", () => {
     await page.mouse.click(point.x, point.y, { clickCount: 3 });
 
     expect(await copySelection(page)).toBe(first);
+  });
+});
+
+test.describe("desktop Copy text action", () => {
+  test.beforeEach(async ({ page, context }) => {
+    await prepareClipboard(context);
+    await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 1200, height: 800 });
+  });
+
+  test("copies a peer's multi-line message from the More menu", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("copy-menu");
+    const lines = "deploy notes\nstep one done\nstep two pending";
+    await peer.multilineConfirmed(irc.channel, lines);
+    await openTranscript(page, irc.url(), irc.channel);
+
+    const row = productionMessageRow(page, lines);
+    await row.hover();
+    await page.getByRole("button", { name: "More actions" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Delete message" }),
+    ).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "Copy text" }).click();
+
+    await expect.poll(() => copiedText(page)).toBe(lines);
+    await nativeFeelAudit(page);
+  });
+
+  test("copies your own message from the row's right-click menu", async ({
+    page,
+    irc,
+  }) => {
+    await openTranscript(page, irc.url(), irc.channel);
+    const own = "my own words to copy";
+    await composer(page).fill(own);
+    await composer(page).press("Enter");
+    const row = productionMessageRow(page, own);
+    await expect(row).toHaveAttribute("data-delivery", "confirmed");
+
+    await row.locator("time").click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Copy text" }).click();
+
+    await expect.poll(() => copiedText(page)).toBe(own);
   });
 });
 

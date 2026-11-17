@@ -54,6 +54,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   if (scrollToDescriptor === undefined)
     Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
   else
@@ -147,7 +148,7 @@ it("shows the reaction toolbar on hover and keyboard focus of a server message",
   if (pending === null) throw new Error("pending row is missing");
 
   expect(row).toHaveAttribute("tabindex", "0");
-  expect(pending).not.toHaveAttribute("tabindex");
+  expect(pending).toHaveAttribute("tabindex", "0");
   fireEvent.pointerEnter(row);
   fireEvent.click(await screen.findByRole("button", { name: "React with 😂" }));
   fireEvent.pointerLeave(row);
@@ -155,7 +156,10 @@ it("shows the reaction toolbar on hover and keyboard focus of a server message",
   fireEvent.pointerEnter(pending);
 
   expect(toggled).toEqual([[1, "😂"]]);
-  expect(screen.queryByRole("toolbar")).toBeNull();
+  expect(
+    await screen.findByRole("button", { name: "More actions" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "React with 😂" })).toBeNull();
 });
 
 it("keeps phone rows out of the tab order and free of the hover toolbar", () => {
@@ -278,8 +282,28 @@ it("drops the delete action when the capability goes away", async () => {
 
   setRedact(undefined);
 
-  expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
-  expect(ownRow()).not.toHaveAttribute("tabindex");
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "Copy text" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "Delete message" })).toBeNull();
+});
+
+it("copies a message's whole text, newlines kept, from the More menu", async () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  const multiline = { ...message, text: "first line\nsecond line" };
+  render(() => <MessageList messages={[multiline]} />);
+  const row = screen
+    .getByText(/first line/u)
+    .closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("peer row is missing");
+  fireEvent.pointerEnter(row);
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Copy text" }));
+
+  expect(writeText).toHaveBeenCalledWith("first line\nsecond line");
+  expect(screen.queryByRole("menuitem", { name: "Delete message" })).toBeNull();
 });
 
 it("returns focus to the row when the menu or the confirmation closes", async () => {
@@ -288,7 +312,10 @@ it("returns focus to the row when the menu or the confirmation closes", async ()
   ));
   fireEvent.pointerEnter(ownRow());
   fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
-  const item = await screen.findByRole("menuitem", { name: "Delete message" });
+  const item = await screen.findByRole("menuitem", { name: "Copy text" });
+  expect(
+    screen.getAllByRole("menuitem").map((entry) => entry.textContent),
+  ).toEqual(["Copy text", "Delete message"]);
   await waitFor(() => expect(item).toHaveFocus());
   fireEvent.keyDown(item, { key: "Escape" });
   expect(ownRow()).toHaveFocus();

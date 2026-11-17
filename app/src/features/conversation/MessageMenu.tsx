@@ -1,32 +1,36 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import type { MessageId } from "../../engine/generated/MessageId";
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
+import { isRedacted } from "../../engine/message-kind";
 import { t } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu";
 import type { ContextMenuRequest } from "../../ui/context-menu";
+import { copyText } from "../../ui/copy-text";
 import { canRedact, type RedactMessage } from "./redact-target";
 
-/** What a message row needs to offer deletion of its message. */
-export interface MessageRowDeletion {
-  readonly redact: RedactMessage;
+/** What a desktop message row needs to open its actions menu. */
+export interface MessageRowMenu {
+  readonly redact: RedactMessage | undefined;
   readonly openMenu: (
     message: MessageProjection,
     request: ContextMenuRequest,
   ) => void;
 }
 
-export interface MessageDeletion {
-  /** Row actions, absent when the network cannot delete messages. */
-  readonly rows: () => MessageRowDeletion | undefined;
+export interface MessageMenu {
+  readonly row: () => MessageRowMenu;
   /** The message whose row menu is open. */
   readonly menuRow: () => MessageId | undefined;
   /** Asks before deleting, as every entry point must; does nothing for other rows. */
-  readonly confirm: (message: MessageProjection, invoker: HTMLElement) => void;
+  readonly confirmDelete: (
+    message: MessageProjection,
+    invoker: HTMLElement,
+  ) => void;
   readonly view: () => JSX.Element;
 }
 
-interface MessageMenu {
+interface OpenedMenu {
   readonly message: MessageProjection;
   readonly request: ContextMenuRequest;
 }
@@ -36,47 +40,58 @@ interface PendingDeletion {
   readonly invoker: HTMLElement;
 }
 
-export function createMessageDeletion(
+/** Every message with text has a menu; a deleted one has nothing to copy or delete. */
+export function hasMessageMenu(message: MessageProjection): boolean {
+  return !isRedacted(message.kind);
+}
+
+export function createMessageMenu(
   redact: () => RedactMessage | undefined,
-): MessageDeletion {
-  const [menu, setMenu] = createSignal<MessageMenu>();
+): MessageMenu {
+  const [opened, setOpened] = createSignal<OpenedMenu>();
   const [pending, setPending] = createSignal<PendingDeletion>();
-  const confirm = (message: MessageProjection, invoker: HTMLElement) => {
+  const confirmDelete = (message: MessageProjection, invoker: HTMLElement) => {
     if (canRedact(message, redact())) setPending({ message, invoker });
   };
   const close = (deletion: PendingDeletion) => {
     setPending(undefined);
     queueMicrotask(() => deletion.invoker.focus({ preventScroll: true }));
   };
-  const menuItems = (opened: MessageMenu | undefined): ContextMenuItem[] =>
-    opened === undefined
+  const copyItems = (menu: OpenedMenu | undefined): ContextMenuItem[] =>
+    menu === undefined || !hasMessageMenu(menu.message)
+      ? []
+      : [
+          {
+            id: "message.copy_text",
+            label: t("message.copy_text"),
+            onSelect: () => copyText(menu.message.text),
+          },
+        ];
+  const deleteItems = (menu: OpenedMenu | undefined): ContextMenuItem[] =>
+    menu === undefined || !canRedact(menu.message, redact())
       ? []
       : [
           {
             id: "message.redact",
             label: t("message.delete"),
-            onSelect: () => confirm(opened.message, opened.request.invoker),
+            onSelect: () => confirmDelete(menu.message, menu.request.invoker),
           },
         ];
   return {
-    rows: () => {
-      const current = redact();
-      return current === undefined
-        ? undefined
-        : {
-            redact: current,
-            openMenu: (message, request) => setMenu({ message, request }),
-          };
-    },
-    menuRow: () => menu()?.message.id,
-    confirm,
+    row: () => ({
+      redact: redact(),
+      openMenu: (message, request) => setOpened({ message, request }),
+    }),
+    menuRow: () => opened()?.message.id,
+    confirmDelete,
     view: () => (
       <>
         <ContextMenu
-          destructiveItems={menuItems(menu())}
+          destructiveItems={deleteItems(opened())}
+          items={copyItems(opened())}
           label={t("message.actions")}
-          onDismiss={() => setMenu(undefined)}
-          request={menu()?.request}
+          onDismiss={() => setOpened(undefined)}
+          request={opened()?.request}
         />
         <Show when={pending()} keyed>
           {(deletion) => (
