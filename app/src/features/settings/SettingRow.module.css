@@ -26,21 +26,24 @@
   font-size: 12.5px;
 }
 
-.note {
+.status {
   align-items: center;
+  border-bottom: 1px solid var(--wl-color-border);
   color: var(--wl-color-muted);
   display: flex;
   flex-wrap: wrap;
   font-size: 12.5px;
-  gap: 4px 10px;
-  margin-top: 6px;
+  gap: 8px 20px;
+  padding: 11px 0;
+  user-select: none;
 }
 
-.note:empty {
-  display: none;
+.statusText {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
-.note [data-tone="error"] {
+.statusText[data-tone="error"] {
   color: var(--wl-color-error);
 }
 
@@ -67,7 +70,7 @@
   outline-offset: 2px;
 }
 
-[data-settings-layout="phone"] .note {
+[data-settings-layout="phone"] .status {
   font-size: 13px;
 }
 

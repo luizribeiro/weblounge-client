@@ -6,7 +6,7 @@ export interface SettingControlIds {
   readonly describedBy: string;
 }
 
-/** A status line under the description, such as why the control can't be used. */
+/** A full-width status row under the control's row, such as why the control can't be used. */
 export interface SettingNote {
   readonly text: string;
   readonly tone: "neutral" | "error";
@@ -36,38 +36,40 @@ export function SettingRow(props: SettingRowProps) {
     },
   };
   return (
-    <div class={styles.row} data-control={props.control}>
-      <div class={styles.text}>
-        <span class={styles.label} id={labelledBy}>
-          {props.label}
-        </span>
-        <span class={styles.description} id={descriptionId}>
-          {props.description}
-        </span>
-        <span class={styles.note} role="status">
-          <Show when={props.note} keyed>
-            {(note) => (
-              <>
-                <span data-tone={note.tone} id={noteId}>
-                  {note.text}
-                </span>
-                <Show when={note.action} keyed>
-                  {(action) => (
-                    <button
-                      class={styles.noteAction}
-                      onClick={() => action.run()}
-                      type="button"
-                    >
-                      {action.label}
-                    </button>
-                  )}
-                </Show>
-              </>
-            )}
-          </Show>
-        </span>
+    <>
+      <div class={styles.row} data-control={props.control}>
+        <div class={styles.text}>
+          <span class={styles.label} id={labelledBy}>
+            {props.label}
+          </span>
+          <span class={styles.description} id={descriptionId}>
+            {props.description}
+          </span>
+        </div>
+        {props.children(ids)}
       </div>
-      {props.children(ids)}
-    </div>
+      <div role="status">
+        <Show when={props.note} keyed>
+          {(note) => (
+            <div class={styles.status} data-setting-status="true">
+              <span class={styles.statusText} data-tone={note.tone} id={noteId}>
+                {note.text}
+              </span>
+              <Show when={note.action} keyed>
+                {(action) => (
+                  <button
+                    class={styles.noteAction}
+                    onClick={() => action.run()}
+                    type="button"
+                  >
+                    {action.label}
+                  </button>
+                )}
+              </Show>
+            </div>
+          )}
+        </Show>
+      </div>
+    </>
   );
 }

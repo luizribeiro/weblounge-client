@@ -1800,6 +1800,24 @@ function pushSwitch(scope: Page | Locator) {
   return scope.getByRole("switch", { name: "Push notifications" });
 }
 
+/** The status sits on its own full-width row under the switch's row, not beside the switch. */
+async function expectStatusRowBelowSwitch(scope: Locator): Promise<void> {
+  const switchRow = scope.locator("[data-control='switch']").filter({
+    has: pushSwitch(scope.page()),
+  });
+  const status = scope.locator("[data-setting-status]");
+  await expect(status).toBeVisible();
+  const [row, line] = await Promise.all([
+    switchRow.boundingBox(),
+    status.boundingBox(),
+  ]);
+  if (row === null || line === null)
+    throw new Error("push rows are not laid out");
+  expect(Math.abs(line.x - row.x)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(line.width - row.width)).toBeLessThanOrEqual(0.5);
+  expect(line.y).toBeGreaterThanOrEqual(row.y + row.height - 0.5);
+}
+
 function registrationSequence(page: Page): Promise<unknown> {
   return page.evaluate(() =>
     Reflect.get(globalThis, "pushRegistrationSequence"),
@@ -1886,6 +1904,69 @@ test.describe("push settings in a desktop browser", () => {
   });
 });
 
+test.describe("push settings states in a desktop browser", () => {
+  test("push settings name where a browser blocks notifications", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "denied",
+    });
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const dialog = await openDesktopNotificationSettings(page);
+
+    await expect(pushSwitch(dialog)).toBeDisabled();
+    await expect(pushSwitch(dialog)).not.toBeChecked();
+    await expect(
+      dialog.getByText("Blocked in this site's browser settings"),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Open Settings" }),
+    ).toHaveCount(0);
+    await expectStatusRowBelowSwitch(dialog);
+    await screenshotBothThemes(page, dialog, "desktop-blocked");
+    expect(relay.calls()).toEqual([]);
+  });
+
+  test("push settings show a failed registration and retry it", async ({
+    baseURL,
+    browserName,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    const relay = await preparePushSettings(page, baseURL, {
+      kind: "web",
+      standalone: false,
+      permission: "granted",
+    });
+    relay.failWith(501);
+
+    await page.goto("/");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    const dialog = await openDesktopNotificationSettings(page);
+    const failure = dialog.getByText("Couldn't turn on notifications");
+
+    await expect(failure).toBeVisible();
+    await expect(pushSwitch(dialog)).toBeChecked();
+    await expectStatusRowBelowSwitch(dialog);
+    await screenshotBothThemes(page, dialog, "desktop-failed");
+
+    relay.failWith(undefined);
+    await dialog.getByRole("button", { name: "Retry" }).click();
+
+    await expect(failure).toHaveCount(0);
+    await expect
+      .poll(() => relay.calls())
+      .toContain("POST /v1/devices/device-1/routes");
+  });
+});
+
 test.describe("push settings on the iPhone home screen", () => {
   test.use({ ...iphone16Pro, serviceWorkers: "block" });
 
@@ -1950,6 +2031,7 @@ test.describe("push settings in the iPhone app", () => {
     await expect(
       settings.getByRole("switch", { name: "Show unread in the tab" }),
     ).toHaveCount(0);
+    await expectStatusRowBelowSwitch(settings);
     await screenshotBothThemes(page, settings, "phone-blocked");
     await nativeFeelAudit(page);
 
@@ -1983,6 +2065,7 @@ test.describe("push settings in the iPhone app", () => {
     const failure = settings.getByText("Couldn't turn on notifications");
     await expect(failure).toBeVisible();
     await expect(pushSwitch(settings)).toBeChecked();
+    await expectStatusRowBelowSwitch(settings);
     await screenshotBothThemes(page, settings, "phone-failed");
 
     relay.failWith(undefined);
