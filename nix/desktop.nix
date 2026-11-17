@@ -2,6 +2,8 @@
   pkgs,
   rustToolchain,
   release,
+  # { marketing, build, display } from the release script; absent, the app is a dev-versioned build.
+  version ? null,
 }:
 let
   rustPlatform = pkgs.makeRustPlatform {
@@ -16,10 +18,17 @@ let
     readConfig "tauri.conf.json"
     // pkgs.lib.optionalAttrs release (readConfig "tauri.release.conf.json");
   bundle = "$out/Applications/${config.productName}.app";
+  versioned = version != null;
+  # The Tauri hook splits its flags on whitespace, which compact toJSON output never contains.
+  versionConfig = builtins.toJSON {
+    version = version.marketing;
+    bundle.macOS.bundleVersion = version.build;
+  };
 in
 rustPlatform.buildRustPackage {
   pname = if release then "weblounge-desktop" else "weblounge-desktop-dev";
-  inherit (config) version;
+  version = if versioned then version.display else config.version;
+  TAURI_WEBLOUNGE_VERSION = pkgs.lib.optionalString versioned version.display;
   src = pkgs.lib.fileset.toSource {
     root = repo;
     fileset = pkgs.lib.fileset.unions [
@@ -44,6 +53,8 @@ rustPlatform.buildRustPackage {
       (root + "/release/bundle-files.test.mjs")
       (root + "/release/plan.mjs")
       (root + "/release/plan.test.mjs")
+      (root + "/release/release-version.mjs")
+      (root + "/release/release-version.test.mjs")
       (root + "/release/identities.test.mjs")
       (root + "/release/rustup-stand-in.test.mjs")
       (root + "/release/snapshot.mjs")
@@ -57,10 +68,15 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = root + "/Cargo.lock";
   nativeBuildInputs = [ pkgs.cargo-tauri.hook ];
   # Every other build keeps the dev identity, so it never shares an identifier with the installed app.
-  tauriBuildFlags = pkgs.lib.optionals release [
-    "--config"
-    "tauri.release.conf.json"
-  ];
+  tauriBuildFlags =
+    pkgs.lib.optionals release [
+      "--config"
+      "tauri.release.conf.json"
+    ]
+    ++ pkgs.lib.optionals versioned [
+      "--config"
+      versionConfig
+    ];
   preCheck = ''
     cargo clippy --offline --release --all-targets -- -D warnings
     ${pkgs.lib.getExe pkgs.nodejs} --test 'src/*.test.mjs' 'release/*.test.mjs'

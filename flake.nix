@@ -818,7 +818,7 @@
           push-e2e = pushE2e;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin rec {
-          desktop = import ./nix/desktop.nix {
+          desktop = pkgs.lib.makeOverridable (import ./nix/desktop.nix) {
             inherit pkgs rustToolchain;
             release = true;
           };
