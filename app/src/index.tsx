@@ -25,6 +25,7 @@ import {
   HostedAuthorizationError,
   type OAuthMetadata,
 } from "./hosted/oauth";
+import { appTitle, deploymentChannel } from "./hosted/release-channel";
 import { resetWebApp } from "./hosted/reset-app";
 import {
   requiresAuthorization,
@@ -341,6 +342,7 @@ async function loadDeploymentAttempt(
       return remediation.then(() => new Promise<never>(() => {}));
     },
   );
+  document.title = appTitle(deploymentChannel(config));
   if (config.mode === "app") return { type: "app", config };
   requireCurrentRedirect(config);
   const metadata = acquireInitialMetadata(config);

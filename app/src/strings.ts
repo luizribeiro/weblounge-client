@@ -29,6 +29,7 @@ export const messages = {
   "common.retry": "Retry",
   "common.sign_in_again": "Sign in again",
   "common.weblounge": "weblounge",
+  "common.weblounge_beta": "weblounge β",
   "cmd.close.confirmation_action": "Leave",
   "cmd.close.confirmation_prompt": "Leave {text}?",
   "cmd.close.description": "Close conversation",

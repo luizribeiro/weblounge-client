@@ -6,6 +6,7 @@ import {
   type Route,
   test,
 } from "@playwright/test";
+import type { ReleaseChannel } from "../src/engine/generated/ReleaseChannel";
 import type { PushPermission } from "../src/platform/native-bridge/generated/PushPermission";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 import {
@@ -262,6 +263,30 @@ for (const worker of ["shared", "dedicated"] as const) {
       request();
     });
     await expectHostedToken(page, "refreshed-token", "reconnect_hosted");
+  });
+}
+
+for (const deployment of [
+  { channel: "beta", title: "weblounge β" },
+  { channel: undefined, title: "weblounge" },
+] as const) {
+  test(`titles a ${deployment.channel ?? "channel-less"} deployment's tab "${deployment.title}"`, async ({
+    page,
+  }) => {
+    await installFakeEngine(page);
+    const redirectUri = await installHostedConfig(page, deployment.channel);
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      await fulfillSessionToken(route, redirectUri(), "session-token");
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
+    await expect(page).toHaveTitle(deployment.title);
   });
 }
 
@@ -2187,14 +2212,20 @@ function pushHostedConfig(requestUrl: string) {
   };
 }
 
-async function installHostedConfig(page: Page): Promise<() => string> {
+async function installHostedConfig(
+  page: Page,
+  channel?: ReleaseChannel,
+): Promise<() => string> {
   let redirectUri = "";
   await installFakeOAuth(page);
   await page.route("**/config.json", async (route) => {
     redirectUri = new URL("/", route.request().url()).href;
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(hostedConfig(route.request().url())),
+      body: JSON.stringify({
+        ...hostedConfig(route.request().url()),
+        ...(channel === undefined ? {} : { channel }),
+      }),
     });
   });
   return () => redirectUri;
