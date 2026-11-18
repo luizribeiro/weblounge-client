@@ -57,6 +57,36 @@ test.describe("browser tab indicator against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("turns yellow for unread channels, red for a mention, and plain once both are read", async ({
+    context,
+    irc,
+    page,
+  }) => {
+    const [chatter, mentions] = ["tab-chat", "tab-ping"].map((label) =>
+      irc.channelNamed(label),
+    );
+    await installNativeFeelInstrumentation(page);
+    await openHome(page, irc, [chatter, mentions]);
+    const peer = await irc.peer("tab-mentioner", [chatter, mentions]);
+    await expectTab(page, "connected", "weblounge");
+
+    await peer.privmsgConfirmed(chatter, "anyone around?");
+    await expectTab(page, "unread", "weblounge");
+    await captureTab(context, page, "unread");
+
+    await peer.privmsgConfirmed(mentions, `${irc.account}: you there?`);
+    await expectTab(page, "mention", "(1) weblounge");
+
+    await channelRow(page, mentions).click();
+    await expectSettled(page, { conversation: mentions });
+    await expectTab(page, "unread", "weblounge");
+
+    await channelRow(page, chatter).click();
+    await expectSettled(page, { conversation: chatter });
+    await expectTab(page, "connected", "weblounge");
+    await nativeFeelAudit(page);
+  });
+
   test("counts a DM in the open conversation while the tab is hidden", async ({
     irc,
     page,
@@ -186,10 +216,16 @@ test.describe("browser tab indicator against local Ergo", () => {
   });
 });
 
-async function openHome(page: Page, irc: IrcTestAccount): Promise<void> {
+async function openHome(
+  page: Page,
+  irc: IrcTestAccount,
+  autojoin: readonly string[] = [],
+): Promise<void> {
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto(irc.url());
-  await page.getByRole("button", { name: irc.channel }).click();
+  await page.goto(irc.url({ autojoin }));
+  for (const channel of autojoin)
+    await expect(channelRow(page, channel)).toBeAttached();
+  await channelRow(page, irc.channel).click();
   await expectSettled(page, { conversation: irc.channel });
 }
 
@@ -223,6 +259,10 @@ async function expectTab(
       states: [icon, icon],
       title,
     });
+}
+
+function channelRow(page: Page, channel: string) {
+  return page.getByRole("button", { name: channel });
 }
 
 function tabState(page: Page) {
