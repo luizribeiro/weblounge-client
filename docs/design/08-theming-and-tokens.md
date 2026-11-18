@@ -192,6 +192,13 @@ the user's own nick uses `selfNick`.
 Theme changes preserve indexes. A nick change may change the colour because the visible identity
 changed; no account-only colour can be reproduced for a plain-text mention.
 
+A word in message text is a mention when the buffer knows that nick: a current or former channel
+member, an author or membership-event nick in the loaded timeline, the DM peer, or the user. The
+engine attaches each message's mentions (`MessageProjection.mentions`) when it emits the timeline,
+so a member list arriving after history recolours earlier rows. The known set only grows: a mention
+stays coloured after that person leaves, because a transcript should not change colour under the
+reader when someone parts. Words that were never a nick in the buffer stay plain text.
+
 ## Picker previews and fonts
 
 The generated registry exposes a small preview token subset from each file. Settings renders DOM
