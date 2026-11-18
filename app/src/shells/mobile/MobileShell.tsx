@@ -118,7 +118,7 @@ export function MobileShell(props: MobileShellProps) {
   const [chatActions, setChatActions] = createSignal<{
     readonly bufferId: number;
     readonly invoker: HTMLButtonElement;
-    readonly rowTop: number;
+    readonly rowRect: DOMRect;
   }>();
   const [detailsBufferId, setDetailsBufferId] = createSignal<number>();
   const [leaveConfirmation, setLeaveConfirmation] = createSignal<{
@@ -757,7 +757,7 @@ export function MobileShell(props: MobileShellProps) {
               setChatActions({
                 bufferId: buffer.id,
                 invoker,
-                rowTop: rect.top,
+                rowRect: rect,
               });
             }}
             onRequestClose={requestClose}
@@ -801,7 +801,7 @@ export function MobileShell(props: MobileShellProps) {
           onRequestClose={() => {
             void requestClose(actionSheetBuffer() as BufferProjection);
           }}
-          rowTop={chatActions()?.rowTop ?? 0}
+          rowRect={chatActions()?.rowRect ?? new DOMRect()}
         />
       )}
       {detailsBuffer()?.kind === "channel" && (

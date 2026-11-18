@@ -7,7 +7,7 @@ import { MobileChatRow } from "./MobileChatRow";
 interface MobileChatActionSheetProps {
   readonly buffer: BufferProjection;
   readonly networkLabel?: string | undefined;
-  readonly rowTop: number;
+  readonly rowRect: DOMRect;
   readonly onDismiss: () => void;
   readonly onMarkRead: () => void;
   readonly onRequestClose: () => void;
@@ -24,8 +24,13 @@ export function MobileChatActionSheet(props: MobileChatActionSheetProps) {
         <div
           aria-hidden="true"
           class={styles.lifted}
+          data-mobile-lifted-row
           inert
-          style={{ "--wl-mobile-lifted-top": `${props.rowTop}px` }}
+          style={{
+            left: `${props.rowRect.left}px`,
+            top: `${props.rowRect.top}px`,
+            width: `${props.rowRect.width}px`,
+          }}
         >
           <MobileChatRow
             buffer={props.buffer}

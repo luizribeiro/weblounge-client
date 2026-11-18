@@ -144,6 +144,26 @@ test.describe("phone conversation closing against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("lifts a long-pressed row without moving it or its contents", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    const row = rowFor(page, irc.channel);
+    await expect(row).toBeVisible();
+    await expectSettled(page);
+    const atRest = await boxesOf(row);
+    await resetNativeFeelLayoutShift(page);
+
+    await pointer(wrapperFor(row), "pointerdown", 0, 1_000);
+    const lifted = page.locator("[data-mobile-lifted-row] [data-buffer-id]");
+    await expect(lifted).toBeVisible();
+    expect(await boxesOf(lifted)).toEqual(atRest);
+    expect(await boxesOf(row)).toEqual(atRest);
+    await nativeFeelAudit(page);
+  });
+
   test("a touch tap on revealed Close or Leave removes the row for good", async ({
     page,
     irc,
@@ -428,6 +448,15 @@ async function pointer(
       element.dispatchEvent(event);
     },
     { leftDistance, timeStamp, type, verticalDistance },
+  );
+}
+
+async function boxesOf(row: Locator): Promise<readonly string[]> {
+  return row.evaluate((element) =>
+    [element, ...element.querySelectorAll("*")].map((child) => {
+      const { x, y, width, height } = child.getBoundingClientRect();
+      return [x, y, width, height].map((value) => value.toFixed(1)).join(" ");
+    }),
   );
 }
 

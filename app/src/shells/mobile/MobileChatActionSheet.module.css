@@ -1,11 +1,6 @@
 .lifted {
-  border-radius: min(12px, var(--wl-radius-round));
   box-shadow: var(--wl-effect-overlay-shadow);
-  left: calc(var(--wl-safe-left) + 8px);
-  overflow: hidden;
   position: absolute;
-  right: calc(var(--wl-safe-right) + 8px);
-  top: var(--wl-mobile-lifted-top);
   z-index: 1;
 }
 
