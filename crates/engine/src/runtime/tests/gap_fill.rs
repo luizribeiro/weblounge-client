@@ -9,7 +9,7 @@ use crate::{BufferId, HistoryDirection, timeline::ItemBody};
 
 const GAP_FROM_MS: i64 = 1_793_102_400_000;
 const GAP_TO_MS: i64 = GAP_FROM_MS + 5_000;
-const FILL_REQUEST: &str = "CHATHISTORY BEFORE #room timestamp=2026-10-27T12:00:05.001Z 100";
+const FILL_REQUEST: &str = "CHATHISTORY BEFORE #room timestamp=2026-10-27T12:00:05.010Z 100";
 
 /// Records the gap once the join has asked for its catch-up page, which the caller answers.
 async fn joined_with_gap() -> (ReplayHarness, BufferId, String) {
@@ -116,6 +116,51 @@ async fn a_catch_up_fetches_the_page_before_a_recorded_gap_and_clears_it() {
     );
 }
 
+/// Ergo's answer to a `BEFORE timestamp=…` page: the stored lines stamped before the bound.
+fn stamped_before(request: &str, stored: &[(&str, &str)]) -> Vec<String> {
+    let bound = request
+        .split(' ')
+        .find_map(|word| word.strip_prefix("timestamp="))
+        .expect("a timestamp bound");
+    stored
+        .iter()
+        .filter(|(time, _)| *time < bound)
+        .map(|(time, id)| {
+            format!("@batch={{batch}};time={time};msgid={id} :alice!a@host PRIVMSG #room :{id}")
+        })
+        .collect()
+}
+
+/// The CI loss behind B38: `stored-early` is stamped 3ms past the catch-up page's oldest line,
+/// but Ergo stored it before that line, so the capped catch-up page left it out.
+#[tokio::test]
+async fn a_fill_brings_a_line_stamped_past_the_edge_but_stored_before_it() {
+    let (mut harness, buffer_id, latest) = joined_with_gap().await;
+    let fill = finish_catch_up(&mut harness, &latest).await;
+
+    let page = stamped_before(
+        &fill,
+        &[
+            ("2026-10-27T11:59:59.000Z", "before"),
+            ("2026-10-27T12:00:02.000Z", "inside"),
+            ("2026-10-27T12:00:05.003Z", "stored-early"),
+            ("2026-10-27T12:00:05.000Z", "after"),
+        ],
+    );
+    let page: Vec<&str> = page.iter().map(String::as_str).collect();
+    send_ergo_history_page(&mut harness.wire, &fill, &page).await;
+
+    events_until(&mut harness, |events| removes_every_gap(events, buffer_id)).await;
+    let state = lock(&harness.state);
+    let model = &state.network.as_ref().expect("network").model;
+    let ids = model
+        .projected_messages(buffer_id)
+        .into_iter()
+        .flat_map(|message| message.server_ids)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["before", "inside", "after", "stored-early"]);
+}
+
 #[tokio::test]
 async fn a_failed_fill_keeps_the_gap_until_the_next_catch_up_retries_it() {
     let (mut harness, buffer_id, latest) = joined_with_gap().await;
@@ -195,7 +240,7 @@ async fn a_shown_gap_row_fetches_the_next_page_into_what_is_still_missing() {
     ));
     let next = next_sent_containing(&mut harness.wire, " CHATHISTORY BEFORE ").await;
     assert!(
-        next.ends_with("CHATHISTORY BEFORE #room timestamp=2026-10-27T12:00:03.001Z 100"),
+        next.ends_with("CHATHISTORY BEFORE #room timestamp=2026-10-27T12:00:03.010Z 100"),
         "{next}"
     );
 }

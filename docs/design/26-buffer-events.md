@@ -398,7 +398,9 @@ can settle a reconnect whose wall-clock end is later than every message. It runs
 
 A filled gap makes no row. A gap clears when a later page's range covers it, and clearing the row
 recomputes the exact badge in the same operation. Gaps backfill themselves (B20): each catch-up
-page fetches one `CHATHISTORY BEFORE` page from the newest gap's newer edge, and a gap row the
+page fetches one `CHATHISTORY BEFORE` page from 10ms past the newest gap's newer edge (Ergo
+stores concurrent lines out of stamp order, so a line stamped just past the edge can be missing
+from the page that set it: B38), and a gap row the
 list mounts (in or near the viewport) asks for the next one; a page shrinks the gap to what lies
 before its oldest line or clears it. A failed fill leaves the gap for the next catch-up, and a
 page that makes no progress is not fetched again. It leaves with eviction, PART or close. The marker is memory-only. After a relaunch the

@@ -28,10 +28,16 @@ pub(crate) struct GapFetch {
     attempt: u64,
 }
 
+/// Ergo fills a page by walking lines in the order it stored them, and it stores a line only after
+/// fanning it out, so concurrent senders' lines sit out of stamp order by up to a millisecond or
+/// so. A line stamped just after the oldest line of the page that bounded the gap can be stored
+/// before that page's lines and left out of it; reaching this far past the gap's newer edge brings
+/// it in, along with lines already shown, which merge by msgid.
+const EDGE_OVERLAP_MS: i64 = 10;
+
 impl GapFetch {
-    /// History bounds are exclusive, so the page starts just past the gap's newer edge.
     pub(crate) fn before(&self) -> SystemTime {
-        system_time_from_millis(self.span.to_ms.saturating_add(1))
+        system_time_from_millis(self.span.to_ms.saturating_add(EDGE_OVERLAP_MS))
     }
 }
 
@@ -197,7 +203,7 @@ mod tests {
                 to_ms: 700
             }
         );
-        assert_eq!(fetch.before(), super::system_time_from_millis(701));
+        assert_eq!(fetch.before(), super::system_time_from_millis(710));
     }
 
     #[test]
