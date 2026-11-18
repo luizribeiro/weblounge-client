@@ -5,7 +5,7 @@ const connected: TabIndicatorState = {
   baseTitle: "weblounge",
   disconnected: false,
   showUnread: true,
-  unreadCount: 0,
+  mentionCount: 0,
 };
 
 describe("tabIndicator", () => {
@@ -16,15 +16,15 @@ describe("tabIndicator", () => {
     });
   });
 
-  it("turns red and counts unread in the title", () => {
-    expect(tabIndicator({ ...connected, unreadCount: 3 })).toEqual({
-      icon: "unread",
+  it("turns red and counts mentions in the title", () => {
+    expect(tabIndicator({ ...connected, mentionCount: 3 })).toEqual({
+      icon: "mention",
       title: "(3) weblounge",
     });
   });
 
   it("caps the title count like the sidebar badge", () => {
-    expect(tabIndicator({ ...connected, unreadCount: 120 }).title).toBe(
+    expect(tabIndicator({ ...connected, mentionCount: 120 }).title).toBe(
       "(99+) weblounge",
     );
   });
@@ -36,14 +36,14 @@ describe("tabIndicator", () => {
     });
   });
 
-  it("lets unread win over disconnected", () => {
+  it("lets a mention win over disconnected", () => {
     expect(
-      tabIndicator({ ...connected, disconnected: true, unreadCount: 1 }),
-    ).toEqual({ icon: "unread", title: "(1) weblounge" });
+      tabIndicator({ ...connected, disconnected: true, mentionCount: 1 }),
+    ).toEqual({ icon: "mention", title: "(1) weblounge" });
   });
 
   it("hides unread when the setting is off but still shows disconnected", () => {
-    const off = { ...connected, showUnread: false, unreadCount: 5 };
+    const off = { ...connected, showUnread: false, mentionCount: 5 };
     expect(tabIndicator(off)).toEqual({
       icon: "connected",
       title: "weblounge",

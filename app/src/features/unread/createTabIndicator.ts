@@ -29,7 +29,7 @@ export function createTabIndicator(sources: TabIndicatorSources): void {
         disconnected: connectionIndicatorShown(sources.networks()),
         // Until the engine answers, a user who turned this off must not see a red flash.
         showUnread: sources.settings()?.app.unread_tab_indicator ?? false,
-        unreadCount: appBadgeCount(sources.buffers()),
+        mentionCount: appBadgeCount(sources.buffers()),
       }),
     );
   });

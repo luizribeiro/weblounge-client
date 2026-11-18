@@ -20,7 +20,7 @@ const faviconVariants = JSON.parse(
 );
 const faviconTiles = {
   connected: brandColors.felt,
-  unread: loungeTheme.colors.mentionBadge,
+  mention: loungeTheme.colors.mentionBadge,
   disconnected: "#8C8F87",
 };
 // Local builds wear a yellow tile so they are never mistaken for the installed release.

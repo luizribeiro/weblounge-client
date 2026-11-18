@@ -19,11 +19,11 @@ describe("createTabIndicatorWriter", () => {
   it("swaps both favicon links and the title, leaving the touch icon", () => {
     const write = createTabIndicatorWriter(document);
 
-    write({ icon: "unread", title: "(2) weblounge" });
+    write({ icon: "mention", title: "(2) weblounge" });
 
     expect(iconHrefs()).toEqual([
-      "/icons/favicon-unread.svg",
-      "/icons/favicon-32-unread.png",
+      "/icons/favicon-mention.svg",
+      "/icons/favicon-32-mention.png",
     ]);
     expect(document.title).toBe("(2) weblounge");
     expect(
@@ -58,9 +58,9 @@ describe("createTabIndicatorWriter", () => {
 
     write({ icon: "connected", title: "weblounge" });
     const atLoad = observer.takeRecords();
-    write({ icon: "unread", title: "(1) weblounge" });
+    write({ icon: "mention", title: "(1) weblounge" });
     const onChange = observer.takeRecords();
-    write({ icon: "unread", title: "(1) weblounge" });
+    write({ icon: "mention", title: "(1) weblounge" });
     const repeated = observer.takeRecords();
     observer.disconnect();
 
