@@ -87,7 +87,7 @@ test.describe("transcript gap and boundary dividers", () => {
         await reconnect(page, irc);
 
         const caughtUpList = activeMessageList(page);
-        await scrollToTranscriptTop(caughtUpList);
+        await scrollCaughtUpTranscriptToTop(caughtUpList);
         const gap = caughtUpList.locator("[data-gap-row]");
         const expectedGap = `Messages may be missing · ${await formatLineTime(page, seedLine)} to ${await formatLineTime(page, firstRetainedLine)}`;
         await expect(gap).toHaveAttribute("aria-label", expectedGap);
@@ -200,7 +200,7 @@ test.describe("transcript gap and boundary dividers", () => {
       await reconnect(page, irc);
 
       const list = activeMessageList(page);
-      await scrollToTranscriptTop(list);
+      await scrollCaughtUpTranscriptToTop(list);
       const gap = list.locator("[data-gap-row]");
       await expect(gap).toHaveCount(1);
       await expect.poll(() => irc.forwarder.isHoldingIncoming()).toBe(true);
@@ -300,6 +300,16 @@ async function reconnect(page: Page, irc: IrcTestAccount): Promise<void> {
   await setPageHidden(page, true);
   await setPageHidden(page, false);
   await expect.poll(() => currentNetworkState(page)).toBe("online");
+}
+
+/** A scroll up that moves nothing leaves the list at the live edge, where the catch-up keeps it. */
+async function scrollCaughtUpTranscriptToTop(list: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      list.evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
+  await scrollToTranscriptTop(list);
 }
 
 async function expectEachOnce(
