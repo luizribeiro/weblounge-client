@@ -218,6 +218,7 @@ struct BufferState {
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
+    remembered_nicks: HashSet<String>,
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
     system_dedup: HashMap<MessageId, SystemDedupReference>,
@@ -599,6 +600,7 @@ impl NetworkModel {
             key: None,
             direct_key: None,
             timeline: Vec::new(),
+            remembered_nicks: HashSet::new(),
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
             topic_card: None,
@@ -2945,6 +2947,29 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn remember_members(&mut self, state: &papo::State, channel: &papo::ChannelName) {
+        let casemapping = self.casemapping;
+        let Some(buffer_id) = self.buffer_id_for_channel(channel) else {
+            return;
+        };
+        let (Some(buffer), Some(channel)) =
+            (self.buffers.get_mut(&buffer_id), state.channel(channel))
+        else {
+            return;
+        };
+        let mut learned = false;
+        for member in channel.members() {
+            let key = casemapping.fold(member.nick().as_str());
+            if !buffer.remembered_nicks.contains(key.as_ref()) {
+                buffer.remembered_nicks.insert(key.into_owned());
+                learned = true;
+            }
+        }
+        if learned {
+            self.dirty_timelines.insert(buffer_id);
+        }
+    }
+
     pub(crate) fn buffer_id_for_channel(&self, channel: &papo::ChannelName) -> Option<BufferId> {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
@@ -4218,6 +4243,7 @@ impl NetworkModel {
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
+                remembered_nicks: HashSet::new(),
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
                 topic_card: None,
@@ -4951,7 +4977,12 @@ fn mention_vocabulary(
     let peer = buffer
         .direct_nick()
         .map(|nick| casemapping.fold(nick.as_str()).into_owned());
-    MentionVocabulary::new(casemapping, own_nick, peer.as_ref(), &buffer.timeline)
+    MentionVocabulary::new(
+        casemapping,
+        own_nick,
+        buffer.remembered_nicks.iter().chain(peer.as_ref()),
+        &buffer.timeline,
+    )
 }
 
 fn evict_over_budget(

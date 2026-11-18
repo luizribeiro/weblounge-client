@@ -31,6 +31,23 @@ impl Changes {
     }
 }
 
+/// Channels where this event may have added a nick to the member list.
+pub(crate) fn channels_gaining_members(
+    event: &papo::Event,
+    state: &papo::State,
+) -> Vec<papo::ChannelName> {
+    match event {
+        papo::Event::Connected(_)
+        | papo::Event::Lagged(_)
+        | papo::Event::CasemappingChanged(_)
+        | papo::Event::ChannelSynced(_)
+        | papo::Event::MembersRefreshed(_)
+        | papo::Event::Joined(_)
+        | papo::Event::NickChanged(_) => affected_channels(event, state),
+        _ => Vec::new(),
+    }
+}
+
 fn affected_channels(event: &papo::Event, state: &papo::State) -> Vec<papo::ChannelName> {
     match event {
         papo::Event::Connected(_) | papo::Event::Lagged(_) | papo::Event::CasemappingChanged(_) => {

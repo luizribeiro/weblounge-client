@@ -4424,8 +4424,12 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let peer_facts_may_change = crate::direct_peer::may_change(&event);
+    let membership_grew = crate::members::channels_gaining_members(&event, &snapshot);
     running.model.observe_peers(&event);
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
+    for channel in &membership_grew {
+        running.model.remember_members(&snapshot, channel);
+    }
     if peer_facts_may_change || output.iter().any(crate::direct_peer::reveals_buffers) {
         output.extend(running.model.sync_direct_peers(&snapshot));
     }
@@ -6118,6 +6122,7 @@ use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
 mod tests {
     mod gap_fill;
     mod history_integrity;
+    mod mentions;
     mod redaction;
 
     use std::{
