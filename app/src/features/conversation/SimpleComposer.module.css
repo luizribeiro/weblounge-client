@@ -1,4 +1,16 @@
 .form {
+  --wl-composer-line-height: var(--wl-size-composer-line);
+  --wl-composer-input-padding-block: var(--wl-space-composer-field-block);
+  --wl-composer-input-border: var(--wl-size-composer-field-border);
+  --wl-composer-input-chrome: calc(
+    2 *
+    (var(--wl-composer-input-padding-block) + var(--wl-composer-input-border))
+  );
+  --wl-composer-single-line: calc(
+    var(--wl-composer-line-height) +
+    var(--wl-composer-input-chrome)
+  );
+
   align-items: flex-end;
   border-top: 1px solid var(--wl-color-border);
   display: flex;
@@ -56,14 +68,13 @@
 }
 
 .input {
-  --wl-composer-input-padding-block: 9px;
-
   background: var(--wl-color-input-bg);
-  border: 1px solid var(--wl-color-border);
+  border: var(--wl-composer-input-border) solid var(--wl-color-border);
   border-radius: var(--wl-radius-composer);
   color: var(--wl-color-fg);
   flex: 1;
   font: inherit;
+  line-height: var(--wl-composer-line-height);
   min-width: 0;
   padding: var(--wl-composer-input-padding-block) 11px;
   resize: none;
@@ -71,8 +82,12 @@
 }
 
 textarea.input {
-  max-height: 7em;
-  min-height: var(--wl-size-composer-single-line);
+  max-height: calc(
+    var(--wl-composer-max-rows) *
+    var(--wl-composer-line-height) +
+    var(--wl-composer-input-chrome)
+  );
+  min-height: var(--wl-composer-single-line);
 }
 
 .field[data-attachment="true"] {
@@ -220,7 +235,16 @@ textarea.input {
 }
 
 .desktopSend {
-  height: var(--wl-size-composer-single-line);
+  height: var(--wl-composer-single-line);
+}
+
+:global(#root[data-input="touch"]) .form {
+  --wl-composer-line-height: var(--wl-size-composer-touch-line);
+  --wl-composer-input-padding-block: calc(
+    (var(--wl-size-touch-target) - var(--wl-composer-line-height)) /
+    2
+  );
+  --wl-composer-input-border: 0px;
 }
 
 :global(#root[data-input="touch"]) .popup {
@@ -251,15 +275,7 @@ textarea.input {
 
 :global(#root[data-input="touch"]) .input {
   background: transparent;
-  border: 0;
   border-radius: 0;
-  line-height: 22px;
-  max-height: calc(
-    6.5em +
-    var(--wl-composer-input-padding-block) +
-    var(--wl-composer-input-padding-block)
-  );
-  padding-block: calc((var(--wl-size-touch-target) - 22px) / 2);
   padding-inline: 11px 0;
 }
 

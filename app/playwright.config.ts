@@ -116,8 +116,11 @@ export default defineConfig({
     },
     {
       name: "firefox-desktop-composer",
-      grep: /aligns desktop Send/u,
-      testMatch: "**/phone-composer.spec.ts",
+      grep: /aligns desktop Send|desktop composer line height/u,
+      testMatch: [
+        "**/phone-composer.spec.ts",
+        "**/composer-line-height.spec.ts",
+      ],
       use: { browserName: "firefox" },
     },
     {
@@ -232,7 +235,10 @@ export default defineConfig({
     },
     {
       name: "webkit-phone-composer",
-      testMatch: "**/phone-composer.spec.ts",
+      testMatch: [
+        "**/phone-composer.spec.ts",
+        "**/composer-line-height.spec.ts",
+      ],
       use: { browserName: "webkit" },
     },
     {
