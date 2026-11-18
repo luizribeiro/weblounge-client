@@ -1,6 +1,7 @@
 import { createEffect, createSignal } from "solid-js";
 import type { BufferKind } from "../../engine/generated/BufferKind";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import type { DesktopPanels } from "../../platform/environment";
 
 export const memberColumnWidth = 232;
 export const memberColumnWidthToken = "var(--wl-size-members)";
@@ -8,8 +9,12 @@ export const minConversationBesideMembers = 480;
 
 export type MembersPresentation = "inline" | "drawer";
 
-export function membersPresentation(paneWidth: number): MembersPresentation {
-  return paneWidth >= memberColumnWidth + minConversationBesideMembers
+export function membersPresentation(
+  paneWidth: number,
+  desktopPanels: DesktopPanels,
+): MembersPresentation {
+  return desktopPanels === "inline" &&
+    paneWidth >= memberColumnWidth + minConversationBesideMembers
     ? "inline"
     : "drawer";
 }
@@ -30,6 +35,7 @@ export interface PaneMembersController {
 
 interface PaneMembersOptions {
   readonly bufferKind: () => BufferKind | undefined;
+  readonly desktopPanels: () => DesktopPanels;
   readonly shown: () => boolean;
   readonly onToggleShown: () => void;
   readonly onDrawerOpen: () => void;
@@ -39,7 +45,8 @@ interface PaneMembersOptions {
 export function createPaneMembers(options: PaneMembersOptions) {
   const [width, setWidth] = createSignal(window.innerWidth);
   const [drawer, setDrawer] = createSignal<DrawerState>("closed");
-  const presentation = () => membersPresentation(width());
+  const presentation = () =>
+    membersPresentation(width(), options.desktopPanels());
   const available = () => options.bufferKind() === "channel";
   const inlineShown = () =>
     available() && presentation() === "inline" && options.shown();

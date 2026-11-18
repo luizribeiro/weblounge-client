@@ -17,6 +17,7 @@ import {
   type MemberPanelChrome,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
+import type { DesktopPanels } from "../../platform/environment";
 import { t } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopPane.module.css";
@@ -57,6 +58,7 @@ type SharedShellProps = Pick<
 
 export interface DesktopPaneProps extends SharedShellProps {
   readonly buffer: BufferProjection | undefined;
+  readonly desktopPanels: DesktopPanels;
   readonly network: NetworkProjection | undefined;
   readonly focusComposerOnMount: boolean;
   readonly headerDragRegion: "deep" | undefined;
@@ -117,6 +119,7 @@ function PaneConversation(props: DesktopPaneProps) {
   const focusComposer = () => focusComposerIn(() => pane);
   const members = createPaneMembers({
     bufferKind: () => props.buffer?.kind,
+    desktopPanels: () => props.desktopPanels,
     focusComposer,
     onDrawerOpen: () => props.onMembersDrawerOpen(),
     onToggleShown: () => props.onToggleMembersShown(),

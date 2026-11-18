@@ -523,6 +523,7 @@ export function DesktopShell(props: DesktopShellProps) {
           commandSpecs={props.commandSpecs}
           completion={props.completion}
           composerNotice={props.composerNotice}
+          desktopPanels={platform.environment().desktopPanels}
           focusComposerOnMount={!retainSidebarFocus()}
           headerDragRegion={windowDragRegion(platform.windowControls())}
           headerWindowControlsInset={

@@ -3,6 +3,7 @@ import { createRoot, createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type { BufferKind } from "../../engine/generated/BufferKind";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import type { DesktopPanels } from "../../platform/environment";
 import {
   createPaneMembers,
   memberColumnWidth,
@@ -25,13 +26,18 @@ it("matches the token that sizes the member column and its drawer", () => {
 
 it("shows members inline once the conversation keeps its minimum width", () => {
   expect(threshold).toBe(712);
-  expect(membersPresentation(threshold)).toBe("inline");
-  expect(membersPresentation(1216)).toBe("inline");
+  expect(membersPresentation(threshold, "inline")).toBe("inline");
+  expect(membersPresentation(1216, "inline")).toBe("inline");
 });
 
 it("falls back to a drawer when the pane is narrower", () => {
-  expect(membersPresentation(threshold - 1)).toBe("drawer");
-  expect(membersPresentation(0)).toBe("drawer");
+  expect(membersPresentation(threshold - 1, "inline")).toBe("drawer");
+  expect(membersPresentation(0, "inline")).toBe("drawer");
+});
+
+it("keeps the drawer while the window is too narrow for an inline sidebar", () => {
+  expect(membersPresentation(threshold, "overlay")).toBe("drawer");
+  expect(membersPresentation(1216, "overlay")).toBe("drawer");
 });
 
 it("only hands a pane the member window of the buffer it shows", () => {
@@ -46,6 +52,8 @@ function paneMembers(width: number, kind: BufferKind = "channel") {
     const [bufferKind, setBufferKind] = createSignal<BufferKind | undefined>(
       kind,
     );
+    const [desktopPanels, setDesktopPanels] =
+      createSignal<DesktopPanels>("inline");
     const [shown, setShown] = createSignal(false);
     const options = {
       focusComposer: vi.fn(),
@@ -55,10 +63,11 @@ function paneMembers(width: number, kind: BufferKind = "channel") {
     const members = createPaneMembers({
       ...options,
       bufferKind,
+      desktopPanels,
       shown,
     });
     members.setWidth(width);
-    return { dispose, members, options, setBufferKind };
+    return { dispose, members, options, setBufferKind, setDesktopPanels };
   });
 }
 
@@ -123,6 +132,19 @@ it("dismisses the drawer silently for another drawer, a wider pane or a DM", () 
   setBufferKind("channel");
   expect(members.drawerShown()).toBe(false);
   expect(options.focusComposer).not.toHaveBeenCalled();
+  dispose();
+});
+
+it("hides the inline list while the sidebar collapses and restores it after", () => {
+  const { dispose, members, setDesktopPanels } = paneMembers(1200);
+  members.controller.toggle();
+  setDesktopPanels("overlay");
+  expect(members.inlineShown()).toBe(false);
+  members.controller.toggle();
+  expect(members.drawerShown()).toBe(true);
+  setDesktopPanels("inline");
+  expect(members.drawerShown()).toBe(false);
+  expect(members.inlineShown()).toBe(true);
   dispose();
 });
 
