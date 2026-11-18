@@ -292,13 +292,18 @@ async function chatRowMismatch(
   const server = await serverHistory(truth, target);
   const expected = await expectedBadge(server, truth, target, ownNick);
   const badge = row.locator("[data-badge-kind]");
-  const shown = (await badge.count()) === 0 ? "" : await badge.innerText();
+  const shown = await shownText(badge);
   if (shown !== expected) return `badge shows "${shown}", server "${expected}"`;
   if (!isPhoneViewport(page) || server.length === 0) return "match";
-  const preview = await row.innerText();
+  const preview = await shownText(row);
   return newestTexts(server).some((text) => preview.includes(text))
     ? "match"
     : `preview "${preview}" is not the newest server line`;
+}
+
+/** Reads without waiting: a badge the server's read marker clears mid-poll would stall the poll. */
+async function shownText(locator: Locator): Promise<string> {
+  return (await locator.allInnerTexts()).join("\n");
 }
 
 async function expectedBadge(
