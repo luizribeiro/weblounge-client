@@ -3271,6 +3271,35 @@ it("builds one distinct-nick lookup for all rendered rows", () => {
   );
 });
 
+it("colours engine-known mentions of people who have not spoken", () => {
+  render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          text: "sheki: are you still alive? ask weblounge",
+          mentions: [
+            { nick: "sheki", nick_color_index: 3, me: false },
+            { nick: "weblounge", nick_color_index: 5, me: true },
+          ],
+        },
+        { ...message, id: 2, text: "where is Sheki" },
+      ]}
+      onOpenDirect={() => undefined}
+    />
+  ));
+
+  for (const nick of ["sheki", "Sheki"])
+    expect(
+      screen
+        .getByRole("button", { name: `Open direct message with ${nick}` })
+        .style.getPropertyValue("--wl-nick-color"),
+    ).toBe("var(--wl-nick-3)");
+  expect(
+    screen.getByText("weblounge", { selector: "span" }).className,
+  ).toContain("own");
+});
+
 it("offers new messages without moving a scrolled-away viewport", async () => {
   const observers: ControlledIntersectionObserver[] = [];
   vi.stubGlobal(

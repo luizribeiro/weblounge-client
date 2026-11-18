@@ -7,6 +7,7 @@ import {
 import { decodeCommandSpecs } from "./decodeCommandSpec";
 import { decodeSettings } from "./decodeSettings";
 import { decodeTimelineItem } from "./decodeTimelineItem";
+import { decodePerson } from "./decodeTimelinePeople";
 import { decodeUploadResolution } from "./decodeUploadResolution";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
 import type {
@@ -1219,6 +1220,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
   const reactions = isRecord(value)
     ? decodeReactions(value.reactions)
     : undefined;
+  const mentions = isRecord(value) ? decodeMentions(value.mentions) : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
@@ -1240,6 +1242,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
       ])
     ) ||
     (value.reactions !== undefined && reactions === undefined) ||
+    (value.mentions !== undefined && mentions === undefined) ||
     !(
       value.own_redaction === undefined ||
       isOneOf(value.own_redaction, ["sending", "failed"])
@@ -1270,6 +1273,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
     highlighted: value.highlighted,
+    ...(mentions === undefined ? {} : { mentions }),
     ...(value.unverified_sender === undefined
       ? {}
       : { unverified_sender: value.unverified_sender }),
@@ -1283,6 +1287,14 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     server_time_ms: value.server_time_ms,
     received_at_ms: value.received_at_ms,
   };
+}
+
+function decodeMentions(
+  value: unknown,
+): MessageProjection["mentions"] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const people = value.map(decodePerson);
+  return people.every((person) => person !== undefined) ? people : undefined;
 }
 
 function decodeReactions(

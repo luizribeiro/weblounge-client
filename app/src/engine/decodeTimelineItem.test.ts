@@ -37,6 +37,39 @@ it("decodes a message body", () => {
   expect(decodeTimelineItem(value)).toEqual(value);
 });
 
+it("decodes a message's mentions and rejects a malformed one", () => {
+  const body = {
+    family: "message",
+    id: 1,
+    author: "luiz",
+    text: "sheki: are you still alive?",
+    kind: "text",
+    bot: false,
+    authorship: "other",
+    nick_color_index: 2,
+    highlighted: false,
+    delivery: "received",
+    local_send_id: null,
+    server_ids: ["msg-1"],
+    server_time_ms: 1,
+    received_at_ms: 2,
+  };
+  const mentioned = {
+    ...gapItem(),
+    body: {
+      ...body,
+      mentions: [{ nick: "sheki", nick_color_index: 4, me: false }],
+    },
+  };
+  const malformed = {
+    ...gapItem(),
+    body: { ...body, mentions: [{ nick: "sheki" }] },
+  };
+
+  expect(decodeTimelineItem(mentioned)).toEqual(mentioned);
+  expect(decodeTimelineItem(malformed)).toBeUndefined();
+});
+
 it("decodes kick and topic bodies", () => {
   const user = person("operator");
   const kicked = systemItem({
