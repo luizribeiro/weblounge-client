@@ -88,6 +88,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F45: transcript rows as a single tab stop with roving focus (arrow keys between rows), so keyboard users can reach every row's Copy text and actions without Tabbing through every message; it touches the reaction focus restore. Design 15.
 - F41: Mac app push (APNs while the app is closed), like the iOS app. Until then the Mac app's Settings → Notifications has only the while-open "Notifications" switch (design 36 "Notifications where push isn't available"). Related F18, F36. Luiz, 2026-11-17.
 - F46: explain the unverified-sender marker (feedback #27). Done in 47d92e5b and 527f7a34. The engine now says why a DM row's sender is unverified (no account, an account this connection can't prove, a different account, can't verify, or a notification that named another sender), and the "?" is a button: a hover hint on desktop, a popover on click, a sheet on the phone (where the "?" is now visible too).
+- F48: n.e. theme from pgray.dev and neutral.engineering (feedback #36). Done in 61c08735.
 - F47: favicon yellow for unread, red for mentions (feedback #34). Done in 68b552de. Grey (disconnected) outranks yellow; design 23 Badging.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
