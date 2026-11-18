@@ -1,0 +1,44 @@
+/* Doubled so the caller's tile class keeps sizing the button but stops painting it. */
+.flip.flip {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  overflow: visible;
+  padding: 0;
+  perspective: 160px;
+  position: relative;
+}
+
+/* Some WebKit builds ignore backface-visibility, so each face also hides
+   halfway through, when the symmetric flip curve turns it edge-on. */
+.flip .face {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  inset: 0;
+  position: absolute;
+  transition:
+    transform var(--wl-motion-flip) var(--wl-motion-flip-curve),
+    visibility 0s linear calc(var(--wl-motion-flip) / 2);
+}
+
+.flip .front {
+  transform: rotateY(0deg);
+}
+
+.flip .back {
+  background: url("../assets/blob-neutral.svg") center / contain no-repeat;
+  transform: rotateY(-180deg);
+  visibility: hidden;
+}
+
+.flip[aria-pressed="true"] .front {
+  transform: rotateY(180deg);
+  visibility: hidden;
+}
+
+.flip[aria-pressed="true"] .back {
+  transform: rotateY(0deg);
+  visibility: visible;
+}
