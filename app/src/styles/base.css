@@ -143,8 +143,8 @@ textarea:focus-visible {
 }
 
 ::selection {
-  background: var(--wl-color-selection);
-  color: var(--wl-color-selection-fg);
+  background: var(--wl-color-text-selection);
+  color: var(--wl-color-text-selection-fg);
 }
 
 #root[data-input="touch"] input,

@@ -95,9 +95,9 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   ).not.toHaveAttribute("style");
   expect(row).toHaveAttribute("data-delivery", "failed");
   expect(row?.className).toContain("highlighted");
-  expect(screen.getByText("alice")).toHaveStyle({
-    color: "var(--wl-nick-1)",
-  });
+  expect(
+    screen.getByText("alice").style.getPropertyValue("--wl-nick-color"),
+  ).toBe("var(--wl-nick-1)");
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 

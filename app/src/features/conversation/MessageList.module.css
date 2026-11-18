@@ -145,6 +145,9 @@
   padding: 0;
   text-align: inherit;
 }
+.paletteNick {
+  color: var(--wl-nick-color);
+}
 .text .nickAction,
 .actionText .nickAction,
 .noticeText .nickAction {
@@ -412,9 +415,9 @@
 
 .virtualRow[data-copy-selected] .time [data-line],
 .virtualRow[data-copy-selected] .nick {
-  background: var(--wl-color-selection);
+  background: var(--wl-color-text-selection);
+  color: var(--wl-color-text-selection-fg);
 }
 .virtualRow[data-copy-selected] .time [data-line] {
-  color: var(--wl-color-selection-fg);
   inline-size: fit-content;
 }

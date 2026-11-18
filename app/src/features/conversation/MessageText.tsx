@@ -85,6 +85,7 @@ export function Nickname(props: {
     [
       props.class,
       own() ? styles.own : undefined,
+      style() === undefined ? undefined : styles.paletteNick,
       clickable() ? styles.nickAction : undefined,
     ]
       .filter(Boolean)
@@ -92,7 +93,7 @@ export function Nickname(props: {
   const style = () =>
     own() || props.display === undefined
       ? undefined
-      : { color: nickColor(props.display.nick_color_index) };
+      : { "--wl-nick-color": nickColor(props.display.nick_color_index) };
 
   if (clickable())
     return (

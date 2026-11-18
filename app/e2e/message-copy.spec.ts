@@ -7,6 +7,7 @@ import {
 } from "./native-feel-audit";
 import { productionMessageRow } from "./production-ergo";
 import { composer, openConversation } from "./redaction";
+import { choose } from "./settings-fixture";
 import { tokenColor } from "./token-color";
 
 const first = "nice, the second message has a few words";
@@ -69,19 +70,7 @@ test.describe("desktop copying from the transcript", () => {
       await charPoint(messageText(page, second), 6),
     );
 
-    const selection = await tokenColor(page, "--wl-color-selection");
-    for (const text of [first, second]) {
-      const row = productionMessageRow(page, text);
-      await expect(row.locator("time [data-line]")).toHaveCSS(
-        "background-color",
-        selection,
-      );
-      await expect(
-        row
-          .locator("[data-message-chrome]")
-          .getByText(peer.nickname, { exact: true }),
-      ).toHaveCSS("background-color", selection);
-    }
+    await expectSelectedChrome(page, peer.nickname, [first, second]);
     expect(await copySelection(page)).toMatch(
       new RegExp(
         `^${time} <${peer.nickname}> ${first}\\n${time} <${peer.nickname}> ${second}$`,
@@ -92,6 +81,42 @@ test.describe("desktop copying from the transcript", () => {
     const firstText = await charPoint(messageText(page, first), 2);
     await page.mouse.click(firstText.x, firstText.y);
     await expect(page.locator("[data-copy-selected]")).toHaveCount(0);
+    await nativeFeelAudit(page);
+  });
+
+  test("paints a selection in Monokai's text selection colours", async ({
+    page,
+    irc,
+  }) => {
+    const peer = await irc.peer("copy-monokai");
+    await peer.privmsgConfirmed(irc.channel, first);
+    await peer.privmsgConfirmed(irc.channel, second);
+    await openTranscript(page, irc.url(), irc.channel);
+    await chooseTheme(page, "Monokai");
+    const nick = productionMessageRow(page, first)
+      .locator("[data-message-chrome]")
+      .getByRole("button", { name: peer.nickname });
+    const { colour, palette } = await nick.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--wl-nick-color)";
+      element.append(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      return { colour: getComputedStyle(element).color, palette: resolved };
+    });
+    expect(colour).toBe(palette);
+    expect(colour).not.toBe(await tokenColor(page, "--wl-color-fg"));
+
+    await drag(
+      page,
+      await charPoint(messageText(page, first), 10),
+      await charPoint(messageText(page, second), 6),
+    );
+
+    expect(await computedSelectionColours(messageText(page, first))).toEqual(
+      await selectionColours(page),
+    );
+    await expectSelectedChrome(page, peer.nickname, [first, second]);
     await nativeFeelAudit(page);
   });
 
@@ -224,6 +249,57 @@ async function openTranscript(
 ): Promise<void> {
   await page.goto(url);
   await openConversation(page, channel);
+}
+
+interface SelectionColours {
+  readonly background: string;
+  readonly foreground: string;
+}
+
+async function selectionColours(page: Page): Promise<SelectionColours> {
+  return {
+    background: await tokenColor(page, "--wl-color-text-selection"),
+    foreground: await tokenColor(page, "--wl-color-text-selection-fg"),
+  };
+}
+
+async function computedSelectionColours(
+  text: Locator,
+): Promise<SelectionColours> {
+  return text.evaluate((element) => {
+    const selection = getComputedStyle(element, "::selection");
+    return {
+      background: selection.backgroundColor,
+      foreground: selection.color,
+    };
+  });
+}
+
+async function expectSelectedChrome(
+  page: Page,
+  nickname: string,
+  texts: readonly string[],
+): Promise<void> {
+  const { background, foreground } = await selectionColours(page);
+  for (const text of texts) {
+    const row = productionMessageRow(page, text);
+    for (const chrome of [
+      row.locator("time [data-line]"),
+      row.locator("[data-message-chrome]").getByText(nickname, { exact: true }),
+    ]) {
+      await expect(chrome).toHaveCSS("background-color", background);
+      await expect(chrome).toHaveCSS("color", foreground);
+    }
+  }
+}
+
+async function chooseTheme(page: Page, name: string): Promise<void> {
+  await page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: "Settings" })
+    .click();
+  await choose(page, name);
+  await page.getByRole("button", { name: "Close settings" }).click();
 }
 
 function messageText(page: Page, text: string): Locator {
