@@ -178,6 +178,11 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-18: fixed two e2e flakes from CI run 44244631268, both test races. In
+  `transcript-gaps.spec.ts`, the spec scrolled up before the catch-up rendered, so the list stayed
+  at the live edge and the gap row never mounted (4 of 4 with the catch-up held mid-gesture). It
+  now waits for the list to overflow first. In `history-integrity.ts`, the chat-row poll read a
+  cache badge's text after the server marker had cleared it, and stalled (1 of 190).
 - 2026-11-17: history integrity suite (design 39). One assertion, `expectTranscriptMatchesServer`
   (`app/e2e/history-integrity.ts`), compares every message row's msgid with the server's
   `CHATHISTORY`; `app/e2e/history-integrity.spec.ts` runs it, with the chat-list badge and preview
