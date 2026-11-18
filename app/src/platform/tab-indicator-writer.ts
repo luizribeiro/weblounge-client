@@ -25,7 +25,9 @@ export function createTabIndicatorWriter(
         'link[rel="icon"]',
       )) {
         const href = tabIconHref(link.type, next.icon);
-        if (href !== undefined) link.setAttribute("href", href);
+        if (href === undefined) continue;
+        link.setAttribute("href", href);
+        link.dataset.tabIcon = next.icon;
       }
     }
     if (next.title !== shown.title) document.title = next.title;
