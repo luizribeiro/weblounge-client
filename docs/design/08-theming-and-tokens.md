@@ -118,6 +118,36 @@ six distinct hues: green, amber, blue `#1398b9` (4.5:1), bright salmon `#ff9269`
 shares Monokai's Hack, 13px and 3px corners. A unit test checks text pairs at 4.5:1 and indicators
 at 3:1 in every theme.
 
+## Text selection
+
+Selected text has its own pair, `textSelection` / `textSelectionFg`
+(`--wl-color-text-selection[-fg]`), separate from `selection` / `selectionFg`, which mark the
+selected row in lists (sidebar, switcher, settings nav). A row selection must stay quiet beside its
+neighbours; a text selection must stand out from everything around it, so one pair can't do both.
+`::selection` in `base.css` uses the pair everywhere: transcript text, the topic, the composer and
+native inputs where the platform honours `::selection`. The transcript's nick and time, which the
+copy handler paints when a selection spans rows (F43), use the same pair, so a selected nick drops
+its palette colour for `textSelectionFg`.
+
+Each theme takes the pair from its own palette, inverting it so the selection reads against the
+surface: dark themes use a bright palette colour with their background or surface as text, light themes their
+dark ink or accent with a light text colour.
+
+| Theme        | Background | Text      | Ratio  |
+| ------------ | ---------- | --------- | ------ |
+| Lounge       | `#1d2825`  | `#bdd9a7` | 9.9:1  |
+| Lounge Night | `#bdd9a7`  | `#18221e` | 10.6:1 |
+| Black        | `#bdd9a7`  | `#000000` | 13.7:1 |
+| Modern       | `#1a3bb0`  | `#ffffff` | 9.1:1  |
+| Terminal     | `#e6b450`  | `#121314` | 9.8:1  |
+| Retro        | `#4a3527`  | `#fff3dc` | 10.4:1 |
+| Monokai      | `#ded685`  | `#1c1c1c` | 11.4:1 |
+| Earthsong    | `#f5ae2e`  | `#292520` | 8.0:1  |
+
+The contrast test requires 7:1 (WCAG AAA) for the pair, and 4.5:1 between the selection background
+and each row background (`bg`, `surface`, `panelAlt` for hovered rows, `mentionBg` for highlights),
+so a selection reads on every row it can cover.
+
 ## Selection and system appearance
 
 First run follows the OS: Lounge in light mode and Lounge Night in dark mode. A manual theme choice
