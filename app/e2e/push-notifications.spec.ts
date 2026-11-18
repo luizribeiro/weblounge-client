@@ -620,28 +620,9 @@ test("anchors queued generic notifications to their receipt deadline", async ({
     });
   });
 
-  const startedAt = performance.now();
-  let presentationElapsedMs: number;
-  const deliveries = deliverPushes(context, page, [envelope, envelope]);
+  const startedAt = await page.evaluate(() => Date.now());
   try {
-    await expect
-      .poll(() => notifications(page), { intervals: [50] })
-      .toEqual([
-        {
-          title: "New message",
-          body: "",
-          tag: expect.stringMatching(/^weblounge-fallback\//),
-          route: "/",
-        },
-        {
-          title: "New message",
-          body: "",
-          tag: expect.stringMatching(/^weblounge-fallback\//),
-          route: "/",
-        },
-      ]);
-    presentationElapsedMs = performance.now() - startedAt;
-    await deliveries;
+    await deliverPushes(context, page, [envelope, envelope]);
   } finally {
     await page.evaluate(() => {
       const transaction = Reflect.get(globalThis, "blockedPushTransaction");
@@ -650,7 +631,22 @@ test("anchors queued generic notifications to their receipt deadline", async ({
       if (database instanceof IDBDatabase) database.close();
     });
   }
-  expect(presentationElapsedMs).toBeLessThan(2_500);
+  // Chromium drops a notification whose getNotifications() call overlaps its
+  // showNotification(), so the shown list is read once both deliveries settle.
+  // The worker leaves `timestamp` unset, so it records when each was shown.
+  const fallback = {
+    title: "New message",
+    body: "",
+    tag: expect.stringMatching(/^weblounge-fallback\//),
+    route: "/",
+  };
+  const shown = await notifications(page);
+  expect(shown).toEqual([fallback, fallback]);
+  expect(new Set(shown?.map(({ tag }) => tag)).size).toBe(2);
+  for (const shownAt of await notificationTimestamps(page)) {
+    expect(shownAt).toBeGreaterThanOrEqual(startedAt);
+    expect(shownAt - startedAt).toBeLessThan(2_500);
+  }
 });
 
 test("shows one generic notification without replacing keys when parsing fails", async ({
@@ -846,6 +842,14 @@ test("reconciles a restored pushed direct message with history", async ({
   // The plaintext fixture turns the provisional row into an unverified authoritative row.
   await expect(row).toHaveAttribute("data-unverified-sender", "true");
 });
+
+async function notificationTimestamps(page: Page): Promise<number[]> {
+  return page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    const shown = (await registration?.getNotifications()) ?? [];
+    return shown.map((notification) => notification.timestamp);
+  });
+}
 
 async function notifications(page: Page, scope = "/") {
   return page.evaluate(async (registrationScope) => {
