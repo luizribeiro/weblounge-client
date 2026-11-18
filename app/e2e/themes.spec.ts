@@ -14,6 +14,13 @@ const themes = [
   { name: "Retro", id: "retro", background: "rgb(246, 239, 225)" },
   { name: "Monokai", id: "monokai", background: "rgb(28, 28, 28)" },
   { name: "Earthsong", id: "earthsong", background: "rgb(41, 37, 32)" },
+  { name: "n.e.", id: "ne", background: "rgb(17, 17, 17)" },
+] as const;
+
+const monospaceThemes = [
+  { theme: "Monokai", font: "Hack", radius: "3px" },
+  { theme: "Earthsong", font: "Hack", radius: "3px" },
+  { theme: "n.e.", font: "IBM Plex Mono", radius: "0px" },
 ] as const;
 
 test.describe("themes against local Ergo", () => {
@@ -71,8 +78,8 @@ test.describe("themes against local Ergo", () => {
     );
   });
 
-  for (const theme of ["Monokai", "Earthsong"]) {
-    test(`${theme} sets titles in Hack and rounds its overlays by 3px`, async ({
+  for (const { theme, font, radius } of monospaceThemes) {
+    test(`${theme} sets titles in ${font} with ${radius} overlay corners`, async ({
       irc,
       page,
     }) => {
@@ -80,9 +87,9 @@ test.describe("themes against local Ergo", () => {
 
       await expect(dialog.getByRole("heading", { name: "Settings" })).toHaveCSS(
         "font-family",
-        /^Hack,/u,
+        new RegExp(`^"?${font}"?,`, "u"),
       );
-      await expect(dialog).toHaveCSS("border-radius", "3px");
+      await expect(dialog).toHaveCSS("border-radius", radius);
     });
   }
 });

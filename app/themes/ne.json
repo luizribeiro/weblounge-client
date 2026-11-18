@@ -1,0 +1,72 @@
+{
+  "id": "ne",
+  "name": "n.e.",
+  "description": "Black and signal yellow",
+  "order": 9,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#111111",
+    "surface": "#111111",
+    "panel": "#111111",
+    "panelFg": "#e5e5e5",
+    "panelMuted": "#999999",
+    "panelBorder": "#333333",
+    "panelAlt": "#1a1a1a",
+    "fg": "#e5e5e5",
+    "muted": "#999999",
+    "border": "#333333",
+    "accent": "#fcc21b",
+    "accentFg": "#111111",
+    "selection": "#262626",
+    "selectionFg": "#e5e5e5",
+    "textSelection": "#fcc21b",
+    "textSelectionFg": "#111111",
+    "mentionBg": "#282312",
+    "mentionBadge": "#fcc21b",
+    "mentionBadgeFg": "#111111",
+    "overlayScrim": "rgba(0,0,0,.6)",
+    "viewerScrim": "rgba(0,0,0,.92)",
+    "viewerFg": "#e5e5e5",
+    "redactionBar": "#999999",
+    "unread": "#fcc21b",
+    "inputBg": "#000000",
+    "chip": "#222222",
+    "codeBg": "#000000",
+    "online": "#fcc21b",
+    "selfNick": "#fcc21b",
+    "error": "#fcc21b",
+    "focusRing": "#fcc21b"
+  },
+  "typography": {
+    "ui": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "mono": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "title": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "base": "13px",
+    "sectionFamily": "IBM Plex Mono, IBM Plex Mono Fallback, ui-monospace, SFMono-Regular, Consolas, monospace",
+    "sectionSize": "12px",
+    "sectionTransform": "none",
+    "sectionTracking": "0"
+  },
+  "shape": {
+    "control": "0px",
+    "avatar": "0px",
+    "icon": "0px",
+    "composer": "0px",
+    "palette": "0px",
+    "pill": "0px",
+    "round": "0px"
+  },
+  "effects": {
+    "overlayShadow": "none",
+    "tooltipShadow": "none",
+    "iconRing": "inset 0 0 0 1px rgba(229,229,229,.16)"
+  },
+  "nickPalette": [
+    "#fff0b3",
+    "#ffd966",
+    "#d9a514",
+    "#a68a3c",
+    "#cccccc",
+    "#8f8f8f"
+  ]
+}

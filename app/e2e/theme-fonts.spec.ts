@@ -33,6 +33,11 @@ const lazyThemes = [
     families: ["Hack"],
     files: ["hack"],
   },
+  {
+    name: "n.e.",
+    families: ["IBM Plex Mono"],
+    files: ["ibm-plex-mono"],
+  },
 ] as const;
 
 test.describe("theme fonts against local Ergo", () => {

@@ -47,6 +47,7 @@ describe("AppearanceSettings", () => {
       "Retro",
       "Monokai",
       "Earthsong",
+      "n.e.",
     ]);
     expect(screen.getByRole("radio", { name: "System" })).toBeChecked();
     expect(
