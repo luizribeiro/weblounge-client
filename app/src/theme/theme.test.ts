@@ -100,6 +100,12 @@ describe("theme registry", () => {
     expect(motionTokens.pushCurve).toBe("cubic-bezier(0.2, 0.9, 0.25, 1)");
     expect(motionTokens.pushIn).toBe("280ms");
     expect(motionTokens.suggestions).toBe("120ms");
+    expect(motionTokens.flip).toBe("500ms");
+    const [x1, y1, x2, y2] =
+      motionTokens.flipCurve.match(/-?[\d.]+/gu)?.map(Number) ?? [];
+    expect([(x1 ?? 0) + (x2 ?? 0), (y1 ?? 0) + (y2 ?? 0)]).toEqual([1, 1]);
+    expect(themeStyleSheet()).toContain("--wl-motion-flip:0ms");
+    expect(themeStyleSheet()).not.toContain("--wl-motion-flip-curve:0ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:280ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:0ms");
     expect(themeStyleSheet()).toContain("--wl-motion-suggestions:0ms");

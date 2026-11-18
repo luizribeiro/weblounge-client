@@ -4,6 +4,8 @@
   --wl-motion-drawer-open: 340ms;
   --wl-motion-connection: 1400ms;
   --wl-motion-fade: 200ms;
+  --wl-motion-flip: 500ms;
+  --wl-motion-flip-curve: cubic-bezier(0.55, -0.2, 0.45, 1.2);
   --wl-motion-pop: 280ms;
   --wl-motion-pop-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --wl-motion-preview-fade: 420ms;
@@ -578,6 +580,7 @@
     --wl-motion-drawer-open: 0ms;
     --wl-motion-connection: 0ms;
     --wl-motion-fade: 0ms;
+    --wl-motion-flip: 0ms;
     --wl-motion-pop: 0ms;
     --wl-motion-preview-fade: 0ms;
     --wl-motion-rail-expand: 0ms;
