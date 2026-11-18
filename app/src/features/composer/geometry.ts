@@ -23,3 +23,12 @@ export function withBlockSizeHeld<T>(
     element.style.blockSize = inlineBlockSize;
   }
 }
+
+/**
+ * The border-box height that shows all of a textarea's content: the composer
+ * sizes in border-box, and `scrollHeight` leaves out the borders.
+ */
+export function contentFittingHeight(textarea: HTMLTextAreaElement): number {
+  const borders = textarea.offsetHeight - textarea.clientHeight;
+  return textarea.scrollHeight + borders;
+}

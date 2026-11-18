@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withBlockSizeHeld } from "./geometry";
+import { contentFittingHeight, withBlockSizeHeld } from "./geometry";
 
 function rowOfHeight(height: number): HTMLElement {
   const row = document.createElement("div");
@@ -37,5 +37,38 @@ describe("withBlockSizeHeld", () => {
 
   it("measures directly without an element to hold", () => {
     expect(withBlockSizeHeld(null, () => "44px")).toBe("44px");
+  });
+});
+
+function textareaMeasuring(sizes: {
+  readonly clientHeight: number;
+  readonly offsetHeight: number;
+  readonly scrollHeight: number;
+}): HTMLTextAreaElement {
+  const textarea = document.createElement("textarea");
+  for (const [name, value] of Object.entries(sizes))
+    Object.defineProperty(textarea, name, { value });
+  return textarea;
+}
+
+describe("contentFittingHeight", () => {
+  it("adds a bordered desktop field's borders to three padded lines", () => {
+    const textarea = textareaMeasuring({
+      clientHeight: 38,
+      offsetHeight: 40,
+      scrollHeight: 78,
+    });
+
+    expect(contentFittingHeight(textarea)).toBe(80);
+  });
+
+  it("is the scroll height of a borderless phone field", () => {
+    const textarea = textareaMeasuring({
+      clientHeight: 44,
+      offsetHeight: 44,
+      scrollHeight: 88,
+    });
+
+    expect(contentFittingHeight(textarea)).toBe(88);
   });
 });

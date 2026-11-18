@@ -34,6 +34,7 @@ import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import {
   composerGeometryChangeEvent,
   composerGeometryWillChangeEvent,
+  contentFittingHeight,
   withBlockSizeHeld,
 } from "./geometry";
 import { ImagePicker } from "./ImagePicker";
@@ -191,7 +192,7 @@ export function Composer(props: ComposerProps) {
     const input = textarea;
     const nextHeight = withBlockSizeHeld(input.parentElement, () => {
       input.style.height = "0";
-      const measured = `${input.scrollHeight}px`;
+      const measured = `${contentFittingHeight(input)}px`;
       if (measured !== previousHeight)
         input.dispatchEvent(
           new Event(composerGeometryWillChangeEvent, { bubbles: true }),
