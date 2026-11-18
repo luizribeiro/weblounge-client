@@ -126,14 +126,16 @@ other hue appears anywhere. Roles the sites lack are derived from those values: 
 and code (black under the `#111` page), `#1a1a1a` hovered rows, `#222222` chips, `#262626` the
 selected row with `#e5e5e5` text, and `#282312` (`#fcc21b` at 10% over `#111`) the mention
 background. Unread, the mention badge, the online dot and errors are the same yellow; their
-meaning comes from their place and shape, never colour alone. The nick palette varies the yellow
+meaning comes from their place and shape, never colour alone. Luiz decided errors stay yellow
+rather than take a muted red. The nick palette varies the yellow
 and the greys in lightness: cream `#fff0b3`, light yellow `#ffd966`, gold `#d9a514`, khaki
-`#a68a3c` (5.7:1), light grey `#cccccc` and grey `#8f8f8f` (5.8:1). Every site colour passes
+`#a68a3c` (5.7:1), light grey `#cccccc` and grey `#8f8f8f` (5.8:1). Some nicks are harder to
+tell apart than in other themes; Luiz accepted that as part of the theme. Every site colour passes
 its contract on `#111` unchanged (fg 15.0:1, muted 6.6:1, yellow 11.6:1, `mark` 11.6:1). It is set
 in IBM Plex Mono, the sites' face, at Terminal's 13px, with the sites' square corners (0px) and no
-shadows. pgray.dev also lays an optional 2000 K multiply overlay (`#ffa03e`) over the page, on by
-default, which warms it towards orange; the theme takes the sites' stylesheet colours, not that
-filter. A unit test checks text pairs at 4.5:1 and indicators
+shadows. pgray.dev also lays a time-of-day 2000 K multiply overlay (`#ffa03e`) over the page, on by
+default, which warms it towards orange. Luiz decided the theme stays yellow: it takes the sites'
+stylesheet colours, not that filter. A unit test checks text pairs at 4.5:1 and indicators
 at 3:1 in every theme.
 
 ## Text selection
