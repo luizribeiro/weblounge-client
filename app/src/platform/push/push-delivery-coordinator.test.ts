@@ -193,6 +193,60 @@ describe("push delivery coordination", () => {
     }
   });
 
+  it("still presents once when a starved fallback timer fires after the budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const presentations: string[] = [];
+      const coordinator = createCoordinator({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        prepare: () => new Promise(() => {}),
+        present: async (presentation) => {
+          presentations.push(presentation);
+        },
+        commit: async () => undefined,
+      });
+
+      void coordinator.enqueue({ id: "starved", kind: "visible" });
+      vi.setSystemTime(Date.now() + 2_100);
+      await vi.advanceTimersByTimeAsync(1_500);
+
+      expect(presentations).toEqual(["generic"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry a late first presentation that fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const errors: unknown[] = [];
+      let attempts = 0;
+      const coordinator = createCoordinator({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        prepare: () => new Promise(() => {}),
+        present: async () => {
+          attempts += 1;
+          throw new Error("presentation unavailable");
+        },
+        commit: async () => undefined,
+        reportError: (error) => errors.push(error),
+      });
+
+      void coordinator.enqueue({ id: "starved", kind: "visible" });
+      vi.setSystemTime(Date.now() + 2_100);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(attempts).toBe(1);
+      expect(errors).toEqual([
+        expect.objectContaining({ message: "presentation unavailable" }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["markread", "ping"] as const)(
     "removes a deadline fallback after a slow %s is classified as silent",
     async (kind) => {

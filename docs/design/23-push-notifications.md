@@ -248,7 +248,8 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. For a visible payload, establish one successful `showNotification` before any further database
    work. A rejected presentation retries with 50–250 ms backoff inside one receipt-anchored
-   two-second budget. Exhaustion is logged and releases the receipt-order chain. Each generic has a
+   two-second budget; the budget bounds only retries, so a first attempt that a starved worker
+   reaches late is still made. Exhaustion is logged and releases the receipt-order chain. Each generic has a
    private per-receipt identity and native tag, while only a generic actually shown by the receipt
    deadline keeps that identity as a replacement marker; a preparation failure that wins first
    produces a final, non-replaceable generic. If detailed content becomes presentable after a

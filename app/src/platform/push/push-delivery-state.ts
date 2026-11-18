@@ -83,7 +83,7 @@ export async function showUntilPresented<T>(
   presentation: () => T,
 ): Promise<boolean> {
   let retryDelayMs = 50;
-  while (!state.shown && Date.now() < state.presentationExpiresAt) {
+  while (!state.shown) {
     try {
       await showOnce(state, presentation());
     } catch (error: unknown) {
