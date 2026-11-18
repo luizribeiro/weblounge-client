@@ -206,8 +206,12 @@ fall back to a themed letter tile. The first themed milestone always uses the li
 token where needed rather than inspecting image alpha.
 
 Remote SVG stays an image resource and is never injected into the DOM. Fetch limits and caching
-belong to a later image-security design. App brand assets come from the paths named in
-`AGENTS.md` and may use approved light/dark variants.
+belong to a later image-security design. App brand assets come from the paths named in `AGENTS.md`
+and may use approved light/dark variants. The favicon's attention tiles (design 23, Badging) are
+brand colours, not theme tokens, since a tab icon cannot follow the theme: felt `#1B2A22` with the
+paper chair at rest, `signal` `#E3B778` (from the brand `tokens.css`) with the ink chair for unread,
+Lounge's `mentionBadge` `#9A3B2E` with the paper chair for mentions, and grey `#8C8F87` while not
+connected.
 
 ## Accessibility
 
