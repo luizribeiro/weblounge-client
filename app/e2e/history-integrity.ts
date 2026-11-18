@@ -5,6 +5,7 @@ import { isPhoneViewport } from "./mobile-platform";
 import { escapeRegex } from "./sidebar-rows";
 
 const serverPageLimit = 100;
+const pageEdgeOverlapMs = 10;
 const badgeCap = 99;
 // Without event-playback, Ergo replays joins and parts as HistServ lines; the app shows them as
 // membership rows.
@@ -38,21 +39,49 @@ export async function serverHistory(
   truth: IrcClient,
   target: string,
 ): Promise<readonly ServerMessage[]> {
-  const lines: string[] = [];
+  const lines = new Map<string, string>();
   let page = await truth.chathistory("LATEST", target, ["*"], serverPageLimit);
-  while (page.length > 0) {
-    lines.unshift(...page);
+  let overlap = pageEdgeOverlapMs;
+  for (;;) {
+    const added = addNewLines(lines, page);
+    // A full page of lines already collected means the overlap alone fills a page.
+    if (!added && (overlap === 0 || page.length < serverPageLimit)) break;
+    overlap = added ? pageEdgeOverlapMs : 0;
     page = await truth.chathistory(
       "BEFORE",
       target,
-      [`msgid=${messageId(page[0] ?? "")}`],
+      [`timestamp=${pastPageEdge(lines.values(), overlap)}`],
       serverPageLimit,
     );
   }
-  return lines
+  return [...lines.values()]
+    .sort((a, b) => Date.parse(serverTime(a)) - Date.parse(serverTime(b)))
     .filter((line) => / (?:PRIVMSG|NOTICE) /u.test(line))
     .map(parseServerMessage)
     .filter((message) => message.author !== historyService);
+}
+
+function addNewLines(lines: Map<string, string>, page: readonly string[]) {
+  const before = lines.size;
+  for (const line of page) {
+    const id = messageId(line);
+    if (id !== "") lines.set(id, line);
+  }
+  return lines.size > before;
+}
+
+/**
+ * Ergo resolves a msgid bound to that line's time and fills a page by walking lines in the order it
+ * stored them, which concurrent senders leave out of stamp order by up to a millisecond or so. A
+ * bound at the page's edge skips lines stored on its far side, so the next page reaches back over
+ * the edge (as the engine's gap fill does, `EDGE_OVERLAP_MS` in `state/gap_fill.rs`) and repeats
+ * lines already collected.
+ */
+function pastPageEdge(lines: Iterable<string>, overlapMs: number): string {
+  const oldest = Math.min(
+    ...[...lines].map((line) => Date.parse(serverTime(line))),
+  );
+  return new Date(oldest + overlapMs).toISOString();
 }
 
 function parseServerMessage(line: string): ServerMessage {

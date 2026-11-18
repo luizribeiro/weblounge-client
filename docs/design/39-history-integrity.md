@@ -37,8 +37,9 @@ are not part of the comparison.
 - **Server history** comes from a raw IRC connection to the same local Ergo, logged in as the
   app's own account, so it sees exactly what the app's `CHATHISTORY` sees (channel history and
   the account's DM history). It is opened only for the check, never sends `MARKREAD` with a
-  timestamp or joins anything, and closes afterwards. It sends `CHATHISTORY LATEST <target> * 100`, then `BEFORE` the
-  oldest msgid until a page comes back short, and keeps `PRIVMSG` and `NOTICE` lines (msgid,
+  timestamp or joins anything, and closes afterwards. It sends `CHATHISTORY LATEST <target> * 100`, then `BEFORE` a
+  timestamp 10ms past the oldest line collected until a page adds no new msgid (Ergo stores
+  concurrent lines out of stamp order, so a bound at the edge skips some: B38), and keeps `PRIVMSG` and `NOTICE` lines (msgid,
   time, author, text). `IrcClient.chathistory` in `app/e2e/irc-client.ts`.
 - **Read marker** comes from `MARKREAD <target>` on that connection.
 - **Transcript** comes from the page: each message row carries `data-msgids` (its papo server ids,
