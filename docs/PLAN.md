@@ -177,9 +177,9 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
   (`app/e2e/history-integrity.ts`), compares every message row's msgid with the server's
   `CHATHISTORY`; `app/e2e/history-integrity.spec.ts` runs it, with the chat-list badge and preview
   check, on desktop Chromium and iPhone WebKit across 12 scenarios, and
-  `crates/engine/src/runtime/tests/history_integrity.rs` is its engine proptest. One scenario is
-  `test.fail()` until B20 is fixed (an open app offline for more than one page); remove the
-  annotation in the commit that fixes it. The suite also found B33, fixed on the same branch.
+  `crates/engine/src/runtime/tests/history_integrity.rs` is its engine proptest. Its B20 scenario (an
+  open app offline for more than one page) passes since B20's gap backfill landed, and it found
+  B33, fixed on the same branch.
 - 2026-11-17: desktop copy rework (B21, feedback #12; F43 desktop part, feedback #13; design 15
   "Selection and copy"). A selection inside one message copies exactly the selected text, newlines
   kept, with no `[time] <nick>`; a selection across messages keeps whole log lines and paints those

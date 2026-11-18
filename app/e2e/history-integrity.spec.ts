@@ -117,9 +117,6 @@ test.describe("history integrity against local Ergo", () => {
     page,
     irc,
   }) => {
-    // B20: the reconnect catch-up leaves a "Messages may be missing" gap between the lines
-    // already loaded and its newest page, and nothing ever fills it.
-    test.fail();
     const { keeper, channel, peer } = await alwaysOnRoom(irc, "away");
     const app = await launch(page, irc, [channel]);
     await sendEach(peer, [channel], 3, `before going offline ${irc.id}`);
