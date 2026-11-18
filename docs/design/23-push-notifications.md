@@ -394,13 +394,19 @@ the built-worker tag-less harness; device verification remains in the rollout ch
   page seeds the worker's per-tag counts and markers from engine DM unread, channel mention and read
   state so later closed-page recomputation has the same base. Linux, Firefox and Chrome Android have
   no badging API, but cleanup still runs.
-- **The browser tab** (F33, hosted web) shows the app-icon badge count too: the favicon's tile turns
-  the brand red (`mentionBadge`) and the title gains a "(3) " prefix, capped at "(99+)" like the
-  sidebar badge, whenever `appBadgeCount` is above zero. While the connection indicator shows
-  progress or an error (`connectionPresentation`), the tile turns grey instead; unread wins over
-  grey. Build time derives the three tiles from `assets/favicon.svg`; the page swaps the existing
-  `<link rel="icon">` and writes the DOM only when the state changes. A Settings switch (design 29)
-  turns the red tile and the count off; grey stays.
+- **The browser tab** (F33, F47, hosted web) shows attention on the favicon's tile, by priority:
+  red (`mentionBadge`, paper chair) while `appBadgeCount` is above zero; grey while the connection
+  indicator shows progress or an error (`connectionPresentation`); yellow (the brand `signal`, ink
+  chair) while any non-server conversation has `unread` above zero; otherwise the felt tile. Red
+  follows the engine's mention count, so DMs turn it red too. Grey outranks yellow because some
+  channel is almost always unread on IRC, and yellow would otherwise hide a dropped connection.
+  Only mentions reach the title: a "(3) " prefix, capped at "(99+)" like the sidebar badge.
+  Build time derives the four tiles from `assets/favicon.svg`; the page swaps the existing
+  `<link rel="icon">` hrefs and their `data-tab-icon` attribute (`connected`, `unread`, `mention`,
+  `disconnected`) only when the state changes, from the buffer and network signals, with no timer.
+  A Settings switch (design 29) turns red, yellow and the count off; grey stays. Dev builds share
+  this scheme: their yellow identity tile (design 27) is the Tauri app icon, which never shows a
+  favicon.
 
 ## Types
 
