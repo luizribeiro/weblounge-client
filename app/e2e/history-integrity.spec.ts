@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import { seedPushedMessage } from "./engine-database";
+import { seedPushedMessage, snapshotRow } from "./engine-database";
 import {
   chatRow,
   expectChatRowMatchesServer,
@@ -38,7 +38,7 @@ test.describe("history integrity against local Ergo", () => {
       const { keeper, channel, peer } = await alwaysOnRoom(irc, "ahead");
       const app = await launch(page, irc, [channel]);
       await peer.privmsgConfirmed(channel, `seen by both ${irc.id}`);
-      await expect(chatRow(app, channel)).toBeVisible();
+      await expectCachedPreview(app, channel, `seen by both ${irc.id}`);
       await closeAppUntilDetached(app, keeper);
 
       const lines: string[] = [];
@@ -69,7 +69,8 @@ test.describe("history integrity against local Ergo", () => {
       const app = await launch(page, irc, [channel]);
       await peer.privmsgConfirmed(channel, `before closing ${irc.id}`);
       await peer.privmsgConfirmed(irc.account, `direct before ${irc.id}`);
-      await expect(chatRow(app, peer.nickname)).toBeVisible();
+      await expectCachedPreview(app, channel, `before closing ${irc.id}`);
+      await expectCachedPreview(app, peer.nickname, `direct before ${irc.id}`);
       await closeAppUntilDetached(app, keeper);
 
       const arrived = await sendEach(
@@ -96,7 +97,11 @@ test.describe("history integrity against local Ergo", () => {
     const { keeper, channel, peer } = await alwaysOnRoom(irc, "long");
     const app = await launch(page, irc, [channel]);
     await peer.privmsgConfirmed(channel, `before the long absence ${irc.id}`);
-    await expect(chatRow(app, channel)).toBeVisible();
+    await expectCachedPreview(
+      app,
+      channel,
+      `before the long absence ${irc.id}`,
+    );
     await closeAppUntilDetached(app, keeper);
 
     await sendFromMany(irc, channel, longerThanOnePage);
@@ -142,7 +147,7 @@ test.describe("history integrity against local Ergo", () => {
       const { keeper, channel, peer } = await alwaysOnRoom(irc, "cut");
       const app = await launch(page, irc, [channel]);
       await peer.privmsgConfirmed(channel, `before closing ${irc.id}`);
-      await expect(chatRow(app, channel)).toBeVisible();
+      await expectCachedPreview(app, channel, `before closing ${irc.id}`);
       await closeAppUntilDetached(app, keeper);
       await sendEach(peer, [channel], 3, `while closed ${irc.id}`);
 
@@ -256,7 +261,12 @@ test.describe("history integrity against local Ergo", () => {
       3,
       `seen ${irc.id}`,
     );
-    await expect(chatRow(app, peer.nickname)).toBeVisible();
+    for (const { target, text } of seen.slice(-2))
+      await expectCachedPreview(
+        app,
+        target === channel ? channel : peer.nickname,
+        text,
+      );
     await changeLines(peer, seen);
     await expect(app.locator("[data-redacted]")).toHaveCount(0);
     await closeAppUntilDetached(app, keeper);
@@ -360,6 +370,20 @@ async function launch(
 // the phone opens on its chat list.
 function homePath(page: Page, irc: IrcTestAccount): string {
   return isPhoneViewport(page) ? "/" : `/Local%20Ergo/${irc.channel.slice(1)}`;
+}
+
+/**
+ * A relaunch starts from the chat-list snapshot, and without a row for a conversation it treats the
+ * conversation's earlier lines as read, so the snapshot must hold the row before the app closes.
+ */
+async function expectCachedPreview(
+  page: Page,
+  title: string,
+  text: string,
+): Promise<void> {
+  await expect
+    .poll(() => snapshotRow(page, title))
+    .toMatchObject({ preview: expect.stringContaining(text) });
 }
 
 /** Relaunches the app and waits for the launch catch-up pages of `caughtUp` to arrive. */
