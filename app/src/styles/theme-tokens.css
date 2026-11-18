@@ -31,6 +31,8 @@
   --wl-color-accent-fg: #f3f1e9;
   --wl-color-selection: #bdd9a7;
   --wl-color-selection-fg: #1d2825;
+  --wl-color-text-selection: #1d2825;
+  --wl-color-text-selection-fg: #bdd9a7;
   --wl-color-mention-bg: #e3ebd6;
   --wl-color-mention-badge: #9a3b2e;
   --wl-color-mention-badge-fg: #f3f1e9;
@@ -88,6 +90,8 @@
   --wl-color-accent-fg: #18221e;
   --wl-color-selection: #2c3a2f;
   --wl-color-selection-fg: #edefe5;
+  --wl-color-text-selection: #bdd9a7;
+  --wl-color-text-selection-fg: #18221e;
   --wl-color-mention-bg: #25321f;
   --wl-color-mention-badge: #eba293;
   --wl-color-mention-badge-fg: #18221e;
@@ -145,6 +149,8 @@
   --wl-color-accent-fg: #000000;
   --wl-color-selection: #1a241d;
   --wl-color-selection-fg: #edefe5;
+  --wl-color-text-selection: #bdd9a7;
+  --wl-color-text-selection-fg: #000000;
   --wl-color-mention-bg: #141c10;
   --wl-color-mention-badge: #eba293;
   --wl-color-mention-badge-fg: #000000;
@@ -202,6 +208,8 @@
   --wl-color-accent-fg: #ffffff;
   --wl-color-selection: #e3e9fd;
   --wl-color-selection-fg: #1a3bb0;
+  --wl-color-text-selection: #1a3bb0;
+  --wl-color-text-selection-fg: #ffffff;
   --wl-color-mention-bg: #fff5dc;
   --wl-color-mention-badge: #c2410c;
   --wl-color-mention-badge-fg: #ffffff;
@@ -263,6 +271,8 @@
   --wl-color-accent-fg: #121314;
   --wl-color-selection: #22252a;
   --wl-color-selection-fg: #f4efe2;
+  --wl-color-text-selection: #e6b450;
+  --wl-color-text-selection-fg: #121314;
   --wl-color-mention-bg: #262113;
   --wl-color-mention-badge: #f28779;
   --wl-color-mention-badge-fg: #121314;
@@ -327,6 +337,8 @@
   --wl-color-accent-fg: #fff8ee;
   --wl-color-selection: #4a3527;
   --wl-color-selection-fg: #fff3dc;
+  --wl-color-text-selection: #4a3527;
+  --wl-color-text-selection-fg: #fff3dc;
   --wl-color-mention-bg: #f1dcb9;
   --wl-color-mention-badge: #b5471d;
   --wl-color-mention-badge-fg: #fff8ee;
@@ -386,6 +398,8 @@
   --wl-color-accent-fg: #1c1c1c;
   --wl-color-selection: #383731;
   --wl-color-selection-fg: #fefefe;
+  --wl-color-text-selection: #ded685;
+  --wl-color-text-selection-fg: #1c1c1c;
   --wl-color-mention-bg: #2b2a1e;
   --wl-color-mention-badge: #d4607d;
   --wl-color-mention-badge-fg: #1c1c1c;
@@ -446,6 +460,8 @@
   --wl-color-accent-fg: #292520;
   --wl-color-selection: #403830;
   --wl-color-selection-fg: #f6f7ec;
+  --wl-color-text-selection: #f5ae2e;
+  --wl-color-text-selection-fg: #292520;
   --wl-color-mention-bg: #3a2f1f;
   --wl-color-mention-badge: #db6d46;
   --wl-color-mention-badge-fg: #292520;

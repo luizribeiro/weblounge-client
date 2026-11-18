@@ -46,6 +46,8 @@ const colorTokens = [
   "accentFg",
   "selection",
   "selectionFg",
+  "textSelection",
+  "textSelectionFg",
   "mentionBg",
   "mentionBadge",
   "mentionBadgeFg",

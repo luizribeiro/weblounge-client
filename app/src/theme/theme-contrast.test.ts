@@ -5,6 +5,13 @@ type ColorToken = keyof ThemeDefinition["colors"];
 
 const textOnSurface = 4.5;
 const nonTextOnSurface = 3;
+const selectedText = 7;
+const rowBackgrounds: readonly ColorToken[] = [
+  "bg",
+  "surface",
+  "panelAlt",
+  "mentionBg",
+];
 
 const textPairs: readonly (readonly [ColorToken, ColorToken])[] = [
   ["fg", "bg"],
@@ -40,6 +47,18 @@ describe.each(themes)("$name contrast", (theme) => {
     expect(
       contrast(theme.colors[foreground], theme.colors[background]),
     ).toBeGreaterThanOrEqual(nonTextOnSurface);
+  });
+
+  it("reads selected text at AAA contrast", () => {
+    expect(
+      contrast(theme.colors.textSelectionFg, theme.colors.textSelection),
+    ).toBeGreaterThanOrEqual(selectedText);
+  });
+
+  it.each(rowBackgrounds)("sets selected text apart from a %s row", (row) => {
+    expect(
+      contrast(theme.colors.textSelection, theme.colors[row]),
+    ).toBeGreaterThanOrEqual(textOnSurface);
   });
 
   it("reads every nick colour on the conversation surface", () => {

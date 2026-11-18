@@ -19,6 +19,8 @@
     "accentFg": "#ffffff",
     "selection": "#e3e9fd",
     "selectionFg": "#1a3bb0",
+    "textSelection": "#1a3bb0",
+    "textSelectionFg": "#ffffff",
     "mentionBg": "#fff5dc",
     "mentionBadge": "#c2410c",
     "mentionBadgeFg": "#ffffff",
