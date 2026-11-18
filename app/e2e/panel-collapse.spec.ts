@@ -1,4 +1,9 @@
 import type { Page } from "@playwright/test";
+import {
+  desktopPanelBoundary,
+  membersDockedWindowWidth,
+  membersInlinePaneWidth,
+} from "../src/platform/desktop-panel-widths";
 import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -6,9 +11,10 @@ import {
 } from "./native-feel-audit";
 import { expectSettled } from "./settled";
 
-const widest = 1040;
-const narrowest = 600;
 const step = 16;
+const stepsPastEachThreshold = 6;
+const widest = membersDockedWindowWidth + stepsPastEachThreshold * step;
+const narrowest = desktopPanelBoundary - stepsPastEachThreshold * step;
 const height = 800;
 
 type DockedPanels =
@@ -137,7 +143,7 @@ test.describe("desktop panels while the window narrows and widens", () => {
     page,
     irc,
   }) => {
-    const medium = 800;
+    const medium = membersInlinePaneWidth + step;
     await installNativeFeelInstrumentation(page);
     await page.setViewportSize({ width: 1440, height });
     await page.goto(irc.url());

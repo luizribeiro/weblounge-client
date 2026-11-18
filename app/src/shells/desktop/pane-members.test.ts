@@ -3,17 +3,19 @@ import { createRoot, createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type { BufferKind } from "../../engine/generated/BufferKind";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import {
+  memberColumnWidth,
+  membersInlinePaneWidth,
+} from "../../platform/desktop-panel-widths";
 import type { DesktopPanels } from "../../platform/environment";
 import {
   createPaneMembers,
-  memberColumnWidth,
   memberColumnWidthToken,
   membersPresentation,
   memberWindowFor,
-  minConversationBesideMembers,
 } from "./pane-members";
 
-const threshold = memberColumnWidth + minConversationBesideMembers;
+const threshold = membersInlinePaneWidth;
 
 it("matches the token that sizes the member column and its drawer", () => {
   const css = readFileSync("src/styles/base.css", "utf8");
@@ -25,7 +27,6 @@ it("matches the token that sizes the member column and its drawer", () => {
 });
 
 it("shows members inline once the conversation keeps its minimum width", () => {
-  expect(threshold).toBe(712);
   expect(membersPresentation(threshold, "inline")).toBe("inline");
   expect(membersPresentation(1216, "inline")).toBe("inline");
 });

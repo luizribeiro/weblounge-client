@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { desktopPanelBoundary } from "../src/platform/desktop-panel-widths";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
@@ -7,7 +8,7 @@ import {
 import { settingsScreenshot } from "./settings-fixture";
 import { expectSettled } from "./settled";
 
-const narrow = { width: 720, height: 800 };
+const narrow = { width: desktopPanelBoundary - 1, height: 800 };
 
 test.describe("Settings section rail in a narrow desktop window", () => {
   test("keeps the content clear at rest and floats the labels over it on hover", async ({

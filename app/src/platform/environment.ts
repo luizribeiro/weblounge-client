@@ -1,5 +1,6 @@
 import { type Accessor, createSignal } from "solid-js";
 import { darkSchemeQuery } from "./color-scheme";
+import { desktopPanelBoundary } from "./desktop-panel-widths";
 import { type HostShell, hostShell } from "./host-shell";
 import { observeKeyboardMotion } from "./keyboard-motion";
 import { observeTouchMoveLock } from "./touch-move-lock";
@@ -9,8 +10,6 @@ import {
   type WindowControlsState,
   type WindowTheme,
 } from "./window-controls";
-
-export const desktopPanelBoundary = 760;
 
 export type PrimaryInput = "touch" | "mouse";
 export type DisplayMode = "standalone" | "browser" | "tauri";

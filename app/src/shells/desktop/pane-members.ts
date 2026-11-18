@@ -1,11 +1,10 @@
 import { createEffect, createSignal } from "solid-js";
 import type { BufferKind } from "../../engine/generated/BufferKind";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import { membersInlinePaneWidth } from "../../platform/desktop-panel-widths";
 import type { DesktopPanels } from "../../platform/environment";
 
-export const memberColumnWidth = 232;
 export const memberColumnWidthToken = "var(--wl-size-members)";
-export const minConversationBesideMembers = 480;
 
 export type MembersPresentation = "inline" | "drawer";
 
@@ -13,8 +12,7 @@ export function membersPresentation(
   paneWidth: number,
   desktopPanels: DesktopPanels,
 ): MembersPresentation {
-  return desktopPanels === "inline" &&
-    paneWidth >= memberColumnWidth + minConversationBesideMembers
+  return desktopPanels === "inline" && paneWidth >= membersInlinePaneWidth
     ? "inline"
     : "drawer";
 }

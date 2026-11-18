@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { desktopPanelBoundary } from "../src/platform/desktop-panel-widths";
 import { copiedText, prepareClipboard } from "./clipboard";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import {
@@ -248,7 +249,10 @@ test.describe("desktop Settings against local Ergo", () => {
     irc,
     page,
   }) => {
-    await page.setViewportSize({ width: 720, height: 800 });
+    await page.setViewportSize({
+      width: desktopPanelBoundary - 1,
+      height: 800,
+    });
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(irc.url());
     await page.getByRole("button", { name: "Toggle channel list" }).click();

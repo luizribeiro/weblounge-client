@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ThemeDefinition, themes } from "../theme/theme-registry";
+import { desktopPanelBoundary } from "./desktop-panel-widths";
 import {
-  desktopPanelBoundary,
   installPlatformEnvironment,
   resolveEnvironment,
   resolveShortcutPlatform,
