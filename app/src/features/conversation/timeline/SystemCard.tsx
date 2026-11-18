@@ -3,6 +3,7 @@ import type { LineEvent } from "../../../engine/generated/LineEvent";
 import { t } from "../../../strings";
 import { formatTime } from "../../../ui/format-time";
 import { EventIcon } from "../../../ui/icons/EventIcon";
+import { Selectable } from "../../../ui/Selectable";
 import styles from "./SystemCard.module.css";
 import lineStyles from "./SystemLine.module.css";
 
@@ -40,9 +41,11 @@ export function SystemCard(props: {
           </Show>
         </div>
         <div class={styles.text} data-system-card-text="true">
-          {props.card.topic === ""
-            ? t("messages.topic.empty")
-            : props.renderText(props.card.topic)}
+          <Selectable surfaceId="topic-card-text">
+            {props.card.topic === ""
+              ? t("messages.topic.empty")
+              : props.renderText(props.card.topic)}
+          </Selectable>
         </div>
       </div>
     </section>

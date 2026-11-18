@@ -27,6 +27,9 @@ it("shows the topic under a Topic title with who set it and when", () => {
   expect(region.querySelector("[data-rendered-text]")).toHaveTextContent(
     card.topic,
   );
+  expect(
+    region.querySelector("[data-rendered-text]")?.closest("[data-selectable]"),
+  ).not.toBeNull();
   expect(topicCardMeta(card)).toBe(
     `set by mel · ${new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(setAt)}`,
   );
