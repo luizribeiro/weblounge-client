@@ -84,19 +84,14 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", {
     })),
   ]);
   await captureLaunchWire(page);
+  await recordRowInteractive(page, unchangedDirect.nickname);
   await irc.forwarder.drop();
   await page.goto(irc.url());
 
   const targetRow = bufferRow(page, unchangedDirect.nickname);
   await expect(targetRow).toBeVisible();
   await targetRow.click();
-  const timeToInteractive = await page.evaluate(() => {
-    const startedAt = Reflect.get(globalThis, "launchCatchupStartedAt");
-    if (typeof startedAt !== "number")
-      throw new Error("launch start time is missing");
-    return performance.timeOrigin + performance.now() - startedAt;
-  });
-  expect(timeToInteractive).toBeLessThan(500);
+  expect(await rowInteractiveAt(page)).toBeLessThan(500);
   await irc.forwarder.restore();
   await expect(
     page.getByText(`cached direct ${directCount - 1} ${suffix}`, {
@@ -540,11 +535,6 @@ async function captureLaunchWire(
     Reflect.deleteProperty(globalThis, "SharedWorker");
     const wire: unknown[] = [];
     const events: unknown[] = [];
-    Reflect.set(
-      globalThis,
-      "launchCatchupStartedAt",
-      performance.timeOrigin + performance.now(),
-    );
     Reflect.set(globalThis, "launchCatchupWire", wire);
     Reflect.set(globalThis, "launchCatchupEvents", events);
     const subscribed = new WeakSet<Worker>();
@@ -606,6 +596,50 @@ async function captureLaunchWire(
       });
     });
   }, heldRequest);
+}
+
+// Measured in the page: Playwright's polling and actionability waits, which
+// vary most on a loaded host, would otherwise count against the launch budget.
+async function recordRowInteractive(page: Page, title: string): Promise<void> {
+  await page.addInitScript((rowTitle) => {
+    const splashIsRevealed = () => {
+      const state = document
+        .querySelector("[data-initial-splash]")
+        ?.getAttribute("data-state");
+      return state === undefined || state === "leaving";
+    };
+    const hasRow = () =>
+      [
+        ...document.querySelectorAll(
+          "[data-mobile-chat-list] [data-buffer-id]",
+        ),
+      ].some((candidate) => {
+        const label = candidate.getAttribute("aria-label") ?? "";
+        return label === rowTitle || label.startsWith(`${rowTitle},`);
+      });
+    const observer = new MutationObserver(() => {
+      if (!splashIsRevealed() || !hasRow()) return;
+      Reflect.set(
+        globalThis,
+        "launchCatchupRowInteractiveAt",
+        performance.now(),
+      );
+      observer.disconnect();
+    });
+    observer.observe(document, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  }, title);
+}
+
+async function rowInteractiveAt(page: Page): Promise<number> {
+  const at = await page.evaluate(() =>
+    Reflect.get(globalThis, "launchCatchupRowInteractiveAt"),
+  );
+  if (typeof at !== "number") throw new Error("row never became interactive");
+  return at;
 }
 
 async function snapshotSchema(page: Page): Promise<number | undefined> {
