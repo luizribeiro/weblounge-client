@@ -759,6 +759,10 @@ pub struct MessageProjection {
     pub nick_color_index: u32,
     /// Whether this row matches the user's highlight rules.
     pub highlighted: bool,
+    /// Each nick the buffer knows that the text mentions, spelled as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub mentions: Option<Vec<crate::timeline::Person>>,
     /// Why this direct-message row's sender identity was not verified, when it was not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -1381,7 +1385,7 @@ pub enum EngineToUi {
         /// Complete current projection of the message's buffer.
         buffer: BufferProjection,
         /// The message that arrived.
-        message: MessageProjection,
+        message: Box<MessageProjection>,
     },
     /// Move a UI-owned draft when a direct message gains a more durable identity.
     DraftKeyChanged {

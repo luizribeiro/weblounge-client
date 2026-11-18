@@ -232,6 +232,7 @@ mod tests {
                     authorship: MessageAuthorship::Other,
                     nick_color_index: 0,
                     highlighted: false,
+                    mentions: None,
                     unverified_sender: None,
                     reactions: None,
                     own_redaction: None,

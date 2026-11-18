@@ -3,6 +3,7 @@
 mod calendar;
 mod error;
 mod fold;
+mod mentions;
 mod patch;
 mod projection;
 mod run;
@@ -18,6 +19,7 @@ pub use fold::{
     ChatRecord, FoldEvent, FoldedBody, FoldedItem, RecordBody, SplitServers, TimelineRecord, Who,
     fold,
 };
+pub(crate) use mentions::{MentionVocabulary, nick_tokens};
 pub use patch::{
     AppliedTimeline, GeometryClass, TimelineChange, TimelineDiff, apply_timeline_change, diff,
 };

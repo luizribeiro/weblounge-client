@@ -101,6 +101,7 @@ mod tests {
             authorship: MessageAuthorship::Other,
             nick_color_index: 2,
             highlighted: true,
+            mentions: None,
             unverified_sender: None,
             reactions: Some(vec![ReactionProjection {
                 text: "👍".into(),

@@ -5,6 +5,7 @@ import type { MessageDelivery } from "./MessageDelivery";
 import type { MessageId } from "./MessageId";
 import type { MessageKind } from "./MessageKind";
 import type { OwnChangeDelivery } from "./OwnChangeDelivery";
+import type { Person } from "./Person";
 import type { ReactionProjection } from "./ReactionProjection";
 import type { UnverifiedSender } from "./UnverifiedSender";
 
@@ -44,6 +45,10 @@ nick_color_index: number,
  * Whether this row matches the user's highlight rules.
  */
 highlighted: boolean,
+/**
+ * Each nick the buffer knows that the text mentions, spelled as written.
+ */
+mentions?: Array<Person>,
 /**
  * Why this direct-message row's sender identity was not verified, when it was not.
  */

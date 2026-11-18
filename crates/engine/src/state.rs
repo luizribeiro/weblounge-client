@@ -23,9 +23,9 @@ use crate::{
     redaction::{EarlyRedactions, REDACTED_PREVIEW, redact_projection, redactor_name},
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
-        LocalCalendar, LocalDay, MemberRank, ModeMeaning, ModeProjection, OrderKey, Person,
-        RecordBody, Subject, SystemLine, SystemProjection, TimelineItem, TimelineRecord, diff,
-        fold,
+        LocalCalendar, LocalDay, MemberRank, MentionVocabulary, ModeMeaning, ModeProjection,
+        OrderKey, Person, RecordBody, Subject, SystemLine, SystemProjection, TimelineItem,
+        TimelineRecord, diff, fold, nick_tokens,
     },
 };
 
@@ -1799,6 +1799,7 @@ impl NetworkModel {
             authorship: MessageAuthorship::Own,
             nick_color_index: 0,
             highlighted: false,
+            mentions: None,
             unverified_sender: None,
             reactions: None,
             own_redaction: None,
@@ -2071,6 +2072,7 @@ impl NetworkModel {
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
             highlighted: false,
+            mentions: None,
             unverified_sender: None,
             reactions: None,
             own_redaction: None,
@@ -3857,7 +3859,7 @@ impl NetworkModel {
         (alerts && unread && buffer.projection.kind != BufferKind::Server).then(|| {
             EngineToUi::NotifiableMessageReceived {
                 buffer: buffer.projection.clone(),
-                message: message.clone(),
+                message: Box::new(message.clone()),
             }
         })
     }
@@ -4061,6 +4063,7 @@ impl NetworkModel {
             nick_color_index: nick_color_index(state.casemapping(), &incoming.author),
             highlighted: incoming.authorship != MessageAuthorship::Own
                 && matches_highlight_rules(&incoming.text, state),
+            mentions: None,
             unverified_sender: unverified_sender(incoming, state, identity, identity_disagrees),
             reactions: incoming
                 .msgid
@@ -4375,11 +4378,14 @@ impl NetworkModel {
         let mut output = Vec::new();
         let mut released = Vec::new();
         let mut released_system = Vec::new();
+        let casemapping = self.casemapping;
+        let own_nick = self.network.nickname.clone();
         for buffer_id in buffer_ids {
             let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
                 continue;
             };
-            let Ok(desired) = project_timeline(buffer) else {
+            let vocabulary = mention_vocabulary(buffer, casemapping, &own_nick);
+            let Ok(desired) = project_timeline(buffer, &vocabulary) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
                 ));
@@ -4891,13 +4897,16 @@ fn safe_raw_mode(change: &papo::ModeChange) -> String {
 
 fn project_timeline(
     buffer: &BufferState,
+    vocabulary: &MentionVocabulary,
 ) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
     fold(&buffer.timeline).map(|items| {
         items
             .into_iter()
             .map(|item| {
                 let body = match item.body {
-                    FoldedBody::Chat(chat) => ItemBody::Message(chat.projection),
+                    FoldedBody::Chat(chat) => {
+                        ItemBody::Message(with_mentions(chat.projection, vocabulary))
+                    }
                     FoldedBody::Run(run) => {
                         let time_ms = run.newest_time_ms();
                         ItemBody::System(SystemProjection {
@@ -4923,6 +4932,26 @@ fn project_timeline(
             })
             .collect()
     })
+}
+
+fn with_mentions(
+    mut message: MessageProjection,
+    vocabulary: &MentionVocabulary,
+) -> MessageProjection {
+    let mentions = vocabulary.mentions(&message.text);
+    message.mentions = (!mentions.is_empty()).then_some(mentions);
+    message
+}
+
+fn mention_vocabulary(
+    buffer: &BufferState,
+    casemapping: papo::Casemapping,
+    own_nick: &str,
+) -> MentionVocabulary {
+    let peer = buffer
+        .direct_nick()
+        .map(|nick| casemapping.fold(nick.as_str()).into_owned());
+    MentionVocabulary::new(casemapping, own_nick, peer.as_ref(), &buffer.timeline)
 }
 
 fn evict_over_budget(
@@ -5223,17 +5252,7 @@ fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
 
 fn contains_nick_token(text: &str, nick: &str, casemapping: papo::Casemapping) -> bool {
     let nick = casemapping.fold(nick);
-    text.split(|character| !is_nick_character(character))
-        .filter(|token| !token.is_empty())
-        .any(|token| casemapping.fold(token) == nick)
-}
-
-fn is_nick_character(character: char) -> bool {
-    character.is_alphanumeric()
-        || matches!(
-            character,
-            '_' | '-' | '[' | ']' | '\\' | '`' | '^' | '{' | '}' | '|'
-        )
+    nick_tokens(text).any(|token| casemapping.fold(token) == nick)
 }
 
 pub(crate) fn is_own_nick(state: &papo::State, nick: &str) -> bool {
