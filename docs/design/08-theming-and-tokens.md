@@ -82,7 +82,7 @@ motion variables and their reduced-motion overrides.
 
 ## Shipped themes
 
-In picker order: Lounge, Lounge Night, Black, Modern, Terminal, Retro, Monokai, Earthsong. Lounge
+In picker order: Lounge, Lounge Night, Black, Modern, Terminal, Retro, Monokai, Earthsong, n.e. Lounge
 Night and Lounge are the System pair. Modern, Terminal and Retro take the prototype's `THEMES`
 values; tokens the prototype lacks follow each theme's own family (focus ring = accent, mention
 badge = the unread or error red). Black is Lounge Night for OLED screens: `#000` for the app,
@@ -115,7 +115,25 @@ mention badge, and the red `#c94234` (3.1:1) to `#e4664f` (4.6:1) for errors. Th
 six distinct hues: green, amber, blue `#1398b9` (4.5:1), bright salmon `#ff9269`, bright blue
 `#5fdaff` and bright yellow `#e0d561`. Red stays out, as it reads as an error, and the cyan
 `#509552` too, as it is a second green beside `#85c54c`. Like Monokai it is a terminal scheme, so it
-shares Monokai's Hack, 13px and 3px corners. A unit test checks text pairs at 4.5:1 and indicators
+shares Monokai's Hack, 13px and 3px corners. n.e. (id `ne`) takes the dark palette of pgray.dev
+and neutral.engineering, whose stylesheets share one `:root.dark` block; it is named after the
+neutral.engineering wordmark, so no person's name brands it. Exact site values: `#111111` (`--bg`)
+for the app, surfaces and panels, `#e5e5e5` (`--fg`) text, `#999999` (`--muted`) muted text and
+the redaction bar, `#333333` (`--border`) for every border, and `#fcc21b` (`--yellow`) for the
+accent, focus ring and self nick, with `#111111` on it, as the sites' `mark` and active nav link
+set it. The text selection is that `mark` pair. The sites use one hue, so the theme does too: no
+other hue appears anywhere. Roles the sites lack are derived from those values: `#000000` inputs
+and code (black under the `#111` page), `#1a1a1a` hovered rows, `#222222` chips, `#262626` the
+selected row with `#e5e5e5` text, and `#282312` (`#fcc21b` at 10% over `#111`) the mention
+background. Unread, the mention badge, the online dot and errors are the same yellow; their
+meaning comes from their place and shape, never colour alone. The nick palette varies the yellow
+and the greys in lightness: cream `#fff0b3`, light yellow `#ffd966`, gold `#d9a514`, khaki
+`#a68a3c` (5.7:1), light grey `#cccccc` and grey `#8f8f8f` (5.8:1). Every site colour passes
+its contract on `#111` unchanged (fg 15.0:1, muted 6.6:1, yellow 11.6:1, `mark` 11.6:1). It is set
+in IBM Plex Mono, the sites' face, at Terminal's 13px, with the sites' square corners (0px) and no
+shadows. pgray.dev also lays an optional 2000 K multiply overlay (`#ffa03e`) over the page, on by
+default, which warms it towards orange; the theme takes the sites' stylesheet colours, not that
+filter. A unit test checks text pairs at 4.5:1 and indicators
 at 3:1 in every theme.
 
 ## Text selection
@@ -143,6 +161,7 @@ dark ink or accent with a light text colour.
 | Retro        | `#4a3527`  | `#fff3dc` | 10.4:1 |
 | Monokai      | `#ded685`  | `#1c1c1c` | 11.4:1 |
 | Earthsong    | `#f5ae2e`  | `#292520` | 8.0:1  |
+| n.e.         | `#fcc21b`  | `#111111` | 11.6:1 |
 
 The contrast test requires 7:1 (WCAG AAA) for the pair, and 4.5:1 between the selection background
 and each row background (`bg`, `surface`, `panelAlt` for hovered rows, `mentionBg` for highlights),
@@ -192,7 +211,7 @@ its hinting kept. They are declared once in `theme-fonts.css`, together with met
 `<Family> Fallback` faces over local Arial, Courier New or Times New Roman. Browsers fetch a face
 only when rendered text uses its family, and only a theme's tokens name these families, so Lounge
 downloads none of them on the page (a Playwright test checks this; others check that Terminal
-fetches only IBM Plex Mono, and Monokai and Earthsong only Hack). Settings cards draw previews
+and n.e. fetch only IBM Plex Mono, and Monokai and Earthsong only Hack). Settings cards draw previews
 without text, so opening Settings loads no theme fonts. The service worker still precaches every
 hashed asset, fonts included, after load and at low priority, so a chosen theme keeps its fonts
 offline. Latin-subset bytes per theme: Modern 52 KB, Terminal 60 KB, Retro 106 KB, Monokai and
