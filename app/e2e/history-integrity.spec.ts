@@ -128,8 +128,7 @@ test.describe("history integrity against local Ergo", () => {
     await irc.forwarder.drop();
     await expect.poll(() => keeper.attachedClientCount()).toBe(1);
     await sendFromMany(irc, channel, longerThanOnePage);
-    await irc.forwarder.restore();
-    await reconnectNow(app, keeper);
+    await reconnectNow(app, irc, keeper);
     await expectHistoryPageReceived(app, channel, pagesBefore);
 
     await expectBuffersMatchServer(app, irc, [channel]);
@@ -156,8 +155,7 @@ test.describe("history integrity against local Ergo", () => {
         interruption,
       );
       await sendEach(peer, [channel], 3, `while cut off ${irc.id}`);
-      await irc.forwarder.restore();
-      await reconnectNow(relaunched, keeper);
+      await reconnectNow(relaunched, irc, keeper);
 
       await expectHistoryPageReceived(relaunched, channel);
       await expectBuffersMatchServer(relaunched, irc, [channel]);
@@ -233,9 +231,8 @@ test.describe("history integrity against local Ergo", () => {
     for (let index = 0; index < 3; index += 1)
       await sendFromComposer(app, channel, `queued ${index} ${irc.id}`);
     await peer.privmsgConfirmed(channel, `while offline ${irc.id}`);
-    await irc.forwarder.restore();
     await context.setOffline(false);
-    await reconnectNow(app, keeper);
+    await reconnectNow(app, irc, keeper);
     await expect(
       app.locator('[data-message-row][data-delivery="optimistic"]'),
     ).toHaveCount(0);
@@ -446,9 +443,19 @@ async function expectAppOffline(page: Page): Promise<void> {
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(0);
 }
 
-/** Returning to the foreground probes the connection instead of waiting out the backoff. */
-async function reconnectNow(page: Page, sameAccount: IrcClient): Promise<void> {
+/**
+ * Returning to the foreground retries at once instead of waiting out the backoff. A silently
+ * dropped socket is closed first: the foreground probe's ping would wait out its 4s timeout on
+ * it, while a closed one fails the ping at once.
+ */
+async function reconnectNow(
+  page: Page,
+  irc: IrcTestAccount,
+  sameAccount: IrcClient,
+): Promise<void> {
+  await irc.forwarder.disconnect();
   const attached = await sameAccount.attachedClientCount();
+  await irc.forwarder.restore();
   await setPageHidden(page, true);
   await setPageHidden(page, false);
   await dispatchPersistedPageShow(page);
