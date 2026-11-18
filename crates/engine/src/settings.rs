@@ -47,6 +47,10 @@ pub enum ThemePreference {
     #[serde(rename = "earthsong")]
     #[ts(rename = "earthsong")]
     Earthsong,
+    /// The n.e. theme, after neutral.engineering.
+    #[serde(rename = "ne")]
+    #[ts(rename = "ne")]
+    NeutralEngineering,
 }
 
 /// Spacing, text size and avatar size of a list.
@@ -451,6 +455,7 @@ mod tests {
             (ThemePreference::Retro, "retro"),
             (ThemePreference::Monokai, "monokai"),
             (ThemePreference::Earthsong, "earthsong"),
+            (ThemePreference::NeutralEngineering, "ne"),
         ] {
             let storage = MemoryKv::default();
 
