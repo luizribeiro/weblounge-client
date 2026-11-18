@@ -2,7 +2,6 @@ import type { JSX } from "solid-js";
 import type { BufferSyncPresentation } from "../../engine/buffer-sync";
 import { t } from "../../strings";
 import { Line } from "../../ui/Line";
-import { Selectable } from "../../ui/Selectable";
 import styles from "./ConversationHeader.module.css";
 import { ConversationTitle } from "./ConversationTitle";
 
@@ -44,11 +43,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
           title={props.title}
         />
         {props.topic !== undefined && props.topic !== "" && (
-          <Line class={styles.topic}>
-            <Selectable surfaceId="conversation-topic">
-              {props.topic}
-            </Selectable>
-          </Line>
+          <Line class={styles.topic}>{props.topic}</Line>
         )}
       </div>
       {props.memberCount !== undefined && (

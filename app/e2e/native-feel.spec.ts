@@ -78,6 +78,39 @@ test.describe("native feel against local Ergo", () => {
     await auditMessageSelection(page, bot.nickname, first, second);
   });
 
+  test("keeps the header topic as chrome and the topic card selectable", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    const topic = `beta ships Friday · https://weblounge.chat/${irc.id}`;
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(`/topic ${topic}`);
+    await composer.press("Enter");
+
+    const headerTopic = page
+      .locator("[data-main-header]")
+      .getByText(topic, { exact: true });
+    await expect(headerTopic).toBeVisible();
+    await expect(headerTopic).toHaveCSS("user-select", "none");
+    await expect(headerTopic).toHaveCSS("cursor", "default");
+
+    await composer.fill("/topic");
+    await composer.press("Enter");
+    const cardText = page.locator(
+      '[data-system-card="topic"] [data-system-card-text]',
+    );
+    await expect(cardText).toHaveText(topic);
+    await expect(cardText.locator("[data-selectable='true']")).not.toHaveCount(
+      0,
+    );
+    await expect(
+      cardText.locator("[data-selectable='true']").first(),
+    ).toHaveCSS("user-select", "text");
+  });
+
   test("uses one focus border on the composer", async ({ page, irc }) => {
     await page.goto(irc.url());
     const composer = page.getByRole("textbox", {

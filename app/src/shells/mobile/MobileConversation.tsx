@@ -46,7 +46,6 @@ import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { copyText } from "../../ui/copy-text";
 import { Line } from "../../ui/Line";
-import { Selectable } from "../../ui/Selectable";
 import { MobileMessageActionSheet } from "./MobileMessageActionSheet";
 import styles from "./MobileShell.module.css";
 import { messageSheetActions } from "./message-sheet-actions";
@@ -187,15 +186,11 @@ export function MobileConversation(props: MobileConversationProps) {
         >
           <ConversationTitle sync={sync} title={props.buffer.title} />
           <Line class={styles.subtitle}>
-            {props.buffer.kind === "direct" ? (
-              t("mobile.conversation.direct")
-            ) : props.buffer.kind === "server" ? (
-              t("mobile.conversation.server")
-            ) : (
-              <Selectable surfaceId="mobile-conversation-topic">
-                {props.buffer.topic || t("mobile.conversation.channel")}
-              </Selectable>
-            )}
+            {props.buffer.kind === "direct"
+              ? t("mobile.conversation.direct")
+              : props.buffer.kind === "server"
+                ? t("mobile.conversation.server")
+                : props.buffer.topic || t("mobile.conversation.channel")}
           </Line>
         </button>
         {props.buffer.kind === "channel" ? (

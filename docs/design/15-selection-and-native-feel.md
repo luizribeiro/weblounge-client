@@ -17,7 +17,7 @@ the final message UI.
 
 Chrome is non-selectable by default. Chrome includes sidebars, channel and member rows, tab bars,
 headers, buttons, badges, settings labels, form labels, timestamps, delivery state, and composer
-buttons. Content opts in only through `Selectable`: message text, topics, server-log lines, code
+buttons. Content opts in only through `Selectable`: message text, topic cards, server-log lines, code
 blocks, and link previews. Inputs and editable controls retain their native selection behavior.
 Each message row is a selection boundary in structure; its chrome remains outside `Selectable`.
 The message list owns cross-row selection, so a drag can include adjacent content rows but cannot

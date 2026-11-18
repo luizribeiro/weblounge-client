@@ -21,10 +21,9 @@ it("renders one-line identity and routes both header controls", () => {
   ));
 
   expect(screen.getByRole("heading", { name: "#lounge" })).toBeInTheDocument();
-  expect(screen.getByText("A very long channel topic")).toHaveAttribute(
-    "data-selectable",
-    "true",
-  );
+  expect(
+    screen.getByText("A very long channel topic").closest("[data-selectable]"),
+  ).toBeNull();
   expect(screen.getByText("1,284")).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Toggle member list" }),
