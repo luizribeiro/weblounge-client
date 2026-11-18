@@ -2,6 +2,7 @@ import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { SystemProjection } from "../../../engine/generated/SystemProjection";
 import { formatTime } from "../../../ui/format-time";
 import { EventIcon } from "../../../ui/icons/EventIcon";
+import { Selectable } from "../../../ui/Selectable";
 import { nickColor } from "../nick-color";
 import styles from "./SystemLine.module.css";
 import {
@@ -68,7 +69,9 @@ export function SystemLine(props: {
           <Show when={words().body}>
             {(body) => (
               <div class={styles.body} data-system-body="true">
-                {props.renderText(body())}
+                <Selectable surfaceId="system-line-body">
+                  {props.renderText(body())}
+                </Selectable>
               </div>
             )}
           </Show>

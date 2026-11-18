@@ -96,6 +96,7 @@ test.describe("native feel against local Ergo", () => {
     await expect(headerTopic).toBeVisible();
     await expect(headerTopic).toHaveCSS("user-select", "none");
     await expect(headerTopic).toHaveCSS("cursor", "default");
+    await nativeFeelAudit(page);
 
     await composer.fill("/topic");
     await composer.press("Enter");

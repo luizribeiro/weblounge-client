@@ -5,6 +5,10 @@
   user-select: text;
 }
 
+:global([data-app-root]) .selectable a[href] {
+  cursor: pointer;
+}
+
 .line {
   display: block;
   min-width: 0;
