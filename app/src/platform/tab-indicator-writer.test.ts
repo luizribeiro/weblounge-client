@@ -39,6 +39,14 @@ describe("createTabIndicatorWriter", () => {
         ?.getAttribute("href"),
     ).toBe("/icons/apple-touch-icon.png");
 
+    write({ icon: "unread", title: "weblounge" });
+    expect(iconHrefs()).toEqual([
+      "/icons/favicon-unread.svg",
+      "/icons/favicon-32-unread.png",
+    ]);
+    expect(iconStates()).toEqual(["unread", "unread"]);
+    expect(document.title).toBe("weblounge");
+
     write({ icon: "disconnected", title: "weblounge" });
     expect(iconHrefs()).toEqual([
       "/icons/favicon-disconnected.svg",

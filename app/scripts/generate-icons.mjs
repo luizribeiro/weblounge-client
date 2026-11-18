@@ -11,7 +11,12 @@ const mark = favicon.slice(
   favicon.lastIndexOf("</g>") + "</g>".length,
 );
 
-export const brandColors = { felt: "#1B2A22", paper: "#EFE8D8" };
+export const brandColors = {
+  felt: "#1B2A22",
+  ink: "#1B2A22",
+  paper: "#EFE8D8",
+  signal: "#E3B778",
+};
 const loungeTheme = JSON.parse(
   await readFile(resolve(appDirectory, "themes/lounge.json"), "utf8"),
 );
@@ -19,9 +24,10 @@ const faviconVariants = JSON.parse(
   await readFile(resolve(appDirectory, "assets/favicon-variants.json"), "utf8"),
 );
 const faviconTiles = {
-  connected: brandColors.felt,
-  mention: loungeTheme.colors.mentionBadge,
-  disconnected: "#8C8F87",
+  connected: { tile: brandColors.felt, mark: brandColors.paper },
+  unread: { tile: brandColors.signal, mark: brandColors.ink },
+  mention: { tile: loungeTheme.colors.mentionBadge, mark: brandColors.paper },
+  disconnected: { tile: "#8C8F87", mark: brandColors.paper },
 };
 // Local builds wear a yellow tile so they are never mistaken for the installed release.
 const devColors = { tile: "#E8B530", mark: "#000000" };
@@ -74,11 +80,17 @@ function renderAppSource(filename, grid, directory) {
   );
 }
 
-function retiledFavicon(tile) {
-  const brandTile = `fill="${brandColors.felt}"`;
-  if (!favicon.includes(brandTile))
-    throw new Error("favicon.svg no longer draws the brand felt tile");
-  return favicon.replace(brandTile, `fill="${tile}"`);
+function retiledFavicon({ tile, mark }) {
+  return replaceOnce(
+    replaceOnce(favicon, `fill="${brandColors.felt}"`, `fill="${tile}"`),
+    `color="${brandColors.paper}"`,
+    `color="${mark}"`,
+  );
+}
+
+function replaceOnce(svg, from, to) {
+  if (!svg.includes(from)) throw new Error(`favicon.svg no longer has ${from}`);
+  return svg.replace(from, to);
 }
 
 function appIconSvg(

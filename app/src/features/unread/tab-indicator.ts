@@ -1,6 +1,6 @@
 import { badgeCountLabel } from "./unread-badge";
 
-export type TabIcon = "connected" | "mention" | "disconnected";
+export type TabIcon = "connected" | "unread" | "mention" | "disconnected";
 
 export interface TabIndicator {
   readonly icon: TabIcon;
