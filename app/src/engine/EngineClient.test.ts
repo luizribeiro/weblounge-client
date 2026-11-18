@@ -109,6 +109,80 @@ describe("WorkerEngineClient", () => {
     await client.close();
   });
 
+  it("fails a request to a silently dead worker and respawns it", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = new FakePort();
+      const second = new FakePort();
+      const client = new WorkerEngineClient(
+        { port: first, close: vi.fn() },
+        undefined,
+        [],
+        () => ({ port: second, close: vi.fn() }),
+      );
+      const hello = {
+        build_id: "build-1",
+        client_id: "tab-1",
+        last_revision: null,
+        shell: "web" as const,
+      };
+      const started = client.start(hello);
+      first.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
+      await started;
+
+      const sent = client.send({
+        id: "send-1",
+        request: { type: "submit_input", buffer_id: 2, input: "hello" },
+      });
+      const failed = expect(sent).rejects.toThrow("engine worker restarted");
+      expect(first.sent.at(-1)).toMatchObject({
+        type: "request",
+        payload: { request: { type: "ping" } },
+      });
+      vi.advanceTimersByTime(5_000);
+
+      await failed;
+      expect(second.sent).toEqual([{ type: "hello", payload: hello }]);
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a request to a live worker pending past the heartbeat", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, port } = fixture();
+      const started = client.start({
+        build_id: "build-1",
+        client_id: "tab-1",
+        last_revision: null,
+        shell: "web",
+      });
+      port.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
+      await started;
+
+      const sent = client.send({
+        id: "mark-all-read-1",
+        request: { type: "mark_all_read" },
+      });
+      const heartbeat = port.sent.at(-1);
+      if (heartbeat?.type !== "request")
+        throw new Error("heartbeat is a request");
+      port.emit({ type: "pong", id: heartbeat.payload.id });
+      vi.advanceTimersByTime(5_000);
+      port.emit({ type: "command_result", id: "mark-all-read-1" });
+
+      await expect(sent).resolves.toEqual({
+        type: "command_result",
+        id: "mark-all-read-1",
+      });
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not probe a worker whose handshake is still pending", async () => {
     vi.useFakeTimers();
     try {

@@ -665,6 +665,46 @@ test.describe("connection resilience against local Ergo", () => {
     await expectShellToRemain(page, channel);
   });
 
+  test("fails a send to a silently killed worker, then sends after recovery", async ({
+    page,
+    irc,
+  }, testInfo) => {
+    const channel = irc.channel;
+    test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
+    await installWorkerControl(page);
+    const bot = await irc.peer("killed");
+    const sessions = await irc.self();
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    await expectOnline(page, testInfo.project.name);
+    const attached = await sessions.attachedClientCount();
+    await page.evaluate(() => {
+      const kill = Reflect.get(globalThis, "killEngineWorkerSilently");
+      if (typeof kill !== "function")
+        throw new Error("engine worker control was not installed");
+      kill();
+    });
+    await expect.poll(() => sessions.attachedClientCount()).toBe(attached - 1);
+
+    const text = `after silent worker death ${Date.now()}`;
+    await composer.fill(text);
+    await composer.press("Enter");
+    await page.waitForFunction(
+      () => Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0) > 1,
+    );
+    await expect(
+      page.getByRole("status").filter({
+        hasText: "Something went wrong. Try again.",
+      }),
+    ).toBeVisible();
+    await expect(composer).toHaveValue(text);
+    await expect.poll(() => sessions.attachedClientCount()).toBe(attached);
+
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+    await bot.waitForPrivmsg(channel, text, irc.account);
+    await expectShellToRemain(page, channel);
+  });
+
   test(
     "recovers after the Ergo process restarts",
     {
@@ -1162,6 +1202,9 @@ async function installWorkerControl(page: Page): Promise<void> {
           this.dispatchEvent(new Event("error"));
           this.terminate();
         });
+        Reflect.set(globalThis, "killEngineWorkerSilently", () =>
+          this.terminate(),
+        );
         const controlledEngineResults = new Map<string, string>();
         Reflect.set(
           globalThis,

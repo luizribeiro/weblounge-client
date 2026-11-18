@@ -165,6 +165,8 @@ export class WorkerEngineClient implements EngineClient {
       this.#requests.set(request.id, { resolve, reject });
     });
     this.#connection.port.postMessage({ type: "request", payload: request });
+    // A worker the browser killed fires no error event; only a probe notices it.
+    this.checkLiveness();
     return result;
   }
 
