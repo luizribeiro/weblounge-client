@@ -7,6 +7,12 @@ function iconHrefs(): (string | null)[] {
   );
 }
 
+function iconStates(): (string | null)[] {
+  return [...document.querySelectorAll('link[rel="icon"]')].map((link) =>
+    link.getAttribute("data-tab-icon"),
+  );
+}
+
 describe("createTabIndicatorWriter", () => {
   beforeEach(() => {
     document.head.innerHTML = `
@@ -25,6 +31,7 @@ describe("createTabIndicatorWriter", () => {
       "/icons/favicon-mention.svg",
       "/icons/favicon-32-mention.png",
     ]);
+    expect(iconStates()).toEqual(["mention", "mention"]);
     expect(document.title).toBe("(2) weblounge");
     expect(
       document
@@ -37,6 +44,7 @@ describe("createTabIndicatorWriter", () => {
       "/icons/favicon-disconnected.svg",
       "/icons/favicon-32-disconnected.png",
     ]);
+    expect(iconStates()).toEqual(["disconnected", "disconnected"]);
     expect(document.title).toBe("weblounge");
 
     write({ icon: "connected", title: "weblounge" });
@@ -44,6 +52,7 @@ describe("createTabIndicatorWriter", () => {
       "/icons/favicon.svg",
       "/icons/favicon-32.png",
     ]);
+    expect(iconStates()).toEqual(["connected", "connected"]);
   });
 
   it("writes nothing while the state is unchanged", () => {

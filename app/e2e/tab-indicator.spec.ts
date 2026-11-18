@@ -220,6 +220,7 @@ async function expectTab(
         tabIconHref("image/svg+xml", icon),
         tabIconHref("image/png", icon),
       ],
+      states: [icon, icon],
       title,
     });
 }
@@ -228,6 +229,9 @@ function tabState(page: Page) {
   return page.evaluate(() => ({
     icons: [...document.querySelectorAll('link[rel="icon"]')].map((link) =>
       link.getAttribute("href"),
+    ),
+    states: [...document.querySelectorAll('link[rel="icon"]')].map((link) =>
+      link.getAttribute("data-tab-icon"),
     ),
     title: document.title,
   }));
