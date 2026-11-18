@@ -171,6 +171,11 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-composer-input-types",
+      testMatch: "**/composer-input-types.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-row-toolbar",
       testMatch: "**/row-toolbar.spec.ts",
       use: { browserName: "webkit" },
