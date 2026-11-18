@@ -1,6 +1,6 @@
 import { badgeCountLabel } from "./unread-badge";
 
-export type TabIcon = "connected" | "unread" | "disconnected";
+export type TabIcon = "connected" | "mention" | "disconnected";
 
 export interface TabIndicator {
   readonly icon: TabIcon;
@@ -11,14 +11,14 @@ export interface TabIndicatorState {
   readonly baseTitle: string;
   readonly disconnected: boolean;
   readonly showUnread: boolean;
-  readonly unreadCount: number;
+  readonly mentionCount: number;
 }
 
 export function tabIndicator(state: TabIndicatorState): TabIndicator {
-  if (state.showUnread && state.unreadCount > 0) {
+  if (state.showUnread && state.mentionCount > 0) {
     return {
-      icon: "unread",
-      title: `(${badgeCountLabel(state.unreadCount)}) ${state.baseTitle}`,
+      icon: "mention",
+      title: `(${badgeCountLabel(state.mentionCount)}) ${state.baseTitle}`,
     };
   }
   return {

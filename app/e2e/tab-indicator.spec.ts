@@ -29,7 +29,7 @@ const screenshots = path.join(
 );
 
 test.describe("browser tab indicator against local Ergo", () => {
-  test("turns red with a count for an unread DM and grey while disconnected", async ({
+  test("turns red with a count for a DM, which counts as a mention, and grey while disconnected", async ({
     context,
     irc,
     page,
@@ -41,8 +41,8 @@ test.describe("browser tab indicator against local Ergo", () => {
 
     const peer = await irc.peer("tab-peer");
     await peer.privmsgConfirmed(irc.account, "are you there?");
-    await expectTab(page, "unread", "(1) weblounge");
-    await captureTab(context, page, "unread");
+    await expectTab(page, "mention", "(1) weblounge");
+    await captureTab(context, page, "mention");
 
     await directRow(page, peer).click();
     await expectSettled(page, { conversation: peer.nickname });
@@ -71,7 +71,7 @@ test.describe("browser tab indicator against local Ergo", () => {
 
     await setPageHidden(page, true);
     await peer.privmsgConfirmed(irc.account, "ping while you are away");
-    await expectTab(page, "unread", "(1) weblounge");
+    await expectTab(page, "mention", "(1) weblounge");
 
     await setPageHidden(page, false);
     await expect(
@@ -95,7 +95,7 @@ test.describe("browser tab indicator against local Ergo", () => {
 
     await setPageFocused(page, false);
     await peer.privmsgConfirmed(irc.channel, `${irc.account}: look here`);
-    await expectTab(page, "unread", "(1) weblounge");
+    await expectTab(page, "mention", "(1) weblounge");
 
     await setPageFocused(page, true);
     await expectTab(page, "connected", "weblounge");
@@ -140,7 +140,7 @@ test.describe("browser tab indicator against local Ergo", () => {
     await expect(tabSwitch).toHaveAttribute("aria-checked", "false");
     await expectTab(page, "connected", "weblounge");
     await tabSwitch.click();
-    await expectTab(page, "unread", "(1) weblounge");
+    await expectTab(page, "mention", "(1) weblounge");
     await expectSettled(page);
     await settingsScreenshot(dialog, "desktop-tab-indicator-on");
     await page.keyboard.press("Escape");

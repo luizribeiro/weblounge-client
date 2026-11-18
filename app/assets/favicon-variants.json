@@ -1,6 +1,6 @@
 {
   "connected": { "svg": "favicon.svg", "png": "favicon-32.png" },
-  "unread": { "svg": "favicon-unread.svg", "png": "favicon-32-unread.png" },
+  "mention": { "svg": "favicon-mention.svg", "png": "favicon-32-mention.png" },
   "disconnected": {
     "svg": "favicon-disconnected.svg",
     "png": "favicon-32-disconnected.png"
