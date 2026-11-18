@@ -74,7 +74,7 @@ export interface PlatformEnvironment {
 
 The corresponding root attributes are `data-input`, `data-display`, `data-shell`, and
 `data-desktop-panels`. The last attribute is presentation state, not shell selection, and is the
-only consumer of the 760px app-container breakpoint. `:root` defines `--wl-safe-top`,
+only consumer of the desktop-panel breakpoint. `:root` defines `--wl-safe-top`,
 `--wl-safe-right`, `--wl-safe-bottom`, and `--wl-safe-left` from `env(safe-area-inset-*)`. The
 platform owns the app geometry: `#root` is fixed and the document never scrolls.
 
@@ -189,10 +189,11 @@ detection (a feature test whenever possible), an upstream bug URL, and a concret
 condition. The planned `iosGestureEvents` entry for WebKit pinch suppression follows that shape;
 quirks cannot select a shell or provide ordinary layout policy.
 
-Width still controls presentation inside the desktop shell. `760px` is the single desktop-panel
-breakpoint: at or above it the sidebar can be inline; below it the sidebar is transient. Inline
-and drawer sidebars share the `--wl-size-sidebar` token, 224px: Luiz signed off this departure
-from the brief's and prototype's 256px on 2026-11-12. The sidebar has no footer: the
+Width still controls presentation inside the desktop shell. The single desktop-panel breakpoint
+is the sidebar width plus the 480px minimum conversation (design 34), `224 + 480 = 704px`: at or
+above it the sidebar can be inline; below it the sidebar is transient and member lists stay in
+their drawers. Inline and drawer sidebars share the `--wl-size-sidebar` token, 224px: Luiz
+signed off this departure from the brief's and prototype's 256px on 2026-11-12. The sidebar has no footer: the
 prototype's own-nick footer was dropped in the same sign-off, and account or settings controls may
 later join the header row. As in the prototype, the brand text takes the header row's free space
 and ellipsizes, so header buttons such as the switcher launcher sit at the row's right padding.
@@ -200,8 +201,8 @@ A network header's highlight has the same height, corner radius and inline inset
 row, with its label centred; the space that separates it from the brand sits in a 6px margin outside
 the highlight, so the rows under it start one margin lower than a bare row would. Luiz signed off the
 margin on 2026-11-13 and the row-shaped highlight on 2026-11-14.
-Member lists independently use the existing pane calculation of a 232px list beside at least a
-320px conversation. The minimum supported desktop viewport is `360px`.
+Member lists use the pane calculation of a 232px list beside at least a 480px conversation
+(design 34). The minimum supported desktop viewport is `360px`.
 
 ## Desktop pane tree
 
@@ -385,7 +386,7 @@ themes, or virtual-list behavior.
 - Platform unit tests cover web media-feature mapping, Tauri target mapping, reactive preference
   changes, injected safe-area/keyboard values, and quirk-registry metadata.
 - Playwright keeps one desktop shell element across 1440, 900, 600, and 400px widths and across
-  the old 760px boundary, preserving its draft and scroll. At 400px it covers left drawer open,
+  the desktop-panel boundary, preserving its draft and scroll. At 400px it covers left drawer open,
   channel selection, scrim/Escape dismissal, and composer focus; touch iPhone and Android profiles
   select mobile.
 - Safe-area Playwright profiles inject iPhone portrait (top 62px, bottom 34px), iPhone landscape
@@ -416,7 +417,8 @@ and cross-device layout sync are not planned.
 ## Decisions
 
 - Choose the shell from primary input capability, never viewport width.
-- Use 760px only as the desktop sidebar presentation breakpoint and support desktop down to 360px.
+- Derive the desktop sidebar presentation breakpoint from the sidebar and minimum conversation
+  widths (704px) and support desktop down to 360px.
 - Centralize browser/Tauri adaptation in `app/src/platform/`; components consume root attributes
   and geometry tokens.
 - Use `black-translucent` status-bar style with one themed header owner for the top inset.

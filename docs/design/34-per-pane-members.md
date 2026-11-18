@@ -81,7 +81,7 @@ export function toggleMembers(visibility: MemberVisibility, channel: ChannelKey)
 - **Width is fixed** at 232px through a new `--wl-size-members` token (the literal `232` is in three
   places today). No drag-resize.
 - Presentation is derived, never stored: `inline` when the pane is at least 232 + the minimum
-  conversation width, otherwise `drawer`. Pane width comes from a `ResizeObserver` on the pane
+  conversation width and the desktop sidebar can be inline, otherwise `drawer`. Pane width comes from a `ResizeObserver` on the pane
   itself, which makes it correct for split panes for free.
 
 ## Per conversation type
@@ -99,8 +99,15 @@ switching buffers.
 
 ## Narrow panes
 
-- Inline needs `232px + 480px` of pane (amends design 09's 320px conversation minimum; see the
-  narrow "before" capture). The sidebar breakpoint (760px) is unchanged.
+- Inline needs `232px + 480px` of pane (see the narrow "before" capture).
+- Panels collapse in one order as the window narrows (B37). The 480px conversation minimum is
+  shared: the sidebar is inline while the window is at least `224 + 480 = 704px` (design 09), and
+  the member list docks only while the sidebar can be inline, so with the sidebar shown it leaves
+  at `224 + 232 + 480 = 936px`. Narrowing therefore moves members to the drawer first and the
+  sidebar collapses later; members stay in the drawer below 704px. Widening restores the sidebar first, then the members. The
+  values come from `app/src/platform/desktop-panel-widths.ts`.
+- A sidebar the user hides in an inline-width window is not a resize: the pane gets the width, and
+  the list docks if the pane now fits `232 + 480`.
 - Below that, the same button and shortcut open the list as an `OverlayDrawer` anchored to **this
   pane's** right edge, below the pane header, with an invisible scrim covering only this pane's
   transcript (decisions 2, 7 and 13).
@@ -207,6 +214,10 @@ Matches design 15's rules:
     across the threshold keeps the composer draft and element identity;
   - with the drawer open, Send is clickable, typing from the drawer lands in the composer, sending
     works and the drawer stays open; a confirmation dialog still swallows typing;
+  - `panel-collapse.spec.ts` steps the window from wide to narrow and back in 16px steps, settling
+    at each, and checks that docked panels change in one direction (members, then sidebar; the
+    reverse on widening) with the conversation filling exactly the width they leave; a manually
+    hidden sidebar in a medium window lets the list dock;
   - committed light/dark screenshots of the open panel (also fixes stale T8 member-panel captures).
 - Every touched journey keeps `nativeFeelAudit` and its idle/hidden checks green; screenshots are
   compared with the mockups above before merge.
@@ -242,3 +253,6 @@ Matches design 15's rules:
     transcript region: it starts at the pane header's bottom and ends at the composer's top. The
     composer spans the whole pane width and stays in the same place, at the same size, whether the
     list is open or not.
+15. **Added 2026-11-18 (B37, feedback #32):** narrowing collapses panels monotonically, members
+    first, then the sidebar; no panel reappears while the window keeps narrowing. Both thresholds
+    derive from the sidebar, member column and 480px conversation widths (see Narrow panes).
