@@ -172,10 +172,10 @@ export class EngineWorkerRuntime {
   }
 
   async #handleMessage(port: WorkerHostPort, message: unknown): Promise<void> {
+    const requestId = readRequestId(message);
     try {
       if (!this.#ports.has(port)) return;
       this.#activePort = port;
-      const requestId = readRequestId(message);
       if (requestId !== undefined) this.#requestPorts.set(requestId, port);
       const currentEngine = await this.#engine;
       const encoded = currentEngine.handle(JSON.stringify(message));
@@ -184,7 +184,11 @@ export class EngineWorkerRuntime {
         throw new Error("engine returned a non-array response");
       for (const event of events) this.#route(event, port);
     } catch {
-      port.postMessage({ type: "fatal", message_key: "engine.worker_failed" });
+      port.postMessage({
+        type: "fatal",
+        message_key: "engine.worker_failed",
+        ...(requestId === undefined ? {} : { id: requestId }),
+      });
     }
   }
 

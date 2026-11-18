@@ -221,6 +221,7 @@ export class WorkerEngineClient implements EngineClient {
   readonly #onMessage = (event: MessageEvent<unknown>): void => {
     const message = decodeWorkerMessage(event.data);
     if (message.type === "fatal") {
+      if (message.id !== undefined) this.#failRequest(message.id);
       this.#publish(message);
       return;
     }
@@ -304,6 +305,11 @@ export class WorkerEngineClient implements EngineClient {
     } finally {
       this.#recovering = false;
     }
+  }
+
+  #failRequest(id: string): void {
+    this.#requests.get(id)?.reject(new Error("engine request failed"));
+    this.#requests.delete(id);
   }
 
   #probeWorker(): void {
@@ -452,10 +458,11 @@ function decodeWorkerMessage(value: unknown): EngineClientMessage {
 function decodeWorkerHostError(
   value: Record<string, unknown>,
 ): WorkerHostError {
-  if (typeof value.message_key === "string") {
-    return { type: "fatal", message_key: value.message_key };
-  }
-  throw new Error("invalid worker host error");
+  if (typeof value.message_key !== "string")
+    throw new Error("invalid worker host error");
+  if (typeof value.id === "string")
+    return { type: "fatal", message_key: value.message_key, id: value.id };
+  return { type: "fatal", message_key: value.message_key };
 }
 
 function decodeEngineMessage(value: unknown): EngineToUi {

@@ -52,6 +52,24 @@ it("broadcasts optimistic state to every shared port", async () => {
   );
 });
 
+it("names the request whose handling failed", async () => {
+  const port = new FakePort();
+  const runtime = new EngineWorkerRuntime(async () => ({
+    handle: () => {
+      throw new Error("engine could not decode the request");
+    },
+  }));
+  runtime.attach(port);
+
+  port.receive({ type: "request", payload: { id: "send-1" } });
+
+  await vi.waitFor(() =>
+    expect(port.sent).toEqual([
+      { type: "fatal", message_key: "engine.worker_failed", id: "send-1" },
+    ]),
+  );
+});
+
 it("forwards timeline patches to every shared port", async () => {
   const first = new FakePort();
   const second = new FakePort();

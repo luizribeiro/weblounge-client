@@ -75,6 +75,7 @@ export type HistoryState = Pick<
 export interface WorkerHostError {
   type: "fatal";
   message_key: string;
+  id?: string;
 }
 
 export type EngineClientMessage = EngineToUi | WorkerHostError;

@@ -294,6 +294,31 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("fails only the request the worker could not handle", async () => {
+    const { client, port } = fixture();
+    const failed = client.send({
+      id: "send-1",
+      request: { type: "submit_input", buffer_id: 2, input: "hello" },
+    });
+    const pending = client.send({
+      id: "send-2",
+      request: { type: "submit_input", buffer_id: 2, input: "again" },
+    });
+
+    port.emit({
+      type: "fatal",
+      message_key: "engine.worker_failed",
+      id: "send-1",
+    });
+    port.emit({ type: "command_result", id: "send-2" });
+
+    await expect(failed).rejects.toThrow("engine request failed");
+    await expect(pending).resolves.toEqual({
+      type: "command_result",
+      id: "send-2",
+    });
+  });
+
   it("rejects a command with the engine's typed message key", async () => {
     const { client, port } = fixture();
     const result = client.send({
