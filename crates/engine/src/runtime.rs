@@ -7403,6 +7403,27 @@ async fn delay(duration: Duration) {
     }
 
     #[test]
+    fn command_usage_follows_the_caret_in_utf16_offsets() {
+        let registry = commands::built_in_registry();
+        let channels =
+            completion_context("/join #dev sekrit", 7, false, "#&", &registry).expect("context");
+        assert_eq!(channels.usage.map(|usage| usage.active_argument), Some(0));
+
+        let input = "/topic 😀 x";
+        let caret = utf16_len(input);
+        let topic = completion_context(input, caret, false, "#&", &registry).expect("context");
+        assert_eq!(caret, 11);
+        assert_eq!((topic.trigger, topic.replace_start), (None, caret));
+        assert_eq!(topic.usage.map(|usage| usage.active_argument), Some(1));
+
+        let input = "/kick 😀 ";
+        let kick =
+            completion_context(input, utf16_len(input), false, "#&", &registry).expect("context");
+        assert_eq!(kick.replace_end, 9);
+        assert_eq!(kick.usage.map(|usage| usage.active_argument), Some(1));
+    }
+
+    #[test]
     fn completion_context_ignores_a_first_word_ending_in_a_command_alias() {
         let registry = commands::built_in_registry();
         for word_ending_in_an_alias in ["im ", "im al", "Im ", "ij ", "xmsg al"] {
