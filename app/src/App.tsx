@@ -43,6 +43,7 @@ import type {
   VisibilityState,
 } from "./engine/protocol";
 import type { TimelineView } from "./engine/timeline-store";
+import { createCompletionAnswers } from "./features/composer/completion-answers";
 import { migrateDraft } from "./features/composer/draft-storage";
 import { ImageViewerOutlet } from "./features/image-viewer/ImageViewerOutlet";
 import type { MemberWindow } from "./features/members/MemberPanel";
@@ -325,7 +326,10 @@ export function App(props: AppProps) {
     }
   };
   let appRoot: HTMLElement | undefined;
-  let latestCompletionRequest: string | undefined;
+  const completionAnswers = createCompletionAnswers(
+    setCompletion,
+    completionDelay,
+  );
   let restartingHostedAuthorization = false;
   let hostedRefreshNetworkId: number | undefined;
   let preparedHostedNetwork: NetworkProjection | undefined;
@@ -800,17 +804,13 @@ export function App(props: AppProps) {
       if (message.type === "command_help_requested") {
         setComposerNotice(commandHelp(commandSpecs() ?? [], message.command));
       }
-      if (message.type === "completion_result") {
-        if (message.command_id === latestCompletionRequest) {
-          const delay = completionDelay();
-          if (delay === 0) setCompletion(message);
-          else
-            window.setTimeout(() => {
-              if (message.command_id === latestCompletionRequest)
-                setCompletion(message);
-            }, delay);
-        }
-      }
+      if (message.type === "completion_result")
+        completionAnswers.answer(message);
+      if (
+        message.type === "command_result" ||
+        message.type === "command_rejected"
+      )
+        completionAnswers.settle(message.id);
       if (message.type === "focus_buffer_requested") {
         setFocusRequest({ bufferId: message.buffer_id });
       }
@@ -1813,7 +1813,7 @@ export function App(props: AppProps) {
           onRequestCompletion={(bufferId, input, cursor, explicit) => {
             if (client === undefined) return;
             const id = crypto.randomUUID();
-            latestCompletionRequest = id;
+            completionAnswers.begin(id);
             const uiCompletion = noticeActions.completeInput(
               id,
               bufferId,
