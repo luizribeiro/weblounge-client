@@ -65,6 +65,20 @@ test.describe("channel operator commands against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("/voice gives the member the voice badge", async ({ page, irc }) => {
+    const channel = irc.channelNamed("voice");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("speaker", [channel]);
+    const members = await showMembers(page, channel);
+
+    await submit(composer, `/voice ${peer.nickname}`);
+
+    await expect(memberPrefix(members, peer.nickname)).toHaveText("+");
+    await expect(
+      systemLine(page, `gave voice to ${peer.nickname}`),
+    ).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

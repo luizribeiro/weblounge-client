@@ -81,6 +81,8 @@ export const messages = {
   "cmd.topic.usage": "/topic [channel] [text]",
   "cmd.version.description": "Show this app build",
   "cmd.version.usage": "/version",
+  "cmd.voice.description": "Let someone talk in a moderated channel",
+  "cmd.voice.usage": "/voice <nicks>",
   "composer.empty_input": "Enter a message or command.",
   "composer.missing_argument": "That command needs more information.",
   "composer.unexpected_argument": "That command has an unexpected argument.",

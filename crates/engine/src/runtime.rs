@@ -989,6 +989,9 @@ impl Runtime {
             Ok(Command::Deop { nicks }) => {
                 self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Deop)
             }
+            Ok(Command::Voice { nicks }) => {
+                self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Voice)
+            }
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -6139,6 +6142,7 @@ fn spawn_push_unregister(
 enum MemberMode {
     Op,
     Deop,
+    Voice,
 }
 
 impl MemberMode {
@@ -6160,6 +6164,7 @@ impl MemberMode {
         Ok(match self {
             Self::Op => request.op(&client.direct(nick).await?),
             Self::Deop => request.deop(nick),
+            Self::Voice => request.voice(&client.direct(nick).await?),
         })
     }
 }
@@ -9871,7 +9876,10 @@ async fn delay(duration: Duration) {
             EngineToUi::CommandResult { id: "op".into() }
         );
 
-        for (input, sent) in [("/deop mel iris", "MODE #room -oo mel iris")] {
+        for (input, sent) in [
+            ("/deop mel iris", "MODE #room -oo mel iris"),
+            ("/voice mel", "MODE #room +v mel"),
+        ] {
             assert!(
                 runtime
                     .request(EngineRequestEnvelope {
