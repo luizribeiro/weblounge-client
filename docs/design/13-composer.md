@@ -77,6 +77,37 @@ The textarea is a combobox controlling a listbox with an active descendant and p
 click, and touch share the keyboard selection model. The list owns overscroll and touch gestures so
 scrolling candidates neither scrolls the page nor dismisses the software keyboard.
 
+### Argument usage hint (F51)
+
+While the input is a registered slash command (`/` at message start, not `//`) followed by
+whitespace, the popup documents the command's parameters, such as `/join <channels> [keys]`, even
+when the current argument has nothing to complete (a key, a free-text reason). The parameter
+under the caret is emphasised.
+
+- **Data.** Each `CommandArgumentSpec` carries `name`, `required` and `rest` (it consumes the rest
+  of the line), all from the derive. `CompletionResult.usage` is `{ name, arguments,
+  active_argument }`. The engine finds `active_argument` by walking the specs over the text before
+  the caret with the parser's own tokeniser: a leading optional `Channel` is consumed only by a
+  word that starts with a `CHANTYPES` character or is `*`, and a `rest` argument absorbs every
+  later word. Past the last parameter, the last stays active. The same index chooses the argument
+  whose kind offers nicks or channels, so completion and the hint can't disagree. A result can now
+  carry a usage with no trigger and no candidates.
+- **Rendering.** The UI renders the line from the canonical name and the argument specs (`<name>`
+  for required, `[name]` for optional) and never parses a display string. The `cmd.*.usage`
+  strings remain for the command list and `/help`; an engine test keeps them equal to that
+  rendering.
+- **Layout.** The usage line is the existing popup's header row, above any nick or channel
+  candidates: one overlay, the same `.hint` row the command list already used for an accepted
+  command. With no candidates the popup is that one row. The prototype has no completion surface,
+  so the popup itself is the look reference; a separate chip would put two overlays above the
+  composer and compete with the typing indicator. The active parameter uses the foreground colour
+  and the candidate weight; the rest stays muted. The overlay is absolute, so nothing reflows; on
+  the phone it takes the composer width like the candidates.
+- **Dismissal.** Escape and a press outside dismiss the hint until the command (its canonical name)
+  changes or the text stops being a command; candidates keep their per-input dismissal. Sending
+  clears the text and so the hint. Unknown commands and commands without arguments show nothing.
+  Enter still sends while only the hint is showing.
+
 Server refusals, standard replies, and relevant numerics become typed command rejections rendered
 as a notice beside the affected buffer's composer. UI code does not classify protocol lines.
 
