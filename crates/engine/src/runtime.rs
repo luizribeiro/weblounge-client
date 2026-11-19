@@ -3354,7 +3354,7 @@ fn command_argument_context(
     registry: &commands::CommandRegistry,
 ) -> Option<CompletionContext> {
     let command_end = before.find(char::is_whitespace)?;
-    let command = before.get(1..command_end)?;
+    let command = before.get(..command_end)?.strip_prefix('/')?;
     let spec = registry.specs().iter().find(|spec| {
         spec.name.eq_ignore_ascii_case(command)
             || spec
@@ -7290,6 +7290,24 @@ async fn delay(duration: Duration) {
         assert!(completion_context("mail@an", 7, false, "#&", &registry).is_none());
         assert!(completion_context("hello /jo", 9, false, "#&", &registry).is_none());
         assert!(completion_context("hello al", 8, true, "#&", &registry).is_some());
+    }
+
+    #[test]
+    fn completion_context_ignores_a_first_word_ending_in_a_command_alias() {
+        let registry = commands::built_in_registry();
+        for word_ending_in_an_alias in ["im ", "im al", "Im ", "ij ", "xmsg al"] {
+            assert!(
+                completion_context(
+                    word_ending_in_an_alias,
+                    utf16_len(word_ending_in_an_alias),
+                    false,
+                    "#&",
+                    &registry
+                )
+                .is_none(),
+                "{word_ending_in_an_alias:?}"
+            );
+        }
     }
 
     #[test]
