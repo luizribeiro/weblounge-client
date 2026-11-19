@@ -5,9 +5,18 @@ import styles from "../conversation/SimpleComposer.module.css";
 
 type CommandArgument = CommandUsage["arguments"][number];
 
-export function UsageLine(props: { readonly usage: CommandUsage }) {
+interface UsageLineProps {
+  readonly id: string;
+  readonly usage: CommandUsage;
+}
+
+export function UsageLine(props: UsageLineProps) {
   return (
-    <Line class={styles.hint} data-command-usage={props.usage.name}>
+    <Line
+      class={styles.hint}
+      data-command-usage={props.usage.name}
+      id={props.id}
+    >
       {`/${props.usage.name}`}
       <Index each={props.usage.arguments}>
         {(argument, index) => (

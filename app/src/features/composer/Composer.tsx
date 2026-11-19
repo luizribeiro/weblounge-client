@@ -151,6 +151,7 @@ export function Composer(props: ComposerProps) {
   );
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
+  const usageId = () => `composer-usage-${props.bufferId}`;
   const suggestions = createMemo(() => {
     const result = props.completion;
     if (
@@ -572,6 +573,7 @@ export function Composer(props: ComposerProps) {
           candidates={suggestions()?.candidates ?? []}
           completionInput={suggestions()?.input ?? ""}
           usage={suggestions()?.usage ?? null}
+          usageId={usageId()}
           listId={listId()}
           onAccept={accept}
           onSelect={setSelected}

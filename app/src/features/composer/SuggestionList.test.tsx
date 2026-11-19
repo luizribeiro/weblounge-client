@@ -45,6 +45,7 @@ it("renders rich options and routes pointer selection", () => {
         active_argument: 1,
       }}
       listId="suggestions"
+      usageId="usage"
       onAccept={accept}
       onSelect={select}
       optionId={(index) => `suggestion-${index}`}
@@ -105,4 +106,36 @@ it("renders rich options and routes pointer selection", () => {
   fireEvent.click(channel);
   expect(select).toHaveBeenCalledWith(3);
   expect(accept).toHaveBeenCalledWith(3);
+});
+
+it("shows only the usage line when nothing completes", () => {
+  render(() => (
+    <SuggestionList
+      candidates={[]}
+      completionInput="/kick mel spam"
+      listId="suggestions"
+      onAccept={() => {}}
+      onSelect={() => {}}
+      optionId={(index) => `suggestion-${index}`}
+      selected={-1}
+      usage={{
+        name: "kick",
+        arguments: [
+          { name: "nick", kind: "nick", required: true, rest: false },
+          { name: "reason", kind: "text", required: false, rest: true },
+        ],
+        active_argument: 1,
+      }}
+      usageId="usage"
+    />
+  ));
+
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(document.getElementById("usage")).toHaveTextContent(
+    "/kick <nick> [reason]",
+  );
+  expect(screen.getByText("[reason]")).toHaveAttribute(
+    "data-active-argument",
+    "true",
+  );
 });

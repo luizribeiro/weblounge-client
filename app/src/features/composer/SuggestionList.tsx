@@ -12,6 +12,7 @@ interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];
   readonly completionInput: string;
   readonly usage: CommandUsage | null;
+  readonly usageId: string;
   readonly listId: string;
   readonly optionId: (index: number) => string;
   readonly selected: number;
@@ -29,8 +30,15 @@ export function SuggestionList(props: SuggestionListProps) {
       data-completion-input={props.completionInput}
       data-composer-suggestions="true"
     >
-      {props.usage !== null && <UsageLine usage={props.usage} />}
-      <div class={styles.candidates} id={props.listId} role="listbox">
+      {props.usage !== null && (
+        <UsageLine id={props.usageId} usage={props.usage} />
+      )}
+      <div
+        class={styles.candidates}
+        hidden={props.candidates.length === 0}
+        id={props.listId}
+        role="listbox"
+      >
         <For each={candidateIds()}>
           {(id, index) => {
             const candidate = () => candidateById(id);

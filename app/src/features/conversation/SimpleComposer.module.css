@@ -146,9 +146,12 @@ textarea.input {
 }
 
 .hint {
-  border-bottom: 1px solid var(--wl-color-border);
   color: var(--wl-color-muted);
   padding: 6px 9px;
+}
+
+.hint + .candidates {
+  border-top: 1px solid var(--wl-color-border);
 }
 
 .activeArgument {
