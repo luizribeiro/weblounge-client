@@ -113,6 +113,15 @@ These commands are visible only when your rank in the focused channel allows the
 
 The first `kick` (F50) is `/kick <nick> [reason]` (alias `k`) on the slash surface only. It kicks from the focused channel, so its first argument completes nicks. The explicit channel, the nick list, the palette entry and the user-menu item come with the other moderation commands. Commands are not hidden by rank yet, so a refusal explains itself: `482` reads "You need to be a channel operator in {target}."
 
+The first op commands (F52) follow the same scope: slash surface only, focused channel only, nick completion on their nick arguments.
+- `op`, `deop`, `voice` and `devoice` take `<nick> [nick…]` (spaces or commas) and send one `SetModes` chain, which papo splits at `MODES`.
+- `ban` and `unban` (alias `ub`) take one `<nick|mask>`. A word containing `!`, `@`, `*`, `?` or `:` is a mask and is sent as typed. A nick becomes `*!*@host` from the member's cached host, as irssi, WeeChat and HexChat default to, or `nick!*@*` while the host is unknown. The account extban, the ban-type setting, the ban-list index and `*` come later. `unban <nick>` removes every entry of a fetched ban list that matches the member's `nick!user@host`, and falls back to the derived mask when the list is unknown or nothing matches.
+- `kickban` (alias `kb`) is `<nick> [reason]` through `Client::kickban` with that derived mask.
+- `invite` is `<nick> [channel]`. Outside a channel the channel is required. Success shows "Invited {nick} to {target}."
+- `mode` is `[channel] [modes [args…]]`. Without a mode string it shows the channel's modes, asking the server first when none are cached. A mode string is classified with `CHANMODES` and `PREFIX` and becomes typed `SetModes` calls. User modes on your own nick come later.
+
+Refusals name what went wrong: `401` reads "{nick} isn't on this network.", `441` reads "{nick} isn't in {target}.", `443` reads "{nick} is already in {target}." and `472`/`501` read "The server doesn't support that mode."
+
 ## Information
 
 | Command | Aliases | Arguments | What it does | papo / capability | Pri | Surfaces | Perm | Confirm |
