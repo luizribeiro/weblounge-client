@@ -111,6 +111,11 @@ pub(crate) enum Command {
     )]
     Unban { nick: Nick },
     #[command(
+        name = "kickban", aliases = ["kb"], usage = "cmd.kickban.usage",
+        description = "cmd.kickban.description", surfaces = ["Slash"], permission = "Op"
+    )]
+    Kickban { nick: Nick, reason: Option<Text> },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -167,7 +172,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 23);
+        assert_eq!(specs.len(), 24);
         assert!(
             specs
                 .iter()
@@ -432,6 +437,19 @@ mod tests {
         assert!(matches!(
             commands::parse("/ub mel", "#&"),
             Ok(Command::Unban { nick }) if nick.0 == "mel"
+        ));
+    }
+
+    #[test]
+    fn kickban_takes_a_nick_and_an_optional_reason() {
+        assert!(matches!(
+            commands::parse("/kb mel spam again", "#&"),
+            Ok(Command::Kickban { nick, reason: Some(reason) })
+                if nick.0 == "mel" && reason.0 == "spam again"
+        ));
+        assert!(matches!(
+            commands::parse("/kickban mel", "#&"),
+            Ok(Command::Kickban { reason: None, .. })
         ));
     }
 

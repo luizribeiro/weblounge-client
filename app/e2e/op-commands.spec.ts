@@ -1,6 +1,7 @@
 import {
   composerNotice,
   joinFirst,
+  member,
   memberPrefix,
   showMembers,
   submit,
@@ -122,6 +123,22 @@ test.describe("channel operator commands against local Ergo", () => {
     await submit(composer, `/unban ${peer.nickname}`);
 
     await expect(systemLine(page, "lifted the ban on *!*@")).toBeVisible();
+  });
+
+  test("/kb bans and then kicks the member", async ({ page, irc }) => {
+    const channel = irc.channelNamed("kickban");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("spammer", [channel]);
+    const members = await showMembers(page, channel);
+    await expect(member(members, peer.nickname)).toBeVisible();
+
+    await submit(composer, `/kb ${peer.nickname} link spam`);
+
+    await expect(systemLine(page, "You banned *!*@")).toBeVisible();
+    await expect(
+      systemLine(page, `You kicked ${peer.nickname}`),
+    ).toHaveAccessibleName(`You kicked ${peer.nickname}: “link spam”`);
+    await expect(member(members, peer.nickname)).toHaveCount(0);
   });
 
   test("a non-op gets a readable refusal", async ({ page, irc }) => {

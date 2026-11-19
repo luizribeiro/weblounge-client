@@ -997,6 +997,9 @@ impl Runtime {
             }
             Ok(Command::Ban { nick }) => self.ban(id, buffer_id, nick.0),
             Ok(Command::Unban { nick }) => self.unban(id, buffer_id, nick.0),
+            Ok(Command::Kickban { nick, reason }) => {
+                self.kickban(id, buffer_id, nick.0, reason.map(|reason| reason.0))
+            }
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -2191,6 +2194,31 @@ impl Runtime {
                 let request = with_channel!(&channel, name => client.mode(name));
                 let request = masks.into_iter().fold(request, papo::SetModes::unban);
                 modes_settled(&request.await?)
+            },
+        )
+    }
+
+    fn kickban(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        nick: String,
+        reason: Option<String>,
+    ) -> Vec<EngineToUi> {
+        self.channel_request(
+            command_id,
+            buffer_id,
+            None,
+            Some(nick.clone()),
+            |channel, client| async move {
+                let mask = crate::ban_mask::ban_mask(&client.state(), &nick);
+                let request = with_channel!(&channel, name => client.kickban(name));
+                let outcome = request
+                    .nick(nick)
+                    .ban(mask)
+                    .reason(reason.unwrap_or_default())
+                    .await?;
+                Ok(outcome.kick?)
             },
         )
     }
@@ -10048,6 +10076,22 @@ async fn delay(duration: Duration) {
             next_output(&mut receiver).await,
             EngineToUi::CommandResult {
                 id: "/ub mel".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn kickban_bans_the_member_host_before_kicking() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        submit(&runtime, buffer_id, "/kb mel spam");
+        confirm_mode_request(&mut wire, "MODE #room +b *!*@mel.host").await;
+        assert_eq!(wire.next_sent().await, "KICK #room mel spam");
+        wire.server(":weblounge!u@host KICK #room mel spam").await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult {
+                id: "/kb mel spam".into()
             }
         );
     }

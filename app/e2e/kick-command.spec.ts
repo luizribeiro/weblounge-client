@@ -31,7 +31,9 @@ test.describe("/kick against local Ergo", () => {
     await expect(member(members, peer.nickname)).toBeVisible();
 
     await composer.pressSequentially("/ki");
-    await expect(page.getByRole("option", { name: /\/kick/u })).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: /^\/kick </u }),
+    ).toBeVisible();
     await expect(page.getByText(kickUsage)).toBeVisible();
     await composer.fill("");
 
