@@ -183,6 +183,50 @@ describe("WorkerEngineClient", () => {
     }
   });
 
+  it("keeps a worker that answers the heartbeat synchronously", async () => {
+    vi.useFakeTimers();
+    try {
+      const port = new FakePort();
+      const close = vi.fn();
+      const replacement = vi.fn();
+      const client = new WorkerEngineClient(
+        { port, close },
+        undefined,
+        [],
+        replacement,
+      );
+      const started = client.start({
+        build_id: "build-1",
+        client_id: "tab-1",
+        last_revision: null,
+        shell: "web",
+      });
+      port.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
+      await started;
+      port.postMessage = (message) => {
+        if (
+          message.type === "request" &&
+          message.payload.request.type === "ping"
+        )
+          port.emit({ type: "pong", id: message.payload.id });
+      };
+
+      const sent = client.send({
+        id: "send-1",
+        request: { type: "mark_all_read" },
+      });
+      vi.advanceTimersByTime(5_000);
+
+      expect(close).not.toHaveBeenCalled();
+      expect(replacement).not.toHaveBeenCalled();
+      const closedSend = expect(sent).rejects.toThrow("closed");
+      await client.close();
+      await closedSend;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not probe a worker whose handshake is still pending", async () => {
     vi.useFakeTimers();
     try {

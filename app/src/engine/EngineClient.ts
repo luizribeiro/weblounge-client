@@ -322,11 +322,11 @@ export class WorkerEngineClient implements EngineClient {
       return;
     const id = `worker-heartbeat-${crypto.randomUUID()}`;
     this.#heartbeatId = id;
+    this.#heartbeatTimeout = setTimeout(() => this.#recover(), 5_000);
     this.#connection.port.postMessage({
       type: "request",
       payload: { id, request: { type: "ping" } },
     });
-    this.#heartbeatTimeout = setTimeout(() => this.#recover(), 5_000);
   }
 
   #clearHeartbeat(): void {
