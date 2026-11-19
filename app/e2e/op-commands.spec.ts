@@ -49,6 +49,22 @@ test.describe("channel operator commands against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("/deop takes the op badge away", async ({ page, irc }) => {
+    const channel = irc.channelNamed("deop");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("demoted", [channel]);
+    const members = await showMembers(page, channel);
+    await submit(composer, `/op ${peer.nickname}`);
+    await expect(memberPrefix(members, peer.nickname)).toHaveText("@");
+
+    await submit(composer, `/deop ${peer.nickname}`);
+
+    await expect(memberPrefix(members, peer.nickname)).toHaveText("");
+    await expect(
+      systemLine(page, `took op from ${peer.nickname}`),
+    ).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

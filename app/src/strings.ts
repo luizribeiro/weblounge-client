@@ -41,6 +41,8 @@ export const messages = {
   "cmd.cycle.usage": "/cycle [channel] [reason]",
   "cmd.debug.description": "Show or hide app diagnostics",
   "cmd.debug.usage": "/debug <viewport|gestures|keyboard|push|off>",
+  "cmd.deop.description": "Remove someone's channel operator status",
+  "cmd.deop.usage": "/deop <nicks>",
   "cmd.file.description": "Upload an image",
   "cmd.file.usage": "/file",
   "cmd.help.description": "Show available commands or command help",

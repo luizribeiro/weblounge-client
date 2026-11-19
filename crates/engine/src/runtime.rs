@@ -986,6 +986,9 @@ impl Runtime {
             Ok(Command::Op { nicks }) => {
                 self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Op)
             }
+            Ok(Command::Deop { nicks }) => {
+                self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Deop)
+            }
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -6135,6 +6138,7 @@ fn spawn_push_unregister(
 #[derive(Clone, Copy)]
 enum MemberMode {
     Op,
+    Deop,
 }
 
 impl MemberMode {
@@ -6155,6 +6159,7 @@ impl MemberMode {
         }
         Ok(match self {
             Self::Op => request.op(&client.direct(nick).await?),
+            Self::Deop => request.deop(nick),
         })
     }
 }
@@ -9865,6 +9870,25 @@ async fn delay(duration: Duration) {
             next_output(&mut receiver).await,
             EngineToUi::CommandResult { id: "op".into() }
         );
+
+        for (input, sent) in [("/deop mel iris", "MODE #room -oo mel iris")] {
+            assert!(
+                runtime
+                    .request(EngineRequestEnvelope {
+                        id: input.into(),
+                        request: EngineRequest::SubmitInput {
+                            buffer_id,
+                            input: input.into(),
+                        },
+                    })
+                    .is_empty()
+            );
+            confirm_mode_request(&mut wire, sent).await;
+            assert_eq!(
+                next_output(&mut receiver).await,
+                EngineToUi::CommandResult { id: input.into() }
+            );
+        }
     }
 
     #[tokio::test]

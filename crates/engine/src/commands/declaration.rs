@@ -86,6 +86,11 @@ pub(crate) enum Command {
     )]
     Op { nicks: NickList },
     #[command(
+        name = "deop", aliases = [], usage = "cmd.deop.usage",
+        description = "cmd.deop.description", surfaces = ["Slash"], permission = "Op"
+    )]
+    Deop { nicks: NickList },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -142,7 +147,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 18);
+        assert_eq!(specs.len(), 19);
         assert!(
             specs
                 .iter()
@@ -357,22 +362,32 @@ mod tests {
     }
 
     #[test]
-    fn op_takes_one_or_more_nicks() {
-        assert!(matches!(
-            commands::parse("/op mel iris", "#&"),
-            Ok(Command::Op { nicks }) if nicks.0 == ["mel", "iris"]
-        ));
-        assert_eq!(
-            commands::parse("/op", "#&"),
-            Err(commands::InputError::MissingArgument)
-        );
+    fn member_mode_commands_take_one_or_more_nicks() {
         let specs = Command::specs();
-        let op = specs
-            .iter()
-            .find(|spec| spec.name == "op")
-            .expect("op exists");
-        assert_eq!(op.arguments[0].kind, CommandArgumentKind::NickList);
-        assert_eq!(op.permission, commands::CommandPermission::Op);
+        for (name, permission) in [
+            ("op", commands::CommandPermission::Op),
+            ("deop", commands::CommandPermission::Op),
+        ] {
+            let nicks = commands::parse(&format!("/{name} mel iris"), "#&").map(member_nicks);
+            assert_eq!(nicks, Ok(Some(vec!["mel".into(), "iris".into()])), "{name}");
+            assert_eq!(
+                commands::parse(&format!("/{name}"), "#&"),
+                Err(commands::InputError::MissingArgument)
+            );
+            let spec = specs
+                .iter()
+                .find(|spec| spec.name == name)
+                .expect("member mode command exists");
+            assert_eq!(spec.arguments[0].kind, CommandArgumentKind::NickList);
+            assert_eq!(spec.permission, permission, "{name}");
+        }
+    }
+
+    fn member_nicks(command: Command) -> Option<Vec<String>> {
+        match command {
+            Command::Op { nicks } | Command::Deop { nicks } => Some(nicks.0),
+            _ => None,
+        }
     }
 
     #[test]
