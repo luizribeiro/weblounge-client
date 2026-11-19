@@ -33,7 +33,10 @@ test.describe("nick mentions in message text against local Ergo", () => {
 
     await quiet.part(irc.channel);
     await expect(
-      page.locator("[data-system-line]").filter({ hasText: quiet.nickname }),
+      page
+        .locator("[data-system-line]")
+        .filter({ hasText: quiet.nickname })
+        .filter({ hasText: /\bleft\b/u }),
     ).toBeVisible();
     await expectColouredMention(page, ownText, quiet);
     await expectColouredMention(page, peerText, quiet);

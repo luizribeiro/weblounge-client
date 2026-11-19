@@ -186,6 +186,10 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-19: fixed a CI flake in `nick-mentions.spec.ts:13`. Its part check filtered system
+  lines by the nick alone, which also matched the history's "quiet and talker joined" line: it
+  passed on that line before the part rendered and hit strict mode once both were shown. It now
+  also requires "left".
 - 2026-11-18: fixed two e2e flakes from CI run 44244631268, both test races. In
   `transcript-gaps.spec.ts`, the spec scrolled up before the catch-up rendered, so the list stayed
   at the live edge and the gap row never mounted (4 of 4 with the catch-up held mid-gesture). It
