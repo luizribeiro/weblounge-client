@@ -4,6 +4,39 @@ pub(crate) struct ParseContext<'a> {
     pub(crate) chantypes: &'a str,
 }
 
+impl ParseContext<'_> {
+    /// A word an optional `Channel` argument consumes: `*` (the current buffer) or a channel name.
+    pub(crate) fn names_channel(&self, word: &str) -> bool {
+        word == "*" || word.starts_with(|first| self.chantypes.contains(first))
+    }
+}
+
+/// The index of the argument that the last word of `typed` fills, walking `arguments` the way
+/// the parser consumes them; `arguments.len()` once every argument is filled.
+pub(crate) fn active_argument(
+    arguments: &[CommandArgumentSpec],
+    typed: &str,
+    context: &ParseContext<'_>,
+) -> usize {
+    let mut tokens = Tokens::new(typed);
+    for (index, argument) in arguments.iter().enumerate() {
+        let Some(word) = tokens.peek() else {
+            return index;
+        };
+        if argument.rest {
+            return index;
+        }
+        if argument.kind == CommandArgumentKind::Channel && !context.names_channel(word) {
+            continue;
+        }
+        if tokens.remaining == word {
+            return index;
+        }
+        tokens.word();
+    }
+    arguments.len()
+}
+
 pub(crate) struct Tokens<'a> {
     remaining: &'a str,
 }

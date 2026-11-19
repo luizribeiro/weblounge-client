@@ -41,9 +41,7 @@ pub(crate) struct Channel(pub(crate) Option<String>);
 impl CommandArg for Channel {
     const KIND: CommandArgumentKind = CommandArgumentKind::Channel;
     fn parse(tokens: &mut Tokens<'_>, context: &ParseContext<'_>) -> Result<Self, InputError> {
-        let explicit = tokens.peek().filter(|value| {
-            *value == "*" || value.starts_with(|first| context.chantypes.contains(first))
-        });
+        let explicit = tokens.peek().filter(|value| context.names_channel(value));
         Ok(Self(explicit.and_then(|_| tokens.word()).and_then(
             |value| (value != "*").then(|| value.to_owned()),
         )))

@@ -1,6 +1,7 @@
 #[allow(dead_code, reason = "consumed by the command declaration next")]
 mod arguments;
 mod declaration;
+mod position;
 mod spec;
 #[allow(dead_code, reason = "consumed by the command declaration next")]
 mod values;
@@ -10,6 +11,7 @@ use std::sync::OnceLock;
 use crate::EngineMessageKey;
 
 pub(crate) use declaration::Command;
+pub(crate) use position::CommandPosition;
 pub(crate) use spec::CompletionPriority;
 pub use spec::{
     CommandArgumentKind, CommandArgumentSpec, CommandPermission, CommandRegistry,

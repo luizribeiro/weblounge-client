@@ -3313,7 +3313,9 @@ fn completion_context(
             auto_accept: false,
         });
     }
-    if let Some(context) = command_argument_context(before, word_start, replace_end, registry) {
+    if let Some(context) =
+        command_argument_context(before, word_start, replace_end, chantypes, registry)
+    {
         return Some(context);
     }
     let (trigger, prefix, replacement_suffix) = match word.chars().next() {
@@ -3392,24 +3394,12 @@ fn command_argument_context(
     before: &str,
     word_start: usize,
     replace_end: u32,
+    chantypes: &str,
     registry: &commands::CommandRegistry,
 ) -> Option<CompletionContext> {
-    let command_end = before.find(char::is_whitespace)?;
-    let command = before.get(..command_end)?.strip_prefix('/')?;
-    let spec = registry.specs().iter().find(|spec| {
-        spec.name.eq_ignore_ascii_case(command)
-            || spec
-                .aliases
-                .iter()
-                .any(|alias| alias.eq_ignore_ascii_case(command))
-    })?;
-    let argument_index = before
-        .get(command_end..word_start)?
-        .split_whitespace()
-        .count();
-    let argument = spec.arguments.get(argument_index)?;
+    let position = commands::CommandPosition::locate(before, chantypes, registry)?;
     let word = before.get(word_start..)?;
-    let (trigger, prefix) = match argument.kind {
+    let (trigger, prefix) = match position.current_argument()?.kind {
         commands::CommandArgumentKind::Channel | commands::CommandArgumentKind::ChannelList => {
             (CompletionTrigger::Channel, word.to_owned())
         }
@@ -3424,7 +3414,7 @@ fn command_argument_context(
         replace_start: utf16_len(before.get(..word_start)?),
         replace_end,
         prefix,
-        argument_hint: Some(spec.usage.clone()),
+        argument_hint: Some(position.spec.usage.clone()),
         replacement_prefix: String::new(),
         replacement_suffix: " ".into(),
         auto_accept: false,
@@ -7343,6 +7333,15 @@ async fn delay(duration: Duration) {
         assert_eq!(context.prefix, "me");
         assert_eq!(context.replace_start, 6);
         assert_eq!(context.argument_hint.as_deref(), Some("cmd.kick.usage"));
+    }
+
+    #[test]
+    fn a_reason_after_a_defaulted_channel_offers_no_channels() {
+        let registry = commands::built_in_registry();
+        assert!(completion_context("/part see", 9, false, "#&", &registry).is_none());
+        let channel = completion_context("/part #de", 9, false, "#&", &registry).expect("context");
+        assert_eq!(channel.trigger, CompletionTrigger::Channel);
+        assert_eq!(channel.prefix, "#de");
     }
 
     #[test]
