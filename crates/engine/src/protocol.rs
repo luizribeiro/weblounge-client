@@ -63,6 +63,8 @@ engine_message_keys! {
     MetadataLimitReached => "engine.metadata_limit_reached",
     NetworkAlreadyConnected => "engine.network_already_connected",
     NetworkNotFound => "engine.network_not_found",
+    NickNotFound => "engine.nick_not_found",
+    NickNotInChannel => "engine.nick_not_in_channel",
     NotInChannel => "engine.not_in_channel",
     Offline => "engine.offline",
     ReadMarkerInvalid => "engine.read_marker_invalid",

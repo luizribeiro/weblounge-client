@@ -100,6 +100,25 @@ test.describe("/kick against local Ergo", () => {
     ).toHaveCount(0);
   });
 
+  test("kicking someone who isn't there names them", async ({ page, irc }) => {
+    const channel = irc.channelNamed("kick-absent");
+    const composer = await joinFirst(page, irc, channel);
+    const elsewhere = await irc.peer("elsewhere", []);
+    const offline = irc.nickNamed("offline");
+
+    await composer.fill(`/kick ${elsewhere.nickname}`);
+    await composer.press("Enter");
+    await expect(
+      composerNotice(page, `${elsewhere.nickname} isn't in ${channel}.`),
+    ).toBeVisible();
+
+    await composer.fill(`/kick ${offline}`);
+    await composer.press("Enter");
+    await expect(
+      composerNotice(page, `${offline} isn't on this network.`),
+    ).toBeVisible();
+  });
+
   test("a missing nick and a non-channel conversation explain themselves", async ({
     page,
     irc,

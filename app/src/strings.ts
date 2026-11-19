@@ -197,6 +197,8 @@ export const messages = {
     "That profile change exceeds this server's client state limit.",
   "engine.network_already_connected": "That network is already connected.",
   "engine.network_not_found": "That network is no longer available.",
+  "engine.nick_not_found": "{nick} isn't on this network.",
+  "engine.nick_not_in_channel": "{nick} isn't in {target}.",
   "engine.not_in_channel": "You're not in {target}.",
   "engine.offline": "That command needs a connection.",
   "engine.read_marker_invalid":
@@ -509,6 +511,9 @@ function normalizeValues(
   }
   if (key === "engine.channel_rejoin_required" && values.target === undefined) {
     return { ...values, target: "this channel" };
+  }
+  if (key.startsWith("engine.nick_") && values.nick === undefined) {
+    return { ...values, nick: "That person" };
   }
   if (key === "notice.message_not_delivered" && values.target === undefined) {
     return { ...values, target: "that person" };
