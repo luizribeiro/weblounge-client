@@ -91,6 +91,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - F48: n.e. theme from pgray.dev and neutral.engineering (feedback #36). Done in 61c08735.
 - F49: in the n.e. theme, the chair mark flips to the blob (Noto's neutral face) on click or tap, and back. Done in 7f5e6f39; `app/e2e/chair-flip.spec.ts`.
 - F47: favicon yellow for unread, red for mentions (feedback #34). Done in 68b552de. Grey (disconnected) outranks yellow; design 23 Badging.
+- F50: /kick (feedback #39). Added in b1468378 (with ee3fd781 and 7ae74580): `/kick <nick> [reason]` (alias `k`) kicks from the focused channel through papo's `Client::kick`, completes nicks after a typed `/kick `, and a `482` now reads "You need to be a channel operator in {target}." for `/topic` too; `app/e2e/kick-command.spec.ts`. Still open: kicking a nick that isn't there (`401`/`441`) shows the generic "The server refused that command."; the explicit channel, nick list, palette and user-menu entries; and the other op commands in the catalog's Moderation table (kickban, ban/unban, quiet, op/deop, halfop, voice/devoice, mode, banlist, invite). Design commands-catalog.
 #### Bugs
 - B1: unreproduced older issues: Firefox offline shell, cached to live chat-list swap losing taps, the motion layer intercepting a tap, papo's empty-WHO `TargetGone` case, the origin of a `.376` MARKREAD. Memory.
 - B2: Chromium phone-layout bot-icon DOM-detachment transient seen once, passed in isolation; root-cause it if it recurs on CI. `app/e2e/phone-layout.spec.ts`.
