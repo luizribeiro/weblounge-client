@@ -161,6 +161,19 @@ test.describe("channel operator commands against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("someone else's invite shows in the channel", async ({ page, irc }) => {
+    const channel = irc.channelNamed("invited");
+    await joinFirst(page, irc, channel);
+    const host = await irc.peer("host", [channel]);
+    const guest = await irc.peer("visitor", []);
+
+    await host.invite(guest.nickname, channel);
+
+    await expect(
+      systemLine(page, `${host.nickname} invited ${guest.nickname}`),
+    ).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

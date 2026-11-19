@@ -4699,6 +4699,7 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::ModeChanged(changed) => process_mode_change(&mut running.model, &changed),
+        papo::Event::Invited(invited) => process_invite(&mut running.model, &invited),
         papo::Event::AccountChanged(changed) => {
             process_account_event(running, snapshot, &changed, output);
             Vec::new()
@@ -5578,6 +5579,7 @@ fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
         papo::Event::Quit(quit) => process_quit(model, &quit),
         papo::Event::NickChanged(changed) => history_nick(model, &changed),
         papo::Event::ModeChanged(changed) => _ = model.receive_mode_change(&changed),
+        papo::Event::Invited(invited) => _ = model.receive_invite(&invited),
         papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
             _ = model.receive_kick(&kicked, false);
         }
@@ -5590,6 +5592,11 @@ fn history_nick(model: &mut NetworkModel, changed: &papo::event::NickChanged) {
     if changed.authorship != papo::Authorship::Own {
         model.receive_nick_change(changed);
     }
+}
+
+fn process_invite(model: &mut NetworkModel, invited: &papo::event::Invited) -> Vec<HistoryFetch> {
+    let _ = model.receive_invite(invited);
+    Vec::new()
 }
 
 fn process_mode_change(

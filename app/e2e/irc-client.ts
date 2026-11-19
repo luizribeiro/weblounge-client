@@ -453,6 +453,13 @@ export class IrcClient {
     );
   }
 
+  async invite(nick: string, channel: string): Promise<void> {
+    this.send(`INVITE ${nick} ${channel}`);
+    await this.waitFor(`INVITE confirmation for ${nick}`, (line) =>
+      line.includes(` 341 ${this.#nickname} ${nick} ${channel}`),
+    );
+  }
+
   async topic(channel: string, topic: string): Promise<void> {
     this.send(`TOPIC ${channel} :${topic}`);
     await this.waitFor(

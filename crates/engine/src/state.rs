@@ -1202,6 +1202,42 @@ impl NetworkModel {
         );
     }
 
+    pub(crate) fn receive_invite(&mut self, invited: &papo::event::Invited) -> Option<()> {
+        if invited.subject_authorship == papo::Authorship::Own {
+            return None;
+        }
+        let buffer_id = *self.names.get(&NameKey::Channel(invited.channel.clone()))?;
+        let msgid = invited.msgid.as_ref().map(ToString::to_string);
+        let server_time_ms = invited.server_time.map(time_millis);
+        let dedup = system_dedup_reference(
+            buffer_id,
+            msgid.clone(),
+            server_time_ms,
+            "invite",
+            invited.actor.to_string(),
+            Some(invited.subject.to_string()),
+        );
+        let nick = invited.subject.to_string();
+        let body = RecordBody::Fold(FoldEvent::Invited {
+            actor: source_actor(self.casemapping, &invited.actor, invited.authorship)?,
+            subject: crate::timeline::Who {
+                key: self.casemapping.fold(&nick).into_owned(),
+                nick_color_index: nick_color_index(self.casemapping, &nick),
+                nick,
+                own: false,
+                msgid,
+            },
+        });
+        self.push_system_record(
+            buffer_id,
+            body,
+            dedup,
+            server_time_ms,
+            time_millis(invited.received_at),
+        )
+        .map(|_| ())
+    }
+
     pub(crate) fn receive_mode_change(&mut self, event: &papo::event::ModeChanged) -> Option<()> {
         let papo::Subject::Channel(channel) = &event.subject else {
             return None;
@@ -9781,6 +9817,53 @@ mod tests {
         assert_mode_meanings(changes);
         let serialized = serde_json::to_string(&upserted).expect("mode patch serializes");
         assert!(!serialized.contains("swordfish"));
+    }
+
+    #[tokio::test]
+    async fn invites_of_others_fold_into_the_channel() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+
+        for (line, recorded) in [
+            (":mel!u@host INVITE iris #room", true),
+            (":mel!u@host INVITE ana #room", true),
+            (":mel!u@host INVITE weblounge #elsewhere", false),
+            (":mel!u@host INVITE iris #elsewhere", false),
+        ] {
+            wire.server(line).await;
+            let invited = next_event(&mut events, |event| match event {
+                papo::Event::Invited(invited) => Some(invited),
+                _ => None,
+            })
+            .await;
+            assert_eq!(model.receive_invite(&invited).is_some(), recorded, "{line}");
+        }
+
+        let patches = model.take_timeline_changes(false);
+        let [EngineToUi::TimelineChanged { upserted, .. }] = patches.as_slice() else {
+            panic!("one folded invite patch expected")
+        };
+        let ItemBody::System(system) = &upserted[0].body else {
+            panic!("system line expected")
+        };
+        let crate::timeline::SystemLine::Run { clauses } = &system.line else {
+            panic!("run expected")
+        };
+        let [RunClause::Invited { people, .. }] = clauses.as_slice() else {
+            panic!("one actor's invites should fold into one clause")
+        };
+        assert_eq!(
+            people
+                .iter()
+                .map(|person| person.nick.as_str())
+                .collect::<Vec<_>>(),
+            ["iris", "ana"]
+        );
     }
 
     #[tokio::test]
