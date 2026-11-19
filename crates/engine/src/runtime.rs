@@ -996,6 +996,7 @@ impl Runtime {
                 self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Devoice)
             }
             Ok(Command::Ban { nick }) => self.ban(id, buffer_id, nick.0),
+            Ok(Command::Unban { nick }) => self.unban(id, buffer_id, nick.0),
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -2171,6 +2172,25 @@ impl Runtime {
                 let mask = crate::ban_mask::ban_mask(&client.state(), &word);
                 let request = with_channel!(&channel, name => client.mode(name));
                 modes_settled(&request.ban(mask).await?)
+            },
+        )
+    }
+
+    fn unban(&self, command_id: String, buffer_id: BufferId, word: String) -> Vec<EngineToUi> {
+        self.channel_request(
+            command_id,
+            buffer_id,
+            None,
+            None,
+            |channel, client| async move {
+                let known = match &channel {
+                    ChannelTarget::Known(name) => Some(name),
+                    ChannelTarget::Text(_) => None,
+                };
+                let masks = crate::ban_mask::unban_masks(&client.state(), known, &word);
+                let request = with_channel!(&channel, name => client.mode(name));
+                let request = masks.into_iter().fold(request, papo::SetModes::unban);
+                modes_settled(&request.await?)
             },
         )
     }
@@ -9990,6 +10010,46 @@ async fn delay(duration: Duration) {
                 EngineToUi::CommandResult { id: input.into() }
             );
         }
+    }
+
+    #[tokio::test]
+    async fn unban_removes_every_fetched_ban_matching_the_member() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        submit(&runtime, buffer_id, "/unban mel");
+        confirm_mode_request(&mut wire, "MODE #room -b *!*@mel.host").await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult {
+                id: "/unban mel".into()
+            }
+        );
+
+        let client = lock(&runtime.state)
+            .network
+            .as_ref()
+            .expect("network runs")
+            .client
+            .clone();
+        let fetch =
+            tokio::spawn(async move { client.list_modes("#room", papo::ListMode::Ban).await });
+        assert_eq!(wire.next_sent().await, "MODE #room b");
+        for mask in ["mel!*@*", "*!*@*.host", "*!*@elsewhere"] {
+            wire.server(format!(":irc.test 367 weblounge #room {mask} op 0"))
+                .await;
+        }
+        wire.server(":irc.test 368 weblounge #room :End of ban list")
+            .await;
+        fetch.await.expect("fetch joins").expect("ban list arrives");
+
+        submit(&runtime, buffer_id, "/ub mel");
+        confirm_mode_request(&mut wire, "MODE #room -bb mel!*@* *!*@*.host").await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult {
+                id: "/ub mel".into()
+            }
+        );
     }
 
     fn submit(runtime: &Runtime, buffer_id: BufferId, input: &str) {

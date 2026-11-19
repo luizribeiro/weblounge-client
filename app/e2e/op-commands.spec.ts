@@ -111,6 +111,19 @@ test.describe("channel operator commands against local Ergo", () => {
     await expect(systemLine(page, "banned *!*@spam.example")).toBeVisible();
   });
 
+  test("/unban lifts the ban /ban set on a member", async ({ page, irc }) => {
+    const channel = irc.channelNamed("unban");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("pardoned", [channel]);
+    await showMembers(page, channel);
+    await submit(composer, `/ban ${peer.nickname}`);
+    await expect(systemLine(page, "You banned *!*@")).toBeVisible();
+
+    await submit(composer, `/unban ${peer.nickname}`);
+
+    await expect(systemLine(page, "lifted the ban on *!*@")).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

@@ -106,6 +106,11 @@ pub(crate) enum Command {
     )]
     Ban { nick: Nick },
     #[command(
+        name = "unban", aliases = ["ub"], usage = "cmd.unban.usage",
+        description = "cmd.unban.description", surfaces = ["Slash"], permission = "Op"
+    )]
+    Unban { nick: Nick },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -162,7 +167,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 22);
+        assert_eq!(specs.len(), 23);
         assert!(
             specs
                 .iter()
@@ -424,6 +429,10 @@ mod tests {
             commands::parse("/ban", "#&"),
             Err(commands::InputError::MissingArgument)
         );
+        assert!(matches!(
+            commands::parse("/ub mel", "#&"),
+            Ok(Command::Unban { nick }) if nick.0 == "mel"
+        ));
     }
 
     #[test]

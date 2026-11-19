@@ -83,6 +83,8 @@ export const messages = {
   "cmd.topic.description": "Show or change the channel topic",
   "cmd.topic.menu": "Edit topic…",
   "cmd.topic.usage": "/topic [channel] [text]",
+  "cmd.unban.description": "Lift a ban on a nick or mask",
+  "cmd.unban.usage": "/unban <nick>",
   "cmd.version.description": "Show this app build",
   "cmd.version.usage": "/version",
   "cmd.voice.description": "Let someone talk in a moderated channel",
