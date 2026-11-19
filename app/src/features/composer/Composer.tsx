@@ -44,6 +44,7 @@ import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
 import { type UploadNote, UploadOverlays } from "./UploadOverlays";
+import { createUsageHint } from "./usage-hint";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -173,6 +174,11 @@ export function Composer(props: ComposerProps) {
     );
     if (candidates.length > 0) return { ...result, candidates };
     return result.input === input ? result : undefined;
+  });
+  const usageHint = createUsageHint({
+    bufferId: () => props.bufferId,
+    completion: () => props.completion,
+    text,
   });
   const confirmationText = () => {
     const command = pendingConfirmation();
@@ -386,9 +392,15 @@ export function Composer(props: ComposerProps) {
     setDismissedInput(text());
     setSelected(-1);
   };
-  const suggesting = createMemo(() => suggestions() !== undefined);
+  const popupOpen = createMemo(
+    () => suggestions() !== undefined || usageHint.usage() !== undefined,
+  );
+  const dismissPopup = () => {
+    dismissSuggestions();
+    usageHint.dismiss();
+  };
   createEffect(() => {
-    if (suggesting()) onPointerDownOutside(() => [wrap], dismissSuggestions);
+    if (popupOpen()) onPointerDownOutside(() => [wrap], dismissPopup);
   });
   const request = (value: string, cursor: number, explicit: boolean) => {
     setCaret(cursor);
@@ -478,9 +490,9 @@ export function Composer(props: ComposerProps) {
       event.key === "Process"
     )
       return;
-    if (event.key === "Escape" && suggestions() !== undefined) {
+    if (event.key === "Escape" && popupOpen()) {
       event.preventDefault();
-      dismissSuggestions();
+      dismissPopup();
     } else if (
       event.key === "Escape" &&
       text() === "" &&
@@ -568,11 +580,11 @@ export function Composer(props: ComposerProps) {
         else touchFocus.cancel();
       }}
     >
-      {suggestions() !== undefined && (
+      <Show when={popupOpen()}>
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}
           completionInput={suggestions()?.input ?? ""}
-          usage={suggestions()?.usage ?? null}
+          usage={usageHint.usage() ?? null}
           usageId={usageId()}
           listId={listId()}
           onAccept={accept}
@@ -580,7 +592,7 @@ export function Composer(props: ComposerProps) {
           optionId={optionId}
           selected={selected()}
         />
-      )}
+      </Show>
       <TypingIndicator typers={props.typers ?? []} />
       <ImagePicker
         onPick={(file) => void attachNoting(file).then(focusAfterOverlay)}
@@ -643,6 +655,9 @@ export function Composer(props: ComposerProps) {
           </Show>
           <div class={styles.entryRow}>
             <textarea
+              aria-describedby={
+                usageHint.usage() === undefined ? undefined : usageId()
+              }
               aria-label={t("composer.input", { target: props.bufferTitle })}
               autocomplete="off"
               class={styles.input}

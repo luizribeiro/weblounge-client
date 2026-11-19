@@ -551,6 +551,42 @@ it("sends typed arguments instead of a stale command suggestion", async () => {
   await waitFor(() => expect(input).toHaveValue(""));
 });
 
+it("documents a free-text argument, dismisses on Escape and sends on Enter", async () => {
+  const onSend = vi.fn(() => true);
+  const typed = "/msg amartinez hello";
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="#lounge"
+      completion={{
+        ...completion(typed, [], typed.length),
+        trigger: null,
+        usage: { ...msgUsage, active_argument: 1 },
+      }}
+      draftKey="test:usage-only"
+      onRequestCandidates={() => {}}
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: typed } });
+
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(screen.getByText("<text>")).toHaveAttribute(
+    "data-active-argument",
+    "true",
+  );
+  expect(input).toHaveAccessibleDescription("/msg <target> <text>");
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByText("<text>")).not.toBeInTheDocument();
+  fireEvent.input(input, { target: { value: `${typed} there` } });
+  expect(screen.queryByText("<text>")).not.toBeInTheDocument();
+
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(onSend).toHaveBeenCalledWith(`${typed} there`);
+  await waitFor(() => expect(input).toHaveValue(""));
+});
+
 it("hides an argument suggestion once a sent command empties the composer", async () => {
   render(() => (
     <Composer
