@@ -237,39 +237,15 @@ impl ChannelTarget {
             Self::Text(channel) => channel.clone(),
         }
     }
+}
 
-    async fn part(&self, client: &papo::Client, reason: String) -> Result<(), papo::Error> {
-        match self {
-            Self::Known(channel) => client.part(channel, reason).await,
-            Self::Text(channel) => client.part(channel, reason).await,
+macro_rules! with_channel {
+    ($target:expr, $channel:ident => $request:expr) => {
+        match $target {
+            ChannelTarget::Known($channel) => $request,
+            ChannelTarget::Text($channel) => $request,
         }
-    }
-
-    async fn join(&self, client: &papo::Client) -> Result<(), papo::Error> {
-        match self {
-            Self::Known(channel) => client.join(channel).await,
-            Self::Text(channel) => client.join(channel).await,
-        }
-    }
-
-    async fn set_topic(&self, client: &papo::Client, text: String) -> Result<(), papo::Error> {
-        match self {
-            Self::Known(channel) => client.set_topic(channel, text).await,
-            Self::Text(channel) => client.set_topic(channel, text).await,
-        }
-    }
-
-    async fn kick(
-        &self,
-        client: &papo::Client,
-        nick: String,
-        reason: String,
-    ) -> Result<(), papo::Error> {
-        match self {
-            Self::Known(channel) => client.kick(channel, nick, reason).await,
-            Self::Text(channel) => client.kick(channel, nick, reason).await,
-        }
-    }
+    };
 }
 
 struct RuntimeState {
@@ -2138,7 +2114,9 @@ impl Runtime {
             command_id,
             buffer_id,
             requested,
-            |channel, client| async move { channel.part(&client, reason.unwrap_or_default()).await },
+            |channel, client| async move {
+                with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)
+            },
         )
     }
 
@@ -2150,13 +2128,11 @@ impl Runtime {
         reason: Option<String>,
     ) -> Vec<EngineToUi> {
         self.channel_request(command_id, buffer_id, None, |channel, client| async move {
-            channel
-                .kick(&client, nick, reason.unwrap_or_default())
-                .await
+            with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)
         })
     }
 
-    fn channel_request<Request>(
+    fn channel_request<Output, Request>(
         &self,
         command_id: String,
         buffer_id: BufferId,
@@ -2164,7 +2140,8 @@ impl Runtime {
         request: impl FnOnce(ChannelTarget, papo::Client) -> Request,
     ) -> Vec<EngineToUi>
     where
-        Request: std::future::Future<Output = Result<(), papo::Error>> + Send + 'static,
+        Output: Send + 'static,
+        Request: std::future::Future<Output = Result<Output, papo::Error>> + Send + 'static,
     {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
@@ -2250,8 +2227,8 @@ impl Runtime {
         let client = running.client.clone();
         drop(state);
         spawn_join_request(self.outbound.clone(), command_id, async move {
-            channel.part(&client, reason.unwrap_or_default()).await?;
-            channel.join(&client).await
+            with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)?;
+            with_channel!(&channel, name => client.join(name).await)
         });
         Vec::new()
     }
@@ -2284,7 +2261,9 @@ impl Runtime {
             command_id,
             buffer_id,
             requested,
-            |channel, client| async move { channel.set_topic(&client, text).await },
+            |channel, client| async move {
+                with_channel!(&channel, name => client.set_topic(name, text).await)
+            },
         )
     }
 
