@@ -2,7 +2,7 @@ use super::{
     CommandPermission, CommandRequirement, CommandSpec, CommandSurface, CompletionPriority,
     ConfirmPolicy, InputError,
     arguments::{CommandArg, ParseContext, Tokens},
-    values::{Channel, ChannelList, CommandName, KeyList, Nick, Target, Text},
+    values::{Channel, ChannelList, CommandName, KeyList, Nick, NickList, Target, Text},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, weblounge_command_derive::Command)]
@@ -81,6 +81,11 @@ pub(crate) enum Command {
     )]
     Kick { nick: Nick, reason: Option<Text> },
     #[command(
+        name = "op", aliases = [], usage = "cmd.op.usage", description = "cmd.op.description",
+        surfaces = ["Slash"], permission = "Op"
+    )]
+    Op { nicks: NickList },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -137,7 +142,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 17);
+        assert_eq!(specs.len(), 18);
         assert!(
             specs
                 .iter()
@@ -349,6 +354,25 @@ mod tests {
         assert!(!kick.arguments[0].rest);
         assert!(kick.arguments[1].rest && !kick.arguments[1].required);
         assert_eq!(kick.permission, commands::CommandPermission::HalfOp);
+    }
+
+    #[test]
+    fn op_takes_one_or_more_nicks() {
+        assert!(matches!(
+            commands::parse("/op mel iris", "#&"),
+            Ok(Command::Op { nicks }) if nicks.0 == ["mel", "iris"]
+        ));
+        assert_eq!(
+            commands::parse("/op", "#&"),
+            Err(commands::InputError::MissingArgument)
+        );
+        let specs = Command::specs();
+        let op = specs
+            .iter()
+            .find(|spec| spec.name == "op")
+            .expect("op exists");
+        assert_eq!(op.arguments[0].kind, CommandArgumentKind::NickList);
+        assert_eq!(op.permission, commands::CommandPermission::Op);
     }
 
     #[test]

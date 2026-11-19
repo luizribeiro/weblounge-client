@@ -81,6 +81,26 @@ impl CommandArg for ChannelList {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NickList(pub(crate) Vec<String>);
+
+impl CommandArg for NickList {
+    const KIND: CommandArgumentKind = CommandArgumentKind::NickList;
+    const CONSUMES_REST: bool = true;
+    fn parse(tokens: &mut Tokens<'_>, _: &ParseContext<'_>) -> Result<Self, InputError> {
+        let nicks = tokens
+            .text()
+            .unwrap_or_default()
+            .split(|character: char| character == ',' || character.is_whitespace())
+            .filter(|nick| !nick.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        (!nicks.is_empty())
+            .then_some(Self(nicks))
+            .ok_or(InputError::MissingArgument)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct KeyList(pub(crate) Vec<String>);
 
 impl CommandArg for KeyList {
@@ -104,7 +124,7 @@ fn comma_list(tokens: &mut Tokens<'_>) -> Result<Vec<String>, InputError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Channel, ChannelList, CommandArg, ParseContext, Text, Tokens};
+    use super::{Channel, ChannelList, CommandArg, NickList, ParseContext, Text, Tokens};
 
     #[test]
     fn defaults_channel_without_consuming_text() {
@@ -124,6 +144,20 @@ mod tests {
         assert_eq!(
             ChannelList::parse(&mut tokens, &context),
             Ok(ChannelList(vec!["#one".into(), "&two".into()]))
+        );
+    }
+
+    #[test]
+    fn nick_lists_split_on_spaces_and_commas() {
+        const _: () = assert!(NickList::CONSUMES_REST);
+        let context = ParseContext { chantypes: "#&" };
+        assert_eq!(
+            NickList::parse(&mut Tokens::new("mel  iris,ana"), &context),
+            Ok(NickList(vec!["mel".into(), "iris".into(), "ana".into()]))
+        );
+        assert_eq!(
+            NickList::parse(&mut Tokens::new(" , "), &context),
+            Err(super::InputError::MissingArgument)
         );
     }
 

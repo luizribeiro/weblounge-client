@@ -1,0 +1,66 @@
+import {
+  composerNotice,
+  joinFirst,
+  memberPrefix,
+  showMembers,
+  submit,
+  systemLine,
+} from "./channel-commands";
+import { expect, test } from "./irc-fixture";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
+
+test.describe("channel operator commands against local Ergo", () => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("/op completes the nick and gives the member the op badge", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    const channel = irc.channelNamed("op");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("helper", [channel]);
+    const members = await showMembers(page, channel);
+    await expect(memberPrefix(members, peer.nickname)).toHaveText("");
+
+    await composer.pressSequentially(`/op ${peer.nickname.slice(0, 5)}`);
+    await expect(page.locator('[data-command-usage="op"]')).toHaveText(
+      "/op <nicks>",
+    );
+    await expect(
+      page.getByRole("option", { name: new RegExp(peer.nickname, "u") }),
+    ).toBeVisible();
+    await composer.press("Enter");
+    await expect(composer).toHaveValue(`/op ${peer.nickname} `);
+    await composer.press("Enter");
+
+    await expect(memberPrefix(members, peer.nickname)).toHaveText("@");
+    await expect(
+      systemLine(page, `You gave op to ${peer.nickname}`),
+    ).toBeVisible();
+    await expect(composer).toHaveValue("");
+    await nativeFeelAudit(page);
+  });
+
+  test("a non-op gets a readable refusal", async ({ page, irc }) => {
+    const channel = irc.channelNamed("op-peer");
+    const operator = await irc.peer("chanop", [channel]);
+    const composer = await joinFirst(page, irc, channel);
+
+    await submit(composer, `/op ${irc.account}`);
+
+    await expect(
+      composerNotice(page, `You need to be a channel operator in ${channel}.`),
+    ).toBeVisible();
+    const members = await showMembers(page, channel);
+    await expect(memberPrefix(members, operator.nickname)).toHaveText("@");
+    await expect(memberPrefix(members, irc.account)).toHaveText("");
+  });
+});

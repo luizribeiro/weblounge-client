@@ -59,6 +59,8 @@ export const messages = {
   "cmd.nick.usage": "/nick <nick>",
   "cmd.notice.description": "Send a notice",
   "cmd.notice.usage": "/notice <target> <text>",
+  "cmd.op.description": "Make someone a channel operator",
+  "cmd.op.usage": "/op <nicks>",
   "cmd.part.confirmation_action": "Leave",
   "cmd.part.confirmation_prompt": "Leave {text}?",
   "cmd.part.description": "Leave a channel",

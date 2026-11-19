@@ -940,6 +940,15 @@ impl Runtime {
         {
             running.model.remember_command(name);
         }
+        self.run_command(id, buffer_id, parsed)
+    }
+
+    fn run_command(
+        &self,
+        id: String,
+        buffer_id: BufferId,
+        parsed: Result<Command, commands::InputError>,
+    ) -> Vec<EngineToUi> {
         match parsed {
             Ok(Command::Say { text }) => {
                 self.send_input(id, buffer_id, text.0, &crate::MessageKind::Text)
@@ -973,6 +982,9 @@ impl Runtime {
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
             Ok(Command::Kick { nick, reason }) => {
                 self.kick(id, buffer_id, nick.0, reason.map(|reason| reason.0))
+            }
+            Ok(Command::Op { nicks }) => {
+                self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Op)
             }
             Ok(Command::Topic {
                 channel,
@@ -2116,7 +2128,7 @@ impl Runtime {
             requested,
             None,
             |channel, client| async move {
-                with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)
+                Ok(with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)?)
             },
         )
     }
@@ -2134,7 +2146,30 @@ impl Runtime {
             None,
             Some(nick.clone()),
             |channel, client| async move {
-                with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)
+                Ok(with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)?)
+            },
+        )
+    }
+
+    fn set_member_modes(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        nicks: Vec<String>,
+        mode: MemberMode,
+    ) -> Vec<EngineToUi> {
+        let single = (nicks.len() == 1).then(|| nicks[0].clone());
+        self.channel_request(
+            command_id,
+            buffer_id,
+            None,
+            single,
+            |channel, client| async move {
+                let mut request = with_channel!(&channel, name => client.mode(name));
+                for nick in nicks {
+                    request = mode.apply(&client, &channel, request, nick).await?;
+                }
+                modes_settled(&request.await?)
             },
         )
     }
@@ -2149,7 +2184,7 @@ impl Runtime {
     ) -> Vec<EngineToUi>
     where
         Output: Send + 'static,
-        Request: std::future::Future<Output = Result<Output, papo::Error>> + Send + 'static,
+        Request: std::future::Future<Output = Result<Output, ChannelFailure>> + Send + 'static,
     {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
@@ -2274,7 +2309,7 @@ impl Runtime {
             requested,
             None,
             |channel, client| async move {
-                with_channel!(&channel, name => client.set_topic(name, text).await)
+                Ok(with_channel!(&channel, name => client.set_topic(name, text).await)?)
             },
         )
     }
@@ -3421,7 +3456,9 @@ fn command_argument_context(
         commands::CommandArgumentKind::Channel | commands::CommandArgumentKind::ChannelList => {
             (CompletionTrigger::Channel, word.to_owned())
         }
-        commands::CommandArgumentKind::Nick | commands::CommandArgumentKind::Target => (
+        commands::CommandArgumentKind::Nick
+        | commands::CommandArgumentKind::NickList
+        | commands::CommandArgumentKind::Target => (
             CompletionTrigger::Person,
             word.strip_prefix('@').unwrap_or(word).to_owned(),
         ),
@@ -6095,6 +6132,58 @@ fn spawn_push_unregister(
     });
 }
 
+#[derive(Clone, Copy)]
+enum MemberMode {
+    Op,
+}
+
+impl MemberMode {
+    async fn apply(
+        self,
+        client: &papo::Client,
+        channel: &ChannelTarget,
+        request: papo::SetModes,
+        nick: String,
+    ) -> Result<papo::SetModes, ChannelFailure> {
+        if let ChannelTarget::Known(name) = channel
+            && client
+                .state()
+                .channel(name)
+                .is_some_and(|joined| joined.member(&nick).is_none())
+        {
+            return Err(ChannelFailure::Rejected(EngineMessageKey::NickNotInChannel));
+        }
+        Ok(match self {
+            Self::Op => request.op(&client.direct(nick).await?),
+        })
+    }
+}
+
+enum ChannelFailure {
+    Request(papo::Error),
+    Refused(papo::Refusal),
+    Rejected(EngineMessageKey),
+}
+
+impl From<papo::Error> for ChannelFailure {
+    fn from(error: papo::Error) -> Self {
+        Self::Request(error)
+    }
+}
+
+fn modes_settled(outcome: &papo::ModesApplied) -> Result<(), ChannelFailure> {
+    if !outcome.applied.is_empty() {
+        return Ok(());
+    }
+    Err(
+        match (outcome.refused.first(), outcome.unconfirmed.first()) {
+            (Some((_, refusal)), _) => ChannelFailure::Refused(*refusal),
+            (None, Some((_, error))) => ChannelFailure::Request(error.clone()),
+            (None, None) => ChannelFailure::Rejected(EngineMessageKey::CommandRefused),
+        },
+    )
+}
+
 struct RefusalNames {
     target: String,
     nick: Option<String>,
@@ -6104,12 +6193,12 @@ fn spawn_channel_request<T: Send + 'static>(
     outbound: mpsc::UnboundedSender<EngineToUi>,
     command_id: String,
     names: RefusalNames,
-    request: impl std::future::Future<Output = Result<T, papo::Error>> + Send + 'static,
+    request: impl std::future::Future<Output = Result<T, ChannelFailure>> + Send + 'static,
 ) {
     spawn_task(async move {
         let event = match request.await {
             Ok(_) => EngineToUi::CommandResult { id: command_id },
-            Err(error) => channel_request_rejection(command_id, names, &error),
+            Err(failure) => channel_request_rejection(command_id, names, failure),
         };
         let _ = outbound.send(event);
     });
@@ -6118,9 +6207,21 @@ fn spawn_channel_request<T: Send + 'static>(
 fn channel_request_rejection(
     command_id: String,
     names: RefusalNames,
-    error: &papo::Error,
+    failure: ChannelFailure,
 ) -> EngineToUi {
-    let Some(message_key) = channel_refusal_key(error, names.nick.is_some()) else {
+    let about_nick = names.nick.is_some();
+    let message_key = match failure {
+        ChannelFailure::Request(papo::Error::Server(error)) => {
+            channel_refusal_key(error.refusal(), about_nick)
+        }
+        ChannelFailure::Request(papo::Error::TargetGone) if about_nick => {
+            Some(EngineMessageKey::NickNotFound)
+        }
+        ChannelFailure::Request(_) => None,
+        ChannelFailure::Refused(refusal) => channel_refusal_key(refusal, about_nick),
+        ChannelFailure::Rejected(key) => Some(key),
+    };
+    let Some(message_key) = message_key else {
         return command_rejection(command_id, EngineMessageKey::CommandRefused);
     };
     let mut values = BTreeMap::from([("target".into(), names.target)]);
@@ -6134,12 +6235,7 @@ fn channel_request_rejection(
     }
 }
 
-fn channel_refusal_key(error: &papo::Error, about_nick: bool) -> Option<EngineMessageKey> {
-    let refusal = match error {
-        papo::Error::Server(error) => error.refusal(),
-        papo::Error::TargetGone if about_nick => return Some(EngineMessageKey::NickNotFound),
-        _ => return None,
-    };
+fn channel_refusal_key(refusal: papo::Refusal, about_nick: bool) -> Option<EngineMessageKey> {
     match refusal {
         papo::Refusal::NoSuchChannel | papo::Refusal::NotOnChannel => {
             Some(EngineMessageKey::NotInChannel)
@@ -7430,6 +7526,26 @@ async fn delay(duration: Duration) {
             completion_context(input, utf16_len(input), false, "#&", &registry).expect("context");
         assert_eq!(kick.replace_end, 9);
         assert_eq!(kick.usage.map(|usage| usage.active_argument), Some(1));
+    }
+
+    #[test]
+    fn member_mode_commands_complete_every_nick() {
+        let registry = commands::built_in_registry();
+        for (input, prefix, start) in [("/op me", "me", 4), ("/op mel ir", "ir", 8)] {
+            let cursor = u32::try_from(input.len()).expect("short input");
+            let context =
+                completion_context(input, cursor, false, "#&", &registry).expect("context");
+            assert_eq!(context.trigger, Some(CompletionTrigger::Person), "{input}");
+            assert_eq!(context.prefix, prefix, "{input}");
+            assert_eq!(context.replace_start, start, "{input}");
+            assert_eq!(
+                context
+                    .usage
+                    .map(|usage| (usage.name, usage.active_argument)),
+                Some(("op".to_owned(), 0)),
+                "{input}"
+            );
+        }
     }
 
     #[test]
@@ -9618,21 +9734,50 @@ async fn delay(duration: Duration) {
             assert_eq!(wire.next_sent().await, *line);
         }
         wire.server(format!(":irc.test {refusal}")).await;
+        if let Some(token) = sent.last().and_then(|line| line.strip_prefix("PING ")) {
+            wire.server(format!(":irc.test PONG irc.test :{token}"))
+                .await;
+        }
+        next_output(receiver).await
+    }
+
+    async fn next_output(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>) -> EngineToUi {
         tokio::time::timeout(Duration::from_secs(1), receiver.recv())
             .await
-            .expect("channel refusal resolves")
+            .expect("channel command resolves")
             .expect("runtime remains subscribed")
+    }
+
+    async fn confirm_mode_request(wire: &mut Wire, request: &str) {
+        assert_eq!(wire.next_sent().await, request);
+        let ping = wire.next_sent().await;
+        let token = ping
+            .strip_prefix("PING ")
+            .expect("papo delimits MODE with PING");
+        wire.server(format!(":weblounge!u@host {request}")).await;
+        wire.server(format!(":irc.test PONG irc.test :{token}"))
+            .await;
     }
 
     async fn joined_room_runtime() -> (Runtime, mpsc::UnboundedReceiver<EngineToUi>, Wire, BufferId)
     {
+        joined_room_runtime_with(&[]).await
+    }
+
+    async fn joined_room_runtime_with(
+        members: &[&str],
+    ) -> (Runtime, mpsc::UnboundedReceiver<EngineToUi>, Wire, BufferId) {
         let (client, mut events, mut wire) = wire(
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
+        wire.server(":offline.test 005 weblounge MODES=2 CHANMODES=beI,k,l,imnst :are supported")
+            .await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        wire.server(":weblounge!u@host JOIN #room").await;
-        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        for source in std::iter::once(&"weblounge!u@host").chain(members) {
+            wire.server(format!(":{source} JOIN #room")).await;
+            _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        }
         let (outbound, receiver) = mpsc::unbounded_channel();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         model.sync_channels(&client.state());
@@ -9696,6 +9841,84 @@ async fn delay(duration: Duration) {
                 ..
             }]
         ));
+    }
+
+    #[tokio::test]
+    async fn member_modes_batch_at_the_server_limit() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host", "iris!i@iris.host", "ana!a@ana.host"])
+                .await;
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "op".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id,
+                        input: "/op mel iris,ana".into(),
+                    },
+                })
+                .is_empty()
+        );
+        confirm_mode_request(&mut wire, "MODE #room +oo mel iris").await;
+        confirm_mode_request(&mut wire, "MODE #room +o ana").await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult { id: "op".into() }
+        );
+    }
+
+    #[tokio::test]
+    async fn member_mode_refusals_name_the_member() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "op-stranger".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id,
+                        input: "/op iris".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(
+            rejection_key_and_nick(next_output(&mut receiver).await),
+            (EngineMessageKey::NickNotInChannel, Some("iris".into()))
+        );
+
+        let refused = refused_channel_command(
+            &runtime,
+            &mut receiver,
+            &mut wire,
+            buffer_id,
+            "/op mel",
+            &["MODE #room +o mel", "PING papo-mode-0"],
+            "482 weblounge #room :You're not a channel operator",
+        )
+        .await;
+        assert_eq!(
+            rejection_key_and_nick(refused),
+            (
+                EngineMessageKey::ChannelOperatorRequired,
+                Some("mel".into())
+            )
+        );
+    }
+
+    fn rejection_key_and_nick(output: EngineToUi) -> (EngineMessageKey, Option<String>) {
+        let EngineToUi::CommandRejected {
+            message_key,
+            values,
+            ..
+        } = output
+        else {
+            panic!("expected a rejection, got {output:?}");
+        };
+        (
+            message_key,
+            values.and_then(|values| values.get("nick").cloned()),
+        )
     }
 
     #[tokio::test]

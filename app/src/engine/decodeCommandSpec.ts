@@ -7,6 +7,7 @@ import type { ConfirmPolicy } from "./generated/ConfirmPolicy";
 
 const argumentKinds = enumValues<CommandArgumentKind>({
   nick: true,
+  nick_list: true,
   channel: true,
   channel_list: true,
   key_list: true,
