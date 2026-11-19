@@ -301,6 +301,31 @@ mod tests {
     }
 
     #[test]
+    fn usage_strings_match_the_argument_specs_the_usage_line_renders() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let strings =
+            fs::read_to_string(root.join("app/src/strings.ts")).expect("strings are readable");
+        for spec in Command::specs() {
+            let rendered = std::iter::once(format!("/{}", spec.name))
+                .chain(spec.arguments.iter().map(|argument| {
+                    if argument.required {
+                        format!("<{}>", argument.name)
+                    } else {
+                        format!("[{}]", argument.name)
+                    }
+                }))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let entry = format!("{:?}: {rendered:?},", spec.usage);
+            assert!(
+                strings.contains(&entry),
+                "{} should read {rendered:?}",
+                spec.usage
+            );
+        }
+    }
+
+    #[test]
     fn kick_takes_a_nick_and_an_optional_reason() {
         assert!(matches!(
             commands::parse("/kick mel", "#&"),
