@@ -2103,6 +2103,24 @@ impl Runtime {
         requested: Option<String>,
         reason: Option<String>,
     ) -> Vec<EngineToUi> {
+        self.channel_request(
+            command_id,
+            buffer_id,
+            requested,
+            |channel, client| async move { channel.part(&client, reason.unwrap_or_default()).await },
+        )
+    }
+
+    fn channel_request<Request>(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<String>,
+        request: impl FnOnce(ChannelTarget, papo::Client) -> Request,
+    ) -> Vec<EngineToUi>
+    where
+        Request: std::future::Future<Output = Result<(), papo::Error>> + Send + 'static,
+    {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
@@ -2114,9 +2132,12 @@ impl Runtime {
         let client = running.client.clone();
         drop(state);
         let target = channel.label();
-        spawn_channel_request(self.outbound.clone(), command_id, target, async move {
-            channel.part(&client, reason.unwrap_or_default()).await
-        });
+        spawn_channel_request(
+            self.outbound.clone(),
+            command_id,
+            target,
+            request(channel, client),
+        );
         Vec::new()
     }
 
@@ -2214,21 +2235,12 @@ impl Runtime {
         requested: Option<String>,
         text: String,
     ) -> Vec<EngineToUi> {
-        let state = lock(&self.state);
-        let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
-        };
-        let channel = match channel_target(running, buffer_id, requested) {
-            Ok(channel) => channel,
-            Err(key) => return rejected_command(command_id, key),
-        };
-        let client = running.client.clone();
-        drop(state);
-        let target = channel.label();
-        spawn_channel_request(self.outbound.clone(), command_id, target, async move {
-            channel.set_topic(&client, text).await
-        });
-        Vec::new()
+        self.channel_request(
+            command_id,
+            buffer_id,
+            requested,
+            |channel, client| async move { channel.set_topic(&client, text).await },
+        )
     }
 
     fn show_topic(
