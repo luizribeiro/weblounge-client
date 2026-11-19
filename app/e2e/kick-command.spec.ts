@@ -1,40 +1,16 @@
-import type { Locator, Page } from "@playwright/test";
-import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import {
+  composerNotice,
+  joinFirst,
+  member,
+  showMembers,
+} from "./channel-commands";
+import { expect, test } from "./irc-fixture";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
-import { expectSettled } from "./settled";
 
 const kickUsage = "<nick> [reason] · Remove someone from this channel";
-
-async function joinFirst(page: Page, irc: IrcTestAccount, channel: string) {
-  await page.goto(irc.url());
-  const home = page.getByRole("textbox", { name: `Message ${irc.channel}` });
-  await expect(home).toBeVisible();
-  await home.fill(`/join ${channel}`);
-  await home.press("Enter");
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-  await expectSettled(page, { conversation: channel });
-  return page.getByRole("textbox", { name: `Message ${channel}` });
-}
-
-async function showMembers(page: Page, channel: string) {
-  const toggle = page.getByRole("button", { name: "Toggle member list" });
-  if ((await toggle.getAttribute("aria-pressed")) !== "true")
-    await toggle.click();
-  const members = page.getByRole("complementary", {
-    name: `Members of ${channel}`,
-  });
-  await expect(members).toBeVisible();
-  return members;
-}
-
-const composerNotice = (page: Page, text: string) =>
-  page.getByRole("status").filter({ hasText: text });
-
-const member = (members: Locator, nick: string) =>
-  members.getByRole("button", { name: `Open direct message with ${nick}` });
 
 test.describe("/kick against local Ergo", () => {
   test.skip(
