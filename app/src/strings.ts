@@ -49,6 +49,8 @@ export const messages = {
   "cmd.identify.usage": "/identify <password>",
   "cmd.join.description": "Join one or more channels",
   "cmd.join.usage": "/join <channels> [keys]",
+  "cmd.kick.description": "Remove someone from this channel",
+  "cmd.kick.usage": "/kick <nick> [reason]",
   "cmd.me.description": "Send an action message",
   "cmd.me.usage": "/me <text>",
   "cmd.msg.description": "Send a private message",

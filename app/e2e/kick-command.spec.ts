@@ -1,0 +1,128 @@
+import type { Locator, Page } from "@playwright/test";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
+import { expectSettled } from "./settled";
+
+const kickUsage = "<nick> [reason] · Remove someone from this channel";
+
+async function joinFirst(page: Page, irc: IrcTestAccount, channel: string) {
+  await page.goto(irc.url());
+  const home = page.getByRole("textbox", { name: `Message ${irc.channel}` });
+  await expect(home).toBeVisible();
+  await home.fill(`/join ${channel}`);
+  await home.press("Enter");
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await expectSettled(page, { conversation: channel });
+  return page.getByRole("textbox", { name: `Message ${channel}` });
+}
+
+async function showMembers(page: Page, channel: string) {
+  const toggle = page.getByRole("button", { name: "Toggle member list" });
+  if ((await toggle.getAttribute("aria-pressed")) !== "true")
+    await toggle.click();
+  const members = page.getByRole("complementary", {
+    name: `Members of ${channel}`,
+  });
+  await expect(members).toBeVisible();
+  return members;
+}
+
+const composerNotice = (page: Page, text: string) =>
+  page.getByRole("status").filter({ hasText: text });
+
+const member = (members: Locator, nick: string) =>
+  members.getByRole("button", { name: `Open direct message with ${nick}` });
+
+test.describe("/kick against local Ergo", () => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("an op completes the nick and kicks with a reason", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    const channel = irc.channelNamed("kick-op");
+    const composer = await joinFirst(page, irc, channel);
+    const peer = await irc.peer("kickee", [channel]);
+    const members = await showMembers(page, channel);
+    await expect(member(members, peer.nickname)).toBeVisible();
+
+    await composer.pressSequentially("/ki");
+    await expect(page.getByRole("option", { name: /\/kick/u })).toBeVisible();
+    await expect(page.getByText(kickUsage)).toBeVisible();
+    await composer.fill("");
+
+    await composer.pressSequentially(`/kick ${peer.nickname.slice(0, 5)}`);
+    await expect(page.getByText("/kick <nick> [reason]")).toBeVisible();
+    const suggestion = page.getByRole("option", {
+      name: new RegExp(peer.nickname, "u"),
+    });
+    await expect(suggestion).toBeVisible();
+    await composer.press("Enter");
+    await expect(composer).toHaveValue(`/kick ${peer.nickname} `);
+    await composer.pressSequentially("link spam");
+    await composer.press("Enter");
+
+    const kickLine = page
+      .locator("[data-system-line]")
+      .filter({ hasText: `You kicked ${peer.nickname}` });
+    await expect(kickLine).toHaveAccessibleName(
+      `You kicked ${peer.nickname}: “link spam”`,
+    );
+    await expect(kickLine).toHaveAttribute("data-warning", "false");
+    await expect(member(members, peer.nickname)).toHaveCount(0);
+    await expect(composer).toHaveValue("");
+    await nativeFeelAudit(page);
+  });
+
+  test("a non-op gets a readable refusal", async ({ page, irc }) => {
+    const channel = irc.channelNamed("kick-peer");
+    const operator = await irc.peer("chanop", [channel]);
+    const composer = await joinFirst(page, irc, channel);
+
+    await composer.fill(`/kick ${operator.nickname} bye`);
+    await composer.press("Enter");
+
+    await expect(
+      composerNotice(page, `You need to be a channel operator in ${channel}.`),
+    ).toBeVisible();
+    const members = await showMembers(page, channel);
+    await expect(member(members, operator.nickname)).toBeVisible();
+    await expect(
+      page.locator("[data-system-line]").filter({ hasText: "kicked" }),
+    ).toHaveCount(0);
+  });
+
+  test("a missing nick and a non-channel conversation explain themselves", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("kick-usage");
+    const composer = await joinFirst(page, irc, channel);
+    await composer.fill("/kick");
+    await composer.press("Enter");
+    await expect(
+      composerNotice(page, "That command needs more information."),
+    ).toBeVisible();
+
+    const peer = await irc.peer("dmpeer");
+    await composer.fill(`/query ${peer.nickname}`);
+    await composer.press("Enter");
+    const direct = page.getByRole("textbox", {
+      name: `Message ${peer.nickname}`,
+    });
+    await expect(direct).toBeVisible();
+    await direct.fill(`/kick ${peer.nickname}`);
+    await direct.press("Enter");
+    await expect(
+      composerNotice(page, "That command only works in a channel."),
+    ).toBeVisible();
+  });
+});

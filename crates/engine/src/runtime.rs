@@ -243,6 +243,18 @@ impl ChannelTarget {
             Self::Text(channel) => client.set_topic(channel, text).await,
         }
     }
+
+    async fn kick(
+        &self,
+        client: &papo::Client,
+        nick: String,
+        reason: String,
+    ) -> Result<(), papo::Error> {
+        match self {
+            Self::Known(channel) => client.kick(channel, nick, reason).await,
+            Self::Text(channel) => client.kick(channel, nick, reason).await,
+        }
+    }
 }
 
 struct RuntimeState {
@@ -968,6 +980,9 @@ impl Runtime {
             Ok(Command::Query { nick, text }) => self.query(id, nick.0, text.map(|text| text.0)),
             Ok(Command::Notice { target, text }) => self.notice(id, target.0, text.0),
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
+            Ok(Command::Kick { nick, reason }) => {
+                self.kick(id, buffer_id, nick.0, reason.map(|reason| reason.0))
+            }
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -2109,6 +2124,20 @@ impl Runtime {
             requested,
             |channel, client| async move { channel.part(&client, reason.unwrap_or_default()).await },
         )
+    }
+
+    fn kick(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        nick: String,
+        reason: Option<String>,
+    ) -> Vec<EngineToUi> {
+        self.channel_request(command_id, buffer_id, None, |channel, client| async move {
+            channel
+                .kick(&client, nick, reason.unwrap_or_default())
+                .await
+        })
     }
 
     fn channel_request<Request>(
@@ -7307,6 +7336,16 @@ async fn delay(duration: Duration) {
     }
 
     #[test]
+    fn kick_completes_a_nick_as_its_first_argument() {
+        let registry = commands::built_in_registry();
+        let context = completion_context("/kick me", 8, false, "#&", &registry).expect("context");
+        assert_eq!(context.trigger, CompletionTrigger::Person);
+        assert_eq!(context.prefix, "me");
+        assert_eq!(context.replace_start, 6);
+        assert_eq!(context.argument_hint.as_deref(), Some("cmd.kick.usage"));
+    }
+
+    #[test]
     fn completion_context_ignores_a_first_word_ending_in_a_command_alias() {
         let registry = commands::built_in_registry();
         for word_ending_in_an_alias in ["im ", "im al", "Im ", "ij ", "xmsg al"] {
@@ -9393,39 +9432,7 @@ async fn delay(duration: Duration) {
 
     #[tokio::test]
     async fn channel_command_refusals_name_the_channel() {
-        let (client, mut events, mut wire) = wire(
-            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
-        );
-        wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        wire.server(":weblounge!u@host JOIN #room").await;
-        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let (outbound, mut receiver) = mpsc::unbounded_channel();
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
-        let buffer_id = model
-            .buffer_id_for_channel(&known_channel(&client, "#room"))
-            .expect("joined buffer exists");
-        let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
-                client,
-                model,
-            }))),
-            outbound,
-        };
-        mark_runtime_online(&runtime);
+        let (runtime, mut receiver, mut wire, buffer_id) = joined_room_runtime().await;
 
         for (id, input, sent, refusal, message_key) in [
             (
@@ -9446,6 +9453,13 @@ async fn delay(duration: Duration) {
                 "topic-needs-op",
                 "/topic op-only topic",
                 "TOPIC #room :op-only topic",
+                "482 weblounge #room :You're not a channel operator",
+                EngineMessageKey::ChannelOperatorRequired,
+            ),
+            (
+                "kick-needs-op",
+                "/kick mel",
+                "KICK #room mel",
                 "482 weblounge #room :You're not a channel operator",
                 EngineMessageKey::ChannelOperatorRequired,
             ),
@@ -9479,6 +9493,80 @@ async fn delay(duration: Duration) {
                 }
             );
         }
+    }
+
+    async fn joined_room_runtime() -> (Runtime, mpsc::UnboundedReceiver<EngineToUi>, Wire, BufferId)
+    {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (outbound, receiver) = mpsc::unbounded_channel();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let buffer_id = model
+            .buffer_id_for_channel(&known_channel(&client, "#room"))
+            .expect("joined buffer exists");
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                identity: ConnectionIdentity::test_plain(),
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
+                client,
+                model,
+            }))),
+            outbound,
+        };
+        mark_runtime_online(&runtime);
+        (runtime, receiver, wire, buffer_id)
+    }
+
+    #[tokio::test]
+    async fn kick_sends_the_reason_from_the_focused_channel_only() {
+        let (runtime, mut receiver, mut wire, buffer_id) = joined_room_runtime().await;
+        let kick = runtime.request(EngineRequestEnvelope {
+            id: "kick".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/kick mel link spam".into(),
+            },
+        });
+        assert!(kick.is_empty());
+        assert_eq!(wire.next_sent().await, "KICK #room mel :link spam");
+        wire.server(":weblounge!u@host KICK #room mel :link spam")
+            .await;
+        let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("kick resolves")
+            .expect("runtime remains subscribed");
+        assert_eq!(result, EngineToUi::CommandResult { id: "kick".into() });
+
+        let outside_channel = runtime.request(EngineRequestEnvelope {
+            id: "kick-outside".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/kick mel".into(),
+            },
+        });
+        assert!(matches!(
+            outside_channel.as_slice(),
+            [EngineToUi::CommandRejected {
+                message_key: EngineMessageKey::ChannelRequired,
+                ..
+            }]
+        ));
     }
 
     #[tokio::test]

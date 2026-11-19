@@ -76,6 +76,11 @@ pub(crate) enum Command {
         text: Option<Text>,
     },
     #[command(
+        name = "kick", aliases = ["k"], usage = "cmd.kick.usage",
+        description = "cmd.kick.description", surfaces = ["Slash"], permission = "HalfOp"
+    )]
+    Kick { nick: Nick, reason: Option<Text> },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -132,7 +137,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 16);
+        assert_eq!(specs.len(), 17);
         assert!(
             specs
                 .iter()
@@ -296,6 +301,30 @@ mod tests {
     }
 
     #[test]
+    fn kick_takes_a_nick_and_an_optional_reason() {
+        assert!(matches!(
+            commands::parse("/kick mel", "#&"),
+            Ok(Command::Kick { nick, reason: None }) if nick.0 == "mel"
+        ));
+        assert!(matches!(
+            commands::parse("/kick mel link spam again", "#&"),
+            Ok(Command::Kick { nick, reason: Some(reason) })
+                if nick.0 == "mel" && reason.0 == "link spam again"
+        ));
+        assert_eq!(
+            commands::parse("/kick", "#&"),
+            Err(commands::InputError::MissingArgument)
+        );
+        let specs = Command::specs();
+        let kick = specs
+            .iter()
+            .find(|spec| spec.name == "kick")
+            .expect("kick exists");
+        assert_eq!(kick.arguments[0].kind, CommandArgumentKind::Nick);
+        assert_eq!(kick.permission, commands::CommandPermission::HalfOp);
+    }
+
+    #[test]
     fn plain_say_and_literal_slash_share_the_typed_ast() {
         assert!(
             matches!(commands::parse("hello", "#&"), Ok(Command::Say { text }) if text.0 == "hello")
@@ -318,6 +347,7 @@ mod tests {
             "/close",
             "/hop",
             "/t new topic",
+            "/k mel",
             "/nick new-name",
             "/exit later",
             "/help join",
