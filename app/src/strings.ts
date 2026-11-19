@@ -43,6 +43,8 @@ export const messages = {
   "cmd.debug.usage": "/debug <viewport|gestures|keyboard|push|off>",
   "cmd.deop.description": "Remove someone's channel operator status",
   "cmd.deop.usage": "/deop <nicks>",
+  "cmd.devoice.description": "Take away someone's voice",
+  "cmd.devoice.usage": "/devoice <nicks>",
   "cmd.file.description": "Upload an image",
   "cmd.file.usage": "/file",
   "cmd.help.description": "Show available commands or command help",

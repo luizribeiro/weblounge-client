@@ -96,6 +96,11 @@ pub(crate) enum Command {
     )]
     Voice { nicks: NickList },
     #[command(
+        name = "devoice", aliases = [], usage = "cmd.devoice.usage",
+        description = "cmd.devoice.description", surfaces = ["Slash"], permission = "HalfOp"
+    )]
+    Devoice { nicks: NickList },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -152,7 +157,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 20);
+        assert_eq!(specs.len(), 21);
         assert!(
             specs
                 .iter()
@@ -373,6 +378,7 @@ mod tests {
             ("op", commands::CommandPermission::Op),
             ("deop", commands::CommandPermission::Op),
             ("voice", commands::CommandPermission::HalfOp),
+            ("devoice", commands::CommandPermission::HalfOp),
         ] {
             let nicks = commands::parse(&format!("/{name} mel iris"), "#&").map(member_nicks);
             assert_eq!(nicks, Ok(Some(vec!["mel".into(), "iris".into()])), "{name}");
@@ -391,9 +397,10 @@ mod tests {
 
     fn member_nicks(command: Command) -> Option<Vec<String>> {
         match command {
-            Command::Op { nicks } | Command::Deop { nicks } | Command::Voice { nicks } => {
-                Some(nicks.0)
-            }
+            Command::Op { nicks }
+            | Command::Deop { nicks }
+            | Command::Voice { nicks }
+            | Command::Devoice { nicks } => Some(nicks.0),
             _ => None,
         }
     }

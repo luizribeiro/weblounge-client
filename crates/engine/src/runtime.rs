@@ -992,6 +992,9 @@ impl Runtime {
             Ok(Command::Voice { nicks }) => {
                 self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Voice)
             }
+            Ok(Command::Devoice { nicks }) => {
+                self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Devoice)
+            }
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -6143,6 +6146,7 @@ enum MemberMode {
     Op,
     Deop,
     Voice,
+    Devoice,
 }
 
 impl MemberMode {
@@ -6165,6 +6169,7 @@ impl MemberMode {
             Self::Op => request.op(&client.direct(nick).await?),
             Self::Deop => request.deop(nick),
             Self::Voice => request.voice(&client.direct(nick).await?),
+            Self::Devoice => request.devoice(nick),
         })
     }
 }
@@ -9879,6 +9884,7 @@ async fn delay(duration: Duration) {
         for (input, sent) in [
             ("/deop mel iris", "MODE #room -oo mel iris"),
             ("/voice mel", "MODE #room +v mel"),
+            ("/devoice mel", "MODE #room -v mel"),
         ] {
             assert!(
                 runtime
