@@ -6078,21 +6078,23 @@ fn channel_request_rejection(
     target: String,
     error: &papo::Error,
 ) -> EngineToUi {
-    if matches!(
-        error,
-        papo::Error::Server(error)
-            if matches!(
-                error.refusal(),
-                papo::Refusal::NoSuchChannel | papo::Refusal::NotOnChannel
-            )
-    ) {
-        EngineToUi::CommandRejected {
-            id: command_id,
-            message_key: EngineMessageKey::NotInChannel,
-            values: Some(BTreeMap::from([("target".into(), target)])),
+    let refusal = match error {
+        papo::Error::Server(error) => Some(error.refusal()),
+        _ => None,
+    };
+    let message_key = match refusal {
+        Some(papo::Refusal::NoSuchChannel | papo::Refusal::NotOnChannel) => {
+            EngineMessageKey::NotInChannel
         }
-    } else {
-        command_rejection(command_id, EngineMessageKey::CommandRefused)
+        Some(papo::Refusal::ChannelOperatorPrivilegesNeeded) => {
+            EngineMessageKey::ChannelOperatorRequired
+        }
+        _ => return command_rejection(command_id, EngineMessageKey::CommandRefused),
+    };
+    EngineToUi::CommandRejected {
+        id: command_id,
+        message_key,
+        values: Some(BTreeMap::from([("target".into(), target)])),
     }
 }
 
@@ -9390,7 +9392,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn part_and_topic_membership_refusals_name_the_channel() {
+    async fn channel_command_refusals_name_the_channel() {
         let (client, mut events, mut wire) = wire(
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
@@ -9425,13 +9427,27 @@ async fn delay(duration: Duration) {
         };
         mark_runtime_online(&runtime);
 
-        for (id, input, sent, numeric) in [
-            ("part-refused", "/part", "PART #room", 442),
+        for (id, input, sent, refusal, message_key) in [
+            (
+                "part-refused",
+                "/part",
+                "PART #room",
+                "442 weblounge #room :You're not on that channel",
+                EngineMessageKey::NotInChannel,
+            ),
             (
                 "topic-refused",
                 "/topic updated topic",
                 "TOPIC #room :updated topic",
-                403,
+                "403 weblounge #room :No such channel",
+                EngineMessageKey::NotInChannel,
+            ),
+            (
+                "topic-needs-op",
+                "/topic op-only topic",
+                "TOPIC #room :op-only topic",
+                "482 weblounge #room :You're not a channel operator",
+                EngineMessageKey::ChannelOperatorRequired,
             ),
         ] {
             assert!(
@@ -9446,10 +9462,7 @@ async fn delay(duration: Duration) {
                     .is_empty()
             );
             assert_eq!(wire.next_sent().await, sent);
-            wire.server(format!(
-                ":irc.test {numeric} weblounge #room :Not on channel"
-            ))
-            .await;
+            wire.server(format!(":irc.test {refusal}")).await;
             let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
                 .await
                 .expect("channel refusal resolves")
@@ -9458,7 +9471,7 @@ async fn delay(duration: Duration) {
                 result,
                 EngineToUi::CommandRejected {
                     id: id.into(),
-                    message_key: EngineMessageKey::NotInChannel,
+                    message_key,
                     values: Some(std::collections::BTreeMap::from([(
                         "target".into(),
                         "#room".into(),

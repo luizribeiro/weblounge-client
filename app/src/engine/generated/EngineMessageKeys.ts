@@ -10,6 +10,7 @@ export const ENGINE_MESSAGE_KEYS = [
   "engine.cached_target_gone",
   "engine.channel_limit_reached",
   "engine.channel_not_found",
+  "engine.channel_operator_required",
   "engine.channel_recreated",
   "engine.channel_rejoin_required",
   "engine.channel_required",

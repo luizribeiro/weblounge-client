@@ -163,6 +163,8 @@ export const messages = {
   "engine.channel_limit_reached":
     "You're in the maximum number of channels for this server.",
   "engine.channel_not_found": "That channel isn't available.",
+  "engine.channel_operator_required":
+    "You need to be a channel operator in {target}.",
   "engine.channel_recreated":
     "This channel was recreated while you were away. Verify its topic and members before trusting it.",
   "engine.channel_rejoin_required":

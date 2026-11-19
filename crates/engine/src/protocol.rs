@@ -44,6 +44,7 @@ engine_message_keys! {
     CachedTargetGone => "engine.cached_target_gone",
     ChannelLimitReached => "engine.channel_limit_reached",
     ChannelNotFound => "engine.channel_not_found",
+    ChannelOperatorRequired => "engine.channel_operator_required",
     ChannelRecreated => "engine.channel_recreated",
     ChannelRejoinRequired => "engine.channel_rejoin_required",
     ChannelRequired => "engine.channel_required",
