@@ -2691,6 +2691,10 @@ async function installFakeEngine(
         }
         const request = envelope.payload?.request;
         const id = envelope.payload?.id;
+        if (request?.type === "ping") {
+          this.emit({ type: "pong", id });
+          return;
+        }
         if (request?.type === "diagnostic") {
           this.emit({
             type: "diagnostic",

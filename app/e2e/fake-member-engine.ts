@@ -23,6 +23,10 @@ export class FakeMemberPort implements EnginePort {
       return;
     }
     const { request, id } = message.payload;
+    if (request.type === "ping") {
+      queueMicrotask(() => this.#emit({ type: "pong", id }));
+      return;
+    }
     if (request.type === "request_members") {
       this.#views.set(request.view_id, {
         buffer: request.buffer_id,
