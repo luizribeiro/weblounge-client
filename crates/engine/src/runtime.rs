@@ -995,6 +995,7 @@ impl Runtime {
             Ok(Command::Devoice { nicks }) => {
                 self.set_member_modes(id, buffer_id, nicks.0, MemberMode::Devoice)
             }
+            Ok(Command::Ban { nick }) => self.ban(id, buffer_id, nick.0),
             Ok(Command::Topic {
                 channel,
                 text: Some(text),
@@ -2156,6 +2157,20 @@ impl Runtime {
             Some(nick.clone()),
             |channel, client| async move {
                 Ok(with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)?)
+            },
+        )
+    }
+
+    fn ban(&self, command_id: String, buffer_id: BufferId, word: String) -> Vec<EngineToUi> {
+        self.channel_request(
+            command_id,
+            buffer_id,
+            None,
+            None,
+            |channel, client| async move {
+                let mask = crate::ban_mask::ban_mask(&client.state(), &word);
+                let request = with_channel!(&channel, name => client.mode(name));
+                modes_settled(&request.ban(mask).await?)
             },
         )
     }
@@ -9957,6 +9972,39 @@ async fn delay(duration: Duration) {
             message_key,
             values.and_then(|values| values.get("nick").cloned()),
         )
+    }
+
+    #[tokio::test]
+    async fn ban_derives_a_host_mask_from_a_nick() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        for (input, sent) in [
+            ("/ban mel", "MODE #room +b *!*@mel.host"),
+            ("/ban ghost", "MODE #room +b ghost!*@*"),
+            ("/ban *!*@spam.example", "MODE #room +b *!*@spam.example"),
+        ] {
+            submit(&runtime, buffer_id, input);
+            confirm_mode_request(&mut wire, sent).await;
+            assert_eq!(
+                next_output(&mut receiver).await,
+                EngineToUi::CommandResult { id: input.into() }
+            );
+        }
+    }
+
+    fn submit(runtime: &Runtime, buffer_id: BufferId, input: &str) {
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: input.into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id,
+                        input: input.into(),
+                    },
+                })
+                .is_empty(),
+            "{input} resolves asynchronously"
+        );
     }
 
     #[tokio::test]

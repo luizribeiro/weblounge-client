@@ -32,6 +32,8 @@ export const messages = {
   "common.sign_in_again": "Sign in again",
   "common.weblounge": "weblounge",
   "common.weblounge_beta": "weblounge β",
+  "cmd.ban.description": "Ban a nick or mask from this channel",
+  "cmd.ban.usage": "/ban <nick>",
   "cmd.close.confirmation_action": "Leave",
   "cmd.close.confirmation_prompt": "Leave {text}?",
   "cmd.close.description": "Close conversation",

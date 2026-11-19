@@ -101,6 +101,11 @@ pub(crate) enum Command {
     )]
     Devoice { nicks: NickList },
     #[command(
+        name = "ban", aliases = [], usage = "cmd.ban.usage", description = "cmd.ban.description",
+        surfaces = ["Slash"], permission = "Op"
+    )]
+    Ban { nick: Nick },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -157,7 +162,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 21);
+        assert_eq!(specs.len(), 22);
         assert!(
             specs
                 .iter()
@@ -403,6 +408,22 @@ mod tests {
             | Command::Devoice { nicks } => Some(nicks.0),
             _ => None,
         }
+    }
+
+    #[test]
+    fn ban_takes_one_nick_or_mask() {
+        assert!(matches!(
+            commands::parse("/ban *!*@spam.example", "#&"),
+            Ok(Command::Ban { nick }) if nick.0 == "*!*@spam.example"
+        ));
+        assert_eq!(
+            commands::parse("/ban mel iris", "#&"),
+            Err(commands::InputError::UnexpectedArgument)
+        );
+        assert_eq!(
+            commands::parse("/ban", "#&"),
+            Err(commands::InputError::MissingArgument)
+        );
     }
 
     #[test]
