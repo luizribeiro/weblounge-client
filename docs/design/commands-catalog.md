@@ -111,6 +111,8 @@ These commands are visible only when your rank in the focused channel allows the
 | wallops | — | Text | Sends a WALLOPS to opers. | pass-through raw `WALLOPS` | Later | S | oper | no |
 | sajoin / sanick / samode | — | Text | Oper overrides. | pass-through raw | Later | S | oper | no |
 
+The first `kick` (F50) is `/kick <nick> [reason]` (alias `k`) on the slash surface only. It kicks from the focused channel, so its first argument completes nicks. The explicit channel, the nick list, the palette entry and the user-menu item come with the other moderation commands. Commands are not hidden by rank yet, so a refusal explains itself: `482` reads "You need to be a channel operator in {target}."
+
 ## Information
 
 | Command | Aliases | Arguments | What it does | papo / capability | Pri | Surfaces | Perm | Confirm |
