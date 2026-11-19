@@ -705,6 +705,46 @@ test.describe("connection resilience against local Ergo", () => {
     await expectShellToRemain(page, channel);
   });
 
+  test("recovers a send without a reload after the shared engine traps", async ({
+    page,
+    irc,
+  }, testInfo) => {
+    const channel = irc.channel;
+    test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
+    await installEngineTrapControl(page);
+    const bot = await irc.peer("trapped");
+    const sessions = await irc.self();
+    const composer = await openChannel(page, irc, testInfo.project.name);
+    await expectOnline(page, testInfo.project.name);
+    const attached = await sessions.attachedClientCount();
+    await page.evaluate(() => {
+      const trap = Reflect.get(globalThis, "trapEngineOnNextRequest");
+      if (typeof trap !== "function")
+        throw new Error("engine trap control was not installed");
+      trap();
+    });
+
+    const text = `after engine trap ${Date.now()}`;
+    await composer.fill(text);
+    await composer.press("Enter");
+    await expect.poll(() => sessions.attachedClientCount()).toBe(attached - 1);
+    await page.waitForFunction(
+      () => Number(Reflect.get(globalThis, "engineSharedWorkers") ?? 0) > 1,
+    );
+    await expect(
+      page.getByRole("status").filter({
+        hasText: "Something went wrong. Try again.",
+      }),
+    ).toBeVisible();
+    await expect(composer).toHaveValue(text);
+    await expect.poll(() => sessions.attachedClientCount()).toBe(attached);
+
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+    await bot.waitForPrivmsg(channel, text, irc.account);
+    await expectShellToRemain(page, channel);
+  });
+
   test(
     "recovers after the Ergo process restarts",
     {
@@ -1183,6 +1223,28 @@ async function seedPushedMessage(
   } finally {
     await closeEngineDatabase(database);
   }
+}
+
+async function installEngineTrapControl(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeSharedWorker = globalThis.SharedWorker;
+    class TrappableSharedWorker extends NativeSharedWorker {
+      constructor(scriptURL: string | URL, options?: string | WorkerOptions) {
+        super(scriptURL, options);
+        const opened = Number(
+          Reflect.get(globalThis, "engineSharedWorkers") ?? 0,
+        );
+        Reflect.set(globalThis, "engineSharedWorkers", opened + 1);
+        Reflect.set(globalThis, "trapEngineOnNextRequest", () => {
+          this.port.postMessage({ type: "engine_trap_test_next" });
+        });
+      }
+    }
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: TrappableSharedWorker,
+    });
+  });
 }
 
 async function installWorkerControl(page: Page): Promise<void> {

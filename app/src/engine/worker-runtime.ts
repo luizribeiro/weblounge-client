@@ -40,6 +40,8 @@ let historyWireTestBeforeTarget: string | undefined;
 let historyWireTestLatestExcept: string | undefined;
 let historyWireTestHoldRequest: string | undefined;
 let storageWriteTestFailuresRemaining = 0;
+let engineTrapTestArmed = false;
+let engineTrapTestTrapped = false;
 let storageWriteTestInstalled = false;
 let historyWireNativeSend:
   | ((
@@ -72,7 +74,11 @@ if (__HISTORY_WIRE_TEST_ENABLED__) {
 }
 
 export function attachEnginePort(port: WorkerHostPort): void {
-  sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
+  // A trapped engine fails every later call, and a SharedWorker outlives its pages, so only a
+  // closed worker lets the page's recovery start a fresh engine.
+  sharedRuntime ??= new EngineWorkerRuntime(loadEngine, () =>
+    globalThis.close(),
+  );
   sharedRuntime.attach(port);
 }
 
@@ -80,16 +86,26 @@ export class EngineWorkerRuntime {
   readonly #ports = new Set<WorkerHostPort>();
   readonly #requestPorts = new Map<string, WorkerHostPort>();
   readonly #engine: Promise<WasmEngine>;
+  readonly #onEngineLost: () => void;
   #activePort: WorkerHostPort | undefined;
 
-  constructor(load: EngineLoader) {
+  constructor(load: EngineLoader, onEngineLost: () => void = () => {}) {
     this.#engine = load((encoded) => this.#routeEncoded(encoded));
+    this.#onEngineLost = onEngineLost;
   }
 
   attach(port: WorkerHostPort): void {
     this.#ports.add(port);
     let pending = Promise.resolve();
     port.addEventListener("message", (event) => {
+      if (
+        __ENGINE_TRAP_TEST_ENABLED__ &&
+        isRecord(event.data) &&
+        event.data.type === "engine_trap_test_next"
+      ) {
+        engineTrapTestArmed = true;
+        return;
+      }
       if (
         __STORAGE_WRITE_TEST_ENABLED__ &&
         isRecord(event.data) &&
@@ -178,17 +194,19 @@ export class EngineWorkerRuntime {
       this.#activePort = port;
       if (requestId !== undefined) this.#requestPorts.set(requestId, port);
       const currentEngine = await this.#engine;
+      if (__ENGINE_TRAP_TEST_ENABLED__) trapEngineIfArmed();
       const encoded = currentEngine.handle(JSON.stringify(message));
       const events: unknown = JSON.parse(encoded);
       if (!Array.isArray(events))
         throw new Error("engine returned a non-array response");
       for (const event of events) this.#route(event, port);
-    } catch {
+    } catch (error) {
       port.postMessage({
         type: "fatal",
         message_key: "engine.worker_failed",
         ...(requestId === undefined ? {} : { id: requestId }),
       });
+      if (error instanceof WebAssembly.RuntimeError) this.#onEngineLost();
     }
   }
 
@@ -440,6 +458,26 @@ function installHistoryWireTestHeartbeat(): void {
     for (const port of historyWireTestPorts)
       postHistoryWireTestControl(port, "heartbeat");
   }, 100);
+}
+
+/**
+ * Stands in for a Rust panic: `panic = "abort"` makes one a wasm `unreachable` trap, after which
+ * wasm-bindgen refuses every call on the engine as a recursive borrow.
+ */
+function trapEngineIfArmed(): void {
+  if (engineTrapTestTrapped)
+    throw new Error("recursive use of an object detected");
+  if (!engineTrapTestArmed) return;
+  engineTrapTestTrapped = true;
+  const unreachableModule = new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60,
+    0x00, 0x00, 0x03, 0x02, 0x01, 0x00, 0x07, 0x08, 0x01, 0x04, 0x74, 0x72,
+    0x61, 0x70, 0x00, 0x00, 0x0a, 0x05, 0x01, 0x03, 0x00, 0x00, 0x0b,
+  ]);
+  const trap = new WebAssembly.Instance(
+    new WebAssembly.Module(unreachableModule),
+  ).exports.trap;
+  if (typeof trap === "function") trap();
 }
 
 function installStorageWriteTestFailure(): void {

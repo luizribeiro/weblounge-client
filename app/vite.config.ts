@@ -73,6 +73,7 @@ export default defineConfig(({ mode }) => {
       __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __HISTORY_WIRE_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __STORAGE_WRITE_TEST_ENABLED__: JSON.stringify(performanceHarness),
+      __ENGINE_TRAP_TEST_ENABLED__: JSON.stringify(performanceHarness),
       ...pushWorkerDefines,
       __DEBUG_IRC_CONFIG__: JSON.stringify(
         buildDebugIrcConfig(mode, process.env, performanceHarness),

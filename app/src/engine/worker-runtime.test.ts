@@ -70,6 +70,34 @@ it("names the request whose handling failed", async () => {
   );
 });
 
+it("gives up the worker once the engine traps", async () => {
+  const port = new FakePort();
+  const lost = vi.fn();
+  const runtime = new EngineWorkerRuntime(
+    async () => ({
+      handle: (message) => {
+        if (message.includes("send-1"))
+          throw new Error("engine could not decode the request");
+        throw new WebAssembly.RuntimeError("unreachable");
+      },
+    }),
+    lost,
+  );
+  runtime.attach(port);
+
+  port.receive({ type: "request", payload: { id: "send-1" } });
+  await vi.waitFor(() => expect(port.sent).toHaveLength(1));
+  expect(lost).not.toHaveBeenCalled();
+
+  port.receive({ type: "request", payload: { id: "send-2" } });
+  await vi.waitFor(() => expect(lost).toHaveBeenCalledOnce());
+  expect(port.sent.at(-1)).toEqual({
+    type: "fatal",
+    message_key: "engine.worker_failed",
+    id: "send-2",
+  });
+});
+
 it("forwards timeline patches to every shared port", async () => {
   const first = new FakePort();
   const second = new FakePort();

@@ -7,6 +7,7 @@ declare const __BUILD_VERSION__: string | null;
 declare const __KEYBOARD_MOTION_TEST_ENABLED__: boolean;
 declare const __HISTORY_WIRE_TEST_ENABLED__: boolean;
 declare const __STORAGE_WRITE_TEST_ENABLED__: boolean;
+declare const __ENGINE_TRAP_TEST_ENABLED__: boolean;
 declare const __PUSH_NEW_MESSAGE__: string;
 declare const __PUSH_NEW_MESSAGES__: string;
 declare const __DEBUG_IRC_CONFIG__: {
