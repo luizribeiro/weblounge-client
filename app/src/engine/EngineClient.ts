@@ -4,7 +4,7 @@ import {
   isOneOf,
   isRecord,
 } from "./decode-primitives";
-import { decodeCommandSpecs } from "./decodeCommandSpec";
+import { decodeCommandSpecs, decodeCommandUsage } from "./decodeCommandSpec";
 import { decodeSettings } from "./decodeSettings";
 import { decodeTimelineItem } from "./decodeTimelineItem";
 import { decodePerson } from "./decodeTimelinePeople";
@@ -637,15 +637,17 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         value.candidates,
         decodeCompletionCandidate,
       );
+      const usage =
+        value.usage === null ? null : decodeCommandUsage(value.usage);
       if (
         typeof value.command_id === "string" &&
         typeof value.buffer_id === "number" &&
         typeof value.input === "string" &&
-        isOneOf(value.trigger, ["command", "person", "channel"]) &&
+        (value.trigger === null ||
+          isOneOf(value.trigger, ["command", "person", "channel"])) &&
         typeof value.replace_start === "number" &&
         typeof value.replace_end === "number" &&
-        (value.argument_hint === null ||
-          typeof value.argument_hint === "string") &&
+        usage !== undefined &&
         typeof value.replacement_prefix === "string" &&
         typeof value.replacement_suffix === "string" &&
         typeof value.auto_accept === "boolean" &&
@@ -659,7 +661,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           trigger: value.trigger,
           replace_start: value.replace_start,
           replace_end: value.replace_end,
-          argument_hint: value.argument_hint,
+          usage,
           replacement_prefix: value.replacement_prefix,
           replacement_suffix: value.replacement_suffix,
           auto_accept: value.auto_accept,

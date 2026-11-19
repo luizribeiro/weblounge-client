@@ -395,7 +395,7 @@ describe("WorkerEngineClient", () => {
       replace_start: 0,
       replace_end: 2,
       trigger: "command",
-      argument_hint: null,
+      usage: null,
       replacement_prefix: "/",
       replacement_suffix: " ",
       auto_accept: false,
@@ -428,15 +428,47 @@ describe("WorkerEngineClient", () => {
       ],
     };
     const { auto_accept: _, ...withoutAcceptance } = typedMention;
+    const reasonUsage = {
+      ...command,
+      command_id: "complete-3",
+      input: "/kick mel spam",
+      replace_start: 14,
+      replace_end: 14,
+      trigger: null,
+      usage: {
+        name: "kick",
+        arguments: [
+          { name: "nick", kind: "nick", required: true, rest: false },
+          { name: "reason", kind: "text", required: false, rest: true },
+        ],
+        active_argument: 1,
+      },
+      replacement_prefix: "",
+      replacement_suffix: "",
+      candidates: [],
+    };
+    const usageWithoutRest = {
+      ...reasonUsage,
+      usage: {
+        ...reasonUsage.usage,
+        arguments: [{ name: "nick", kind: "nick", required: true }],
+      },
+    };
 
     port.emit(command);
     port.emit(typedMention);
+    port.emit(reasonUsage);
     expect(() => port.emit(withoutAcceptance)).toThrow(
       "invalid engine message",
     );
+    expect(() => port.emit(usageWithoutRest)).toThrow("invalid engine message");
     frames[0]?.(0);
 
-    expect(listener.mock.calls).toEqual([[command], [typedMention]]);
+    expect(listener.mock.calls).toEqual([
+      [command],
+      [typedMention],
+      [reasonUsage],
+    ]);
   });
 
   it("decodes typed local notice messages", () => {

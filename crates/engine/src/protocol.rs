@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use ts_rs::TS;
 
-use crate::commands::CommandSpec;
+use crate::commands::{CommandSpec, CommandUsage};
 use crate::settings::{SettingChange, Settings};
 
 macro_rules! engine_message_keys {
@@ -1320,8 +1320,10 @@ pub enum EngineToUi {
         replace_start: u32,
         #[ts(type = "number")]
         replace_end: u32,
-        trigger: CompletionTrigger,
-        argument_hint: Option<String>,
+        /// Absent when the caret is in a command argument that has nothing to complete.
+        trigger: Option<CompletionTrigger>,
+        /// The parameters of the slash command being typed.
+        usage: Option<CommandUsage>,
         /// Engine-owned text placed before the selected candidate label.
         replacement_prefix: String,
         /// Engine-owned text placed after the selected candidate label.

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type {
+  CommandUsage,
   CompletionCandidate,
   CompletionResult,
 } from "../../engine/protocol";
@@ -55,11 +56,29 @@ const person = (nick: string): CompletionCandidate => ({
   bot: false,
 });
 
+const msgUsage: CommandUsage = {
+  name: "msg",
+  arguments: [
+    { name: "target", kind: "target", required: true, rest: false },
+    { name: "text", kind: "text", required: true, rest: true },
+  ],
+  active_argument: 0,
+};
+
+const joinUsage: CommandUsage = {
+  name: "join",
+  arguments: [
+    { name: "channels", kind: "channel_list", required: true, rest: false },
+    { name: "keys", kind: "key_list", required: false, rest: false },
+  ],
+  active_argument: 0,
+};
+
 function completion(
   input: string,
   candidates: readonly CompletionCandidate[],
   replaceStart = 0,
-  argumentHint: string | null = null,
+  usage: CommandUsage | null = null,
   replacementPrefix = "",
   replacementSuffix = ": ",
 ): CompletionResult {
@@ -71,7 +90,7 @@ function completion(
     trigger: "person",
     replace_start: replaceStart,
     replace_end: input.length,
-    argument_hint: argumentHint,
+    usage,
     replacement_prefix: replacementPrefix,
     replacement_suffix: replacementSuffix,
     auto_accept: false,
@@ -541,7 +560,7 @@ it("hides an argument suggestion once a sent command empties the composer", asyn
         "/msg a",
         [person("amartinez")],
         5,
-        "cmd.msg.usage",
+        msgUsage,
         "",
         " ",
       )}
@@ -591,7 +610,7 @@ it("submits when Enter would only add a completion separator", async () => {
       bufferTitle="#rust"
       completion={{
         ...completion("/join #rust", [{ type: "channel", name: "#rust" }]),
-        argument_hint: "cmd.join.usage",
+        usage: joinUsage,
         buffer_id: 9,
         replace_start: 6,
         replacement_suffix: " ",

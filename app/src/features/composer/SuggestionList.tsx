@@ -1,16 +1,17 @@
 import { createMemo, For, onCleanup } from "solid-js";
-import type { CompletionCandidate } from "../../engine/protocol";
+import type { CommandUsage, CompletionCandidate } from "../../engine/protocol";
 import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { t, translate } from "../../strings";
 import { BotIcon } from "../../ui/BotIcon";
 import { Line } from "../../ui/Line";
 import { nickColor } from "../conversation/nick-color";
 import styles from "../conversation/SimpleComposer.module.css";
+import { UsageLine } from "./UsageLine";
 
 interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];
   readonly completionInput: string;
-  readonly hint: string | null;
+  readonly usage: CommandUsage | null;
   readonly listId: string;
   readonly optionId: (index: number) => string;
   readonly selected: number;
@@ -28,9 +29,7 @@ export function SuggestionList(props: SuggestionListProps) {
       data-completion-input={props.completionInput}
       data-composer-suggestions="true"
     >
-      {props.hint !== null && (
-        <Line class={styles.hint}>{translate(props.hint)}</Line>
-      )}
+      {props.usage !== null && <UsageLine usage={props.usage} />}
       <div class={styles.candidates} id={props.listId} role="listbox">
         <For each={candidateIds()}>
           {(id, index) => {

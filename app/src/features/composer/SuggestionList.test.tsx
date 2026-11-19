@@ -31,7 +31,19 @@ it("renders rich options and routes pointer selection", () => {
         { type: "channel", name: "#papo" },
       ]}
       completionInput="/"
-      hint="cmd.join.usage"
+      usage={{
+        name: "join",
+        arguments: [
+          {
+            name: "channels",
+            kind: "channel_list",
+            required: true,
+            rest: false,
+          },
+          { name: "keys", kind: "key_list", required: false, rest: false },
+        ],
+        active_argument: 1,
+      }}
       listId="suggestions"
       onAccept={accept}
       onSelect={select}
@@ -50,6 +62,16 @@ it("renders rich options and routes pointer selection", () => {
     screen.getByText("<channels> [keys] · Join one or more channels"),
   ).toBeVisible();
   expect(screen.queryByText(/\/join \/join/u)).not.toBeInTheDocument();
+  expect(
+    document.querySelector("[data-command-usage='join']"),
+  ).toHaveTextContent("/join <channels> [keys]");
+  expect(screen.getByText("[keys]")).toHaveAttribute(
+    "data-active-argument",
+    "true",
+  );
+  expect(screen.getByText("<channels>")).not.toHaveAttribute(
+    "data-active-argument",
+  );
   expect(screen.queryByText("Member")).not.toBeInTheDocument();
   expect(screen.getByRole("option", { name: /ana/u })).toHaveAttribute(
     "aria-selected",

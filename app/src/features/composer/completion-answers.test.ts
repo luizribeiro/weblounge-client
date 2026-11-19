@@ -11,7 +11,7 @@ function result(id: string, input: string): CompletionResult {
     trigger: "person",
     replace_start: 0,
     replace_end: input.length,
-    argument_hint: null,
+    usage: null,
     replacement_prefix: "",
     replacement_suffix: ": ",
     auto_accept: false,

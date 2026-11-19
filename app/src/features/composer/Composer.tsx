@@ -571,7 +571,7 @@ export function Composer(props: ComposerProps) {
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}
           completionInput={suggestions()?.input ?? ""}
-          hint={suggestions()?.argument_hint ?? null}
+          usage={suggestions()?.usage ?? null}
           listId={listId()}
           onAccept={accept}
           onSelect={setSelected}
@@ -761,8 +761,10 @@ function completionTriggerRemains(
   cursor: number,
 ): boolean {
   const query = input.slice(result.replace_start, cursor);
-  if (result.argument_hint !== null) return cursor >= result.replace_start;
+  if (result.usage !== null) return cursor >= result.replace_start;
   switch (result.trigger) {
+    case null:
+      return false;
     case "command":
       return query.startsWith("/");
     case "person":

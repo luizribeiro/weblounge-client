@@ -2,6 +2,7 @@ import type { CommandArgumentKind } from "./generated/CommandArgumentKind";
 import type { CommandPermission } from "./generated/CommandPermission";
 import type { CommandSpec } from "./generated/CommandSpec";
 import type { CommandSurface } from "./generated/CommandSurface";
+import type { CommandUsage } from "./generated/CommandUsage";
 import type { ConfirmPolicy } from "./generated/ConfirmPolicy";
 
 const argumentKinds = enumValues<CommandArgumentKind>({
@@ -94,6 +95,22 @@ function decodeCommandSpec(value: unknown): CommandSpec | undefined {
 
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
+}
+
+export function decodeCommandUsage(value: unknown): CommandUsage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.arguments)) return undefined;
+  const arguments_ = value.arguments.map(decodeArgument);
+  if (
+    typeof value.name !== "string" ||
+    typeof value.active_argument !== "number" ||
+    arguments_.some((argument) => argument === undefined)
+  )
+    return undefined;
+  return {
+    name: value.name,
+    arguments: arguments_.filter((argument) => argument !== undefined),
+    active_argument: value.active_argument,
+  };
 }
 
 function decodeArgument(

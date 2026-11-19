@@ -12,6 +12,7 @@ use crate::EngineMessageKey;
 
 pub(crate) use declaration::Command;
 pub(crate) use position::CommandPosition;
+pub use position::CommandUsage;
 pub(crate) use spec::CompletionPriority;
 pub use spec::{
     CommandArgumentKind, CommandArgumentSpec, CommandPermission, CommandRegistry,

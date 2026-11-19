@@ -2,6 +2,7 @@
 import type { BufferId } from "./BufferId";
 import type { BufferProjection } from "./BufferProjection";
 import type { CommandSpec } from "./CommandSpec";
+import type { CommandUsage } from "./CommandUsage";
 import type { CompletionCandidate } from "./CompletionCandidate";
 import type { CompletionTrigger } from "./CompletionTrigger";
 import type { EngineMessageKey } from "./EngineMessageKey";
@@ -163,7 +164,15 @@ buffer_id: BufferId,
 /**
  * Input echoed to discard stale worker responses.
  */
-input: string, replace_start: number, replace_end: number, trigger: CompletionTrigger, argument_hint: string | null,
+input: string, replace_start: number, replace_end: number,
+/**
+ * Absent when the caret is in a command argument that has nothing to complete.
+ */
+trigger: CompletionTrigger | null,
+/**
+ * The parameters of the slash command being typed.
+ */
+usage: CommandUsage | null,
 /**
  * Engine-owned text placed before the selected candidate label.
  */

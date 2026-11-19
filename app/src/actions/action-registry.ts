@@ -426,7 +426,7 @@ export class ActionRegistry {
       replace_start: input.indexOf("/"),
       replace_end: cursor,
       trigger: "command",
-      argument_hint: null,
+      usage: null,
       replacement_prefix: "/",
       replacement_suffix: " ",
       auto_accept: false,

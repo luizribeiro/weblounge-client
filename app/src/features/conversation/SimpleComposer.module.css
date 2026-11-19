@@ -151,6 +151,11 @@ textarea.input {
   padding: 6px 9px;
 }
 
+.activeArgument {
+  color: var(--wl-color-fg);
+  font-weight: 650;
+}
+
 .primary {
   align-items: center;
   color: var(--wl-color-fg);

@@ -65,14 +65,29 @@ const MARK_READ_DIAGNOSTIC_ID: &str = "mark-read";
 const PUSH_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 
 struct CompletionContext {
-    trigger: CompletionTrigger,
+    trigger: Option<CompletionTrigger>,
     replace_start: u32,
     replace_end: u32,
     prefix: String,
-    argument_hint: Option<String>,
+    usage: Option<commands::CommandUsage>,
     replacement_prefix: String,
     replacement_suffix: String,
     auto_accept: bool,
+}
+
+impl CompletionContext {
+    fn usage_only(caret: u32, usage: commands::CommandUsage) -> Self {
+        Self {
+            trigger: None,
+            replace_start: caret,
+            replace_end: caret,
+            prefix: String::new(),
+            usage: Some(usage),
+            replacement_prefix: String::new(),
+            replacement_suffix: String::new(),
+            auto_accept: false,
+        }
+    }
 }
 
 struct RunningNetwork {
@@ -1198,10 +1213,11 @@ impl Runtime {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
         let candidates = match context.trigger {
-            CompletionTrigger::Command => {
+            None => Vec::new(),
+            Some(CompletionTrigger::Command) => {
                 command_candidates(&context.prefix, &running.model, &snapshot)
             }
-            CompletionTrigger::Person => person_candidates(
+            Some(CompletionTrigger::Person) => person_candidates(
                 &running.model,
                 buffer_id,
                 &context.prefix,
@@ -1212,7 +1228,7 @@ impl Runtime {
                 },
                 &snapshot,
             ),
-            CompletionTrigger::Channel => {
+            Some(CompletionTrigger::Channel) => {
                 channel_candidates(&running.model, &context.prefix, &snapshot)
             }
         };
@@ -1224,7 +1240,7 @@ impl Runtime {
                 trigger: context.trigger,
                 replace_start: context.replace_start,
                 replace_end: context.replace_end,
-                argument_hint: context.argument_hint,
+                usage: context.usage,
                 replacement_prefix: context.replacement_prefix,
                 replacement_suffix: context.replacement_suffix,
                 auto_accept: context.auto_accept && candidates.len() == 1,
@@ -3293,8 +3309,21 @@ fn completion_context(
     chantypes: &str,
     registry: &commands::CommandRegistry,
 ) -> Option<CompletionContext> {
-    let end = byte_offset(input, cursor);
-    let before = input.get(..end)?;
+    let before = input.get(..byte_offset(input, cursor))?;
+    let position = commands::CommandPosition::locate(before, chantypes, registry);
+    let usage = position.as_ref().and_then(commands::CommandPosition::usage);
+    match trigger_context(before, explicit, chantypes, position.as_ref()) {
+        Some(context) => Some(CompletionContext { usage, ..context }),
+        None => usage.map(|usage| CompletionContext::usage_only(utf16_len(before), usage)),
+    }
+}
+
+fn trigger_context(
+    before: &str,
+    explicit: bool,
+    chantypes: &str,
+    position: Option<&commands::CommandPosition<'_>>,
+) -> Option<CompletionContext> {
     if !explicit && let Some(context) = terminated_mention_context(before) {
         return Some(context);
     }
@@ -3303,18 +3332,18 @@ fn completion_context(
     let word = before.get(word_start..)?;
     if before.starts_with('/') && !before.contains(char::is_whitespace) {
         return Some(CompletionContext {
-            trigger: CompletionTrigger::Command,
+            trigger: Some(CompletionTrigger::Command),
             replace_start: 0,
             replace_end,
             prefix: word.trim_start_matches('/').to_owned(),
-            argument_hint: None,
+            usage: None,
             replacement_prefix: "/".into(),
             replacement_suffix: " ".into(),
             auto_accept: false,
         });
     }
-    if let Some(context) =
-        command_argument_context(before, word_start, replace_end, chantypes, registry)
+    if let Some(context) = position
+        .and_then(|position| command_argument_context(position, before, word_start, replace_end))
     {
         return Some(context);
     }
@@ -3335,11 +3364,11 @@ fn completion_context(
         _ => return None,
     };
     Some(CompletionContext {
-        trigger,
-        replace_start: utf16_len(input.get(..word_start)?),
+        trigger: Some(trigger),
+        replace_start: utf16_len(before.get(..word_start)?),
         replace_end,
         prefix,
-        argument_hint: None,
+        usage: None,
         replacement_prefix: String::new(),
         replacement_suffix: replacement_suffix.into(),
         auto_accept: false,
@@ -3379,11 +3408,11 @@ fn terminated_mention_context(before: &str) -> Option<CompletionContext> {
         terminator.to_string()
     };
     Some(CompletionContext {
-        trigger: CompletionTrigger::Person,
+        trigger: Some(CompletionTrigger::Person),
         replace_start: utf16_len(mention.get(..start)?),
         replace_end: utf16_len(before),
         prefix: nick.to_owned(),
-        argument_hint: None,
+        usage: None,
         replacement_prefix: String::new(),
         replacement_suffix,
         auto_accept: true,
@@ -3391,13 +3420,11 @@ fn terminated_mention_context(before: &str) -> Option<CompletionContext> {
 }
 
 fn command_argument_context(
+    position: &commands::CommandPosition<'_>,
     before: &str,
     word_start: usize,
     replace_end: u32,
-    chantypes: &str,
-    registry: &commands::CommandRegistry,
 ) -> Option<CompletionContext> {
-    let position = commands::CommandPosition::locate(before, chantypes, registry)?;
     let word = before.get(word_start..)?;
     let (trigger, prefix) = match position.current_argument()?.kind {
         commands::CommandArgumentKind::Channel | commands::CommandArgumentKind::ChannelList => {
@@ -3410,11 +3437,11 @@ fn command_argument_context(
         _ => return None,
     };
     Some(CompletionContext {
-        trigger,
+        trigger: Some(trigger),
         replace_start: utf16_len(before.get(..word_start)?),
         replace_end,
         prefix,
-        argument_hint: Some(position.spec.usage.clone()),
+        usage: None,
         replacement_prefix: String::new(),
         replacement_suffix: " ".into(),
         auto_accept: false,
@@ -7276,7 +7303,7 @@ async fn delay(duration: Duration) {
                 CompletionTrigger::Person,
                 "",
                 5,
-                Some("cmd.msg.usage"),
+                Some("msg"),
                 "",
                 " ",
             ),
@@ -7286,7 +7313,7 @@ async fn delay(duration: Duration) {
                 CompletionTrigger::Channel,
                 "",
                 6,
-                Some("cmd.join.usage"),
+                Some("join"),
                 "",
                 " ",
             ),
@@ -7313,10 +7340,10 @@ async fn delay(duration: Duration) {
         ] {
             let context = completion_context(input, utf16_len(input), explicit, "#&", &registry)
                 .expect("context");
-            assert_eq!(context.trigger, trigger);
+            assert_eq!(context.trigger, Some(trigger));
             assert_eq!(context.prefix, prefix);
             assert_eq!(context.replace_start, start);
-            assert_eq!(context.argument_hint.as_deref(), hint);
+            assert_eq!(context.usage.map(|usage| usage.name).as_deref(), hint);
             assert_eq!(context.replacement_prefix, before);
             assert_eq!(context.replacement_suffix, after);
         }
@@ -7329,19 +7356,50 @@ async fn delay(duration: Duration) {
     fn kick_completes_a_nick_as_its_first_argument() {
         let registry = commands::built_in_registry();
         let context = completion_context("/kick me", 8, false, "#&", &registry).expect("context");
-        assert_eq!(context.trigger, CompletionTrigger::Person);
+        assert_eq!(context.trigger, Some(CompletionTrigger::Person));
         assert_eq!(context.prefix, "me");
         assert_eq!(context.replace_start, 6);
-        assert_eq!(context.argument_hint.as_deref(), Some("cmd.kick.usage"));
+        assert_eq!(
+            context
+                .usage
+                .map(|usage| (usage.name, usage.active_argument)),
+            Some(("kick".to_owned(), 0))
+        );
     }
 
     #[test]
     fn a_reason_after_a_defaulted_channel_offers_no_channels() {
         let registry = commands::built_in_registry();
-        assert!(completion_context("/part see", 9, false, "#&", &registry).is_none());
+        let reason = completion_context("/part see", 9, false, "#&", &registry).expect("context");
+        assert_eq!(reason.trigger, None);
+        assert_eq!(reason.usage.map(|usage| usage.active_argument), Some(1));
         let channel = completion_context("/part #de", 9, false, "#&", &registry).expect("context");
-        assert_eq!(channel.trigger, CompletionTrigger::Channel);
+        assert_eq!(channel.trigger, Some(CompletionTrigger::Channel));
         assert_eq!(channel.prefix, "#de");
+    }
+
+    #[test]
+    fn a_command_argument_without_candidates_still_reports_its_usage() {
+        let registry = commands::built_in_registry();
+        let input = "/kick mel link spam";
+        let reason =
+            completion_context(input, utf16_len(input), false, "#&", &registry).expect("context");
+        assert_eq!(reason.trigger, None);
+        assert_eq!((reason.replace_start, reason.replace_end), (19, 19));
+        assert_eq!(
+            reason
+                .usage
+                .map(|usage| (usage.name, usage.active_argument)),
+            Some(("kick".to_owned(), 1))
+        );
+
+        let mention =
+            completion_context("/me waves at @al", 16, false, "#&", &registry).expect("context");
+        assert_eq!(mention.trigger, Some(CompletionTrigger::Person));
+        assert_eq!(mention.usage.map(|usage| usage.name).as_deref(), Some("me"));
+
+        assert!(completion_context("/whois mel", 10, false, "#&", &registry).is_none());
+        assert!(completion_context("/close ", 7, false, "#&", &registry).is_none());
     }
 
     #[test]
@@ -7380,7 +7438,7 @@ async fn delay(duration: Duration) {
             let context = completion_context(input, utf16_len(input), false, "#&", &registry)
                 .expect("context");
             assert!(context.auto_accept, "{input}");
-            assert_eq!(context.trigger, CompletionTrigger::Person, "{input}");
+            assert_eq!(context.trigger, Some(CompletionTrigger::Person), "{input}");
             assert_eq!(context.prefix, prefix, "{input}");
             assert_eq!(context.replace_start, start, "{input}");
             assert_eq!(context.replace_end, utf16_len(input), "{input}");

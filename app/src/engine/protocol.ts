@@ -1,5 +1,6 @@
 import type { BufferProjection } from "./generated/BufferProjection";
 import type { CommandSpec } from "./generated/CommandSpec";
+import type { CommandUsage } from "./generated/CommandUsage";
 import type { CompletionCandidate } from "./generated/CompletionCandidate";
 import type { CompletionTrigger } from "./generated/CompletionTrigger";
 import type { EngineMessageKey } from "./generated/EngineMessageKey";
@@ -20,6 +21,7 @@ import type { UnverifiedSender } from "./generated/UnverifiedSender";
 export type {
   BufferProjection,
   CommandSpec,
+  CommandUsage,
   CompletionCandidate,
   CompletionTrigger,
   EngineMessageKey,
