@@ -56,7 +56,7 @@ export interface MobileConversationProps {
   readonly foregroundExitEpoch?: number | undefined;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
-  readonly completion?: CompletionResult;
+  readonly completion?: CompletionResult | undefined;
   readonly messages: readonly MessageProjection[];
   readonly timeline?: TimelineView | undefined;
   readonly timelineEnabled?: boolean | undefined;

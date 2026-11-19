@@ -207,9 +207,7 @@ export function MobileScreen(props: MobileScreenProps) {
           foregroundExitEpoch={props.foregroundExitEpoch}
           commandSpecs={props.commandSpecs}
           composerNotice={composerNotice()}
-          {...(props.completion === undefined
-            ? {}
-            : { completion: props.completion })}
+          completion={props.completion}
           memberships={props.memberships.get(buffer()?.id ?? -1) ?? []}
           historyState={props.historyStates?.get(buffer()?.id ?? -1)}
           messages={props.messages.get(buffer()?.id ?? -1) ?? []}
