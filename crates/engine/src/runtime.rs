@@ -998,6 +998,14 @@ impl Runtime {
             Ok(Command::Ban { nick }) => self.ban(id, buffer_id, nick.0),
             Ok(Command::Unban { nick }) => self.unban(id, buffer_id, nick.0),
             Ok(Command::Invite { nick, channel }) => self.invite(id, buffer_id, nick.0, channel.0),
+            Ok(Command::Mode {
+                channel,
+                modes: None,
+            }) => self.show_modes(id, buffer_id, channel.0),
+            Ok(Command::Mode {
+                channel,
+                modes: Some(modes),
+            }) => self.set_modes(id, buffer_id, channel.0, &modes.0),
             Ok(Command::Kickban { nick, reason }) => {
                 self.kickban(id, buffer_id, nick.0, reason.map(|reason| reason.0))
             }
@@ -2250,6 +2258,88 @@ impl Runtime {
                     action: None,
                 });
                 Ok(())
+            },
+        )
+    }
+
+    fn show_modes(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<String>,
+    ) -> Vec<EngineToUi> {
+        let outbound = self.outbound.clone();
+        self.channel_request(
+            command_id,
+            buffer_id,
+            requested,
+            None,
+            |channel, client| async move {
+                let target = channel.label();
+                let mut modes = cached_channel_modes(&client, &target);
+                if modes.is_none() {
+                    // TODO(papo-0.1): papo has no typed channel-mode query; the PING after the
+                    // raw MODE returns once the server's 324 has updated papo's channel state.
+                    client
+                        .send_raw(papo::Line::new("MODE").with_params([target.clone()]))
+                        .await?;
+                    client.ping().await?;
+                    modes = cached_channel_modes(&client, &target);
+                }
+                let (key, values) = modes.map_or_else(
+                    || ("notice.channel_modes_none", BTreeMap::new()),
+                    |modes| {
+                        (
+                            "notice.channel_modes",
+                            BTreeMap::from([("modes".into(), modes)]),
+                        )
+                    },
+                );
+                let mut values = values;
+                values.insert("target".into(), target);
+                let _ = outbound.send(EngineToUi::Notice {
+                    key: key.into(),
+                    values,
+                    tone: crate::NoticeTone::Neutral,
+                    action: None,
+                });
+                Ok(())
+            },
+        )
+    }
+
+    fn set_modes(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<String>,
+        text: &str,
+    ) -> Vec<EngineToUi> {
+        let parsed = lock(&self.state).network.as_ref().map(|running| {
+            let semantics = crate::mode_string::mode_semantics(running.client.state().isupport());
+            crate::mode_string::parse_mode_string(&semantics, text)
+        });
+        let changes = match parsed {
+            Some(Ok(changes)) => changes,
+            Some(Err(key)) => return rejected_command(command_id, key),
+            None => return rejected_command(command_id, EngineMessageKey::NetworkNotFound),
+        };
+        let mut members = changes
+            .iter()
+            .filter(|change| change.member_mode)
+            .filter_map(|change| change.argument.clone());
+        let single = members.next().filter(|_| members.next().is_none());
+        self.channel_request(
+            command_id,
+            buffer_id,
+            requested,
+            single,
+            |channel, client| async move {
+                let mut request = with_channel!(&channel, name => client.mode(name));
+                for change in changes {
+                    request = apply_mode_change(&client, &channel, request, change).await?;
+                }
+                modes_settled(&request.await?)
             },
         )
     }
@@ -6248,6 +6338,8 @@ enum MemberMode {
     Deop,
     Voice,
     Devoice,
+    Dehalfop,
+    Grant(char),
 }
 
 impl MemberMode {
@@ -6271,8 +6363,56 @@ impl MemberMode {
             Self::Deop => request.deop(nick),
             Self::Voice => request.voice(&client.direct(nick).await?),
             Self::Devoice => request.devoice(nick),
+            Self::Dehalfop => request.dehalfop(nick),
+            Self::Grant(mode) => request.prefix(mode, &client.direct(nick).await?),
         })
     }
+}
+
+fn cached_channel_modes(client: &papo::Client, channel: &str) -> Option<String> {
+    let state = client.state();
+    let joined = state.channel(channel)?;
+    joined
+        .modes()
+        .next()
+        .is_some()
+        .then(|| crate::mode_string::describe_channel_modes(joined))
+}
+
+async fn apply_mode_change(
+    client: &papo::Client,
+    channel: &ChannelTarget,
+    request: papo::SetModes,
+    change: crate::mode_string::TypedModeChange,
+) -> Result<papo::SetModes, ChannelFailure> {
+    let crate::mode_string::TypedModeChange {
+        set,
+        mode,
+        member_mode,
+        argument,
+    } = change;
+    if member_mode {
+        let member = match (mode, set) {
+            ('o', false) => MemberMode::Deop,
+            ('v', false) => MemberMode::Devoice,
+            ('h', false) => MemberMode::Dehalfop,
+            (_, true) => MemberMode::Grant(mode),
+            (_, false) => return Err(ChannelFailure::Rejected(EngineMessageKey::ModeUnknown)),
+        };
+        return member
+            .apply(client, channel, request, argument.unwrap_or_default())
+            .await;
+    }
+    Ok(match (mode, set, argument) {
+        ('k', true, Some(key)) => request.key(papo::Secret::new(key)),
+        ('k', false, key) => {
+            request.remove_key(papo::Secret::new(key.unwrap_or_else(|| "*".into())))
+        }
+        (_, true, Some(argument)) => request.add_with(mode, argument),
+        (_, false, Some(argument)) => request.remove_with(mode, argument),
+        (_, true, None) => request.add(mode),
+        (_, false, None) => request.remove(mode),
+    })
 }
 
 enum ChannelFailure {
@@ -6362,6 +6502,9 @@ fn channel_refusal_key(refusal: papo::Refusal, about_nick: bool) -> Option<Engin
         papo::Refusal::NoSuchNick if about_nick => Some(EngineMessageKey::NickNotFound),
         papo::Refusal::UserNotInChannel if about_nick => Some(EngineMessageKey::NickNotInChannel),
         papo::Refusal::UserOnChannel if about_nick => Some(EngineMessageKey::NickAlreadyInChannel),
+        papo::Refusal::UnknownMode | papo::Refusal::UnknownUserMode => {
+            Some(EngineMessageKey::ModeUnknown)
+        }
         _ => None,
     }
 }
@@ -10174,6 +10317,98 @@ async fn delay(duration: Duration) {
         assert_eq!(
             rejection_key_and_nick(refused),
             (EngineMessageKey::NickAlreadyInChannel, Some("mel".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_sets_typed_changes_and_shows_the_channel_modes() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        let notice = |key: &str, values: &[(&str, &str)]| EngineToUi::Notice {
+            key: key.into(),
+            values: values
+                .iter()
+                .map(|(key, value)| ((*key).into(), (*value).into()))
+                .collect(),
+            tone: crate::NoticeTone::Neutral,
+            action: None,
+        };
+
+        submit(&runtime, buffer_id, "/mode");
+        assert_eq!(wire.next_sent().await, "MODE #room");
+        let ping = wire.next_sent().await;
+        let token = ping
+            .strip_prefix("PING ")
+            .expect("papo pings after the query");
+        wire.server(":irc.test 324 weblounge #room +nt").await;
+        wire.server(format!(":irc.test PONG irc.test :{token}"))
+            .await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            notice(
+                "notice.channel_modes",
+                &[("modes", "+nt"), ("target", "#room")]
+            )
+        );
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult { id: "/mode".into() }
+        );
+
+        for (input, sent) in [
+            ("/mode +m", "MODE #room +m"),
+            ("/mode +ol mel 50", "MODE #room +ol mel 50"),
+            ("/mode -k", "MODE #room -k *"),
+        ] {
+            submit(&runtime, buffer_id, input);
+            confirm_mode_request(&mut wire, sent).await;
+            assert_eq!(
+                next_output(&mut receiver).await,
+                EngineToUi::CommandResult { id: input.into() }
+            );
+        }
+
+        submit(&runtime, buffer_id, "/mode");
+        assert_eq!(
+            next_output(&mut receiver).await,
+            notice(
+                "notice.channel_modes",
+                &[("modes", "+lmnt 50"), ("target", "#room")]
+            )
+        );
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult { id: "/mode".into() }
+        );
+
+        assert!(matches!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "unknown".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id,
+                        input: "/mode +Z".into(),
+                    },
+                })
+                .as_slice(),
+            [EngineToUi::CommandRejected {
+                message_key: EngineMessageKey::ModeUnknown,
+                ..
+            }]
+        ));
+        let refused = refused_channel_command(
+            &runtime,
+            &mut receiver,
+            &mut wire,
+            buffer_id,
+            "/mode +s",
+            &["MODE #room +s", "PING papo-mode-4"],
+            "472 weblounge s :is an unknown mode char to me",
+        )
+        .await;
+        assert_eq!(
+            rejection_key_and_nick(refused),
+            (EngineMessageKey::ModeUnknown, None)
         );
     }
 

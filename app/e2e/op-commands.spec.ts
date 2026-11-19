@@ -174,6 +174,27 @@ test.describe("channel operator commands against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("/mode sets a mode, shows the modes and names an unknown one", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("mode");
+    const composer = await joinFirst(page, irc, channel);
+
+    await submit(composer, "/mode +m");
+    await expect(
+      systemLine(page, "You made the channel moderated"),
+    ).toBeVisible();
+
+    await submit(composer, "/mode");
+    await expect(page.getByText(`${channel} modes: +`)).toContainText("m");
+
+    await submit(composer, "/mode +Z");
+    await expect(
+      composerNotice(page, "The server doesn't support that mode."),
+    ).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

@@ -121,6 +121,14 @@ pub(crate) enum Command {
     )]
     Invite { nick: Nick, channel: Channel },
     #[command(
+        name = "mode", aliases = [], usage = "cmd.mode.usage", description = "cmd.mode.description",
+        surfaces = ["Slash"], permission = "Op"
+    )]
+    Mode {
+        channel: Channel,
+        modes: Option<Text>,
+    },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -177,7 +185,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 25);
+        assert_eq!(specs.len(), 26);
         assert!(
             specs
                 .iter()
@@ -459,6 +467,19 @@ mod tests {
             commands::parse("/invite mel ops", "#&"),
             Err(commands::InputError::UnexpectedArgument)
         );
+    }
+
+    #[test]
+    fn mode_takes_an_optional_channel_and_mode_string() {
+        assert!(matches!(
+            commands::parse("/mode #ops +o-v mel iris", "#&"),
+            Ok(Command::Mode { channel, modes: Some(modes) })
+                if channel.0.as_deref() == Some("#ops") && modes.0 == "+o-v mel iris"
+        ));
+        assert!(matches!(
+            commands::parse("/mode", "#&"),
+            Ok(Command::Mode { channel, modes: None }) if channel.0.is_none()
+        ));
     }
 
     #[test]

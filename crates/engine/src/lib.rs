@@ -7,6 +7,7 @@ pub mod commands;
 mod direct_peer;
 mod filehost;
 mod members;
+mod mode_string;
 mod name_key;
 mod notification_settings;
 mod protocol;
