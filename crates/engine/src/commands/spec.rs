@@ -25,6 +25,7 @@ pub struct CommandArgumentSpec {
     pub name: String,
     pub kind: CommandArgumentKind,
     pub required: bool,
+    pub rest: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]

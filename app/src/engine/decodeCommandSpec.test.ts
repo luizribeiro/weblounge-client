@@ -4,7 +4,7 @@ import { decodeCommandSpecs } from "./decodeCommandSpec";
 const spec = {
   name: "fixture",
   aliases: [],
-  arguments: [{ name: "text", kind: "text", required: true }],
+  arguments: [{ name: "text", kind: "text", required: true, rest: true }],
   usage: "cmd.fixture.usage",
   description: "cmd.fixture.description",
   requirements: [{ type: "connected" }],

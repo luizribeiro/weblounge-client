@@ -54,6 +54,7 @@ pub(crate) trait CommandArg: Sized {
             name: name.into(),
             kind: Self::KIND,
             required: true,
+            rest: Self::CONSUMES_REST,
         }
     }
 }

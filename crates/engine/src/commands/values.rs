@@ -50,12 +50,10 @@ impl CommandArg for Channel {
     }
     fn spec(name: &str) -> CommandArgumentSpec {
         CommandArgumentSpec {
+            name: name.into(),
+            kind: Self::KIND,
             required: false,
-            ..CommandArgumentSpec {
-                name: name.into(),
-                kind: Self::KIND,
-                required: true,
-            }
+            rest: false,
         }
     }
 }

@@ -751,7 +751,12 @@ describe("WorkerEngineClient", () => {
           name: "help",
           aliases: ["?"],
           arguments: [
-            { name: "command", kind: "command_name", required: false },
+            {
+              name: "command",
+              kind: "command_name",
+              required: false,
+              rest: false,
+            },
           ],
           usage: "cmd.help.usage",
           description: "cmd.help.description",

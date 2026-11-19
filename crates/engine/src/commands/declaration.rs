@@ -321,6 +321,8 @@ mod tests {
             .find(|spec| spec.name == "kick")
             .expect("kick exists");
         assert_eq!(kick.arguments[0].kind, CommandArgumentKind::Nick);
+        assert!(!kick.arguments[0].rest);
+        assert!(kick.arguments[1].rest && !kick.arguments[1].required);
         assert_eq!(kick.permission, commands::CommandPermission::HalfOp);
     }
 

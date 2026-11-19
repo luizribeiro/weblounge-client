@@ -445,7 +445,12 @@ describe("ActionRegistry", () => {
     const join = {
       ...command("join", ["slash", "palette"]),
       arguments: [
-        { name: "channels", kind: "channel_list" as const, required: true },
+        {
+          name: "channels",
+          kind: "channel_list" as const,
+          required: true,
+          rest: false,
+        },
       ],
     };
     const registry = new ActionRegistry(
@@ -475,8 +480,13 @@ describe("ActionRegistry", () => {
     const topic = {
       ...command("topic", ["slash", "palette"]),
       arguments: [
-        { name: "channel", kind: "channel" as const, required: false },
-        { name: "text", kind: "text" as const, required: false },
+        {
+          name: "channel",
+          kind: "channel" as const,
+          required: false,
+          rest: false,
+        },
+        { name: "text", kind: "text" as const, required: false, rest: true },
       ],
     };
     const registry = new ActionRegistry({}, "other", [topic], vi.fn());
@@ -834,7 +844,9 @@ function implicitChannelCommand(
 ): import("../engine/protocol").CommandSpec {
   return {
     ...command(name, ["channel_menu"]),
-    arguments: [{ name: "channel", kind: "channel", required: false }],
+    arguments: [
+      { name: "channel", kind: "channel", required: false, rest: false },
+    ],
   };
 }
 

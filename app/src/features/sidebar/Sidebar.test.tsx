@@ -383,7 +383,9 @@ function channelCommand(name: "cycle" | "topic"): CommandSpec {
   return {
     name,
     aliases: [],
-    arguments: [{ name: "channel", kind: "channel", required: false }],
+    arguments: [
+      { name: "channel", kind: "channel", required: false, rest: false },
+    ],
     usage: `cmd.${name}.usage`,
     description: `cmd.${name}.description`,
     requirements: [{ type: "connected" }],
@@ -400,7 +402,7 @@ function destructiveCommand(name: "close" | "part"): CommandSpec {
     aliases: [],
     arguments:
       name === "part"
-        ? [{ name: "channel", kind: "channel", required: false }]
+        ? [{ name: "channel", kind: "channel", required: false, rest: false }]
         : [],
     usage: `cmd.${name}.usage`,
     description: `cmd.${name}.description`,

@@ -103,10 +103,16 @@ function decodeArgument(
     !isRecord(value) ||
     typeof value.name !== "string" ||
     !isOneOf(value.kind, argumentKinds) ||
-    typeof value.required !== "boolean"
+    typeof value.required !== "boolean" ||
+    typeof value.rest !== "boolean"
   )
     return undefined;
-  return { name: value.name, kind: value.kind, required: value.required };
+  return {
+    name: value.name,
+    kind: value.kind,
+    required: value.required,
+    rest: value.rest,
+  };
 }
 
 function decodeRequirement(
