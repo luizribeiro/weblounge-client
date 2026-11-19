@@ -63,6 +63,7 @@ engine_message_keys! {
     MetadataLimitReached => "engine.metadata_limit_reached",
     NetworkAlreadyConnected => "engine.network_already_connected",
     NetworkNotFound => "engine.network_not_found",
+    NickAlreadyInChannel => "engine.nick_already_in_channel",
     NickNotFound => "engine.nick_not_found",
     NickNotInChannel => "engine.nick_not_in_channel",
     NotInChannel => "engine.not_in_channel",

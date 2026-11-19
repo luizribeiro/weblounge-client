@@ -997,6 +997,7 @@ impl Runtime {
             }
             Ok(Command::Ban { nick }) => self.ban(id, buffer_id, nick.0),
             Ok(Command::Unban { nick }) => self.unban(id, buffer_id, nick.0),
+            Ok(Command::Invite { nick, channel }) => self.invite(id, buffer_id, nick.0, channel.0),
             Ok(Command::Kickban { nick, reason }) => {
                 self.kickban(id, buffer_id, nick.0, reason.map(|reason| reason.0))
             }
@@ -2219,6 +2220,36 @@ impl Runtime {
                     .reason(reason.unwrap_or_default())
                     .await?;
                 Ok(outcome.kick?)
+            },
+        )
+    }
+
+    fn invite(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        nick: String,
+        requested: Option<String>,
+    ) -> Vec<EngineToUi> {
+        let outbound = self.outbound.clone();
+        self.channel_request(
+            command_id,
+            buffer_id,
+            requested,
+            Some(nick.clone()),
+            |channel, client| async move {
+                let invitee = client.direct(&nick).await?;
+                with_channel!(&channel, name => client.invite(&invitee, name).await)?;
+                let _ = outbound.send(EngineToUi::Notice {
+                    key: "notice.invite_sent".into(),
+                    values: std::collections::BTreeMap::from([
+                        ("nick".into(), nick),
+                        ("target".into(), channel.label()),
+                    ]),
+                    tone: crate::NoticeTone::Neutral,
+                    action: None,
+                });
+                Ok(())
             },
         )
     }
@@ -6323,6 +6354,7 @@ fn channel_refusal_key(refusal: papo::Refusal, about_nick: bool) -> Option<Engin
         }
         papo::Refusal::NoSuchNick if about_nick => Some(EngineMessageKey::NickNotFound),
         papo::Refusal::UserNotInChannel if about_nick => Some(EngineMessageKey::NickNotInChannel),
+        papo::Refusal::UserOnChannel if about_nick => Some(EngineMessageKey::NickAlreadyInChannel),
         _ => None,
     }
 }
@@ -10093,6 +10125,48 @@ async fn delay(duration: Duration) {
             EngineToUi::CommandResult {
                 id: "/kb mel spam".into()
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn invite_confirms_and_names_a_member_already_there() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        submit(&runtime, buffer_id, "/invite mel #ops");
+        assert_eq!(wire.next_sent().await, "INVITE mel #ops");
+        wire.server(":irc.test 341 weblounge mel #ops").await;
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::Notice {
+                key: "notice.invite_sent".into(),
+                values: std::collections::BTreeMap::from([
+                    ("nick".into(), "mel".into()),
+                    ("target".into(), "#ops".into()),
+                ]),
+                tone: crate::NoticeTone::Neutral,
+                action: None,
+            }
+        );
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandResult {
+                id: "/invite mel #ops".into()
+            }
+        );
+
+        let refused = refused_channel_command(
+            &runtime,
+            &mut receiver,
+            &mut wire,
+            buffer_id,
+            "/invite mel",
+            &["INVITE mel #room"],
+            "443 weblounge mel #room :is already on channel",
+        )
+        .await;
+        assert_eq!(
+            rejection_key_and_nick(refused),
+            (EngineMessageKey::NickAlreadyInChannel, Some("mel".into()))
         );
     }
 

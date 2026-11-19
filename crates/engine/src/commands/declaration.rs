@@ -116,6 +116,11 @@ pub(crate) enum Command {
     )]
     Kickban { nick: Nick, reason: Option<Text> },
     #[command(
+        name = "invite", aliases = [], usage = "cmd.invite.usage",
+        description = "cmd.invite.description", surfaces = ["Slash"]
+    )]
+    Invite { nick: Nick, channel: Channel },
+    #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
         surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
@@ -172,7 +177,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 24);
+        assert_eq!(specs.len(), 25);
         assert!(
             specs
                 .iter()
@@ -438,6 +443,22 @@ mod tests {
             commands::parse("/ub mel", "#&"),
             Ok(Command::Unban { nick }) if nick.0 == "mel"
         ));
+    }
+
+    #[test]
+    fn invite_takes_a_nick_and_an_optional_channel() {
+        assert!(matches!(
+            commands::parse("/invite mel #ops", "#&"),
+            Ok(Command::Invite { nick, channel }) if nick.0 == "mel" && channel.0.as_deref() == Some("#ops")
+        ));
+        assert!(matches!(
+            commands::parse("/invite mel", "#&"),
+            Ok(Command::Invite { channel, .. }) if channel.0.is_none()
+        ));
+        assert_eq!(
+            commands::parse("/invite mel ops", "#&"),
+            Err(commands::InputError::UnexpectedArgument)
+        );
     }
 
     #[test]

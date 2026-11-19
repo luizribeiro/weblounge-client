@@ -141,6 +141,26 @@ test.describe("channel operator commands against local Ergo", () => {
     await expect(member(members, peer.nickname)).toHaveCount(0);
   });
 
+  test("/invite confirms, and names someone already there", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("invite");
+    const composer = await joinFirst(page, irc, channel);
+    const guest = await irc.peer("invitee", []);
+    const regular = await irc.peer("regular", [channel]);
+
+    await submit(composer, `/invite ${guest.nickname}`);
+    await expect(
+      page.getByText(`Invited ${guest.nickname} to ${channel}.`),
+    ).toBeVisible();
+
+    await submit(composer, `/invite ${regular.nickname}`);
+    await expect(
+      composerNotice(page, `${regular.nickname} is already in ${channel}.`),
+    ).toBeVisible();
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);

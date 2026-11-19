@@ -29,6 +29,7 @@ export const ENGINE_MESSAGE_KEYS = [
   "engine.metadata_limit_reached",
   "engine.network_already_connected",
   "engine.network_not_found",
+  "engine.nick_already_in_channel",
   "engine.nick_not_found",
   "engine.nick_not_in_channel",
   "engine.not_in_channel",

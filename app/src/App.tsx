@@ -2003,6 +2003,7 @@ function noticeValues(
 ): MessageValues {
   return {
     ...(values.input === undefined ? {} : { input: values.input }),
+    ...(values.nick === undefined ? {} : { nick: values.nick }),
     ...(values.network_id === undefined
       ? {}
       : { network_id: values.network_id }),
