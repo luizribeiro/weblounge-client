@@ -6391,7 +6391,9 @@ async fn apply_mode_change(
             ('v', false) => MemberMode::Devoice,
             ('h', false) => MemberMode::Dehalfop,
             (_, true) => MemberMode::Grant(mode),
-            (_, false) => return Err(ChannelFailure::Rejected(EngineMessageKey::ModeUnknown)),
+            // TODO(papo-0.1): papo removes only o, h and v by name; `SetModes` has no generic
+            // prefix removal for owner or admin modes such as `-q` and `-a`.
+            (_, false) => return Err(ChannelFailure::Rejected(EngineMessageKey::CommandRefused)),
         };
         return member
             .apply(client, channel, request, argument.unwrap_or_default())
@@ -10414,6 +10416,11 @@ async fn delay(duration: Duration) {
                 ..
             }]
         ));
+        submit(&runtime, buffer_id, "/mode -q mel");
+        assert_eq!(
+            rejection_key_and_nick(next_output(&mut receiver).await),
+            (EngineMessageKey::CommandRefused, Some("mel".into()))
+        );
         let refused = refused_channel_command(
             &runtime,
             &mut receiver,
