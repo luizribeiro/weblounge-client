@@ -93,7 +93,7 @@ test.describe("/kick against local Ergo", () => {
     await composer.fill(`/kick ${offline}`);
     await composer.press("Enter");
     await expect(
-      composerNotice(page, `${offline} isn't on this network.`),
+      composerNotice(page, `${offline} isn't in ${channel}.`),
     ).toBeVisible();
   });
 

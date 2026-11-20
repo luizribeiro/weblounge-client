@@ -2169,6 +2169,7 @@ impl Runtime {
             None,
             Some(nick.clone()),
             |channel, client| async move {
+                require_member(&client, &channel, &nick)?;
                 Ok(with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)?)
             },
         )
@@ -6350,14 +6351,7 @@ impl MemberMode {
         request: papo::SetModes,
         nick: String,
     ) -> Result<papo::SetModes, ChannelFailure> {
-        if let ChannelTarget::Known(name) = channel
-            && client
-                .state()
-                .channel(name)
-                .is_some_and(|joined| joined.member(&nick).is_none())
-        {
-            return Err(ChannelFailure::Rejected(EngineMessageKey::NickNotInChannel));
-        }
+        require_member(client, channel, &nick)?;
         Ok(match self {
             Self::Op => request.op(&client.direct(nick).await?),
             Self::Deop => request.deop(nick),
@@ -6413,6 +6407,22 @@ async fn apply_mode_change(
         (_, true, None) => request.add(mode),
         (_, false, None) => request.remove(mode),
     })
+}
+
+fn require_member(
+    client: &papo::Client,
+    channel: &ChannelTarget,
+    nick: &str,
+) -> Result<(), ChannelFailure> {
+    if let ChannelTarget::Known(name) = channel
+        && client
+            .state()
+            .channel(name)
+            .is_some_and(|joined| joined.member(nick).is_none())
+    {
+        return Err(ChannelFailure::Rejected(EngineMessageKey::NickNotInChannel));
+    }
+    Ok(())
 }
 
 enum ChannelFailure {
@@ -9895,7 +9905,8 @@ async fn delay(duration: Duration) {
 
     #[tokio::test]
     async fn channel_command_refusals_name_the_channel() {
-        let (runtime, mut receiver, mut wire, buffer_id) = joined_room_runtime().await;
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
         let room = [("target", "#room")];
         let kicked = [("target", "#room"), ("nick", "mel")];
 
@@ -10019,11 +10030,6 @@ async fn delay(duration: Duration) {
             .await;
     }
 
-    async fn joined_room_runtime() -> (Runtime, mpsc::UnboundedReceiver<EngineToUi>, Wire, BufferId)
-    {
-        joined_room_runtime_with(&[]).await
-    }
-
     async fn joined_room_runtime_with(
         members: &[&str],
     ) -> (Runtime, mpsc::UnboundedReceiver<EngineToUi>, Wire, BufferId) {
@@ -10069,7 +10075,8 @@ async fn delay(duration: Duration) {
 
     #[tokio::test]
     async fn kick_sends_the_reason_from_the_focused_channel_only() {
-        let (runtime, mut receiver, mut wire, buffer_id) = joined_room_runtime().await;
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
         let kick = runtime.request(EngineRequestEnvelope {
             id: "kick".into(),
             request: EngineRequest::SubmitInput {
@@ -10148,6 +10155,17 @@ async fn delay(duration: Duration) {
                 EngineToUi::CommandResult { id: input.into() }
             );
         }
+    }
+
+    #[tokio::test]
+    async fn kick_refuses_someone_who_is_not_in_the_channel() {
+        let (runtime, mut receiver, _wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        submit(&runtime, buffer_id, "/kick iris");
+        assert_eq!(
+            rejection_key_and_nick(next_output(&mut receiver).await),
+            (EngineMessageKey::NickNotInChannel, Some("iris".into()))
+        );
     }
 
     #[tokio::test]
