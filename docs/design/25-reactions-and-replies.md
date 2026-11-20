@@ -76,13 +76,16 @@ Portuguese, so "fogo" finds 🔥. `app/scripts/generate-emoji-annotations.mjs` d
 emoji-test.txt and CLDR JSON and writes a trimmed `app/src/assets/emoji-annotations.json`, vendored
 next to its Unicode licence; the build never touches the network. The picker loads that file as a
 lazy chunk when it first opens, and labels every emoji, browsed or found, with its English CLDR
-name. A short hand-curated alias list (`emoji-aliases.ts`) adds chat slang CLDR lacks or ranks
+name; until it arrives, browsing labels each emoji with itself, and a failed load says so and
+retries on the next keystroke. A short hand-curated alias list (`emoji-aliases.ts`) adds chat slang CLDR lacks or ranks
 too low, such as "ty" for 🙏 and "heart" for ❤️.
 
 Matching ignores case and diacritics and compares the whole query. Results form one list ranked
 by the best tier any of an emoji's names or keywords reaches: an exact name or alias, then a name
 prefix, then an exact keyword or keyword prefix, then a substring of a name or keyword; ties keep
-Unicode order.
+Unicode order. The list stops at 112 (whole rows of both grids), so a one-letter query stays fast
+and the best matches still lead. An emoji typed or pasted into the field, with or without U+FE0F,
+finds itself.
 
 ## Testing
 
