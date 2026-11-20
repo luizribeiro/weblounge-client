@@ -893,7 +893,7 @@ impl NetworkModel {
                 && buffer.projection.channel_status != Some(ChannelStatus::Joined)
                 && buffer.projection.available != Some(false)
             {
-                buffer.projection.available = Some(false);
+                set_available(buffer, Some(false));
                 events.push(EngineToUi::BufferUpdated {
                     buffer: buffer.projection.clone(),
                 });
@@ -1046,7 +1046,7 @@ impl NetworkModel {
                         buffer.projection.topic = topic;
                         buffer.projection.channel_status = Some(ChannelStatus::Joined);
                         buffer.projection.title = title;
-                        buffer.projection.available = None;
+                        set_available(buffer, None);
                         changed = true;
                     }
                 }
@@ -3047,6 +3047,11 @@ impl NetworkModel {
             .map(|time| system_time_from_millis(time.value()))
     }
 
+    #[cfg(test)]
+    pub(crate) fn unread_fact_count(&self, buffer_id: BufferId) -> Option<usize> {
+        Some(unread_count(&self.buffers.get(&buffer_id)?.read_facts))
+    }
+
     pub(crate) fn buffer_id_for_conversation(
         &self,
         conversation: &papo::Conversation,
@@ -4189,7 +4194,7 @@ impl NetworkModel {
             .and_then(|direct_key| self.directs.get(direct_key).copied());
         if let Some(id) = direct_id.or_else(|| self.names.get(&key).copied()) {
             if let Some(buffer) = self.buffers.get_mut(&id) {
-                buffer.projection.available = None;
+                set_available(buffer, None);
             }
             if matches!(key, NameKey::Direct(_)) {
                 self.names.insert(key.clone(), id);
@@ -4760,19 +4765,34 @@ fn confirmed_text(kind: &MessageKind, text: &str) -> String {
     action.params.unwrap_or_default().to_owned()
 }
 
+fn set_available(buffer: &mut BufferState, available: Option<bool>) {
+    buffer.projection.available = available;
+    derive_read_projection(buffer);
+}
+
 fn derive_read_projection(buffer: &mut BufferState) {
     let mark = buffer.read_facts.mark().map(ServerTimeMs::value);
     buffer.projection.read_at_ms = mark;
     derive_chat_projection(buffer);
+    (buffer.projection.unread, buffer.projection.mentions) = badge_counts(buffer);
+}
+
+/// Unavailable conversations appear in no list, so a count there would be a badge nobody can clear.
+fn badge_counts(buffer: &BufferState) -> (u64, u64) {
+    if buffer.projection.available == Some(false) {
+        return (0, 0);
+    }
     let unread = unread_count(&buffer.read_facts);
-    buffer.projection.unread =
-        if has_unread_gap(&buffer.read_facts) || has_unread_transcript_gap(buffer) {
-            u64::try_from(unread.max(100)).unwrap_or(u64::MAX)
-        } else {
-            u64::try_from(unread).unwrap_or(u64::MAX)
-        };
-    buffer.projection.mentions =
-        u64::try_from(mention_count(&buffer.read_facts, false)).unwrap_or(u64::MAX);
+    let unread = if has_unread_gap(&buffer.read_facts) || has_unread_transcript_gap(buffer) {
+        unread.max(100)
+    } else {
+        unread
+    };
+    let mentions = mention_count(&buffer.read_facts, false);
+    (
+        u64::try_from(unread).unwrap_or(u64::MAX),
+        u64::try_from(mentions).unwrap_or(u64::MAX),
+    )
 }
 
 fn has_unread_transcript_gap(buffer: &BufferState) -> bool {
@@ -10518,6 +10538,65 @@ mod tests {
             model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
         ));
+    }
+
+    fn cached_channel_with_mention(key: &str) -> ChatListSnapshot {
+        ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel { key: key.into() },
+                title: key.into(),
+                last_activity_ms: Some(1_000),
+                stubs: snapshot_stubs(1, 1, 1_000),
+                redacted_stubs: Vec::new(),
+                gap_until: None,
+                preview: Some("cached mention".into()),
+                newest: None,
+                read_at_ms: None,
+                raw_read_at_ms: None,
+                pending_read_at_ms: None,
+                peer_pin: None,
+                peer_bot: false,
+            }],
+        )
+    }
+
+    #[tokio::test]
+    async fn vanished_cached_channel_hides_its_counts_until_rejoined() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&[]).await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_)).then_some(())
+        })
+        .await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.restore_chat_list(cached_channel_with_mention("#room"));
+        let counts = |model: &NetworkModel| {
+            let buffer = model
+                .buffers
+                .values()
+                .find(|buffer| buffer.projection.title == "#room")
+                .expect("cached channel");
+            (buffer.projection.unread, buffer.projection.mentions)
+        };
+        assert_eq!(counts(&model), (1, 1));
+
+        let events_out = model.mark_vanished_restored_rows();
+        assert_eq!(counts(&model), (0, 0));
+        assert!(matches!(
+            events_out.as_slice(),
+            [EngineToUi::BufferUpdated { buffer }]
+                if buffer.available == Some(false) && buffer.mentions == 0 && buffer.unread == 0
+        ));
+
+        wire.server(":weblounge!u@host JOIN #room").await;
+        next_event(&mut events, |event| {
+            matches!(event, papo::Event::Joined(_)).then_some(())
+        })
+        .await;
+        model.rebuild_name_keys(&client.state());
+        model.sync_channels(&client.state());
+        assert_eq!(counts(&model), (1, 1));
     }
 
     #[test]

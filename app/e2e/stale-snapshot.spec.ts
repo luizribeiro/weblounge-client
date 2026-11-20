@@ -513,6 +513,35 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("drops a vanished cached channel's mention from the tab count", async ({
+    baseURL,
+    page,
+    irc,
+  }) => {
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const gone = irc.channelNamed("left-elsewhere");
+    await page.goto("/config.json");
+    await writeChatListSnapshot(page, baseURL, 6, [
+      {
+        conversation: { kind: "channel", key: gone },
+        title: gone,
+        last_activity_ms: 1_800_000_000_000,
+        stubs: mentionStubs(gone, 1),
+        preview: `cached ${gone}`,
+      },
+    ]);
+    await irc.forwarder.drop();
+    await page.goto(irc.url());
+    await expect(bufferRow(page, gone)).toBeVisible();
+    await expect(page).toHaveTitle("(1) weblounge");
+
+    await irc.forwarder.restore();
+    await expect(bufferRow(page, irc.channel)).toBeVisible();
+    await expect(bufferRow(page, gone)).toBeHidden();
+    await expect(page).toHaveTitle("weblounge");
+  });
+
   test("keeps a remotely read DM clear across an immediate reload", async ({
     page,
     irc,

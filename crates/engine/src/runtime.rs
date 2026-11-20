@@ -10906,11 +10906,8 @@ async fn delay(duration: Duration) {
             assert!(running.pending_reads.is_empty());
             assert_eq!(running.model.pending_read_time(unavailable_id), None);
             assert!(matches!(
-                running.model.buffers_event(),
-                EngineToUi::BuffersChanged { buffers, .. }
-                    if buffers.iter().any(|buffer|
-                        buffer.id == unavailable_id && buffer.unread > 0
-                    )
+                running.model.unread_fact_count(unavailable_id),
+                Some(count) if count > 0
             ));
         }
         tokio::task::yield_now().await;
