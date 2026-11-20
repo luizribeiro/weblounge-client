@@ -1,3 +1,5 @@
+import { emojiAliases } from "./emoji-aliases";
+
 export interface EmojiEntry {
   readonly emoji: string;
   readonly name: string;
@@ -24,7 +26,10 @@ function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
-function searchable(row: readonly string[]): SearchableEmoji {
+function searchable(
+  row: readonly string[],
+  aliases: ReadonlyMap<string, readonly string[]>,
+): SearchableEmoji {
   const [emoji = "", ...locales] = row;
   const names = locales.filter((_, index) => index % 2 === 0);
   const keywords = locales
@@ -33,13 +38,17 @@ function searchable(row: readonly string[]): SearchableEmoji {
   return {
     emoji,
     name: names[0] ?? emoji,
-    names: names.map(fold),
+    names: [...names, ...(aliases.get(emoji) ?? [])].map(fold),
     keywords: keywords.map(fold),
   };
 }
 
 export function buildEmojiIndex(annotations: EmojiAnnotations): EmojiIndex {
-  const entries = annotations.entries.map(searchable);
+  const aliases = new Map<string, string[]>();
+  for (const [alias, emoji] of Object.entries(emojiAliases)) {
+    aliases.set(emoji, [...(aliases.get(emoji) ?? []), alias]);
+  }
+  const entries = annotations.entries.map((row) => searchable(row, aliases));
   return {
     entries,
     byEmoji: new Map(entries.map((entry) => [entry.emoji, entry])),

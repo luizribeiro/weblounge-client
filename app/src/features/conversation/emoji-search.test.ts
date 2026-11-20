@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import annotations from "../../assets/emoji-annotations.json";
+import { emojiAliases } from "./emoji-aliases";
 import {
   buildEmojiIndex,
   loadEmojiIndex,
@@ -34,6 +35,13 @@ it.each([
 ])("lists the obvious %s emoji near the top", (query, emoji) => {
   expect(found(query).slice(0, 12)).toEqual(expect.arrayContaining(emoji));
 });
+
+it.each(Object.entries(emojiAliases))(
+  "ranks the alias %s first as %s",
+  (alias, emoji) => {
+    expect(found(alias)[0]).toBe(emoji);
+  },
+);
 
 it("ranks an exact name above a name prefix, then a keyword", () => {
   const results = found("fire");
