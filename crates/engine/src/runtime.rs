@@ -6577,6 +6577,7 @@ use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
 
 #[cfg(test)]
 mod tests {
+    mod direct_routing;
     mod gap_fill;
     mod history_integrity;
     mod mentions;
