@@ -3679,16 +3679,22 @@ fn command_candidates(
     model: &NetworkModel,
     state: &papo::State,
 ) -> Vec<CompletionCandidate> {
-    let mut specs = commands::registry()
+    let slash = commands::registry()
         .specs()
         .iter()
-        .filter(|spec| spec.surfaces.contains(&commands::CommandSurface::Slash))
+        .filter(|spec| spec.surfaces.contains(&commands::CommandSurface::Slash));
+    if slash
+        .clone()
+        .any(|spec| spec.name.eq_ignore_ascii_case(prefix))
+    {
+        return Vec::new();
+    }
+    let mut specs = slash
         .filter(|spec| {
             spec.name
                 .get(..prefix.len())
                 .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
         })
-        .filter(|spec| !spec.name.eq_ignore_ascii_case(prefix))
         .filter(|spec| command_requirements_met(spec, state))
         .collect::<Vec<_>>();
     specs.sort_by_key(|spec| {
@@ -9558,19 +9564,21 @@ async fn delay(duration: Duration) {
                     if name == "join")
         ));
 
-        let exact = runtime.request(EngineRequestEnvelope {
-            id: "complete-exact".into(),
-            request: EngineRequest::CompleteInput {
-                buffer_id: BufferId(1),
-                input: "/join".into(),
-                cursor: 5,
-                explicit: false,
-            },
-        });
-        assert!(matches!(
-            exact.first(),
-            Some(EngineToUi::CompletionResult { candidates, .. }) if candidates.is_empty()
-        ));
+        for typed in ["/join", "/kick"] {
+            let exact = runtime.request(EngineRequestEnvelope {
+                id: format!("complete-exact:{typed}"),
+                request: EngineRequest::CompleteInput {
+                    buffer_id: BufferId(1),
+                    input: typed.into(),
+                    cursor: utf16_len(typed),
+                    explicit: false,
+                },
+            });
+            assert!(
+                command_candidate_names(&exact).is_empty(),
+                "{typed} is complete, so Enter runs it instead of picking a longer command"
+            );
+        }
 
         let initial = runtime.request(EngineRequestEnvelope {
             id: "complete-all".into(),

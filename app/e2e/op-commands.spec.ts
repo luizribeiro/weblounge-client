@@ -195,6 +195,31 @@ test.describe("channel operator commands against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("each command without its nick asks for more information", async ({
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("op-usage");
+    const composer = await joinFirst(page, irc, channel);
+    for (const command of [
+      "/op",
+      "/deop",
+      "/voice",
+      "/devoice",
+      "/ban",
+      "/unban",
+      "/kick",
+      "/kickban",
+      "/invite",
+    ]) {
+      await submit(composer, command);
+      await expect(
+        composerNotice(page, "That command needs more information."),
+      ).toBeVisible();
+      await expect(composer).toHaveValue(command);
+    }
+  });
+
   test("a non-op gets a readable refusal", async ({ page, irc }) => {
     const channel = irc.channelNamed("op-peer");
     const operator = await irc.peer("chanop", [channel]);
