@@ -58,10 +58,11 @@ asked, and differ by colour; the row's accessible name says the state ("ana, onl
 Where it shows:
 
 - desktop sidebar DM rows, the phone drawer and the switcher (`BufferPrefix`), as before;
-- the phone chat list: a dot on the DM avatar's bottom-right corner, with a `--wl-color-panel`
-  ring to separate it from the avatar;
-- the DM header, desktop and phone: the mark and the state word ("Online", "Away", "Offline") as the
-  subtitle, like the prototype's "direct message · online"; unknown keeps today's subtitle.
+- the phone chat list: the mark on the DM avatar's bottom-right corner (a bot's robot too), on a
+  `--wl-color-surface` disc to separate it from the avatar; the row's label is unchanged;
+- the DM header, desktop and phone: the mark and "Direct message · online" (away, offline) as the
+  subtitle, like the prototype's "direct message · online"; unknown keeps today's header (nothing
+  on desktop, "Direct message" on the phone).
 
 The member list is unchanged: everyone in it shares the channel, so nobody is offline, and the
 prototype groups Online and Away with away rows muted.
