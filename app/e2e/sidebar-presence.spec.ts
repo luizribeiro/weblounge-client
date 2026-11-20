@@ -128,7 +128,10 @@ test.describe("sidebar presence against local Ergo", () => {
         `${peer.nickname}, 1 unread, including mentions, away`,
       );
       await expect(dot).toHaveAttribute("data-presence", "away");
-      await expect(dot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(dot).toHaveCSS(
+        "background-color",
+        await tokenColour(page, "--wl-color-panel-muted"),
+      );
       await expect(dot).toHaveCSS(
         "border-top-color",
         await tokenColour(page, "--wl-color-panel-muted"),
@@ -139,6 +142,11 @@ test.describe("sidebar presence against local Ergo", () => {
         `${peer.nickname}, 1 unread, including mentions, offline`,
       );
       await expect(dot).toHaveAttribute("data-presence", "offline");
+      await expect(dot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(dot).toHaveCSS(
+        "border-top-color",
+        await tokenColour(page, "--wl-color-panel-muted"),
+      );
       await nativeFeelAudit(page);
     } finally {
       peer.close();
@@ -203,6 +211,11 @@ test.describe("sidebar presence against local Ergo", () => {
         `${bot.nickname}, bot, 1 unread, including mentions, offline`,
       );
       await expect(robot).toHaveAttribute("data-presence", "offline");
+      await expect(robot).toHaveCSS(
+        "color",
+        await tokenColour(page, "--wl-color-panel-muted"),
+      );
+      await expect(robot).toHaveCSS("opacity", "0.5");
       await nativeFeelAudit(page);
     } finally {
       bot.close();

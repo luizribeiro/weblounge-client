@@ -2,31 +2,6 @@
   text-align: center;
 }
 
-.presence {
-  border: var(--wl-size-presence-ring) solid var(--wl-color-online);
-  border-radius: 50%;
-  display: inline-block;
-  height: var(--wl-size-presence-dot);
+.prefix > .mark {
   vertical-align: middle;
-  width: var(--wl-size-presence-dot);
-}
-
-.presence[data-presence="online"] {
-  background: var(--wl-color-online);
-}
-
-.presence[data-presence="away"] {
-  border-color: currentColor;
-}
-
-.prefix > .bot {
-  vertical-align: middle;
-}
-
-.prefix > .bot[data-presence="online"] {
-  color: var(--wl-color-online);
-}
-
-.prefix > .bot[data-presence="away"] {
-  opacity: 0.5;
 }

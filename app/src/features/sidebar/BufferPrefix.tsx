@@ -1,6 +1,6 @@
 import { type JSX, splitProps } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
-import { BotIcon } from "../../ui/BotIcon";
+import { PresenceMark } from "../../ui/PresenceMark";
 import styles from "./BufferPrefix.module.css";
 
 interface BufferPrefixProps
@@ -12,7 +12,6 @@ export function BufferPrefix(props: BufferPrefixProps) {
   const [own, rest] = splitProps(props, ["buffer", "class"]);
   const sign = () =>
     own.buffer.kind === "channel" ? own.buffer.title.slice(0, 1) : "";
-  const presence = () => own.buffer.peer_presence;
   return (
     <span
       {...rest}
@@ -20,21 +19,11 @@ export function BufferPrefix(props: BufferPrefixProps) {
       class={`${styles.prefix} ${own.class ?? ""}`}
     >
       {sign() !== "" && <span data-channel-sign="true">{sign()}</span>}
-      {own.buffer.peer_bot === true ? (
-        <BotIcon
-          class={styles.bot}
-          data-peer-bot="true"
-          data-presence={presence()}
-        />
-      ) : (
-        presence() !== undefined && (
-          <span
-            class={styles.presence}
-            data-presence={presence()}
-            data-presence-dot="true"
-          />
-        )
-      )}
+      <PresenceMark
+        bot={own.buffer.peer_bot === true}
+        class={styles.mark}
+        presence={own.buffer.peer_presence}
+      />
     </span>
   );
 }
