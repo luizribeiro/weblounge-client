@@ -163,6 +163,14 @@ function PaneConversation(props: DesktopPaneProps) {
           buffer().kind === "channel" ? (buffer().member_count ?? 0) : undefined
         }
         membersPressed={members.pressed()}
+        peer={
+          buffer().kind === "direct"
+            ? {
+                presence: buffer().peer_presence,
+                bot: buffer().peer_bot === true,
+              }
+            : undefined
+        }
         membersTooltip={props.membersTooltip}
         onToggleMembers={() => props.onToggleMembers()}
         onToggleSidebar={() => props.onToggleSidebar()}

@@ -1,14 +1,19 @@
 import type { JSX } from "solid-js";
 import type { BufferSyncPresentation } from "../../engine/buffer-sync";
+import type { PeerPresence } from "../../engine/protocol";
 import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import styles from "./ConversationHeader.module.css";
 import { ConversationTitle } from "./ConversationTitle";
+import { DirectPresence } from "./DirectPresence";
 
 interface ConversationHeaderProps {
   readonly title: string;
   readonly sync: () => BufferSyncPresentation;
   readonly topic?: string | undefined;
+  readonly peer?:
+    | { readonly presence: PeerPresence | undefined; readonly bot: boolean }
+    | undefined;
   readonly sidebarTooltip: string;
   readonly membersTooltip: string;
   readonly memberCount?: number | undefined;
@@ -44,6 +49,13 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         />
         {props.topic !== undefined && props.topic !== "" && (
           <Line class={styles.topic}>{props.topic}</Line>
+        )}
+        {props.peer?.presence !== undefined && (
+          <DirectPresence
+            bot={props.peer.bot}
+            class={styles.topic}
+            presence={props.peer.presence}
+          />
         )}
       </div>
       {props.memberCount !== undefined && (
