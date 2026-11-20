@@ -3,6 +3,7 @@ import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient, isolatedPassword, registerAccount } from "./irc-client";
 import { expect, test } from "./irc-fixture";
+import { waitForServiceWorkerControl } from "./service-worker-control";
 
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
 
@@ -660,13 +661,9 @@ test("drops legacy saved counts while keeping the restored list interactive", {
   });
   await page.goto("/");
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  await waitForServiceWorkerControl(page);
   await page.reload();
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null),
-    )
-    .toBe(true);
+  await waitForServiceWorkerControl(page);
   await seedChatListSnapshot(page, {
     schema: 2,
     fingerprint: fingerprint("Local Ergo", websocketEndpoint(baseURL)),

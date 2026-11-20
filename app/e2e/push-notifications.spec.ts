@@ -10,6 +10,7 @@ import {
 import { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { deliverPush, deliverPushes } from "./push-delivery";
+import { waitForServiceWorkerControl } from "./service-worker-control";
 import { deliverStablePushBatch } from "./stable-push-batch";
 import {
   notificationPromptDismissed,
@@ -38,19 +39,8 @@ test("leaves a fresh engine database for the engine to create", async ({
     await navigator.serviceWorker.register("/service-worker.js", {
       scope: "/",
     });
-    await navigator.serviceWorker.ready;
   });
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const registration = await navigator.serviceWorker.getRegistration("/");
-        return {
-          active: registration?.active?.state ?? null,
-          controller: navigator.serviceWorker.controller?.state ?? null,
-        };
-      }),
-    )
-    .toEqual({ active: "activated", controller: "activated" });
+  await waitForServiceWorkerControl(page);
   const envelope = await seedRouteAndEncrypt(
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=fresh-push :mel!m@example.test PRIVMSG #lounge :hello before engine storage",
@@ -91,17 +81,7 @@ async function prepareServiceWorker(
   );
   await context.grantPermissions(["notifications"]);
   await page.goto("/");
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const registration = await navigator.serviceWorker.ready;
-        return {
-          active: registration.active?.state ?? null,
-          controller: navigator.serviceWorker.controller?.state ?? null,
-        };
-      }),
-    )
-    .toEqual({ active: "activated", controller: "activated" });
+  await waitForServiceWorkerControl(page);
 }
 
 function capturePushErrors(context: BrowserContext): string[] {
@@ -763,6 +743,7 @@ test("reconciles a restored pushed direct message with history", async ({
   await page.goto(irc.url());
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expect.poll(() => snapshotRow(page, irc.channel)).toBeDefined();
+  await waitForServiceWorkerControl(page);
   const departed = bot.waitForNickDeparture(appAccount);
   await page.close();
   await departed;

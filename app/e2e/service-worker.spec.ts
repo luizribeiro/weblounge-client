@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { waitForServiceWorkerControl } from "./service-worker-control";
 
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
 
@@ -28,17 +29,12 @@ test("registers the app-shell worker only in production", async ({ page }) => {
       .toBe(0);
     return;
   }
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await waitForServiceWorkerControl(page);
   expect(
     await page.evaluate(() =>
       Reflect.get(globalThis, "serviceWorkerIdleCallbackRan"),
     ),
   ).toBe(true);
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null),
-    )
-    .toBe(true);
 });
 
 test("launches the shell and engine from cache with the origin offline", async ({
@@ -60,12 +56,7 @@ test("launches the shell and engine from cache with the origin offline", async (
     await expect(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
-    await expect.poll(() => activeWorkerState(page)).toBe("activated");
-    await expect
-      .poll(() =>
-        page.evaluate(() => navigator.serviceWorker.controller !== null),
-      )
-      .toBe(true);
+    await waitForServiceWorkerControl(page);
     expect(
       await page.evaluate(async () => {
         const requests = await Promise.all(
@@ -156,12 +147,7 @@ test("uses network HTML online and the cached shell offline", async ({
   const origin = await offlineBuildServer();
   try {
     await page.goto(origin.origin);
-    await expect.poll(() => activeWorkerState(page)).toBe("activated");
-    await expect
-      .poll(() =>
-        page.evaluate(() => navigator.serviceWorker.controller !== null),
-      )
-      .toBe(true);
+    await waitForServiceWorkerControl(page);
 
     await poisonCachedIndex(page);
     await page.reload();
@@ -197,12 +183,7 @@ test("upgrades the last deployed build and preserves its active push route", asy
     await expect(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
-    await expect.poll(() => activeWorkerState(page)).toBe("activated");
-    await expect
-      .poll(() =>
-        page.evaluate(() => navigator.serviceWorker.controller !== null),
-      )
-      .toBe(true);
+    await waitForServiceWorkerControl(page);
     expect(await page.evaluate(() => window.weblounge.version)).toContain(
       process.env.WEBLOUNGE_PREVIOUS_BUILD_SHA,
     );
@@ -279,12 +260,7 @@ test("a minimum hosted build navigates to the current build once", async ({
     await expect(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
-    await expect.poll(() => activeWorkerState(page)).toBe("activated");
-    await expect
-      .poll(() =>
-        page.evaluate(() => navigator.serviceWorker.controller !== null),
-      )
-      .toBe(true);
+    await waitForServiceWorkerControl(page);
     const currentVersion = await page.evaluate(() => window.weblounge.version);
     await poisonCachedIndex(page);
 
@@ -511,7 +487,7 @@ test("a hosted reset token clears the shell only once", async ({ context }) => {
     await expect(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
-    await expect.poll(() => activeWorkerState(page)).toBe("activated");
+    await waitForServiceWorkerControl(page);
     await page.evaluate(async () => {
       await caches.open("weblounge-emergency-reset-sentinel");
     });
@@ -571,7 +547,7 @@ test("activation removes obsolete app-shell caches", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await waitForServiceWorkerControl(page);
   await expect
     .poll(() =>
       page.evaluate(async () =>
@@ -594,12 +570,7 @@ test("does not intercept or cache API, OAuth, session, or WebSocket traffic", as
     "the service worker is intentionally disabled in development",
   );
   await page.goto("/");
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null),
-    )
-    .toBe(true);
+  await waitForServiceWorkerControl(page);
   const seen: string[] = [];
   for (const path of ["api/probe", "oauth/probe", "session-token"]) {
     await page.route(`**/${path}`, async (route) => {
@@ -650,13 +621,6 @@ test("does not intercept or cache API, OAuth, session, or WebSocket traffic", as
     ]),
   );
 });
-
-async function activeWorkerState(page: import("@playwright/test").Page) {
-  return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
-    return registration?.active?.state ?? null;
-  });
-}
 
 async function poisonCachedIndex(page: import("@playwright/test").Page) {
   await page.evaluate(async () => {
