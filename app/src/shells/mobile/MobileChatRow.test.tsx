@@ -122,6 +122,51 @@ it("sizes avatar text from density and colours direct initials by nick", () => {
   expect(avatar).toHaveStyle({ color: "var(--wl-nick-1)" });
 });
 
+it.each([
+  ["an online person", { peer_presence: "online" }, "[data-presence-dot]"],
+  ["an offline person", { peer_presence: "offline" }, "[data-presence-dot]"],
+  ["a bot", { peer_bot: true, peer_presence: "away" }, "[data-peer-bot]"],
+] as const)(
+  "marks %s's presence on the corner of the DM avatar",
+  (_, overrides, mark) => {
+    const { container } = render(() => (
+      <MobileChatRow
+        buffer={buffer({
+          kind: "direct",
+          title: "mel",
+          nick_color_index: 3,
+          ...overrides,
+        })}
+        onOpen={vi.fn()}
+        onPressStart={() => {}}
+        previews={true}
+      />
+    ));
+
+    const avatar = container.querySelector("[data-nick-color-index='3']");
+    expect(avatar).toHaveTextContent("M");
+    expect(
+      avatar?.querySelector(`[data-mobile-presence] ${mark}`),
+    ).toHaveAttribute("data-presence", overrides.peer_presence);
+  },
+);
+
+it.each([
+  ["a person of unknown presence", buffer({ kind: "direct", title: "mel" })],
+  ["a channel", buffer()],
+])("puts no presence mark on %s", (_, row) => {
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={row}
+      onOpen={vi.fn()}
+      onPressStart={() => {}}
+      previews={true}
+    />
+  ));
+
+  expect(container.querySelector("[data-mobile-presence]")).toBeNull();
+});
+
 it("uses the same locale time in chat previews and message rows", () => {
   const { container } = render(() => (
     <>
