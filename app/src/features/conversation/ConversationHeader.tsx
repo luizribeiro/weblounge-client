@@ -50,13 +50,11 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         {props.topic !== undefined && props.topic !== "" && (
           <Line class={styles.topic}>{props.topic}</Line>
         )}
-        {props.peer?.presence !== undefined && (
-          <DirectPresence
-            bot={props.peer.bot}
-            class={styles.topic}
-            presence={props.peer.presence}
-          />
-        )}
+        <DirectPresence
+          bot={props.peer?.bot === true}
+          class={styles.topic}
+          presence={props.peer?.presence}
+        />
       </div>
       {props.memberCount !== undefined && (
         <button

@@ -19,6 +19,19 @@ describe("DirectPresence", () => {
     },
   );
 
+  it("shows its fallback while the peer's presence is unknown", () => {
+    const { container } = render(() => (
+      <DirectPresence
+        bot={false}
+        fallback={<span>Direct message</span>}
+        presence={undefined}
+      />
+    ));
+
+    expect(container).toHaveTextContent("Direct message");
+    expect(container.querySelector("[data-direct-presence]")).toBeNull();
+  });
+
   it("marks a bot with its robot", () => {
     const { container } = render(() => (
       <DirectPresence bot presence="offline" />
