@@ -1721,8 +1721,15 @@ impl NetworkModel {
             else {
                 continue;
             };
-            let direct = self.casemapping.nick(message.target.clone())
-                == self.casemapping.nick(message.nickname);
+            let direct = state.name_rules().map_or_else(
+                || !state.isupport().is_channel(&message.target),
+                |rules| {
+                    !matches!(
+                        rules.target(&message.target),
+                        Ok((_, papo::Conversation::Channel(_)))
+                    )
+                },
+            );
             let (conversation, direct_key, availability) = if direct {
                 let nick = state.name_rules().map_or_else(
                     || self.casemapping.nick(message.sender.clone()),
@@ -6704,6 +6711,33 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(timeline(&model), ["arrived while closed"]);
+    }
+
+    #[test]
+    fn pushed_direct_to_a_nick_other_than_the_routes_opens_the_sender_direct() {
+        let (mut model, state) = model(10);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "luiz_",
+            "sender": "iris",
+            "target": "luiz",
+            "msgid": "pushed-direct",
+            "time": "2026-11-19T12:00:00.000Z",
+            "text": "hi",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+
+        model.restore_pushed_messages(vec![pushed], &state);
+
+        let conversations: Vec<_> = model
+            .buffers
+            .values()
+            .filter(|buffer| buffer.projection.kind != BufferKind::Server)
+            .map(|buffer| (buffer.projection.kind, buffer.projection.title.as_str()))
+            .collect();
+        assert_eq!(conversations, [(BufferKind::Direct, "iris")]);
     }
 
     #[tokio::test]

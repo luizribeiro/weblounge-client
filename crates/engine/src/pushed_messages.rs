@@ -12,7 +12,6 @@ const MAX_MESSAGES: u32 = 500;
 pub struct PushedMessage {
     schema: u32,
     pub(crate) network_label: String,
-    pub(crate) nickname: String,
     pub(crate) sender: String,
     #[serde(default)]
     pub(crate) account: Option<String>,
