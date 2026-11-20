@@ -7,6 +7,7 @@ import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { longPressMilliseconds } from "../../ui/long-press";
+import { PresenceMark } from "../../ui/PresenceMark";
 import {
   type PointerSample,
   recentPointerSamples,
@@ -251,6 +252,16 @@ export function MobileChatRow(props: MobileChatRowProps) {
           {props.buffer.kind === "channel"
             ? "#"
             : props.buffer.title.slice(0, 1).toUpperCase()}
+          {props.buffer.kind === "direct" &&
+            (props.buffer.peer_bot === true ||
+              props.buffer.peer_presence !== undefined) && (
+              <span class={styles.presence} data-mobile-presence="true">
+                <PresenceMark
+                  bot={props.buffer.peer_bot === true}
+                  presence={props.buffer.peer_presence}
+                />
+              </span>
+            )}
         </span>
         <span class={styles.content}>
           <span class={styles.heading}>

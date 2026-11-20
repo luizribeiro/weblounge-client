@@ -76,6 +76,17 @@
   height: var(--wl-density-mobile-avatar);
   justify-content: center;
   line-height: 1;
+  position: relative;
+}
+
+.presence {
+  background: var(--wl-color-surface);
+  border-radius: 50%;
+  bottom: calc(var(--wl-size-presence-ring) * -2);
+  display: flex;
+  padding: calc(var(--wl-size-presence-ring) * 2);
+  position: absolute;
+  right: calc(var(--wl-size-presence-ring) * -2);
 }
 
 .content {
