@@ -47,7 +47,10 @@ pub(crate) fn parse_mode_string(
         .iter()
         .filter(|change| change.argument.is_some())
         .count();
-    if changes.is_empty() || consumed < arguments.len() {
+    if changes.is_empty() {
+        return Err(EngineMessageKey::ComposerMissingArgument);
+    }
+    if consumed < arguments.len() {
         return Err(EngineMessageKey::ComposerUnexpectedArgument);
     }
     Ok(changes)
@@ -119,6 +122,21 @@ mod tests {
             Ok(vec![change(false, 'l', None), change(false, 'k', None)])
         );
         assert_eq!(
+            parse_mode_string(&isupport, "+k-k sekrit old"),
+            Ok(vec![
+                change(true, 'k', Some("sekrit")),
+                change(false, 'k', Some("old"))
+            ])
+        );
+        assert_eq!(
+            parse_mode_string(&isupport, "+ov-l mel iris"),
+            Ok(vec![
+                change(true, 'o', Some("mel")),
+                change(true, 'v', Some("iris")),
+                change(false, 'l', None),
+            ])
+        );
+        assert_eq!(
             parse_mode_string(&isupport, "+b *!*@spam.example"),
             Ok(vec![change(true, 'b', Some("*!*@spam.example"))])
         );
@@ -132,7 +150,8 @@ mod tests {
             ("+o", EngineMessageKey::ComposerMissingArgument),
             ("+k", EngineMessageKey::ComposerMissingArgument),
             ("+m extra", EngineMessageKey::ComposerUnexpectedArgument),
-            ("+", EngineMessageKey::ComposerUnexpectedArgument),
+            ("+", EngineMessageKey::ComposerMissingArgument),
+            ("+b", EngineMessageKey::ComposerMissingArgument),
         ] {
             assert_eq!(parse_mode_string(&isupport, input), Err(refusal), "{input}");
         }
