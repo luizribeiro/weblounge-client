@@ -144,6 +144,7 @@ export const messages = {
   "typing.are_typing": "are typing…",
   "typing.is_typing": "is typing…",
   "typing.several": "several people are typing…",
+  "conversation.direct_presence": "Direct message · {presence}",
   "conversation.open_direct": "Open direct message with {nick}",
   "conversation.toggle_members": "Toggle member list",
   "conversation.toggle_sidebar": "Toggle channel list",
