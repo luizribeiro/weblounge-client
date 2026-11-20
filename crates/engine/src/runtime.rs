@@ -2221,6 +2221,7 @@ impl Runtime {
             None,
             Some(nick.clone()),
             |channel, client| async move {
+                require_member(&client, &channel, &nick)?;
                 let mask = crate::ban_mask::ban_mask(&client.state(), &nick);
                 let request = with_channel!(&channel, name => client.kickban(name));
                 let outcome = request
@@ -10279,6 +10280,17 @@ async fn delay(duration: Duration) {
             EngineToUi::CommandResult {
                 id: "/ub mel".into()
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn kickban_refuses_someone_who_is_not_in_the_channel_before_banning() {
+        let (runtime, mut receiver, _wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
+        submit(&runtime, buffer_id, "/kb iris");
+        assert_eq!(
+            rejection_key_and_nick(next_output(&mut receiver).await),
+            (EngineMessageKey::NickNotInChannel, Some("iris".into()))
         );
     }
 
