@@ -116,7 +116,7 @@ test.describe("DM and member presence against local Ergo", () => {
     await expectSettled(page, { conversation: irc.channel });
   });
 
-  test("shows a peer who shares no channel only once its away state is reported after a relaunch, without opening its DM", async ({
+  test("shows a peer who shares no channel away after a relaunch until its away state is reported, then offline once it quits", async ({
     page,
     irc,
   }) => {
@@ -132,17 +132,22 @@ test.describe("DM and member presence against local Ergo", () => {
 
     await page.goto(irc.url());
     await expectSettled(page, { conversation: irc.channel });
-    await expect(presenceOf(page, unshared.nickname)).toHaveCount(0);
-
-    await unshared.setAway("lunch");
     await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
       "data-presence",
       "away",
     );
+
+    await unshared.setAway("lunch");
     await unshared.setAway(undefined);
     await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
       "data-presence",
       "online",
+    );
+    unshared.close();
+    await unshared.waitForDisconnect();
+    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+      "data-presence",
+      "offline",
     );
     await nativeFeelAudit(page);
   });

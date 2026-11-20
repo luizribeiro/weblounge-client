@@ -209,6 +209,7 @@ describe("SidebarRow", () => {
   it.each([
     ["online", "alice, 4 unread, including mentions, online"],
     ["away", "alice, 4 unread, including mentions, away"],
+    ["offline", "alice, 4 unread, including mentions, offline"],
   ] as const)(
     "marks a direct peer reported %s on its leading column",
     (presence, label) => {
@@ -255,6 +256,7 @@ describe("SidebarRow", () => {
   it.each([
     ["online", "online", "concierge, bot, online"],
     ["away", "away", "concierge, bot, away"],
+    ["offline", "offline", "concierge, bot, offline"],
     ["unknown", undefined, "concierge, bot"],
   ] as const)(
     "marks a bot peer whose presence is %s with the robot instead of a dot",

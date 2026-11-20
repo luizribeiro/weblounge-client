@@ -136,9 +136,9 @@ test.describe("sidebar presence against local Ergo", () => {
       peer.close();
       await peer.waitForDisconnect();
       await expect(row).toHaveAccessibleName(
-        `${peer.nickname}, 1 unread, including mentions`,
+        `${peer.nickname}, 1 unread, including mentions, offline`,
       );
-      await expect(dot).toHaveCount(0);
+      await expect(dot).toHaveAttribute("data-presence", "offline");
       await nativeFeelAudit(page);
     } finally {
       peer.close();
@@ -200,10 +200,9 @@ test.describe("sidebar presence against local Ergo", () => {
       bot.close();
       await bot.waitForDisconnect();
       await expect(botRow).toHaveAccessibleName(
-        `${bot.nickname}, bot, 1 unread, including mentions`,
+        `${bot.nickname}, bot, 1 unread, including mentions, offline`,
       );
-      await expect(robot).not.toHaveAttribute("data-presence");
-      await expect(robot).toHaveCSS("opacity", "1");
+      await expect(robot).toHaveAttribute("data-presence", "offline");
       await nativeFeelAudit(page);
     } finally {
       bot.close();
@@ -233,10 +232,10 @@ test.describe("sidebar presence against local Ergo", () => {
       await page.reload();
       await expectSettled(page, { conversation: irc.channel });
 
-      const row = await directRow(page, name);
+      const row = await directRow(page, `${name}, away`);
       const robot = row.locator("[data-sidebar-prefix] [data-peer-bot]");
       await expect(robot).toBeVisible();
-      await expect(robot).not.toHaveAttribute("data-presence");
+      await expect(robot).toHaveAttribute("data-presence", "away");
       await nativeFeelAudit(page);
     } finally {
       bot.close();

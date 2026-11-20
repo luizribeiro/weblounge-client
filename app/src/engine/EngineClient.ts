@@ -1171,7 +1171,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ) ||
     !(
       value.peer_presence === undefined ||
-      isOneOf(value.peer_presence, ["online", "away"])
+      isOneOf(value.peer_presence, ["online", "away", "offline"])
     ) ||
     !(value.peer_bot === undefined || typeof value.peer_bot === "boolean") ||
     !(value.topic === null || typeof value.topic === "string") ||
