@@ -100,6 +100,7 @@
 }
 .panel[data-presentation="mobile"] {
   border-top: 1px solid var(--wl-color-border);
+  min-height: 0;
   padding-top: 10px;
 }
 .panel[data-presentation="mobile"] .search {
@@ -108,6 +109,7 @@
 }
 .panel[data-presentation="mobile"] .groups {
   height: min(440px, 52dvh);
+  min-height: 0;
 }
 .panel[data-presentation="mobile"] .groupName {
   font-size: 12px;

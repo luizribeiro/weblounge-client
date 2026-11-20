@@ -19,9 +19,18 @@
     min(14px, var(--wl-radius-round)) 0 0;
   bottom: 0;
   box-shadow: var(--wl-effect-overlay-shadow);
+  box-sizing: border-box;
   color: var(--wl-color-fg);
+  display: flex;
+  flex-direction: column;
   left: var(--wl-safe-left);
-  padding: 8px 16px calc(18px + var(--wl-safe-bottom));
+  max-height: 100%;
+  padding: 8px 16px calc(18px + var(--wl-safe-bottom-effective));
   position: absolute;
   right: var(--wl-safe-right);
+}
+
+.panel[data-keyboard-owner] {
+  bottom: var(--wl-keyboard-inset);
+  max-height: calc(100% - var(--wl-keyboard-inset));
 }

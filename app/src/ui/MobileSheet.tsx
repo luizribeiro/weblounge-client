@@ -59,6 +59,7 @@ export function MobileSheet(props: MobileSheetProps) {
         aria-label={props.label}
         aria-modal="true"
         class={styles.panel}
+        data-keyboard-surface="true"
         onKeyDown={(event) => trapTab(event, panel)}
         ref={panel}
         role="dialog"

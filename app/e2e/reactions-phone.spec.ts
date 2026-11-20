@@ -1,8 +1,9 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { copiedText, prepareClipboard } from "./clipboard";
 import { messageId } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { longPressMessage } from "./message-sheet";
+import { emulateSafeArea } from "./mobile-platform";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
@@ -12,6 +13,11 @@ import { productionMessageRow } from "./production-ergo";
 import { expectConfirmedOwn } from "./reaction-chip";
 import { expectSettled } from "./settled";
 import { isChromium, tap, touchDown } from "./touch";
+import {
+  fieldKeyboardOverlap,
+  installVisualViewportHook,
+  setVisualViewport,
+} from "./visual-viewport";
 
 test("toggles your reaction from a phone chip through sending, confirmation and reload", async ({
   page,
@@ -127,6 +133,58 @@ test("picks any emoji from the phone sheet's searchable picker", async ({
   await nativeFeelAudit(page);
 });
 
+test("keeps the phone picker's search and header above the keyboard", async ({
+  page,
+  irc,
+}) => {
+  await installNativeFeelInstrumentation(page);
+  await installVisualViewportHook(page);
+  await emulateSafeArea(page, { top: 62, bottom: 34 });
+  const text = "search for a rocket with the keyboard up";
+  const bot = await irc.peer("keyboard");
+  await openChat(page, irc);
+  await bot.privmsgConfirmed(irc.channel, text);
+  const row = productionMessageRow(page, text);
+  const root = page.locator("#root");
+
+  const sheet = await longPressMessage(page, row, bot.nickname);
+  await tap(page, sheet.getByRole("button", { name: "Add reaction" }));
+  const search = sheet.getByPlaceholder("Search emoji");
+  await tap(page, search);
+  await expect(search).toBeFocused();
+  const layoutHeight = await page.evaluate(() => innerHeight);
+  await setVisualViewport(page, layoutHeight - 358, 336);
+  await expect(root).toHaveAttribute("data-keyboard", "open");
+
+  await expect
+    .poll(() => sheetAboveKeyboard(sheet))
+    .toEqual({
+      documentScroll: 0,
+      searchVisible: true,
+      sheetBottomGap: 0,
+      sheetTopVisible: true,
+    });
+  await expect(sheet).toHaveCSS("padding-bottom", "18px");
+
+  await search.fill("rocket");
+  const rocket = sheet.getByRole("button", { name: "rocket ship" });
+  await expect(rocket).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "thumbs up" })).toHaveCount(0);
+  await expect.poll(() => fieldKeyboardOverlap(rocket)).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => sheetAboveKeyboard(sheet))
+    .toEqual({
+      documentScroll: 0,
+      searchVisible: true,
+      sheetBottomGap: 0,
+      sheetTopVisible: true,
+    });
+
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await nativeFeelAudit(page);
+});
+
 test("copies a message's text from the phone sheet and closes from the scrim", async ({
   context,
   page,
@@ -233,4 +291,36 @@ async function openChat(page: Page, irc: IrcTestAccount): Promise<void> {
   await page.goto(irc.url({ path: `/Local%20Ergo/${irc.channel.slice(1)}` }));
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expectSettled(page, { conversation: irc.channel });
+}
+
+interface SheetKeyboardLayout {
+  readonly documentScroll: number;
+  readonly searchVisible: boolean;
+  readonly sheetBottomGap: number;
+  readonly sheetTopVisible: boolean;
+}
+
+async function sheetAboveKeyboard(
+  sheet: Locator,
+): Promise<SheetKeyboardLayout> {
+  return sheet.evaluate((panel) => {
+    const viewport = window.visualViewport;
+    const search = panel.querySelector("input[type='search']");
+    if (viewport === null || search === null)
+      throw new Error("visual viewport or emoji search is missing");
+    const visibleTop =
+      viewport.offsetTop +
+      Number.parseFloat(
+        getComputedStyle(panel).getPropertyValue("--wl-safe-top"),
+      );
+    const keyboardTop = viewport.offsetTop + viewport.height;
+    const rect = panel.getBoundingClientRect();
+    const field = search.getBoundingClientRect();
+    return {
+      documentScroll: window.scrollY + viewport.offsetTop,
+      searchVisible: field.top >= visibleTop && field.bottom <= keyboardTop,
+      sheetBottomGap: Math.round(Math.abs(rect.bottom - keyboardTop)),
+      sheetTopVisible: rect.top >= visibleTop,
+    };
+  });
 }

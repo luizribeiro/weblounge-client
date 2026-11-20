@@ -40,6 +40,7 @@ it("keeps a sheet's search field inside its Tab cycle", async () => {
   await Promise.resolve();
   const dialog = screen.getByRole("dialog", { name: "Message actions" });
   const search = screen.getByRole("searchbox", { name: "Search emoji" });
+  expect(dialog).toHaveAttribute("data-keyboard-surface", "true");
   search.focus();
 
   fireEvent.keyDown(dialog, { key: "Tab" });
