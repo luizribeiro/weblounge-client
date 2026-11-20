@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use papo_proto::Casemapping;
+use papo_proto::{Isupport, Prefix};
 use serde::Serialize;
 
 use crate::{ChatPayload, PushEvent};
@@ -144,7 +144,7 @@ fn chat_notification(
     kind: PushedMessageKind,
     route: &RouteMeta,
 ) -> PreparedNotification {
-    let direct = same_irc_name(&chat.target, &route.nickname);
+    let direct = !is_channel_target(&chat.target);
     let buffer = if direct { &chat.sender } else { &chat.target };
     let tag = conversation_tag(&route.network_label, buffer);
     let path = buffer_path(&route.network_label, buffer, direct);
@@ -212,9 +212,11 @@ fn buffer_path(network_label: &str, buffer: &str, direct: bool) -> String {
     }
 }
 
-// Push homes don't tell the device which casemapping they use, so this uses IRC's default.
-fn same_irc_name(first: &str, second: &str) -> bool {
-    Casemapping::Rfc1459.fold(first) == Casemapping::Rfc1459.fold(second)
+// Push homes don't send their ISUPPORT, so channel and status prefixes are IRC's defaults.
+fn is_channel_target(target: &str) -> bool {
+    let isupport = Isupport::default();
+    let statuses: Vec<char> = isupport.prefix().into_iter().map(Prefix::symbol).collect();
+    isupport.is_channel(target.trim_start_matches(statuses.as_slice()))
 }
 
 fn encode_uri_component(value: &str) -> String {

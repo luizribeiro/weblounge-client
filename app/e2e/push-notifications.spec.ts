@@ -11,6 +11,7 @@ import { IrcClient } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { deliverPush, deliverPushes } from "./push-delivery";
 import { waitForServiceWorkerControl } from "./service-worker-control";
+import { escapeRegex } from "./sidebar-rows";
 import { deliverStablePushBatch } from "./stable-push-batch";
 import {
   notificationPromptDismissed,
@@ -705,6 +706,54 @@ test("shows a cold pushed notice before IRC and deduplicates its history copy", 
   await expect(notice).toHaveCount(1);
 });
 
+test("files a pushed DM under its sender when the route kept an older nick", async ({
+  context,
+  page,
+  irc,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await prepareServiceWorker(context, page);
+  await irc.self();
+  const peer = await irc.peer("push-stale-nick");
+  const text = `pushed to my current nick ${irc.id}`;
+  const line = await peer.privmsgConfirmed(irc.account, text);
+  const envelope = await seedRouteAndEncrypt(page, line, {
+    networkLabel: "Local Ergo",
+    nickname: `${irc.account}_old`,
+  });
+  await deliverPush(context, page, envelope);
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([
+      {
+        title: peer.nickname,
+        body: text,
+        tag: `Local Ergo/${peer.nickname.toLowerCase()}`,
+        route: `/Local%20Ergo/@${peer.nickname}`,
+      },
+    ]);
+
+  await page.close();
+  await context.setOffline(true);
+  const coldPage = await context.newPage();
+  await coldPage.goto(irc.url({ path: `/Local%20Ergo/@${peer.nickname}` }));
+
+  await expect(
+    coldPage.locator("[data-message-row]", { hasText: text }),
+  ).toBeVisible();
+  await expect(sidebarRow(coldPage, peer.nickname)).toBeVisible();
+  await expect(sidebarRow(coldPage, irc.account)).toHaveCount(0);
+});
+
 test("reconciles a restored pushed direct message with history", async ({
   context,
   page,
@@ -823,6 +872,12 @@ test("reconciles a restored pushed direct message with history", async ({
   // The plaintext fixture turns the provisional row into an unverified authoritative row.
   await expect(row).toHaveAttribute("data-unverified-sender", "true");
 });
+
+function sidebarRow(page: Page, title: string) {
+  return page.getByRole("button", {
+    name: new RegExp(`^${escapeRegex(title)}(?:,|$)`, "u"),
+  });
+}
 
 async function notificationTimestamps(page: Page): Promise<number[]> {
   return page.evaluate(async () => {

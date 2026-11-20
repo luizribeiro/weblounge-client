@@ -115,32 +115,34 @@ fn keeps_the_pushed_message_in_the_engine_cache_record_shape() {
 }
 
 #[test]
-fn matches_the_own_nick_under_rfc1459_casemapping() {
+fn routes_by_channel_prefix_whatever_nick_the_route_recorded() {
     let route = RouteMeta {
         network_label: "Lounge".into(),
-        nickname: "luiz[away]~".into(),
+        nickname: "luiz_".into(),
     };
     let cases = [
-        ("LUIZ{AWAY}^", true),
-        ("Luiz[Away]~", true),
-        ("lúiz[away]~", false),
-        ("luiz[away]~_", false),
+        ("luiz", "mel", "/Lounge/@mel"),
+        ("[away]luiz", "mel", "/Lounge/@mel"),
+        ("#luiz", "mel in #luiz", "/Lounge/luiz"),
+        ("&local", "mel in &local", "/Lounge/%26local"),
+        ("@#luiz", "mel in @#luiz", "/Lounge/%40%23luiz"),
     ];
 
-    for (target, direct) in cases {
+    for (target, title, path) in cases {
         let line =
             format!("@time={TIME};msgid=dm :mel!m@example.test PRIVMSG {target} :still there?");
-        let PreparedNotification::Visible(notification) =
-            notification_for(parse_push_payload(&line).expect("parses"), &route)
-        else {
-            panic!("expected a visible notification");
+        let notification = notification_for(parse_push_payload(&line).expect("parses"), &route);
+        let PreparedNotification::Visible(notification) = notification else {
+            panic!("expected a visible notification, got {notification:?}");
         };
-        let expected = if direct {
-            "mel".to_owned()
-        } else {
-            format!("mel in {target}")
-        };
-        assert_eq!(notification.title, expected, "{target}");
+        assert_eq!(
+            (
+                notification.title.as_str(),
+                notification.user_info.route.as_str()
+            ),
+            (title, path),
+            "{target}"
+        );
     }
 }
 
