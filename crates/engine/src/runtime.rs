@@ -2278,6 +2278,9 @@ impl Runtime {
             None,
             |channel, client| async move {
                 let target = channel.label();
+                if client.state().channel(target.as_str()).is_none() {
+                    return Err(ChannelFailure::Refused(papo::Refusal::NotOnChannel));
+                }
                 let mut modes = cached_channel_modes(&client, &target);
                 if modes.is_none() {
                     // TODO(papo-0.1): papo has no typed channel-mode query; the PING after the
@@ -10412,7 +10415,12 @@ async fn delay(duration: Duration) {
             next_output(&mut receiver).await,
             EngineToUi::CommandResult { id: "/mode".into() }
         );
+    }
 
+    #[tokio::test]
+    async fn mode_refusals_explain_themselves() {
+        let (runtime, mut receiver, mut wire, buffer_id) =
+            joined_room_runtime_with(&["mel!m@mel.host"]).await;
         assert!(matches!(
             runtime
                 .request(EngineRequestEnvelope {
@@ -10428,6 +10436,18 @@ async fn delay(duration: Duration) {
                 ..
             }]
         ));
+        submit(&runtime, buffer_id, "/mode #elsewhere");
+        assert_eq!(
+            next_output(&mut receiver).await,
+            EngineToUi::CommandRejected {
+                id: "/mode #elsewhere".into(),
+                message_key: EngineMessageKey::NotInChannel,
+                values: Some(std::collections::BTreeMap::from([(
+                    "target".into(),
+                    "#elsewhere".into()
+                )])),
+            }
+        );
         submit(&runtime, buffer_id, "/mode -q mel");
         assert_eq!(
             rejection_key_and_nick(next_output(&mut receiver).await),
@@ -10439,7 +10459,7 @@ async fn delay(duration: Duration) {
             &mut wire,
             buffer_id,
             "/mode +s",
-            &["MODE #room +s", "PING papo-mode-4"],
+            &["MODE #room +s", "PING papo-mode-0"],
             "472 weblounge s :is an unknown mode char to me",
         )
         .await;
