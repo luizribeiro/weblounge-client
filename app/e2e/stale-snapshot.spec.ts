@@ -1127,6 +1127,50 @@ async function seedUnreadDirectSnapshot(
   schema = 6,
   gapUntil?: number,
 ): Promise<void> {
+  await writeChatListSnapshot(page, baseURL, schema, [
+    {
+      conversation: { kind: "direct", key: nick },
+      title: nick,
+      last_activity_ms: lastActivityMs,
+      stubs: mentionStubs(nick, count),
+      ...(gapUntil !== undefined
+        ? { gap_until: gapUntil }
+        : count > 100
+          ? { gap_until: 100 }
+          : {}),
+      preview,
+    },
+    ...backgroundDirects.map((backgroundNick, index) => ({
+      conversation: { kind: "direct", key: backgroundNick },
+      title: backgroundNick,
+      last_activity_ms: 1_799_999_999_999 - index,
+      stubs: [],
+      preview: `cached ${backgroundNick}`,
+    })),
+    ...channels.map((channel, index) => ({
+      conversation: { kind: "channel", key: channel },
+      title: channel,
+      last_activity_ms: 1_799_999_999_999 - backgroundDirects.length - index,
+      stubs: [],
+      preview: `cached ${channel}`,
+    })),
+  ]);
+}
+
+function mentionStubs(key: string, count: number): readonly unknown[] {
+  return Array.from({ length: Math.min(count, 100) }, (_, index) => ({
+    mention: true,
+    msgid: `cached-${key}-${index}`,
+    time: index + 1,
+  }));
+}
+
+async function writeChatListSnapshot(
+  page: Page,
+  baseURL: string,
+  schema: number,
+  rows: readonly unknown[],
+): Promise<void> {
   const endpoint = new URL("/socket", baseURL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
   const fingerprint = `${"Local Ergo".length}:Local Ergo${endpoint.href.length}:${endpoint.href}`;
@@ -1147,43 +1191,7 @@ async function seedUnreadDirectSnapshot(
           transaction.onabort = () => reject(transaction.error);
         });
       },
-      {
-        schema,
-        fingerprint,
-        rows: [
-          {
-            conversation: { kind: "direct", key: nick },
-            title: nick,
-            last_activity_ms: lastActivityMs,
-            stubs: Array.from({ length: Math.min(count, 100) }, (_, index) => ({
-              mention: true,
-              msgid: `cached-${nick}-${index}`,
-              time: index + 1,
-            })),
-            ...(gapUntil !== undefined
-              ? { gap_until: gapUntil }
-              : count > 100
-                ? { gap_until: 100 }
-                : {}),
-            preview,
-          },
-          ...backgroundDirects.map((backgroundNick, index) => ({
-            conversation: { kind: "direct", key: backgroundNick },
-            title: backgroundNick,
-            last_activity_ms: 1_799_999_999_999 - index,
-            stubs: [],
-            preview: `cached ${backgroundNick}`,
-          })),
-          ...channels.map((channel, index) => ({
-            conversation: { kind: "channel", key: channel },
-            title: channel,
-            last_activity_ms:
-              1_799_999_999_999 - backgroundDirects.length - index,
-            stubs: [],
-            preview: `cached ${channel}`,
-          })),
-        ],
-      },
+      { schema, fingerprint, rows },
     );
   } finally {
     await closeEngineDatabase(database);
