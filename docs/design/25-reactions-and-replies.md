@@ -67,6 +67,23 @@ bump (PLAN TD8) the engine treats `Ok` as the echo and records a local-time own 
 msgid, which history replaces on reload. Sending is offered only when reactions, echo-message and
 labeled-response are all negotiated, because only then does `Ok` mean the server echoed it.
 
+## Emoji search
+
+Browsing shows the hand-picked categories; search covers every fully-qualified emoji of Unicode
+Emoji 15.1 (newer ones may not render on the devices we support), without skin-tone variants.
+Names and keywords come from Unicode CLDR annotations and derived annotations in English and
+Portuguese, so "fogo" finds 🔥. `app/scripts/generate-emoji-annotations.mjs` downloads the pinned
+emoji-test.txt and CLDR JSON and writes a trimmed `app/src/assets/emoji-annotations.json`, vendored
+next to its Unicode licence; the build never touches the network. The picker loads that file as a
+lazy chunk when it first opens, and labels every emoji, browsed or found, with its English CLDR
+name. A short hand-curated alias list (`emoji-aliases.ts`) adds chat slang CLDR lacks or ranks
+too low, such as "ty" for 🙏 and "heart" for ❤️.
+
+Matching ignores case and diacritics and compares the whole query. Results form one list ranked
+by the best tier any of an emoji's names or keywords reaches: an exact name or alias, then a name
+prefix, then an exact keyword or keyword prefix, then a substring of a name or keyword; ties keep
+Unicode order.
+
 ## Testing
 
 - Pure engine tests cover add, remove, duplicate and out-of-order replay, history/live overlap,
