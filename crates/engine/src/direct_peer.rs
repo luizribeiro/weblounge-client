@@ -40,27 +40,48 @@ impl PeerEvidence {
         }
     }
 
-    /// Presence the network vouches for: the peer shares a channel with us or `MONITOR` reports it
-    /// online, and its away state has been reported. With always-on and auto-away a detached peer
-    /// stays connected, so a visible peer whose away state is unknown has no presence either.
+    /// Presence the network vouches for: a peer in a shared channel by its reported away state,
+    /// and a peer known only through `MONITOR` as online, away or offline.
     pub(crate) fn presence(&self, state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
-        let user = state.user(nick)?;
-        let visible = user.channels().len() != 0
-            || (!self.reported_offline.contains(nick)
-                && state
-                    .monitor_online()
-                    .any(|online| online.nick() == user.nick()));
-        if !visible {
-            return None;
+        let user = state.user(nick);
+        if let Some(user) = user.filter(|user| user.channels().len() != 0) {
+            return self.reported_away(user);
         }
+        if self.reported_offline.contains(nick) {
+            return Some(PeerPresence::Offline);
+        }
+        let user = user.filter(|user| {
+            state
+                .monitor_online()
+                .any(|online| online.nick() == user.nick())
+        })?;
+        Some(
+            self.reported_away(user)
+                .unwrap_or_else(|| unreported_monitor_presence(state)),
+        )
+    }
+
+    fn reported_away(&self, user: &papo::User) -> Option<PeerPresence> {
         match user.away() {
             papo::Away::Away { .. } => Some(PeerPresence::Away),
             papo::Away::Present => Some(PeerPresence::Online),
             _ => self
                 .heard_from
-                .contains(nick)
+                .contains(user.nick())
                 .then_some(PeerPresence::Online),
         }
+    }
+}
+
+/// A `MONITOR` online reply carries no away state, and with always-on and auto-away a detached
+/// peer stays connected. Where the server will report the peer's away changes, assume the worse
+/// until it does; where it never will, being connected is all we can show.
+fn unreported_monitor_presence(state: &papo::State) -> PeerPresence {
+    if state.supports(papo::Feature::ExtendedMonitor) && state.supports(papo::Feature::AwayTracking)
+    {
+        PeerPresence::Away
+    } else {
+        PeerPresence::Online
     }
 }
 
@@ -107,9 +128,15 @@ pub(crate) mod test_support {
 
     /// A registered client with `away-notify` and `extended-monitor` that monitors `alice`.
     pub(crate) async fn monitoring_alice() -> (papo::Client, papo::Events, Wire, papo::Nick) {
+        monitoring_alice_with(&["away-notify", "extended-monitor"]).await
+    }
+
+    pub(crate) async fn monitoring_alice_with(
+        caps: &[&str],
+    ) -> (papo::Client, papo::Events, Wire, papo::Nick) {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&["away-notify", "extended-monitor"]).await;
+        wire.register(caps).await;
         next(&mut events, |event| {
             matches!(event, papo::Event::Connected(_))
         })
@@ -144,7 +171,7 @@ pub(crate) mod test_support {
 mod tests {
     use papo_testing::Wire;
 
-    use super::test_support::{monitoring_alice, next};
+    use super::test_support::{monitoring_alice, monitoring_alice_with, next};
     use crate::{
         BufferId, BufferProjection, EngineToUi, NetworkId, PeerPresence,
         state::{DirectAvailability, NetworkModel},
@@ -162,6 +189,24 @@ mod tests {
         async fn monitored() -> Self {
             let (client, events, wire, nick) = monitoring_alice().await;
             Self::with_direct(client, events, wire, nick)
+        }
+
+        async fn monitored_without_away_reports() -> Self {
+            let (client, events, wire, nick) = monitoring_alice_with(&["away-notify"]).await;
+            Self::with_direct(client, events, wire, nick)
+        }
+
+        async fn report_connected(&mut self) {
+            self.server(
+                ":offline.test 730 weblounge :alice!~alice@cloak.example",
+                monitor_online,
+            )
+            .await;
+        }
+
+        async fn report_offline(&mut self) {
+            self.server(":offline.test 731 weblounge :alice", monitor_offline)
+                .await;
         }
 
         async fn sharing_a_channel(caps: &[&str]) -> Self {
@@ -207,11 +252,7 @@ mod tests {
         }
 
         async fn report_online(&mut self) {
-            self.server(
-                ":offline.test 730 weblounge :alice!~alice@cloak.example",
-                monitor_online,
-            )
-            .await;
+            self.report_connected().await;
             self.server(":alice!~alice@cloak.example AWAY", away_changed)
                 .await;
         }
@@ -359,15 +400,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_monitored_peer_has_no_presence_until_its_away_state_is_reported() {
+    async fn a_monitored_peer_shows_away_until_its_away_state_is_reported() {
         let mut peer = Peer::monitored().await;
 
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
-        assert_eq!(peer.sync(), []);
+        peer.report_connected().await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
 
         peer.server(":alice!~alice@cloak.example AWAY", away_changed)
             .await;
@@ -376,14 +413,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_monitored_peer_shows_online_where_the_server_never_reports_away_changes() {
+        let mut peer = Peer::monitored_without_away_reports().await;
+
+        peer.report_connected().await;
+
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+    }
+
+    #[tokio::test]
+    async fn a_peer_monitored_while_disconnected_is_offline_until_it_connects() {
+        let mut peer = Peer::monitored().await;
+
+        peer.report_offline().await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Offline))]);
+
+        peer.report_connected().await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
+    }
+
+    #[tokio::test]
     async fn a_line_from_a_monitored_peer_reports_it_online() {
         let mut peer = Peer::monitored().await;
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
-        assert_eq!(peer.sync(), []);
+        peer.report_connected().await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
 
         peer.server(
             "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
@@ -408,16 +461,11 @@ mod tests {
         .await;
         _ = peer.sync();
 
-        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
-            .await;
+        peer.report_offline().await;
         _ = peer.sync();
-        peer.server(
-            ":offline.test 730 weblounge :alice!~alice@cloak.example",
-            monitor_online,
-        )
-        .await;
+        peer.report_connected().await;
 
-        assert_eq!(peer.sync(), []);
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
     }
 
     #[tokio::test]
@@ -436,15 +484,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_peer_reported_offline_loses_its_presence_instead_of_showing_offline() {
+    async fn a_peer_reported_offline_shows_offline() {
         let mut peer = Peer::monitored().await;
         peer.report_online().await;
         _ = peer.sync();
 
-        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
-            .await;
+        peer.report_offline().await;
 
-        assert_eq!(peer.sync(), [(peer.alice, None)]);
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Offline))]);
     }
 
     #[tokio::test]
@@ -538,9 +585,8 @@ mod tests {
         peer.report_online().await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
 
-        peer.server(":offline.test 731 weblounge :alice", monitor_offline)
-            .await;
+        peer.report_offline().await;
 
-        assert_eq!(peer.sync(), [(peer.alice, None)]);
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Offline))]);
     }
 }

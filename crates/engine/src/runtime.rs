@@ -8179,13 +8179,16 @@ async fn delay(duration: Duration) {
         for (line, presence) in [
             (
                 ":offline.test 730 weblounge :alice!~alice@cloak.example",
-                vec![],
-            ),
-            (
-                ":alice!~alice@cloak.example AWAY :lunch",
                 vec![Some(crate::PeerPresence::Away)],
             ),
-            (":offline.test 731 weblounge :alice", vec![None]),
+            (
+                ":alice!~alice@cloak.example AWAY",
+                vec![Some(crate::PeerPresence::Online)],
+            ),
+            (
+                ":offline.test 731 weblounge :alice",
+                vec![Some(crate::PeerPresence::Offline)],
+            ),
         ] {
             wire.server(line).await;
             let event = next_matching(&mut events, crate::direct_peer::may_change).await;

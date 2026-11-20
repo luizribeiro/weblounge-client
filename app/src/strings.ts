@@ -465,6 +465,7 @@ export const messages = {
   "sidebar.row_presence_label": "{label}, {presence}",
   "sidebar.presence.online": "online",
   "sidebar.presence.away": "away",
+  "sidebar.presence.offline": "offline",
   "sidebar.unread": "{count} unread",
   "sidebar.unread_mentions": "{count} unread, including mentions",
   "palette.close": "Close command palette",

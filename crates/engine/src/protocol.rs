@@ -495,7 +495,7 @@ pub enum ChannelStatus {
     Kicked,
 }
 
-/// Presence the network reports for a direct-message peer through `MONITOR`.
+/// Presence the network reports for a direct-message peer through a shared channel or `MONITOR`.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum PeerPresence {
@@ -503,6 +503,8 @@ pub enum PeerPresence {
     Online,
     /// The peer is connected and marked away.
     Away,
+    /// `MONITOR` reports the peer disconnected.
+    Offline,
 }
 
 /// Why a direct-message row's sender could not be confirmed as the conversation's peer.
