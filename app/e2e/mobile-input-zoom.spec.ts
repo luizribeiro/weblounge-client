@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { emulateSafeArea, emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
+import { waitForServiceWorkerControl } from "./service-worker-control";
 import { waitForStableGeometry } from "./stable-geometry";
 import {
   expectTranscriptHitTarget,
@@ -819,17 +820,7 @@ async function openChannel(page: Page, irc: IrcTestAccount, query = "") {
 
 async function waitForProductionWorkerControl(page: Page): Promise<void> {
   if (process.env.WEBLOUNGE_E2E_DEV === "1") return;
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const registration = await navigator.serviceWorker.ready;
-        return {
-          active: registration.active?.state ?? null,
-          controller: navigator.serviceWorker.controller?.state ?? null,
-        };
-      }),
-    )
-    .toEqual({ active: "activated", controller: "activated" });
+  await waitForServiceWorkerControl(page);
 }
 
 interface KeyboardFrame {
