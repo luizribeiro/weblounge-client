@@ -108,7 +108,7 @@ test("picks any emoji from the phone sheet's searchable picker", async ({
   irc,
 }) => {
   await installNativeFeelInstrumentation(page);
-  const text = "something deserves a rocket";
+  const text = "isso está pegando fogo";
   const bot = await irc.peer("picker");
   await openChat(page, irc);
   const id = messageId(await bot.privmsgConfirmed(irc.channel, text));
@@ -120,11 +120,13 @@ test("picks any emoji from the phone sheet's searchable picker", async ({
   await expect(search).toBeVisible();
   await expect(search).toHaveCSS("font-size", "16px");
   await expect(sheet.getByRole("button", { name: "Copy text" })).toHaveCount(0);
-  await search.fill("rocket");
-  await tap(page, sheet.getByRole("button", { name: "rocket ship" }));
+  await search.fill("fogo");
+  const results = sheet.getByRole("region", { name: "Results" });
+  await expect(results.getByRole("button").first()).toHaveText("🔥");
+  await tap(page, results.getByRole("button", { name: "fire", exact: true }));
   await expect(sheet).toHaveCount(0);
-  await bot.waitForReaction(irc.channel, id, "🚀", irc.account);
-  await expectConfirmedOwn(row.locator('[data-reaction="🚀"]'), "1");
+  await bot.waitForReaction(irc.channel, id, "🔥", irc.account);
+  await expectConfirmedOwn(row.locator('[data-reaction="🔥"]'), "1");
 
   await longPressMessage(page, row, bot.nickname);
   await page.keyboard.press("Escape");
@@ -167,7 +169,7 @@ test("keeps the phone picker's search and header above the keyboard", async ({
   await expect(sheet).toHaveCSS("padding-bottom", "18px");
 
   await search.fill("rocket");
-  const rocket = sheet.getByRole("button", { name: "rocket ship" });
+  const rocket = sheet.getByRole("button", { name: "rocket", exact: true });
   await expect(rocket).toBeVisible();
   await expect(sheet.getByRole("button", { name: "thumbs up" })).toHaveCount(0);
   await expect.poll(() => fieldKeyboardOverlap(rocket)).toBeLessThanOrEqual(0);

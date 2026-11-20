@@ -72,7 +72,7 @@ it("offers the six quick reactions, outlining yours, and reacts with one tap", a
   expect(dismiss).toHaveBeenCalledOnce();
 });
 
-it("swaps the action list for the searchable picker and adds only new reactions", () => {
+it("swaps the action list for the searchable picker and adds only new reactions", async () => {
   const reacted: string[] = [];
   const { dialog, dismiss } = renderSheet((reaction) => reacted.push(reaction));
   const add = within(dialog).getByRole("button", { name: "Add reaction" });
@@ -85,18 +85,20 @@ it("swaps the action list for the searchable picker and adds only new reactions"
   fireEvent.input(within(dialog).getByPlaceholderText("Search emoji"), {
     target: { value: "rocket" },
   });
-  fireEvent.click(within(dialog).getByRole("button", { name: "rocket ship" }));
+  fireEvent.click(
+    await within(dialog).findByRole("button", { name: "rocket" }),
+  );
 
   expect(reacted).toEqual(["🚀"]);
   expect(dismiss).toHaveBeenCalledOnce();
 });
 
-it("closes without unreacting when the picker's choice is already yours", () => {
+it("closes without unreacting when the picker's choice is already yours", async () => {
   const reacted: string[] = [];
   const { dialog, dismiss } = renderSheet((reaction) => reacted.push(reaction));
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Add reaction" }));
-  fireEvent.click(within(dialog).getByRole("button", { name: "eyes looking" }));
+  fireEvent.click(await within(dialog).findByRole("button", { name: "eyes" }));
 
   expect(reacted).toEqual([]);
   expect(dismiss).toHaveBeenCalledOnce();

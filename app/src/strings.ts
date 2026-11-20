@@ -159,6 +159,9 @@ export const messages = {
   "reaction.picker_title": "React to {nick}",
   "reaction.search": "Search emoji",
   "reaction.no_match": "No emoji match “{query}”.",
+  "reaction.results": "Results",
+  "reaction.search_unavailable":
+    "Emoji search didn’t load. Type again to retry.",
   "reaction.failed_label": "Your {reaction} reaction failed. Click to retry",
   "reaction.failed_tooltip": "Couldn’t react. Click to retry",
   "direct_identity.cannot_verify": "Can't verify this is the same {nick}",

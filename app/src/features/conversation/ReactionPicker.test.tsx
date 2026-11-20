@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { afterEach, expect, it } from "vitest";
-import { searchEmoji } from "./emoji-catalog";
 import { ReactionPicker } from "./ReactionPicker";
 
 afterEach(() => {
@@ -26,16 +25,16 @@ function renderPicker(mine: ReadonlySet<string> = new Set()) {
   return { invoker, picked, closed: () => closed };
 }
 
-it("opens with focus in the search field and every category", () => {
+it("opens with focus in the search field and every category", async () => {
   renderPicker();
 
   const dialog = screen.getByRole("dialog", { name: "Add reaction" });
   expect(dialog).toHaveTextContent("React to alice");
   expect(screen.getByPlaceholderText("Search emoji")).toHaveFocus();
   expect(
-    screen
-      .getAllByRole("region")
-      .map((region) => region.getAttribute("aria-label")),
+    (await screen.findAllByRole("region")).map((region) =>
+      region.getAttribute("aria-label"),
+    ),
   ).toEqual([
     "Frequent",
     "Smileys",
@@ -47,34 +46,35 @@ it("opens with focus in the search field and every category", () => {
   ]);
 });
 
-it("filters by name and says when nothing matches", () => {
+it("lists matches by rank and says when nothing matches", async () => {
   renderPicker();
   const search = screen.getByPlaceholderText("Search emoji");
 
   fireEvent.input(search, { target: { value: "rocket" } });
+  const results = await screen.findByRole("region", { name: "Results" });
   expect(
-    within(screen.getByRole("dialog"))
+    within(results)
       .getAllByRole("button")
       .map((button) => button.textContent),
-  ).toEqual(["🚀"]);
+  ).toEqual(["🚀", "🧑‍🚀", "👨‍🚀", "👩‍🚀"]);
 
   fireEvent.input(search, { target: { value: "zebra-unicorn" } });
   expect(screen.getByText("No emoji match “zebra-unicorn”.")).toBeVisible();
 });
 
-it("picks a new emoji and returns focus to the add button", () => {
+it("picks a new emoji and returns focus to the add button", async () => {
   const { invoker, picked, closed } = renderPicker();
 
-  fireEvent.click(screen.getByRole("button", { name: "party tada" }));
+  fireEvent.click(await screen.findByRole("button", { name: "party popper" }));
 
   expect(picked).toEqual(["🎉"]);
   expect(closed()).toBe(1);
   expect(invoker).toHaveFocus();
 });
 
-it("does not remove a reaction you already gave when picked again", () => {
+it("does not remove a reaction you already gave when picked again", async () => {
   const { picked, closed } = renderPicker(new Set(["👍"]));
-  const thumbs = screen.getByRole("button", { name: "thumbs up +1" });
+  const thumbs = await screen.findByRole("button", { name: "thumbs up" });
 
   expect(thumbs).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(thumbs);
@@ -93,10 +93,4 @@ it("closes on Escape and on a click outside", () => {
   fireEvent.pointerDown(document.body);
 
   expect(closed()).toBe(2);
-});
-
-it("matches the quick reactions exactly", () => {
-  const frequent = searchEmoji("")[0]?.entries.map((entry) => entry.emoji);
-
-  expect(frequent?.slice(0, 3)).toEqual(["👍", "❤️", "😂"]);
 });

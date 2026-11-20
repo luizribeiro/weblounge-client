@@ -189,12 +189,14 @@ test("picks any emoji from the searchable picker", async ({ page, irc }) => {
   await expect(add).toBeFocused();
 
   await add.click();
-  await search.fill("rocket");
-  await expect(picker.getByRole("region")).toHaveCount(1);
-  await picker.getByRole("button", { name: "rocket ship" }).click();
+  await search.fill("fire");
+  const results = picker.getByRole("region");
+  await expect(results).toHaveAccessibleName("Results");
+  await expect(results.getByRole("button").first()).toHaveText("🔥");
+  await results.getByRole("button", { name: "fire", exact: true }).click();
   await expect(picker).toHaveCount(0);
-  await bot.waitForReaction(irc.channel, id, "🚀", irc.account);
-  await expect(row.locator('[data-reaction="🚀"]')).toHaveAttribute(
+  await bot.waitForReaction(irc.channel, id, "🔥", irc.account);
+  await expect(row.locator('[data-reaction="🔥"]')).toHaveAttribute(
     "data-reaction-own",
     "true",
   );

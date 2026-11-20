@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { t } from "../../strings";
-import { searchEmoji } from "./emoji-catalog";
+import { pickerGroups } from "./emoji-catalog";
+import { type EmojiIndex, loadEmojiIndex } from "./emoji-search";
 import styles from "./ReactionPicker.module.css";
 
 /** The searchable emoji categories, shared by the desktop popover and the phone sheet. */
@@ -12,14 +13,25 @@ export function ReactionPickerPanel(props: {
   readonly searchRef?: ((search: HTMLInputElement) => void) | undefined;
 }) {
   const [query, setQuery] = createSignal("");
-  const groups = createMemo(() => searchEmoji(query()));
+  const [index, setIndex] = createSignal<EmojiIndex>();
+  const [loadFailed, setLoadFailed] = createSignal(false);
+  const load = () => {
+    setLoadFailed(false);
+    loadEmojiIndex().then(setIndex, () => setLoadFailed(true));
+  };
+  load();
+  const groups = createMemo(() => pickerGroups(index(), query()));
+  const searching = () => query().trim() !== "";
   return (
     <div class={styles.panel} data-presentation={props.presentation}>
       <label class={styles.label}>
         {t("reaction.picker_title", { nick: props.nick })}
         <input
           class={styles.search}
-          onInput={(event) => setQuery(event.currentTarget.value)}
+          onInput={(event) => {
+            setQuery(event.currentTarget.value);
+            if (loadFailed()) load();
+          }}
           placeholder={t("reaction.search")}
           ref={(search) => props.searchRef?.(search)}
           type="search"
@@ -50,7 +62,12 @@ export function ReactionPickerPanel(props: {
             </section>
           )}
         </For>
-        <Show when={groups().length === 0}>
+        <Show when={searching() && loadFailed()}>
+          <p class={styles.empty}>{t("reaction.search_unavailable")}</p>
+        </Show>
+        <Show
+          when={searching() && index() !== undefined && groups().length === 0}
+        >
           <p class={styles.empty}>
             {t("reaction.no_match", { query: query().trim() })}
           </p>
