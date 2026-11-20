@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
-import { emulateStandalone } from "./mobile-platform";
+import { emulateSafeArea, emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
 import { waitForStableGeometry } from "./stable-geometry";
 import {
@@ -652,7 +652,7 @@ for (const layout of [
 
     test.beforeEach(async ({ page }) => {
       await emulateStandalone(page);
-      await emulateSafeTop(page, 62);
+      await emulateSafeArea(page, { top: 62 });
       await installVisualViewportHook(page);
     });
 
@@ -911,14 +911,6 @@ async function sampleSuggestionTap(
     .poll(() => page.evaluate(() => window.__suggestionTapFrames?.length ?? 0))
     .toBe(frameCount + 1);
   return page.evaluate(() => window.__suggestionTapFrames ?? []);
-}
-
-async function emulateSafeTop(page: Page, inset: number): Promise<void> {
-  await page.addInitScript((top) => {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(`:root { --wl-safe-top: ${top}px !important; }`);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  }, inset);
 }
 
 async function shellBottomError(
