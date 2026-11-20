@@ -64,3 +64,35 @@ it("switches from a channel with a cleared topic to a DM", () => {
     screen.queryByRole("button", { name: "Toggle member list" }),
   ).toBeNull();
 });
+
+it("names a DM peer's presence and drops it when the pane leaves the DM", () => {
+  const [buffer, setBuffer] = createSignal<{
+    readonly title: string;
+    readonly presence?: "online" | "away" | "offline";
+  }>({ title: "ana", presence: "away" });
+  const active = createMemo(buffer);
+  const { container } = render(() => (
+    <ConversationHeader
+      membersTooltip="Toggle member list"
+      onToggleMembers={() => {}}
+      onToggleSidebar={() => {}}
+      peer={
+        active().presence !== undefined
+          ? { presence: active().presence, bot: false }
+          : undefined
+      }
+      sidebarTooltip="Toggle channel list"
+      sync={() => ({ interrupted: false, progressing: false })}
+      title={active().title}
+    />
+  ));
+
+  expect(container.querySelector("[data-direct-presence]")).toHaveTextContent(
+    "Direct message · away",
+  );
+
+  setBuffer({ title: "#lounge" });
+
+  expect(screen.getByRole("heading", { name: "#lounge" })).toBeVisible();
+  expect(container.querySelector("[data-direct-presence]")).toBeNull();
+});

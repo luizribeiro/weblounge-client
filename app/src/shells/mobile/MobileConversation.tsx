@@ -186,22 +186,24 @@ export function MobileConversation(props: MobileConversationProps) {
           type="button"
         >
           <ConversationTitle sync={sync} title={props.buffer.title} />
-          {props.buffer.kind === "direct" &&
-          props.buffer.peer_presence !== undefined ? (
-            <DirectPresence
-              bot={props.buffer.peer_bot === true}
-              class={styles.subtitle}
-              presence={props.buffer.peer_presence}
-            />
-          ) : (
-            <Line class={styles.subtitle}>
-              {props.buffer.kind === "direct"
-                ? t("mobile.conversation.direct")
-                : props.buffer.kind === "server"
-                  ? t("mobile.conversation.server")
-                  : props.buffer.topic || t("mobile.conversation.channel")}
-            </Line>
-          )}
+          <DirectPresence
+            bot={props.buffer.peer_bot === true}
+            class={styles.subtitle}
+            fallback={
+              <Line class={styles.subtitle}>
+                {props.buffer.kind === "direct"
+                  ? t("mobile.conversation.direct")
+                  : props.buffer.kind === "server"
+                    ? t("mobile.conversation.server")
+                    : props.buffer.topic || t("mobile.conversation.channel")}
+              </Line>
+            }
+            presence={
+              props.buffer.kind === "direct"
+                ? props.buffer.peer_presence
+                : undefined
+            }
+          />
         </button>
         {props.buffer.kind === "channel" ? (
           <button
