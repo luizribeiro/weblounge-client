@@ -8,11 +8,9 @@ export interface EmojiGroup {
   readonly entries: readonly EmojiEntry[];
 }
 
-const frequentGroup = "Frequent";
-
 const source: readonly (readonly [string, string])[] = [
   [
-    frequentGroup,
+    "Frequent",
     "👍 thumbs up +1|❤️ heart love|😂 joy laugh|🎉 party tada|👀 eyes looking|✅ check done|🙏 thanks pray|🔥 fire",
   ],
   [
@@ -51,17 +49,19 @@ export const emojiGroups: readonly EmojiGroup[] = source.map(
   }),
 );
 
-/** Searching hides Frequent, whose entries repeat in their own categories. */
 export function searchEmoji(query: string): readonly EmojiGroup[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return emojiGroups;
+  const listed = new Set<string>();
   return emojiGroups
-    .filter((group) => group.name !== frequentGroup)
     .map((group) => ({
       name: group.name,
-      entries: group.entries.filter(
-        (entry) => entry.name.includes(needle) || entry.emoji === needle,
-      ),
+      entries: group.entries.filter((entry) => {
+        const matches = entry.name.includes(needle) || entry.emoji === needle;
+        if (!matches || listed.has(entry.emoji)) return false;
+        listed.add(entry.emoji);
+        return true;
+      }),
     }))
     .filter((group) => group.entries.length > 0);
 }
