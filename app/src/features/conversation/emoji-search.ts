@@ -22,6 +22,10 @@ export interface EmojiAnnotations {
 
 export const searchResultLimit = 112;
 
+function withoutVariationSelector(emoji: string): string {
+  return emoji.replaceAll("\uFE0F", "");
+}
+
 function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
@@ -69,7 +73,10 @@ export function searchEmoji(
   query: string,
 ): readonly EmojiEntry[] {
   const typed = query.trim();
-  const exact = index.byEmoji.get(typed);
+  const glyph = withoutVariationSelector(typed);
+  const exact = index.entries.find(
+    (entry) => withoutVariationSelector(entry.emoji) === glyph,
+  );
   if (exact !== undefined) return [exact];
   const needle = fold(typed);
   if (needle === "") return [];

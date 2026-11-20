@@ -62,6 +62,7 @@ it("ignores case, diacritics and surrounding space", () => {
 
 it("finds an emoji typed or pasted into the search", () => {
   expect(found("🔥")).toEqual(["🔥"]);
+  expect(found("❤")).toEqual(["❤️"]);
 });
 
 it("names every result in English", () => {
