@@ -3643,6 +3643,11 @@ fn terminated_mention_context(before: &str) -> Option<CompletionContext> {
     })
 }
 
+/// After a listed nick, Enter submits the list instead of picking yet another member.
+fn nick_list_started(before_word: &str) -> bool {
+    before_word.split_whitespace().nth(1).is_some()
+}
+
 fn command_argument_context(
     position: &commands::CommandPosition<'_>,
     before: &str,
@@ -3653,6 +3658,11 @@ fn command_argument_context(
     let (trigger, prefix) = match position.current_argument()?.kind {
         commands::CommandArgumentKind::Channel | commands::CommandArgumentKind::ChannelList => {
             (CompletionTrigger::Channel, word.to_owned())
+        }
+        commands::CommandArgumentKind::NickList
+            if word.is_empty() && nick_list_started(before.get(..word_start)?) =>
+        {
+            return None;
         }
         commands::CommandArgumentKind::Nick
         | commands::CommandArgumentKind::NickList
@@ -7808,6 +7818,16 @@ async fn delay(duration: Duration) {
             completion_context(input, utf16_len(input), false, "#&", &registry).expect("context");
         assert_eq!(kick.replace_end, 9);
         assert_eq!(kick.usage.map(|usage| usage.active_argument), Some(1));
+    }
+
+    #[test]
+    fn a_nick_list_offers_no_member_until_the_next_nick_is_typed() {
+        let registry = commands::built_in_registry();
+        let first = completion_context("/op ", 4, false, "#&", &registry).expect("context");
+        assert_eq!(first.trigger, Some(CompletionTrigger::Person));
+        let next = completion_context("/op mel ", 8, false, "#&", &registry).expect("context");
+        assert_eq!(next.trigger, None);
+        assert_eq!(next.usage.map(|usage| usage.name), Some("op".to_owned()));
     }
 
     #[test]
