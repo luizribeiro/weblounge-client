@@ -193,6 +193,13 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-20: fixed a CI flake in `mobile-input-zoom.spec.ts:35` (run 44819612854). Its wait for
+  worker control polled `serviceWorker.ready` within `expect.poll`'s 5s, but a first install
+  precaches the whole shell at low priority two requests at a time (design 19's bounded
+  concurrency, kept so install never competes with first-launch work), which outlasted 5s on a
+  loaded runner. `waitForServiceWorkerControl` now waits on worker lifecycle events in one
+  evaluate, and the push, service-worker and startup specs' first-install polls use it. Repro: with
+  each worker asset fetch held 400ms, the old poll fails at 5s; the helper passes after 13.3s.
 - 2026-11-19: fixed a CI flake in `nick-mentions.spec.ts:13`. Its part check filtered system
   lines by the nick alone, which also matched the history's "quiet and talker joined" line: it
   passed on that line before the part rendered and hit strict mode once both were shown. It now
