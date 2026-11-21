@@ -60,9 +60,14 @@ Where it shows:
 - desktop sidebar DM rows, the phone drawer and the switcher (`BufferPrefix`), as before;
 - the phone chat list: the mark on the DM avatar's bottom-right corner (a bot's robot too), on a
   `--wl-color-surface` disc to separate it from the avatar; the row's label is unchanged;
-- the DM header, desktop and phone: the mark and "Direct message · online" (away, offline) as the
-  subtitle, like the prototype's "direct message · online"; unknown keeps today's header (nothing
-  on desktop, "Direct message" on the phone).
+- the DM header, desktop and phone: the mark, centred on the text, and "Online", "Away since
+  14:05" or "Offline, last seen 14:05" (Luiz, F53 review); the phone header's accessible name says
+  the same. Unknown keeps today's header (nothing on desktop, "Direct message" on the phone).
+
+A time appears only for a change this session saw: an `AWAY` (at its server time), a quit, or a
+`731` after the peer was reported online. A peer assumed away from a bare `730`, or already offline
+when first watched, shows plain "Away" or "Offline"; reconnecting forgets the times. Today's times
+are `formatTime`'s; earlier ones are the short date ("20 Nov").
 
 The member list is unchanged: everyone in it shares the channel, so nobody is offline, and the
 prototype groups Online and Away with away rows muted.
