@@ -149,6 +149,7 @@ export const messages = {
   "conversation.presence.away_since": "Away since {time}",
   "conversation.presence.offline": "Offline",
   "conversation.presence.offline_since": "Offline, last seen {time}",
+  "conversation.presence.yesterday": "yesterday {time}",
   "conversation.open_direct": "Open direct message with {nick}",
   "conversation.toggle_members": "Toggle member list",
   "conversation.toggle_sidebar": "Toggle channel list",

@@ -8,6 +8,17 @@ const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
 });
 
+const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+});
+
+const monthYearFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  year: "numeric",
+});
+
+const dayMilliseconds = 86_400_000;
+
 const timeColumnWidth = `${widestTimeLength(timeFormatter) + 1}ch`;
 
 export function formatTime(time: number | Date): string {
@@ -18,11 +29,32 @@ export function formatShortDate(time: number | Date): string {
   return shortDateFormatter.format(time);
 }
 
-/** A time for a moment today, otherwise its date. */
-export function formatTimeOrDate(time: number, now = Date.now()): string {
-  return new Date(time).toDateString() === new Date(now).toDateString()
-    ? formatTime(time)
-    : formatShortDate(time);
+export function formatWeekday(time: number | Date): string {
+  return weekdayFormatter.format(time);
+}
+
+export function formatMonthYear(time: number | Date): string {
+  return monthYearFormatter.format(time);
+}
+
+/** Local calendar days from `time` to `now`; rounding absorbs a daylight-saving hour. */
+export function calendarDaysBefore(time: number, now: number): number {
+  return Math.round(
+    (localMidnight(now) - localMidnight(time)) / dayMilliseconds,
+  );
+}
+
+export function isSameLocalYear(time: number, now: number): boolean {
+  return new Date(time).getFullYear() === new Date(now).getFullYear();
+}
+
+function localMidnight(time: number): number {
+  const date = new Date(time);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
 }
 
 export function formattedTimeColumnWidth(): string {

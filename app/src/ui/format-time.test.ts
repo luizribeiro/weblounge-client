@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatShortDate,
-  formatTime,
-  formatTimeOrDate,
+  calendarDaysBefore,
+  isSameLocalYear,
   widestTimeLength,
 } from "./format-time";
 
@@ -26,18 +25,39 @@ describe("widestTimeLength", () => {
   });
 });
 
-describe("formatTimeOrDate", () => {
-  const now = new Date(2026, 10, 21, 18, 30).getTime();
+describe("calendarDaysBefore", () => {
+  it("counts local calendar days, not 24-hour spans", () => {
+    const now = new Date(2026, 10, 21, 0, 20).getTime();
 
-  it("shows only the time for a moment earlier today", () => {
-    const today = new Date(2026, 10, 21, 14, 5).getTime();
-
-    expect(formatTimeOrDate(today, now)).toBe(formatTime(today));
+    expect(
+      calendarDaysBefore(new Date(2026, 10, 21, 0, 0).getTime(), now),
+    ).toBe(0);
+    expect(
+      calendarDaysBefore(new Date(2026, 10, 20, 23, 59).getTime(), now),
+    ).toBe(1);
+    expect(
+      calendarDaysBefore(new Date(2026, 10, 14, 0, 30).getTime(), now),
+    ).toBe(7);
   });
 
-  it("shows only the short date for a moment on another day", () => {
-    const yesterday = new Date(2026, 10, 20, 23, 55).getTime();
+  it("spans a daylight-saving change as whole days", () => {
+    const after = new Date(2026, 3, 1, 12, 0).getTime();
 
-    expect(formatTimeOrDate(yesterday, now)).toBe(formatShortDate(yesterday));
+    expect(
+      calendarDaysBefore(new Date(2026, 2, 1, 12, 0).getTime(), after),
+    ).toBe(31);
+  });
+});
+
+describe("isSameLocalYear", () => {
+  it("splits at the new year", () => {
+    const newYear = new Date(2027, 0, 1, 0, 10).getTime();
+
+    expect(
+      isSameLocalYear(new Date(2026, 11, 31, 23, 50).getTime(), newYear),
+    ).toBe(false);
+    expect(isSameLocalYear(new Date(2027, 0, 1, 0, 0).getTime(), newYear)).toBe(
+      true,
+    );
   });
 });
