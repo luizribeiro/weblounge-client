@@ -5,6 +5,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { expectBotPresence, expectPresenceDot } from "./presence-marks";
 import { expectSettled } from "./settled";
 import {
   expectSidebarColumnsCentredAtEachDensity,
@@ -115,11 +116,7 @@ test.describe("sidebar presence against local Ergo", () => {
         `${peer.nickname}, 1 unread, including mentions, online`,
       );
       const dot = row.locator("[data-sidebar-prefix] [data-presence]");
-      await expect(dot).toHaveAttribute("data-presence", "online");
-      await expect(dot).toHaveCSS(
-        "background-color",
-        await tokenColour(page, "--wl-color-online"),
-      );
+      await expectPresenceDot(page, dot, "online");
       const channel = page.getByRole("button", { name: irc.channel });
       expect(await nameLeft(row)).toBeCloseTo(await nameLeft(channel), 1);
 
@@ -127,26 +124,13 @@ test.describe("sidebar presence against local Ergo", () => {
       await expect(row).toHaveAccessibleName(
         `${peer.nickname}, 1 unread, including mentions, away`,
       );
-      await expect(dot).toHaveAttribute("data-presence", "away");
-      await expect(dot).toHaveCSS(
-        "background-color",
-        await tokenColour(page, "--wl-color-panel-muted"),
-      );
-      await expect(dot).toHaveCSS(
-        "border-top-color",
-        await tokenColour(page, "--wl-color-panel-muted"),
-      );
+      await expectPresenceDot(page, dot, "away");
       peer.close();
       await peer.waitForDisconnect();
       await expect(row).toHaveAccessibleName(
         `${peer.nickname}, 1 unread, including mentions, offline`,
       );
-      await expect(dot).toHaveAttribute("data-presence", "offline");
-      await expect(dot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-      await expect(dot).toHaveCSS(
-        "border-top-color",
-        await tokenColour(page, "--wl-color-panel-muted"),
-      );
+      await expectPresenceDot(page, dot, "offline");
       await nativeFeelAudit(page);
     } finally {
       peer.close();
@@ -176,12 +160,7 @@ test.describe("sidebar presence against local Ergo", () => {
         `${human.nickname}, 1 unread, including mentions, online`,
       );
       const robot = botRow.locator("[data-sidebar-prefix] [data-peer-bot]");
-      await expect(robot).toHaveAttribute("data-presence", "online");
-      await expect(robot).toHaveCSS(
-        "color",
-        await tokenColour(page, "--wl-color-online"),
-      );
-      await expect(robot).toHaveCSS("opacity", "1");
+      await expectBotPresence(page, robot, "online");
       await expect(botRow.locator("[data-presence]")).toHaveCount(1);
       await expect(
         humanRow.locator("[data-sidebar-prefix] [data-peer-bot]"),
@@ -198,24 +177,14 @@ test.describe("sidebar presence against local Ergo", () => {
       await expect(botRow).toHaveAccessibleName(
         `${bot.nickname}, bot, 1 unread, including mentions, away`,
       );
-      await expect(robot).toHaveAttribute("data-presence", "away");
-      await expect(robot).toHaveCSS(
-        "color",
-        await tokenColour(page, "--wl-color-panel-muted"),
-      );
-      await expect(robot).toHaveCSS("opacity", "0.5");
+      await expectBotPresence(page, robot, "away");
 
       bot.close();
       await bot.waitForDisconnect();
       await expect(botRow).toHaveAccessibleName(
         `${bot.nickname}, bot, 1 unread, including mentions, offline`,
       );
-      await expect(robot).toHaveAttribute("data-presence", "offline");
-      await expect(robot).toHaveCSS(
-        "color",
-        await tokenColour(page, "--wl-color-panel-muted"),
-      );
-      await expect(robot).toHaveCSS("opacity", "0.5");
+      await expectBotPresence(page, robot, "offline");
       await nativeFeelAudit(page);
     } finally {
       bot.close();

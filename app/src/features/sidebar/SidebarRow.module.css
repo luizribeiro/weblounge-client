@@ -35,6 +35,8 @@
 }
 
 .row:hover {
+  --wl-presence-halo: var(--wl-color-chip);
+
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);
 }
@@ -44,6 +46,8 @@
 }
 
 .active {
+  --wl-presence-halo: var(--wl-color-selection);
+
   background: var(--wl-color-selection);
   color: var(--wl-color-selection-fg);
 }

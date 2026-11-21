@@ -40,7 +40,7 @@ describe("PresenceMark", () => {
       "away",
     );
     setBot(true);
-    expect(screen.getByRole("img", { name: "bot" })).toHaveAttribute(
+    expect(container.querySelector("[data-peer-bot]")).toHaveAttribute(
       "data-presence",
       "away",
     );
@@ -48,24 +48,27 @@ describe("PresenceMark", () => {
   });
 
   it.each(["online", "away", "offline"] as const)(
-    "draws a %s bot as the robot instead of a dot",
+    "draws a %s bot as the robot wearing a badge of that state",
     (presence) => {
       const { container } = render(() => (
         <PresenceMark bot presence={presence} />
       ));
 
-      const robot = screen.getByRole("img", { name: "bot" });
-      expect(robot).toHaveAttribute("data-peer-bot", "true");
-      expect(robot).toHaveAttribute("data-presence", presence);
-      expect(container.querySelector("[data-presence-dot]")).toBeNull();
+      const bot = container.querySelector("[data-peer-bot]");
+      expect(bot).toHaveAttribute("data-presence", presence);
+      expect(bot).toContainElement(screen.getByRole("img", { name: "bot" }));
+      expect(bot?.querySelector("[aria-hidden='true']")).not.toBeNull();
+      expect(container.querySelectorAll("[data-presence]")).toHaveLength(1);
     },
   );
 
-  it("draws a bot whose presence is unknown as a robot with no state", () => {
-    render(() => <PresenceMark bot presence={undefined} />);
+  it("draws a bot whose presence is unknown as a plain robot", () => {
+    const { container } = render(() => (
+      <PresenceMark bot presence={undefined} />
+    ));
 
-    expect(screen.getByRole("img", { name: "bot" })).not.toHaveAttribute(
-      "data-presence",
-    );
+    const bot = container.querySelector("[data-peer-bot]");
+    expect(bot).not.toHaveAttribute("data-presence");
+    expect(bot?.querySelector("[aria-hidden='true']")).toBeNull();
   });
 });

@@ -1,4 +1,6 @@
 .row {
+  --wl-presence-halo: var(--wl-color-surface);
+
   align-items: center;
   appearance: none;
   background: transparent;
@@ -19,6 +21,8 @@
 
 .row:hover,
 .row[aria-selected="true"] {
+  --wl-presence-halo: var(--wl-color-selection);
+
   background: var(--wl-color-selection);
   color: var(--wl-color-selection-fg);
 }

@@ -1,4 +1,10 @@
 .dot {
+  --wl-presence-size: calc(
+    var(--wl-size-presence-dot) +
+    2 *
+    var(--wl-size-presence-ring)
+  );
+
   border: var(--wl-size-presence-ring) solid var(--wl-color-panel-muted);
   border-radius: 50%;
   display: inline-block;
@@ -8,25 +14,50 @@
   width: var(--wl-size-presence-dot);
 }
 
-.dot[data-presence="online"] {
+.dot[data-presence="online"],
+.bot[data-presence="online"] .badgeDot {
   background: var(--wl-color-online);
   border-color: var(--wl-color-online);
 }
 
-.dot[data-presence="away"] {
-  background: var(--wl-color-panel-muted);
+/* The crescent's bite is a hole, so whatever sits behind the mark shows through it. */
+.dot[data-presence="away"],
+.bot[data-presence="away"] .badgeDot {
+  background: radial-gradient(
+      circle at 82% 28%,
+      transparent calc(var(--wl-presence-size) * 0.36),
+      var(--wl-color-panel-muted) calc(var(--wl-presence-size) * 0.36 + 0.5px)
+    )
+    border-box;
+  border-color: transparent;
 }
 
-.dot[data-presence="offline"] {
+.dot[data-presence="offline"],
+.bot[data-presence="offline"] .badgeDot {
   background: transparent;
+}
+
+.bot {
+  color: var(--wl-color-panel-muted);
+  display: inline-flex;
+  position: relative;
+  vertical-align: middle;
 }
 
 .bot[data-presence="online"] {
   color: var(--wl-color-online);
 }
 
-.bot[data-presence="away"],
-.bot[data-presence="offline"] {
-  color: var(--wl-color-panel-muted);
-  opacity: 0.5;
+.badge {
+  background: var(--wl-presence-halo, var(--wl-color-panel));
+  border-radius: 50%;
+  bottom: calc(var(--wl-size-presence-ring) * -1);
+  display: flex;
+  padding: var(--wl-size-presence-ring);
+  position: absolute;
+  right: calc(var(--wl-size-presence-ring) * -2);
+}
+
+.badgeDot {
+  --wl-size-presence-dot: var(--wl-size-presence-badge);
 }

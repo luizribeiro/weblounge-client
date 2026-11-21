@@ -7,9 +7,9 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { expectPresenceDot } from "./presence-marks";
 import { choose, choosePhoneAppearance } from "./settings-fixture";
 import { backToChatList, expectSettled } from "./settled";
-import { tokenColour } from "./sidebar-geometry";
 
 const screenshotDirectory = path.join(
   process.cwd(),
@@ -41,15 +41,6 @@ const layouts: readonly Layout[] = [
   },
 ];
 
-const looks = {
-  online: { fill: "--wl-color-online", ring: "--wl-color-online" },
-  away: { fill: "--wl-color-panel-muted", ring: "--wl-color-panel-muted" },
-  offline: { fill: undefined, ring: "--wl-color-panel-muted" },
-} as const satisfies Record<
-  PeerPresence,
-  { readonly fill: string | undefined; readonly ring: string }
->;
-
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
   "requires the flake's local Ergo fixture",
@@ -73,7 +64,7 @@ for (const layout of layouts) {
       await peer.privmsgConfirmed(irc.account, `hello ${irc.id}`);
       const row = await directRow(page, peer.nickname);
       const mark = row.locator("[data-presence-dot]");
-      await expectMark(page, mark, "online");
+      await expectPresenceDot(page, mark, "online");
 
       await row.click();
       await expectSettled(page, { conversation: peer.nickname });
@@ -83,7 +74,7 @@ for (const layout of layouts) {
 
       await peer.setAway("lunch");
       await expectHeader(page, header, "away", statuses.awaySince);
-      if (layout.listedWhileOpen) await expectMark(page, mark, "away");
+      if (layout.listedWhileOpen) await expectPresenceDot(page, mark, "away");
       await capture(page, layout, "away");
 
       peer.close();
@@ -102,7 +93,7 @@ for (const layout of layouts) {
       await nativeFeelAudit(page);
 
       if (!layout.listedWhileOpen) await backToChatList(page, peer.nickname);
-      await expectMark(page, mark, "offline");
+      await expectPresenceDot(page, mark, "offline");
       await captureNe(page, layout, row);
     } finally {
       peer.close();
@@ -147,7 +138,7 @@ async function expectHeader(
 ): Promise<void> {
   await expect(header).toHaveText(status);
   const mark = header.locator("[data-presence-dot]");
-  await expectMark(page, mark, presence);
+  await expectPresenceDot(page, mark, presence);
   await expectCentredOnText(mark, header.locator("[data-line]"));
 }
 
@@ -163,25 +154,6 @@ async function expectCentredOnText(mark: Locator, text: Locator) {
   expect(
     Math.abs(markBox.y + markBox.height / 2 - (glyphs.top + glyphs.height / 2)),
   ).toBeLessThanOrEqual(1);
-}
-
-async function expectMark(
-  page: Page,
-  mark: Locator,
-  presence: PeerPresence,
-): Promise<void> {
-  const look = looks[presence];
-  await expect(mark).toHaveAttribute("data-presence", presence);
-  await expect(mark).toHaveCSS(
-    "background-color",
-    look.fill === undefined
-      ? "rgba(0, 0, 0, 0)"
-      : await tokenColour(page, look.fill),
-  );
-  await expect(mark).toHaveCSS(
-    "border-top-color",
-    await tokenColour(page, look.ring),
-  );
 }
 
 async function capture(

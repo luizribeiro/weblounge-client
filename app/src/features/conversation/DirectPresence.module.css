@@ -1,4 +1,6 @@
 .presence {
+  --wl-presence-halo: var(--wl-color-surface);
+
   align-items: center;
   display: flex;
   gap: 6px;
