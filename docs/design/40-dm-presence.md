@@ -69,8 +69,15 @@ Where it shows:
 
 A time appears only for a change this session saw: an `AWAY` (at its server time), a quit, or a
 `731` after the peer was reported online. A peer assumed away from a bare `730`, or already offline
-when first watched, shows plain "Away" or "Offline"; reconnecting forgets the times. Today's times
-are `formatTime`'s; earlier ones are the short date ("20 Nov").
+when first watched, shows plain "Away" or "Offline"; reconnecting forgets the times, and nothing is
+stored across restarts. The time is a server-time tag when the line has a valid one, otherwise the
+moment we received the line; papo's `MONITOR` offline event carries no tag, so a `731` is always
+dated on receipt. Either way it is when we saw the change, never a guess.
+
+Wording (Luiz, 2026-11-21, absolute): "Away since 14:05" today, "since yesterday 23:50", "since
+Mon" within the past week, "since 31 Oct" within the year, then "since Nov 2024"; "Offline, last
+seen …" the same. Local calendar days decide the range. The label is worked out when shown and only
+changes with the presence, so nothing ticks and the idle checks are unaffected.
 
 The member list is unchanged: everyone in it shares the channel, so nobody is offline, and the
 prototype groups Online and Away with away rows muted.
@@ -80,9 +87,25 @@ passes except `modern`'s existing online green on the selected row (2.8:1). Onli
 a hue difference only, weakest in `lounge` (1.1:1 luminance, green against grey) and `n.e.` is
 yellow against grey (1.7:1).
 
+## Any IRC server
+
+Presence uses only standard IRC and IRCv3, each gated on what the server advertises: `MONITOR`
+(ISUPPORT), `extended-monitor` and `away-notify` (caps), plain `WHO` with its H/G flag (WHOX when
+advertised), and `QUIT`. Without one of them it degrades rather than guessing:
+
+- **No `MONITOR`:** nothing is watched, and a peer sharing no channel shows no mark.
+- **No `extended-monitor` or `away-notify`:** the one `WHO` still gives the starting state, which
+  stands with no time, since later changes won't be reported. Before it answers, the peer shows
+  online rather than away. Not guessing "away" where the server can't report away is a **proposed
+  default awaiting Luiz's OK**.
+- **No or invalid server-time:** the change is dated when we received it.
+
+Nothing in the presence path is Ergo-specific. One gap outside it: papo 40c6722's guarded DM handle
+needs a `MONITOR` slot, so on a server without `MONITOR` a DM to a peer we can't verify fails like a
+full `MONITOR` list does. That is a DM-sending and identity question, left for Luiz and papo.
+
 ## Out of scope
 
-- Seeding the away state of a newly watched peer (see "Open").
 - Presence for channel members beyond the existing Online/Away grouping.
 - `MONITOR` beyond the server's limit: the overflow stays unknown, with the existing
   "Presence updates are unavailable" notice.
@@ -97,5 +120,6 @@ yellow against grey (1.7:1).
 
 ## Open (Luiz)
 
-The wording of long durations ("Away since …", "last seen …") is being chosen from mocks; today a
-time can only be one this session saw, so it reaches minutes to hours.
+- The proposed default above: on a server that can't report away changes, show online until the
+  `WHO` answers, then only what it said.
+- DMs on a server without `MONITOR` (see "Any IRC server").
