@@ -29,17 +29,18 @@ the look:
 1. The peer shares a channel: its reported away state (channel `WHO`, `away-notify`). Unreported
    stays unknown until the channel `WHO` answers, as before.
 2. `MONITOR` reported it offline (`731`, kept until a `730` or reconnect): `offline`.
-3. `MONITOR` reports it online: its reported away state; a line it sent us counts as present.
-   Otherwise, Luiz's rule: **unreported away state renders `away`** when the server will tell us
-   when it changes (`extended-monitor` and `away-notify` both negotiated). On a server without
-   them we can never learn it, so it renders `online`.
+3. `MONITOR` reports it online: its reported away state, then the answer to its away check (below),
+   then a line it sent us as present. Otherwise, Luiz's rule: **unreported away state renders
+   `away`** when the server will tell us when it changes (`extended-monitor` and `away-notify` both
+   negotiated). On a server without them we can never learn it, so it renders `online`.
 4. Otherwise: unknown (no `MONITOR`, list full, not yet answered, disconnected).
 
-No `WHO` is sent to learn a DM peer's away state (Luiz: snapshots go stale).
-
-Consequence to note: on Ergo, a present peer who shares no channel and hasn't messaged us since we
-connected renders `away` until it sets or clears away or sends us a line. Iris is such a peer, so
-B46's symptom stays for it under this rule; see "Open" below.
+**Away check** (Luiz, 2026-11-21). Ergo never sends a peer's away state with its `730`, so each
+watched peer reported online gets exactly one `WHO nick`; its `H` or `G` stands until the peer goes
+offline, and `away-notify` reports changes after that. No `WHO` on DM open, none for a peer whose
+away state papo already knows, and another only after the peer goes offline and comes back. One
+`WHO` is in flight at a time, so a reconnect that brings many peers online doesn't burst the
+server; papo has no send pacing of its own. This fixes iris, a present peer sharing no channel.
 
 ## Look
 
@@ -47,13 +48,15 @@ One `PresenceMark` component (`app/src/ui/`) draws the mark wherever presence sh
 
 | State   | Person                                                    | Bot (robot icon)            |
 |---------|-----------------------------------------------------------|-----------------------------|
-| online  | filled dot, `--wl-color-online` fill and ring              | robot in `--wl-color-online` |
-| away    | filled dot, `--wl-color-panel-muted` fill and ring         | robot in `--wl-color-panel-muted`, 0.5 opacity |
-| offline | empty ring in `--wl-color-panel-muted`                     | same as away                |
-| unknown | no dot                                                    | robot in the row's text colour |
+| online  | filled dot, `--wl-color-online` fill and ring              | robot in `--wl-color-online`, filled badge |
+| away    | crescent cut from a `--wl-color-panel-muted` disc          | muted robot, crescent badge |
+| offline | hollow ring in `--wl-color-panel-muted`                    | muted robot, hollow badge   |
+| unknown | no dot                                                    | robot in the row's text colour, no badge |
 
-Shape separates offline from the rest without colour. Online and away are both filled, as Luiz
-asked, and differ by colour; the row's accessible name says the state ("ana, online").
+Option A of the F53 icon mocks (Luiz, 2026-11-21): shape tells all three states apart without
+colour, which also suits n.e.'s yellow and greys. The crescent's bite is see-through, and the bot
+badge (`--wl-size-presence-badge`) sits on a halo in the row's background (`--wl-presence-halo`).
+The row's accessible name says the state ("ana, online").
 
 Where it shows:
 
@@ -94,7 +97,5 @@ yellow against grey (1.7:1).
 
 ## Open (Luiz)
 
-The away-until-reported rule makes a present, quiet, no-shared-channel peer look away on Ergo,
-because Ergo never sends the initial away state with `730`. Options: accept it; or seed it once per
-newly watched peer (one `WHO nick` after its `730`), which `extended-monitor` then keeps current, so
-it can't go stale the way a WHO-on-open snapshot without away reports would.
+The wording of long durations ("Away since …", "last seen …") is being chosen from mocks; today a
+time can only be one this session saw, so it reaches minutes to hours.
