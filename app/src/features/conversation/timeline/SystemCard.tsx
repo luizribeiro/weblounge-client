@@ -1,7 +1,7 @@
 import { type JSX, Show } from "solid-js";
 import type { LineEvent } from "../../../engine/generated/LineEvent";
 import { t } from "../../../strings";
-import { formatTime } from "../../../ui/format-time";
+import { formatShortDate, formatTime } from "../../../ui/format-time";
 import { EventIcon } from "../../../ui/icons/EventIcon";
 import { Selectable } from "../../../ui/Selectable";
 import styles from "./SystemCard.module.css";
@@ -57,7 +57,7 @@ export function topicCardMeta(card: TopicCardEvent): string {
     card.setter === null || card.setter === ""
       ? undefined
       : t("messages.topic.set_by", { setter: card.setter }),
-    card.set_at_ms === null ? undefined : formatCardDate(card.set_at_ms),
+    card.set_at_ms === null ? undefined : formatShortDate(card.set_at_ms),
   ]
     .filter((part) => part !== undefined)
     .join(" · ");
@@ -71,13 +71,4 @@ export function topicCardAccessibleName(card: TopicCardEvent): string {
   ]
     .filter(Boolean)
     .join(". ");
-}
-
-const cardDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-});
-
-function formatCardDate(milliseconds: number): string {
-  return cardDateFormatter.format(milliseconds);
 }
