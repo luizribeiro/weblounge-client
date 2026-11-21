@@ -88,7 +88,7 @@ it("names a DM peer's presence and drops it when the pane leaves the DM", () => 
   ));
 
   expect(container.querySelector("[data-direct-presence]")).toHaveTextContent(
-    "Direct message · away",
+    "Away",
   );
 
   setBuffer({ title: "#lounge" });

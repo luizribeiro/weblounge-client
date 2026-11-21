@@ -12,7 +12,11 @@ interface ConversationHeaderProps {
   readonly sync: () => BufferSyncPresentation;
   readonly topic?: string | undefined;
   readonly peer?:
-    | { readonly presence: PeerPresence | undefined; readonly bot: boolean }
+    | {
+        readonly presence: PeerPresence | undefined;
+        readonly sinceMs?: number | undefined;
+        readonly bot: boolean;
+      }
     | undefined;
   readonly sidebarTooltip: string;
   readonly membersTooltip: string;
@@ -54,6 +58,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
           bot={props.peer?.bot === true}
           class={styles.topic}
           presence={props.peer?.presence}
+          sinceMs={props.peer?.sinceMs}
         />
       </div>
       {props.memberCount !== undefined && (

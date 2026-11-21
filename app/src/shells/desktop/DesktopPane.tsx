@@ -167,6 +167,7 @@ function PaneConversation(props: DesktopPaneProps) {
           buffer().kind === "direct"
             ? {
                 presence: buffer().peer_presence,
+                sinceMs: buffer().peer_presence_since_ms,
                 bot: buffer().peer_bot === true,
               }
             : undefined

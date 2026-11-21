@@ -1,12 +1,13 @@
 import { type JSX, Show } from "solid-js";
 import type { PeerPresence } from "../../engine/protocol";
-import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import { PresenceMark } from "../../ui/PresenceMark";
 import styles from "./DirectPresence.module.css";
+import { presenceStatus } from "./presence-status";
 
 interface DirectPresenceProps {
   readonly presence: PeerPresence | undefined;
+  readonly sinceMs?: number | undefined;
   readonly bot: boolean;
   readonly class?: string | undefined;
   readonly fallback?: JSX.Element;
@@ -22,9 +23,7 @@ export function DirectPresence(props: DirectPresenceProps) {
         >
           <PresenceMark bot={props.bot} presence={presence()} />
           <Line class={styles.text}>
-            {t("conversation.direct_presence", {
-              presence: t(`sidebar.presence.${presence()}`),
-            })}
+            {presenceStatus(presence(), props.sinceMs)}
           </Line>
         </span>
       )}

@@ -27,6 +27,7 @@ import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
+import { presenceStatus } from "../../features/conversation/presence-status";
 import {
   bufferReactionToggle,
   reactionTarget,
@@ -177,7 +178,7 @@ export function MobileConversation(props: MobileConversationProps) {
           <span aria-hidden="true">‹</span>
         </button>
         <button
-          aria-label={t("mobile.show_details", { title: props.buffer.title })}
+          aria-label={identityLabel(props.buffer)}
           class={styles.chatIdentity}
           disabled={
             props.buffer.kind !== "channel" || props.onOpenDetails === undefined
@@ -203,6 +204,7 @@ export function MobileConversation(props: MobileConversationProps) {
                 ? props.buffer.peer_presence
                 : undefined
             }
+            sinceMs={props.buffer.peer_presence_since_ms}
           />
         </button>
         {props.buffer.kind === "channel" ? (
@@ -366,4 +368,16 @@ export function MobileConversation(props: MobileConversationProps) {
       </Show>
     </section>
   );
+}
+
+function identityLabel(buffer: BufferProjection): string {
+  return buffer.kind === "direct" && buffer.peer_presence !== undefined
+    ? t("mobile.direct_status", {
+        title: buffer.title,
+        status: presenceStatus(
+          buffer.peer_presence,
+          buffer.peer_presence_since_ms,
+        ),
+      })
+    : t("mobile.show_details", { title: buffer.title });
 }
