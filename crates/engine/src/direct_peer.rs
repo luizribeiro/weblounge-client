@@ -209,6 +209,24 @@ mod tests {
             Self::with_direct(client, events, wire, nick)
         }
 
+        /// A server that advertises no `MONITOR`, so nothing can watch alice.
+        async fn without_monitor() -> Self {
+            let (client, mut events, mut wire) =
+                papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            wire.register(&["away-notify", "extended-monitor"]).await;
+            next(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            assert!(matches!(
+                client.monitor().add(["alice"]).await,
+                Err(papo::Error::Unsupported(unsupported))
+                    if unsupported.feature == papo::Feature::Monitor
+            ));
+            let nick = client.state().casemapping().nick("alice");
+            Self::with_direct(client, events, wire, nick)
+        }
+
         async fn monitored_without_away_reports() -> Self {
             let (client, events, wire, nick) = monitoring_alice_with(&["away-notify"]).await;
             Self::with_direct(client, events, wire, nick)
@@ -681,5 +699,55 @@ mod tests {
         peer.report_online().await;
 
         assert_eq!(peer.sync_since(), [(Some(PeerPresence::Online), None)]);
+    }
+
+    #[tokio::test]
+    async fn without_monitor_a_peer_sharing_no_channel_shows_no_presence() {
+        let mut peer = Peer::without_monitor().await;
+
+        peer.server(
+            "@msgid=hi;time=2026-11-21T14:05:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+
+        assert_eq!(peer.sync(), []);
+    }
+
+    #[tokio::test]
+    async fn an_away_change_without_server_time_is_dated_when_it_arrived() {
+        let mut peer = Peer::monitored().await;
+        peer.report_online().await;
+        _ = peer.sync();
+        let before = crate::state::time_millis(papo::time::now());
+
+        peer.server(":alice!~alice@cloak.example AWAY :lunch", away_changed)
+            .await;
+
+        let after = crate::state::time_millis(papo::time::now());
+        let [(Some(PeerPresence::Away), Some(since))] = peer.sync_since()[..] else {
+            panic!("alice is away with a time");
+        };
+        assert!((before..=after).contains(&since));
+    }
+
+    #[tokio::test]
+    async fn an_invalid_server_time_never_becomes_the_away_time() {
+        let mut peer = Peer::monitored().await;
+        peer.report_online().await;
+        _ = peer.sync();
+        let before = crate::state::time_millis(papo::time::now());
+
+        peer.server(
+            "@time=1999-99-99T99:99:99Z :alice!~alice@cloak.example AWAY :lunch",
+            away_changed,
+        )
+        .await;
+
+        let after = crate::state::time_millis(papo::time::now());
+        let [(Some(PeerPresence::Away), Some(since))] = peer.sync_since()[..] else {
+            panic!("alice is away with a time");
+        };
+        assert!((before..=after).contains(&since));
     }
 }

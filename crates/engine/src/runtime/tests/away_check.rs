@@ -17,8 +17,12 @@ struct Session {
 impl Session {
     /// Registered with away-notify and extended-monitor, watching alice, with her DM open.
     async fn watching_alice() -> Self {
+        Self::watching_alice_with(&["away-notify", "extended-monitor"]).await
+    }
+
+    async fn watching_alice_with(caps: &[&str]) -> Self {
         let (client, events, wire, nick) =
-            crate::direct_peer::test_support::monitoring_alice().await;
+            crate::direct_peer::test_support::monitoring_alice_with(caps).await;
         let (state, outbound, receiver) = harness(client.clone());
         let alice = lock(&state)
             .network
@@ -78,11 +82,15 @@ impl Session {
     }
 
     async fn presence_update(&mut self) -> Option<PeerPresence> {
+        self.presence_and_time().await.0
+    }
+
+    async fn presence_and_time(&mut self) -> (Option<PeerPresence>, Option<i64>) {
         loop {
             let event = self.receiver.recv().await.expect("engine output open");
             match event {
                 EngineToUi::BufferUpdated { buffer } if buffer.id == self.alice => {
-                    return buffer.peer_presence;
+                    return (buffer.peer_presence, buffer.peer_presence_since_ms);
                 }
                 _ => {}
             }
@@ -195,4 +203,26 @@ async fn peers_coming_online_together_are_asked_one_at_a_time() {
     session.expect_no_who_before_marker("carol").await;
     session.answer_who("alice", 'H').await;
     assert_eq!(session.wire.next_sent().await, "WHO bob");
+}
+
+#[tokio::test]
+async fn without_away_reports_the_who_alone_sets_away_and_gives_no_time() {
+    for caps in [&["away-notify"][..], &[]] {
+        let mut session = Session::watching_alice_with(caps).await;
+
+        session.report_online(ALICE_ONLINE).await;
+        assert_eq!(session.wire.next_sent().await, "WHO alice");
+        assert_eq!(
+            session.presence_and_time().await,
+            (Some(PeerPresence::Online), None),
+            "no away guess with caps {caps:?}"
+        );
+        session.answer_who("alice", 'G').await;
+
+        assert_eq!(
+            session.presence_and_time().await,
+            (Some(PeerPresence::Away), None),
+            "the WHO's answer, undated, with caps {caps:?}"
+        );
+    }
 }
