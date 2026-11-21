@@ -189,6 +189,7 @@
 .subtitle {
   color: var(--wl-color-muted);
   font-size: 12px;
+  justify-content: center;
 }
 .retry {
   appearance: none;

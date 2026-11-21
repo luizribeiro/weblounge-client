@@ -16,19 +16,17 @@ export function DirectPresence(props: DirectPresenceProps) {
   return (
     <Show fallback={props.fallback} when={props.presence}>
       {(presence) => (
-        <Line
+        <span
           class={`${styles.presence} ${props.class ?? ""}`}
           data-direct-presence={presence()}
         >
-          <PresenceMark
-            bot={props.bot}
-            class={styles.mark}
-            presence={presence()}
-          />
-          {t("conversation.direct_presence", {
-            presence: t(`sidebar.presence.${presence()}`),
-          })}
-        </Line>
+          <PresenceMark bot={props.bot} presence={presence()} />
+          <Line class={styles.text}>
+            {t("conversation.direct_presence", {
+              presence: t(`sidebar.presence.${presence()}`),
+            })}
+          </Line>
+        </span>
       )}
     </Show>
   );
