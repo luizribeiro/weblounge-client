@@ -116,36 +116,42 @@ test.describe("DM and member presence against local Ergo", () => {
     await expectSettled(page, { conversation: irc.channel });
   });
 
-  test("shows a peer who shares no channel away after a relaunch until its away state is reported, then offline once it quits", async ({
+  test("asks once after a relaunch, so connected peers who share no channel show online or away, then offline once they quit", async ({
     page,
     irc,
   }) => {
-    const unshared = await irc.peer("iris", []);
+    const present = await irc.peer("iris", []);
+    const away = await irc.peer("ana", []);
     await installNativeFeelInstrumentation(page);
     await page.goto(irc.url());
     await expectSettled(page, { conversation: irc.channel });
-    await unshared.privmsgConfirmed(irc.account, `beep ${irc.id}`);
-    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
-      "data-presence",
-      "online",
-    );
-
-    await page.goto(irc.url());
-    await expectSettled(page, { conversation: irc.channel });
-    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+    await present.privmsgConfirmed(irc.account, `beep ${irc.id}`);
+    await away.privmsgConfirmed(irc.account, `hello ${irc.id}`);
+    await away.setAway("lunch");
+    await expect(presenceOf(page, away.nickname)).toHaveAttribute(
       "data-presence",
       "away",
     );
 
-    await unshared.setAway("lunch");
-    await unshared.setAway(undefined);
-    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+    await page.goto(irc.url());
+    await expectSettled(page, { conversation: irc.channel });
+    await expect(presenceOf(page, present.nickname)).toHaveAttribute(
       "data-presence",
       "online",
     );
-    unshared.close();
-    await unshared.waitForDisconnect();
-    await expect(presenceOf(page, unshared.nickname)).toHaveAttribute(
+    await expect(presenceOf(page, away.nickname)).toHaveAttribute(
+      "data-presence",
+      "away",
+    );
+
+    await present.setAway("lunch");
+    await expect(presenceOf(page, present.nickname)).toHaveAttribute(
+      "data-presence",
+      "away",
+    );
+    present.close();
+    await present.waitForDisconnect();
+    await expect(presenceOf(page, present.nickname)).toHaveAttribute(
       "data-presence",
       "offline",
     );

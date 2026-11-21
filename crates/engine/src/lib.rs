@@ -1,5 +1,6 @@
 //! Platform-neutral weblounge engine composition.
 
+mod away_check;
 mod ban_mask;
 mod chat_list_snapshot;
 /// Runtime slash-command metadata and registration.

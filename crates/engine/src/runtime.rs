@@ -4735,6 +4735,7 @@ fn process_event_with_direct(
     if peer_facts_may_change || output.iter().any(crate::direct_peer::reveals_buffers) {
         output.extend(running.model.sync_direct_peers(&snapshot));
     }
+    away_check::start_away_checks(running, &shared_state, outbound);
     if effects.clear_hosted_authentication {
         output.extend(running.model.take_timeline_changes(false));
         state.network = None;
@@ -6573,12 +6574,14 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
     tokio::spawn(future);
 }
 
+mod away_check;
 mod gap_fill;
 
 use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
 
 #[cfg(test)]
 mod tests {
+    mod away_check;
     mod direct_routing;
     mod gap_fill;
     mod history_integrity;

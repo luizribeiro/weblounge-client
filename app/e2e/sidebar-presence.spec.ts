@@ -245,10 +245,10 @@ test.describe("sidebar presence against local Ergo", () => {
       await page.reload();
       await expectSettled(page, { conversation: irc.channel });
 
-      const row = await directRow(page, `${name}, away`);
+      const row = await directRow(page, `${name}, online`);
       const robot = row.locator("[data-sidebar-prefix] [data-peer-bot]");
       await expect(robot).toBeVisible();
-      await expect(robot).toHaveAttribute("data-presence", "away");
+      await expect(robot).toHaveAttribute("data-presence", "online");
       await nativeFeelAudit(page);
     } finally {
       bot.close();

@@ -3151,6 +3151,10 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
+    pub(crate) fn away_checks(&mut self) -> &mut crate::away_check::AwayChecks {
+        self.peer_evidence.away_checks()
+    }
+
     pub(crate) fn observe_peers(&mut self, event: &papo::Event, now_ms: i64) {
         self.peer_evidence.observe(event, now_ms);
     }

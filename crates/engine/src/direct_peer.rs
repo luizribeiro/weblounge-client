@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{EngineToUi, PeerPresence, witnessed_presence::WitnessedPresence};
+use crate::{
+    EngineToUi, PeerPresence, away_check::AwayChecks, witnessed_presence::WitnessedPresence,
+};
 
 /// What this connection's events say about DM peers beyond papo's state: papo keeps a peer whose
 /// direct handle is held in `monitor_online` after a `MONITOR` offline reply, and it does not treat
@@ -10,11 +12,13 @@ pub(crate) struct PeerEvidence {
     reported_offline: HashSet<papo::Nick>,
     heard_from: HashSet<papo::Nick>,
     witnessed: WitnessedPresence,
+    away_checks: AwayChecks,
 }
 
 impl PeerEvidence {
     pub(crate) fn observe(&mut self, event: &papo::Event, now_ms: i64) {
         self.witnessed.observe(event, now_ms);
+        self.away_checks.observe(event);
         match event {
             papo::Event::MonitorOffline(offline) => {
                 self.heard_from.remove(&offline.subject);
@@ -63,6 +67,10 @@ impl PeerEvidence {
         )
     }
 
+    pub(crate) fn away_checks(&mut self) -> &mut AwayChecks {
+        &mut self.away_checks
+    }
+
     /// When this connection saw the peer enter `presence`, for an away or offline peer.
     pub(crate) fn since(&self, nick: &papo::Nick, presence: Option<PeerPresence>) -> Option<i64> {
         presence
@@ -74,10 +82,11 @@ impl PeerEvidence {
         match user.away() {
             papo::Away::Away { .. } => Some(PeerPresence::Away),
             papo::Away::Present => Some(PeerPresence::Online),
-            _ => self
-                .heard_from
-                .contains(user.nick())
-                .then_some(PeerPresence::Online),
+            _ => self.away_checks.answered(user.nick()).or_else(|| {
+                self.heard_from
+                    .contains(user.nick())
+                    .then_some(PeerPresence::Online)
+            }),
         }
     }
 }
