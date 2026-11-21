@@ -583,6 +583,7 @@ impl NetworkModel {
                 nick_color_index: None,
                 direct_identity: None,
                 peer_presence: None,
+                peer_presence_since_ms: None,
                 peer_bot: false,
                 draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
@@ -3145,12 +3146,13 @@ impl NetworkModel {
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
         buffer.projection.peer_presence = None;
+        buffer.projection.peer_presence_since_ms = None;
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
 
-    pub(crate) fn observe_peers(&mut self, event: &papo::Event) {
-        self.peer_evidence.observe(event);
+    pub(crate) fn observe_peers(&mut self, event: &papo::Event, now_ms: i64) {
+        self.peer_evidence.observe(event, now_ms);
     }
 
     pub(crate) fn sync_direct_peers(&mut self, state: &papo::State) -> Vec<EngineToUi> {
@@ -3163,10 +3165,14 @@ impl NetworkModel {
                     return None;
                 };
                 let presence = self.peer_evidence.presence(state, nick);
+                let since = self.peer_evidence.since(nick, presence);
                 let bot = crate::direct_peer::bot(state, nick, buffer.projection.peer_bot);
-                (buffer.projection.peer_presence != presence || buffer.projection.peer_bot != bot)
+                (buffer.projection.peer_presence != presence
+                    || buffer.projection.peer_presence_since_ms != since
+                    || buffer.projection.peer_bot != bot)
                     .then(|| {
                         buffer.projection.peer_presence = presence;
+                        buffer.projection.peer_presence_since_ms = since;
                         buffer.projection.peer_bot = bot;
                         EngineToUi::BufferUpdated {
                             buffer: buffer.projection.clone(),
@@ -4266,6 +4272,7 @@ impl NetworkModel {
             direct_identity: (kind == BufferKind::Direct)
                 .then_some(DirectIdentityState::Unverified),
             peer_presence: None,
+            peer_presence_since_ms: None,
             peer_bot: false,
             draft_key: projected_draft_key,
             topic,

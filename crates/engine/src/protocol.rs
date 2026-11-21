@@ -574,6 +574,10 @@ pub struct BufferProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub peer_presence: Option<PeerPresence>,
+    /// When this session saw an away or offline peer change into that state, as Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub peer_presence_since_ms: Option<i64>,
     /// Whether IRC metadata identifies a direct-message peer as a bot.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]

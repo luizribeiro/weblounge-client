@@ -1386,6 +1386,11 @@ describe("WorkerEngineClient", () => {
 
   it.each([
     { field: "peer_presence", valid: "offline", invalid: "invisible" },
+    {
+      field: "peer_presence_since_ms",
+      valid: 1_795_269_900_000,
+      invalid: "14:05",
+    },
     { field: "peer_bot", valid: true, invalid: "yes" },
   ])(
     "decodes a direct peer's $field and rejects invalid values",

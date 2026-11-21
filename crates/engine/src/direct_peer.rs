@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{EngineToUi, PeerPresence};
+use crate::{EngineToUi, PeerPresence, witnessed_presence::WitnessedPresence};
 
 /// What this connection's events say about DM peers beyond papo's state: papo keeps a peer whose
 /// direct handle is held in `monitor_online` after a `MONITOR` offline reply, and it does not treat
@@ -9,10 +9,12 @@ use crate::{EngineToUi, PeerPresence};
 pub(crate) struct PeerEvidence {
     reported_offline: HashSet<papo::Nick>,
     heard_from: HashSet<papo::Nick>,
+    witnessed: WitnessedPresence,
 }
 
 impl PeerEvidence {
-    pub(crate) fn observe(&mut self, event: &papo::Event) {
+    pub(crate) fn observe(&mut self, event: &papo::Event, now_ms: i64) {
+        self.witnessed.observe(event, now_ms);
         match event {
             papo::Event::MonitorOffline(offline) => {
                 self.heard_from.remove(&offline.subject);
@@ -59,6 +61,13 @@ impl PeerEvidence {
             self.reported_away(user)
                 .unwrap_or_else(|| unreported_monitor_presence(state)),
         )
+    }
+
+    /// When this connection saw the peer enter `presence`, for an away or offline peer.
+    pub(crate) fn since(&self, nick: &papo::Nick, presence: Option<PeerPresence>) -> Option<i64> {
+        presence
+            .filter(|presence| *presence != PeerPresence::Online)
+            .and_then(|presence| self.witnessed.since(nick, presence))
     }
 
     fn reported_away(&self, user: &papo::User) -> Option<PeerPresence> {
@@ -265,7 +274,7 @@ mod tests {
                     .next()
                     .await
                     .expect("papo event stream remains open");
-                self.model.observe_peers(&event);
+                self.model.observe_peers(&event, OBSERVED_AT_MS);
                 if until(&event) {
                     return;
                 }
@@ -274,6 +283,13 @@ mod tests {
 
         fn sync(&mut self) -> Vec<(BufferId, Option<PeerPresence>)> {
             self.sync_fact(|buffer| buffer.peer_presence)
+        }
+
+        fn sync_since(&mut self) -> Vec<(Option<PeerPresence>, Option<i64>)> {
+            self.sync_fact(|buffer| (buffer.peer_presence, buffer.peer_presence_since_ms))
+                .into_iter()
+                .map(|(_, fact)| fact)
+                .collect()
         }
 
         fn sync_bot(&mut self) -> Vec<(BufferId, bool)> {
@@ -291,6 +307,8 @@ mod tests {
                 .collect()
         }
     }
+
+    const OBSERVED_AT_MS: i64 = 1_795_000_000_000;
 
     fn monitor_online(event: &papo::Event) -> bool {
         matches!(event, papo::Event::MonitorOnline(_))
@@ -588,5 +606,71 @@ mod tests {
         peer.report_offline().await;
 
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Offline))]);
+    }
+
+    #[tokio::test]
+    async fn an_away_change_seen_this_session_carries_its_server_time() {
+        let mut peer = Peer::monitored().await;
+        peer.report_online().await;
+        _ = peer.sync();
+
+        peer.server(
+            "@time=2026-11-21T14:05:00.000Z :alice!~alice@cloak.example AWAY :lunch",
+            away_changed,
+        )
+        .await;
+        assert_eq!(
+            peer.sync_since(),
+            [(Some(PeerPresence::Away), Some(1_795_269_900_000))]
+        );
+
+        peer.server(":alice!~alice@cloak.example AWAY", away_changed)
+            .await;
+        assert_eq!(peer.sync_since(), [(Some(PeerPresence::Online), None)]);
+    }
+
+    #[tokio::test]
+    async fn a_peer_assumed_away_from_a_bare_730_has_no_time() {
+        let mut peer = Peer::monitored().await;
+
+        peer.report_connected().await;
+
+        assert_eq!(peer.sync_since(), [(Some(PeerPresence::Away), None)]);
+    }
+
+    #[tokio::test]
+    async fn a_peer_seen_going_offline_is_last_seen_when_monitor_reported_it() {
+        let mut peer = Peer::monitored().await;
+        peer.report_online().await;
+        _ = peer.sync();
+
+        peer.report_offline().await;
+
+        assert_eq!(
+            peer.sync_since(),
+            [(Some(PeerPresence::Offline), Some(OBSERVED_AT_MS))]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_peer_already_offline_when_first_watched_has_no_last_seen() {
+        let mut peer = Peer::monitored().await;
+
+        peer.report_offline().await;
+
+        assert_eq!(peer.sync_since(), [(Some(PeerPresence::Offline), None)]);
+    }
+
+    #[tokio::test]
+    async fn a_peer_coming_back_drops_its_last_seen() {
+        let mut peer = Peer::monitored().await;
+        peer.report_online().await;
+        _ = peer.sync();
+        peer.report_offline().await;
+        _ = peer.sync();
+
+        peer.report_online().await;
+
+        assert_eq!(peer.sync_since(), [(Some(PeerPresence::Online), None)]);
     }
 }

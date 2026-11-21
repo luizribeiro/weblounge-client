@@ -28,6 +28,7 @@ mod typing;
 mod upload_approvals;
 mod upload_policy;
 mod upload_target;
+mod witnessed_presence;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use std::sync::Arc;

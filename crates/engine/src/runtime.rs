@@ -4725,7 +4725,9 @@ fn process_event_with_direct(
     let mut output = Vec::new();
     let peer_facts_may_change = crate::direct_peer::may_change(&event);
     let membership_grew = crate::members::channels_gaining_members(&event, &snapshot);
-    running.model.observe_peers(&event);
+    running
+        .model
+        .observe_peers(&event, time_millis(papo::time::now()));
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
     for channel in &membership_grew {
         running.model.remember_members(&snapshot, channel);

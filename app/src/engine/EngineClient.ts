@@ -1173,6 +1173,10 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
       value.peer_presence === undefined ||
       isOneOf(value.peer_presence, ["online", "away", "offline"])
     ) ||
+    !(
+      value.peer_presence_since_ms === undefined ||
+      typeof value.peer_presence_since_ms === "number"
+    ) ||
     !(value.peer_bot === undefined || typeof value.peer_bot === "boolean") ||
     !(value.topic === null || typeof value.topic === "string") ||
     !(
@@ -1209,6 +1213,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ...(value.peer_presence === undefined
       ? {}
       : { peer_presence: value.peer_presence }),
+    ...(value.peer_presence_since_ms === undefined
+      ? {}
+      : { peer_presence_since_ms: value.peer_presence_since_ms }),
     ...(value.peer_bot === undefined ? {} : { peer_bot: value.peer_bot }),
     draft_key: value.draft_key,
     topic: value.topic,

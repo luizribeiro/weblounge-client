@@ -53,6 +53,10 @@ direct_identity?: DirectIdentityState,
  */
 peer_presence?: PeerPresence,
 /**
+ * When this session saw an away or offline peer change into that state, as Unix milliseconds.
+ */
+peer_presence_since_ms?: number,
+/**
  * Whether IRC metadata identifies a direct-message peer as a bot.
  */
 peer_bot?: boolean,
