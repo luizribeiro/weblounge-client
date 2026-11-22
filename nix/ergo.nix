@@ -8,6 +8,16 @@ let
   apiToken = "weblounge-local-api-token";
   # Must match app/e2e/fake-filehost-server.mjs and E2E_FILEHOST_ORIGIN in app/csp.ts.
   fakeFilehost = "https://127.0.0.1:4175";
+  motd = pkgs.writeText "weblounge-ergo.motd" (
+    builtins.concatStringsSep "\n" [
+      "Welcome to the WebLounge local test network."
+      "This server exists for automated tests only."
+      "Channels are disposable and history keeps 100 messages."
+      "NickServ and ChanServ are online."
+      "Accounts are created by the test fixtures."
+      "Have a good test run."
+    ]
+  );
   config = pkgs.runCommand "weblounge-ergo.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
     ${pkgs.lib.getExe pkgs.ergochat} defaultconfig > "$out"
     yq --inplace '
@@ -18,7 +28,7 @@ let
         "127.0.0.1:8067": {"websocket": true}
       } |
       .server.websockets.allowed-origins = [] |
-      .server.motd = "" |
+      .server.motd = "${motd}" |
       .server.additional-isupport = {"draft/FILEHOST": "${fakeFilehost}/upload"} |
       .accounts.registration.enabled = false |
       .accounts.require-sasl.enabled = true |

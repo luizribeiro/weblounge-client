@@ -101,6 +101,7 @@ import {
   estimateSystemLineHeight,
   systemLineSizeRevision,
 } from "./timeline/item-size-estimate";
+import { MotdCard } from "./timeline/MotdCard";
 import { NoticeRow } from "./timeline/NoticeRow";
 import {
   isIrcNoticeMessage,
@@ -1691,6 +1692,19 @@ function TimelineRowView(props: {
                 card={shown().card}
                 presentation={props.presentation ?? "desktop"}
                 renderText={renderText}
+                timeMs={shown().timeMs}
+              />
+            )}
+          </Match>
+          <Match when={systemCard(row, "motd")}>
+            {(shown) => (
+              <MotdCard
+                card={shown().card}
+                expanded={props.expanded}
+                onToggle={(expanded) =>
+                  props.onToggleSystem(shown().itemId, expanded)
+                }
+                presentation={props.presentation ?? "desktop"}
                 timeMs={shown().timeMs}
               />
             )}

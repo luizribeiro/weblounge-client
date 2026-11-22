@@ -8,7 +8,7 @@ export function SystemCard(props: {
   readonly accessibleName: string;
   readonly children: JSX.Element;
   readonly icon: EventIconName;
-  readonly kind: "topic";
+  readonly kind: "motd" | "topic";
   readonly meta?: string | undefined;
   readonly presentation: "desktop" | "mobile";
   readonly timeMs: number;

@@ -1,0 +1,15 @@
+/* item-size-estimate.ts sizes MOTD lines from this font size and line height. */
+.lines {
+  font-family: var(--wl-font-mono);
+  font-size: 12.5px;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.line {
+  display: block;
+  min-height: 19px;
+}
+.toggle {
+  line-height: 18px;
+}
