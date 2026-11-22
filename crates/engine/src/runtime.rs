@@ -5109,6 +5109,11 @@ fn process_connected(
             .map(|account| account.key().to_owned()),
     );
     project_own_change_actions(&mut running.model, Some(snapshot));
+    if let Some(line) = connected_line(&running.identity.endpoint) {
+        running
+            .model
+            .push_server_line(line, time_millis(papo::time::now()));
+    }
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
         snapshot.supports(papo::Feature::History),
@@ -5134,6 +5139,17 @@ fn process_connected(
     }
     connected_push_action(running, snapshot, output);
     history_fetches
+}
+
+fn connected_line(endpoint: &str) -> Option<crate::timeline::LineEvent> {
+    let endpoint = endpoint.parse::<papo::Endpoint>().ok()?;
+    Some(crate::timeline::LineEvent::Connected {
+        server: endpoint.host().to_owned(),
+        secure: matches!(
+            endpoint.kind(),
+            papo::EndpointKind::Tls | papo::EndpointKind::SecureWebSocket
+        ),
+    })
 }
 
 fn connected_push_action(
@@ -6587,6 +6603,7 @@ mod tests {
     mod history_integrity;
     mod mentions;
     mod redaction;
+    mod server_buffer;
 
     use std::{
         collections::VecDeque,

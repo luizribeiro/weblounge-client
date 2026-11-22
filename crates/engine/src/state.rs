@@ -673,7 +673,7 @@ impl NetworkModel {
         self.network.id
     }
 
-    const fn server_buffer_id(&self) -> BufferId {
+    pub(crate) const fn server_buffer_id(&self) -> BufferId {
         self.server_buffer_id
     }
 
@@ -2294,6 +2294,16 @@ impl NetworkModel {
         }
         self.dirty_timelines.insert(buffer_id);
         Some(id)
+    }
+
+    pub(crate) fn push_server_line(&mut self, line: LineEvent, received_at_ms: i64) {
+        self.push_system_record(
+            self.server_buffer_id(),
+            RecordBody::Line(line),
+            None,
+            None,
+            received_at_ms,
+        );
     }
 
     pub(crate) fn receive_kick(
