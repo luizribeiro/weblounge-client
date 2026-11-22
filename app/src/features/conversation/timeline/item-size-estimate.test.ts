@@ -146,6 +146,33 @@ describe("estimateSystemLineHeight", () => {
     );
   });
 
+  it("sizes a message of the day from its shown lines and toggle", () => {
+    const motd = (count: number): SystemProjection => ({
+      time_ms: 1,
+      line: {
+        type: "event",
+        event: {
+          type: "motd",
+          lines: Array.from({ length: count }, (_, line) => `line ${line}`),
+        },
+      },
+    });
+    const estimate = (count: number, expanded: boolean) =>
+      estimateSystemLineHeight(
+        motd(count),
+        1280,
+        "cozy",
+        "desktop",
+        expanded,
+        false,
+        "after-divider",
+      );
+
+    expect(estimate(2, false)).toBe(3 + 18 + 18 + 4 + 2 * 19);
+    expect(estimate(10, false)).toBe(3 + 18 + 18 + 4 + 4 * 19 + 4 + 18);
+    expect(estimate(10, true)).toBe(estimate(10, false) + 6 * 19);
+  });
+
   it("invalidates on every geometry input", () => {
     expect(systemLineSizeRevision(7, 3, true, false, "message", "mobile")).toBe(
       "7:3:true:false:message:mobile",

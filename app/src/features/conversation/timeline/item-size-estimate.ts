@@ -1,5 +1,6 @@
 import { type DensityId, densityPresets } from "../../../density/density";
 import type { SystemProjection } from "../../../engine/generated/SystemProjection";
+import { motdFolds, motdShownLines } from "./motd-lines";
 import type { RowSpacing } from "./row-spacing";
 import { systemLineText, systemLineWords } from "./system-line-words";
 
@@ -20,8 +21,31 @@ export function estimateSystemLineHeight(
   if (system.line.type === "event" && system.line.event.type === "topic_card")
     return (
       top +
-      estimateCardHeight(system.line.event.topic, viewportWidth, presentation)
+      estimateCardHeight(
+        wrappedLines(
+          [system.line.event.topic],
+          viewportWidth,
+          presentation,
+          cardFontSize,
+        ) * cardLineHeight,
+        presentation,
+      )
     );
+  if (system.line.type === "event" && system.line.event.type === "motd") {
+    const card = system.line.event;
+    const lines = wrappedLines(
+      motdShownLines(card, expanded),
+      viewportWidth,
+      presentation,
+      motdFontSize,
+    );
+    const toggle = motdFolds(card)
+      ? cardPadding[presentation].gap + motdToggleHeight
+      : 0;
+    return (
+      top + estimateCardHeight(lines * motdLineHeight + toggle, presentation)
+    );
+  }
   const textWidth = Math.max(
     presentation === "mobile" ? viewportWidth - 58 : viewportWidth - 248,
     80,
@@ -52,6 +76,9 @@ export function estimateSystemLineHeight(
 const cardHeaderHeight = 18;
 const cardLineHeight = 21;
 const cardFontSize = 14;
+const motdFontSize = 12.5;
+const motdLineHeight = 19;
+const motdToggleHeight = 18;
 const cardMaxWidth = 620;
 const cardBorders = 2;
 const cardPadding = {
@@ -62,9 +89,20 @@ const mobileTranscriptInline = 32;
 const desktopTextColumnOffset = 248;
 
 function estimateCardHeight(
-  topic: string,
+  bodyHeight: number,
+  presentation: "desktop" | "mobile",
+): number {
+  const padding = cardPadding[presentation];
+  return (
+    padding.block + cardBorders + cardHeaderHeight + padding.gap + bodyHeight
+  );
+}
+
+function wrappedLines(
+  texts: readonly string[],
   viewportWidth: number,
   presentation: "desktop" | "mobile",
+  fontSize: number,
 ): number {
   const padding = cardPadding[presentation];
   const outerWidth =
@@ -74,15 +112,12 @@ function estimateCardHeight(
   const innerWidth = Math.max(outerWidth - padding.inline - cardBorders, 80);
   const charactersPerLine = Math.max(
     1,
-    Math.floor(innerWidth / (cardFontSize * characterWidthFactor)),
+    Math.floor(innerWidth / (fontSize * characterWidthFactor)),
   );
-  const lines = Math.max(1, Math.ceil(topic.length / charactersPerLine));
-  return (
-    padding.block +
-    cardBorders +
-    cardHeaderHeight +
-    padding.gap +
-    lines * cardLineHeight
+  return texts.reduce(
+    (total, text) =>
+      total + Math.max(1, Math.ceil(text.length / charactersPerLine)),
+    0,
   );
 }
 
