@@ -4867,10 +4867,20 @@ fn process_papo_event(
         papo::Event::Disconnected(disconnected) => {
             process_disconnected(running, &disconnected, output, &mut effects)
         }
-        _ => Vec::new(),
+        event => process_server_buffer_event(&mut running.model, event),
     };
     running.model.observe_live_server_time(live_server_time);
     effects
+}
+
+fn process_server_buffer_event(model: &mut NetworkModel, event: papo::Event) -> Vec<HistoryFetch> {
+    if let papo::Event::Motd(motd) = event {
+        model.push_server_line(
+            crate::timeline::LineEvent::Motd { lines: motd.lines },
+            time_millis(papo::time::now()),
+        );
+    }
+    Vec::new()
 }
 
 fn receive_redaction(

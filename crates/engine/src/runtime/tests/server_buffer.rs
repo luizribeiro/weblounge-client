@@ -132,6 +132,38 @@ async fn each_reconnect_adds_another_connection_line() {
     assert_eq!(session.server_lines(), [connected(), connected()]);
 }
 
+#[tokio::test]
+async fn the_message_of_the_day_precedes_the_connection_line() {
+    let motd = ["pull up a chair.", "", "be kind, ship things."];
+    let mut session = Session::new();
+    session.register(&motd).await;
+
+    assert_eq!(
+        session.server_lines(),
+        [
+            LineEvent::Motd {
+                lines: motd.map(String::from).to_vec(),
+            },
+            connected(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn each_reconnect_shows_that_connection_s_message_of_the_day() {
+    let motd = LineEvent::Motd {
+        lines: vec!["be kind, ship things.".into()],
+    };
+    let mut session = Session::new();
+    session.register(&["be kind, ship things."]).await;
+    session.reconnect(&["be kind, ship things."]).await;
+
+    assert_eq!(
+        session.server_lines(),
+        [motd.clone(), connected(), motd, connected()]
+    );
+}
+
 #[test]
 fn the_connection_line_names_the_endpoint_host_and_its_transport() {
     let line = |server: &str, secure| {
