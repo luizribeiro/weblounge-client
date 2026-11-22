@@ -1,27 +1,25 @@
 import { type JSX, Show } from "solid-js";
-import type { LineEvent } from "../../../engine/generated/LineEvent";
-import { t } from "../../../strings";
-import { formatShortDate, formatTime } from "../../../ui/format-time";
-import { EventIcon } from "../../../ui/icons/EventIcon";
-import { Selectable } from "../../../ui/Selectable";
+import { formatTime } from "../../../ui/format-time";
+import { EventIcon, type EventIconName } from "../../../ui/icons/EventIcon";
 import styles from "./SystemCard.module.css";
 import lineStyles from "./SystemLine.module.css";
 
-export type TopicCardEvent = Extract<LineEvent, { type: "topic_card" }>;
-
 export function SystemCard(props: {
-  readonly card: TopicCardEvent;
+  readonly accessibleName: string;
+  readonly children: JSX.Element;
+  readonly icon: EventIconName;
+  readonly kind: "topic";
+  readonly meta?: string | undefined;
   readonly presentation: "desktop" | "mobile";
-  readonly renderText: (text: string) => JSX.Element;
   readonly timeMs: number;
+  readonly title: string;
 }) {
-  const meta = () => topicCardMeta(props.card);
   return (
     <section
-      aria-label={topicCardAccessibleName(props.card)}
+      aria-label={props.accessibleName}
       class={lineStyles.line}
       data-presentation={props.presentation}
-      data-system-card="topic"
+      data-system-card={props.kind}
     >
       <time
         class={lineStyles.time}
@@ -30,45 +28,18 @@ export function SystemCard(props: {
         {formatTime(props.timeMs)}
       </time>
       <span class={`${lineStyles.iconColumn} ${styles.desktopIcon}`}>
-        <EventIcon class={lineStyles.icon} icon="topic" />
+        <EventIcon class={lineStyles.icon} icon={props.icon} />
       </span>
       <div class={styles.card}>
         <div class={styles.header}>
-          <EventIcon class={styles.phoneIcon} icon="topic" />
-          <span class={styles.title}>{t("messages.topic.title")}</span>
-          <Show when={meta()}>
-            <span class={styles.meta}>{meta()}</span>
+          <EventIcon class={styles.phoneIcon} icon={props.icon} />
+          <span class={styles.title}>{props.title}</span>
+          <Show when={props.meta}>
+            <span class={styles.meta}>{props.meta}</span>
           </Show>
         </div>
-        <div class={styles.text} data-system-card-text="true">
-          <Selectable surfaceId="topic-card-text">
-            {props.card.topic === ""
-              ? t("messages.topic.empty")
-              : props.renderText(props.card.topic)}
-          </Selectable>
-        </div>
+        {props.children}
       </div>
     </section>
   );
-}
-
-export function topicCardMeta(card: TopicCardEvent): string {
-  return [
-    card.setter === null || card.setter === ""
-      ? undefined
-      : t("messages.topic.set_by", { setter: card.setter }),
-    card.set_at_ms === null ? undefined : formatShortDate(card.set_at_ms),
-  ]
-    .filter((part) => part !== undefined)
-    .join(" · ");
-}
-
-export function topicCardAccessibleName(card: TopicCardEvent): string {
-  return [
-    t("messages.topic.title"),
-    card.topic === "" ? t("messages.topic.empty") : card.topic,
-    topicCardMeta(card),
-  ]
-    .filter(Boolean)
-    .join(". ");
 }

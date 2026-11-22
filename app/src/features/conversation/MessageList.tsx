@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { densityPresets } from "../../density/density";
+import type { LineEvent } from "../../engine/generated/LineEvent";
 import type { SystemProjection } from "../../engine/generated/SystemProjection";
 import type { TimelineItem } from "../../engine/generated/TimelineItem";
 import { isRedacted } from "../../engine/message-kind";
@@ -107,12 +108,12 @@ import {
   type LocalNoticeMessage,
 } from "./timeline/notice-message";
 import { type RowFamily, topPadding } from "./timeline/row-spacing";
-import { SystemCard, type TopicCardEvent } from "./timeline/SystemCard";
 import { SystemLine } from "./timeline/SystemLine";
 import {
   systemLineSummaryText,
   systemLineWords,
 } from "./timeline/system-line-words";
+import { TopicCard } from "./timeline/TopicCard";
 import { UnverifiedSenderMark } from "./UnverifiedSenderMark";
 
 interface MessageListProps {
@@ -1507,14 +1508,34 @@ const scrollKeys = new Set([
   "PageUp",
 ]);
 
-function topicCard(
+type CardEvent<T extends "motd" | "topic_card"> = Extract<
+  LineEvent,
+  { type: T }
+>;
+
+function systemCard<T extends "motd" | "topic_card">(
   row: TimelineRow,
-): { readonly card: TopicCardEvent; readonly timeMs: number } | undefined {
-  return row.kind === "system" &&
-    row.system.line.type === "event" &&
-    row.system.line.event.type === "topic_card"
-    ? { card: row.system.line.event, timeMs: row.system.time_ms }
+  type: T,
+):
+  | {
+      readonly card: CardEvent<T>;
+      readonly itemId: number;
+      readonly timeMs: number;
+    }
+  | undefined {
+  if (row.kind !== "system" || row.system.line.type !== "event")
+    return undefined;
+  const event = row.system.line.event;
+  return isCardEvent(event, type)
+    ? { card: event, itemId: row.itemId, timeMs: row.system.time_ms }
     : undefined;
+}
+
+function isCardEvent<T extends "motd" | "topic_card">(
+  event: LineEvent,
+  type: T,
+): event is CardEvent<T> {
+  return event.type === type;
 }
 
 function renderedRowStart(
@@ -1664,9 +1685,9 @@ function TimelineRowView(props: {
               </div>
             )}
           </Match>
-          <Match when={topicCard(row)}>
+          <Match when={systemCard(row, "topic_card")}>
             {(shown) => (
-              <SystemCard
+              <TopicCard
                 card={shown().card}
                 presentation={props.presentation ?? "desktop"}
                 renderText={renderText}

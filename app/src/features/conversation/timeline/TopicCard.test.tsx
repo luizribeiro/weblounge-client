@@ -1,6 +1,6 @@
 import { render, screen } from "@solidjs/testing-library";
 import { expect, it } from "vitest";
-import { SystemCard, type TopicCardEvent, topicCardMeta } from "./SystemCard";
+import { TopicCard, type TopicCardEvent, topicCardMeta } from "./TopicCard";
 
 const setAt = Date.UTC(2026, 10, 3, 12);
 const card: TopicCardEvent = {
@@ -12,7 +12,7 @@ const card: TopicCardEvent = {
 
 it("shows the topic under a Topic title with who set it and when", () => {
   render(() => (
-    <SystemCard
+    <TopicCard
       card={card}
       presentation="desktop"
       renderText={(text) => <span data-rendered-text>{text}</span>}
@@ -38,7 +38,7 @@ it("shows the topic under a Topic title with who set it and when", () => {
 it("says no topic is set and omits unknown setter facts", () => {
   const empty = { ...card, topic: "", setter: null, set_at_ms: null };
   render(() => (
-    <SystemCard
+    <TopicCard
       card={empty}
       presentation="mobile"
       renderText={(text) => <span data-rendered-text>{text}</span>}
