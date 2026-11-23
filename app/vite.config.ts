@@ -71,7 +71,9 @@ export default defineConfig(({ mode }) => {
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
       __BUILD_VERSION__: JSON.stringify(buildVersionFromEnv(mode, process.env)),
       __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
-      __HISTORY_WIRE_TEST_ENABLED__: JSON.stringify(performanceHarness),
+      __HISTORY_WIRE_TEST_ENABLED__: JSON.stringify(
+        performanceHarness || process.env.WEBLOUNGE_E2E_WIRE_TRACE === "1",
+      ),
       __STORAGE_WRITE_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __ENGINE_TRAP_TEST_ENABLED__: JSON.stringify(performanceHarness),
       ...pushWorkerDefines,

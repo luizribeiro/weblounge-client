@@ -241,11 +241,63 @@ test.describe("full unmocked push lifecycle", () => {
       await expect.poll(() => storedAppBadge(page)).toBe(badgeWithUnreadDm);
 
       const droppedBefore = await normalPushesDropped();
+      await other.addInitScript(() => {
+        const wire: string[] = [];
+        Reflect.set(globalThis, "diagWire", wire);
+        const add = MessagePort.prototype.addEventListener;
+        MessagePort.prototype.addEventListener = function (
+          type: string,
+          listener: EventListenerOrEventListenerObject | null,
+          options?: boolean | AddEventListenerOptions,
+        ) {
+          if (type === "message" && listener !== null) {
+            add.call(this, "message", (event) => {
+              const data = (event as MessageEvent<unknown>).data as {
+                type?: unknown;
+                at?: number;
+                direction?: string;
+                line?: string;
+                event?: string;
+                state?: unknown;
+              } | null;
+              if (
+                typeof data?.type === "string" &&
+                data.type.startsWith("history_wire_test")
+              ) {
+                wire.push(
+                  `${Math.round(data.at ?? 0)} ${data.direction ?? "control"} ${data.line ?? data.event ?? ""}`,
+                );
+              } else if (
+                typeof data?.type === "string" &&
+                /push|network_state/u.test(data.type)
+              ) {
+                wire.push(
+                  `${Date.now()} engine ${JSON.stringify(data).slice(0, 200)}`,
+                );
+              }
+            });
+            this.postMessage({ type: "history_wire_test_trace_subscribe" });
+          }
+          add.call(this, type, listener, options);
+        };
+      });
+      const reloadedAt = Date.now();
       await other.goto("/?debug=push");
       await expect(connectionHeading(other)).toBeVisible();
-      await expect(other.locator("[data-debug-overlay]")).toContainText(
-        "engine=Registered",
-      );
+      await expect(other.locator("[data-debug-overlay]"))
+        .toContainText("engine=Registered")
+        .catch(async (error: unknown) => {
+          const wire = await other.evaluate(
+            () => (Reflect.get(globalThis, "diagWire") ?? []) as string[],
+          );
+          throw new Error(
+            `${String(error)}\nDIAGNOSTIC reloaded=${reloadedAt} now=${Date.now()}:\n${wire
+              .filter(
+                (line) => !/ (PING|PONG)\b| 00[2-5] | 37[256] /u.test(line),
+              )
+              .join("\n")}`,
+          );
+        });
       await other
         .getByRole("complementary", { name: "Channel list" })
         .getByRole("button", {

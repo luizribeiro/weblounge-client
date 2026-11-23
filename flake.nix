@@ -408,6 +408,7 @@
         };
         pushE2eApp = checkApp.overrideAttrs {
           WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
+          WEBLOUNGE_E2E_WIRE_TRACE = "1";
         };
         # WebKit lays out a fixed-height line on its primary font's metrics, and
         # when no family of the app's mono stack is installed that font has none,
