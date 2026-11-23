@@ -2314,7 +2314,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `e277a83` (pre-0.1 API cleanup). DMs send to the nick and hold a
+- **papo:** papo 0.1 pinned at `1f64caa` (API final for 0.1). DMs send to the nick and hold a
   papo `Watch` for peers we share no channel with. papo dropped `PeerKey`, so the DM identity guard
   is the engine's own `PeerPin`: the peer's account on TLS connections (persisted; papo's old pins
   still read) plus per-connection holder continuity that a rename away, quit or leaving every
