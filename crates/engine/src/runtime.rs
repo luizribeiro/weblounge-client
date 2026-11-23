@@ -3939,6 +3939,42 @@ async fn drain_events(
             });
         }
     }
+    process_event_stream_end(&state, &outbound, instance);
+}
+
+/// papo ends the event stream without a `Disconnected` event when its driver stops, so the
+/// connection this instance still shows is over and nothing will reconnect it.
+fn process_event_stream_end(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+) {
+    let mut guard = lock(state);
+    let Some(running) = guard
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return;
+    };
+    let mut output = Vec::new();
+    release_connection(running, &mut output);
+    if !matches!(
+        running.model.connection(),
+        NetworkConnectionState::Offline { .. } | NetworkConnectionState::Failed { .. }
+    ) {
+        output.push(running.model.set_connection(
+            NetworkConnectionState::Failed {
+                reason: ConnectionFailureReason::Protocol,
+                message_key: EngineMessageKey::ConnectionFailed,
+            },
+            None,
+        ));
+        output.push(EngineToUi::notice(EngineMessageKey::ConnectionFailed));
+    }
+    let output = finish_timeline_turn(guard, output);
+    send_events(outbound, output);
+    update_chat_list(state, outbound, instance);
 }
 
 /// The peer of a private line someone else sent, whose DM can now reach them.
@@ -5014,14 +5050,6 @@ fn process_disconnected_event(
     disconnected: &papo::event::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
-    running.typing = crate::typing::OutgoingTyping::default();
-    project_own_change_actions(&mut running.model, None);
-    output.extend(running.model.conversation_buffers().map(|(buffer_id, _)| {
-        EngineToUi::TypingChanged {
-            buffer_id,
-            typers: Vec::new(),
-        }
-    }));
     let clear_authentication = process_disconnect(running, disconnected, output);
     let refresh_token = running.identity.kind() == AuthenticationKind::HostedOAuth
         && !clear_authentication
@@ -5173,25 +5201,7 @@ fn process_disconnect(
     disconnected: &papo::event::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
-    running
-        .model
-        .begin_disconnect_gap(time_millis(papo::time::now()));
-    running.model.restart_inflight_history();
-    running.model.invalidate_direct_handles();
-    running.flushing_reads = false;
-    let mut retained = VecDeque::new();
-    for queued in running.pending_sends.drain(..) {
-        if queued.retry_if_disconnected {
-            retained.push_back(queued);
-        } else {
-            output.extend(
-                running
-                    .model
-                    .fail_send(&queued.pending, EngineMessageKey::SendFailed),
-            );
-        }
-    }
-    running.pending_sends = retained;
+    release_connection(running, output);
     let hosted_authentication_failed =
         running.identity.kind() == AuthenticationKind::HostedOAuth && is_sasl_failure(disconnected);
     output.push(running.model.set_connection(
@@ -5212,6 +5222,38 @@ fn process_disconnect(
         hosted_authentication_failed,
     ));
     hosted_authentication_failed
+}
+
+/// What a lost connection takes with it: typing, the actions only a live server confirms, the
+/// peers' handles, in-flight history and reads, and sends that may not outlive it.
+fn release_connection(running: &mut RunningNetwork, output: &mut Vec<EngineToUi>) {
+    running.typing = crate::typing::OutgoingTyping::default();
+    project_own_change_actions(&mut running.model, None);
+    output.extend(running.model.conversation_buffers().map(|(buffer_id, _)| {
+        EngineToUi::TypingChanged {
+            buffer_id,
+            typers: Vec::new(),
+        }
+    }));
+    running
+        .model
+        .begin_disconnect_gap(time_millis(papo::time::now()));
+    running.model.restart_inflight_history();
+    running.model.invalidate_direct_handles();
+    running.flushing_reads = false;
+    let mut retained = VecDeque::new();
+    for queued in running.pending_sends.drain(..) {
+        if queued.retry_if_disconnected {
+            retained.push_back(queued);
+        } else {
+            output.extend(
+                running
+                    .model
+                    .fail_send(&queued.pending, EngineMessageKey::SendFailed),
+            );
+        }
+    }
+    running.pending_sends = retained;
 }
 
 fn process_lagged(
@@ -11666,6 +11708,40 @@ async fn delay(duration: Duration) {
             "@time={time} :offline.test NOTICE weblounge :clock"
         ))
         .await;
+    }
+
+    #[tokio::test]
+    async fn a_stopped_driver_ends_the_connection_it_was_running() {
+        let (client, events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound,
+            client.clone(),
+            events,
+            1,
+        ));
+        wire.register(&[]).await;
+        while !matches!(
+            receiver.recv().await,
+            Some(EngineToUi::NetworkStateChanged { ref network })
+                if network.state == NetworkConnectionState::Online
+        ) {}
+
+        drop(wire);
+        drain.await.expect("event stream ends");
+
+        let output = collect(&mut receiver);
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::NetworkStateChanged { network } if network.state
+                == NetworkConnectionState::Failed {
+                    reason: crate::ConnectionFailureReason::Protocol,
+                    message_key: EngineMessageKey::ConnectionFailed,
+                }
+        )));
+        assert!(!client.snapshot().is_connected());
     }
 
     #[test]
