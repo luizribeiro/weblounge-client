@@ -1,9 +1,16 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { BrowserContextOptions, Locator, Page } from "@playwright/test";
-import { expect, test } from "./irc-fixture";
+import type {
+  Browser,
+  BrowserContextOptions,
+  Locator,
+  Page,
+} from "@playwright/test";
+import type { IrcClient } from "./irc-client";
+import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { choose, choosePhoneAppearance } from "./settings-fixture";
 import { backToChatList, expectSettled } from "./settled";
+import { escapeRegex } from "./sidebar-rows";
 
 /** Review captures of every presence state; CI skips them, a review run sets the variable. */
 test.skip(
@@ -35,41 +42,47 @@ const themes = ["light", "dark", "ne"] as const;
 
 for (const layout of layouts) {
   for (const theme of themes) {
-    test(`${layout.name} ${theme}: every presence state`, async ({
+    const setting = { layout, theme };
+
+    test(`${layout.name} ${theme}: online at launch, a person and a bot`, async ({
       browser,
       baseURL,
       irc,
     }) => {
-      const ana = await irc.peer("ana", []);
-      const bruno = await irc.peer("bruno", []);
-      const kit = await irc.peer("kit", []);
-      const iris = await irc.peer("iris", []);
-      const context = await browser.newContext({ baseURL, ...layout.context });
-      await irc.scope(context);
-      const page = await context.newPage();
-      const screens = new Screens(page, layout, theme);
-      try {
-        await iris.mode(iris.nickname, "+B");
-        await page.emulateMedia({
-          colorScheme: theme === "dark" ? "dark" : "light",
-        });
-        await page.goto(irc.url());
-        await screens.joined(irc.channel);
-        if (theme === "ne") await screens.chooseNe();
-        for (const peer of [ana, bruno, kit, iris])
-          await peer.privmsgConfirmed(irc.account, `hello ${irc.id}`);
-        await bruno.setAway("lunch");
-        kit.close();
-        await kit.waitForDisconnect();
-
-        await page.goto(irc.url());
-        await screens.joined(irc.channel);
+      await session({ ...setting, browser, baseURL, irc }, async (screens) => {
+        const [ana, iris] = await screens.peers("ana", "iris");
+        await screens.relaunch();
         await screens.capture("list");
         await screens.open(ana.nickname, /^Online$/u, "online");
         await screens.open(iris.nickname, /^Online$/u, "bot-online");
+      });
+    });
+
+    test(`${layout.name} ${theme}: away and offline at launch, with no time`, async ({
+      browser,
+      baseURL,
+      irc,
+    }) => {
+      await session({ ...setting, browser, baseURL, irc }, async (screens) => {
+        const [bruno, kit] = await screens.peers("bruno", "kit");
+        await bruno.setAway("lunch");
+        kit.close();
+        await kit.waitForDisconnect();
+        await screens.relaunch();
         await screens.open(bruno.nickname, /^Away$/u, "away");
         await screens.open(kit.nickname, /^Offline$/u, "offline");
+      });
+    });
 
+    test(`${layout.name} ${theme}: changes seen this session, with times`, async ({
+      browser,
+      baseURL,
+      irc,
+    }) => {
+      await session({ ...setting, browser, baseURL, irc }, async (screens) => {
+        const [ana, iris] = await screens.peers("ana", "iris");
+        await screens.expectOnline(ana.nickname);
+        await screens.expectOnline(iris.nickname);
         await ana.setAway("lunch");
         await screens.open(ana.nickname, /^Away since \S/u, "away-since");
         await iris.setAway("recharging");
@@ -88,25 +101,89 @@ for (const layout of layouts) {
           /^Offline, last seen \S/u,
           "bot-offline",
         );
-      } finally {
-        for (const peer of [ana, bruno, kit, iris]) peer.close();
-        await context.close();
-      }
+      });
     });
+  }
+}
+
+interface SessionOptions {
+  readonly browser: Browser;
+  readonly baseURL: string | undefined;
+  readonly irc: IrcTestAccount;
+  readonly layout: Layout;
+  readonly theme: (typeof themes)[number];
+}
+
+/** The app open in the chosen layout and theme; peers come from `Screens.peers`. */
+async function session(
+  options: SessionOptions,
+  body: (screens: Screens) => Promise<void>,
+): Promise<void> {
+  const { irc, layout, theme } = options;
+  const context = await options.browser.newContext({
+    baseURL: options.baseURL,
+    ...layout.context,
+  });
+  await irc.scope(context);
+  const page = await context.newPage();
+  const screens = new Screens(page, layout, theme, irc);
+  try {
+    await page.emulateMedia({
+      colorScheme: theme === "dark" ? "dark" : "light",
+    });
+    await page.goto(irc.url());
+    await screens.joined();
+    if (theme === "ne") await screens.chooseNe();
+    await body(screens);
+  } finally {
+    screens.closePeers();
+    await context.close();
   }
 }
 
 class Screens {
   #inConversation: string | undefined;
+  readonly #peers: IrcClient[] = [];
 
   constructor(
     private readonly page: Page,
     private readonly layout: Layout,
     private readonly theme: (typeof themes)[number],
+    private readonly irc: IrcTestAccount,
   ) {}
 
+  /** Peers sharing no channel who have each sent us a DM; one named iris is a bot. */
+  async peers(...labels: readonly string[]): Promise<IrcClient[]> {
+    const peers = await Promise.all(
+      labels.map((label) => this.irc.peer(label, [])),
+    );
+    this.#peers.push(...peers);
+    for (const [index, peer] of peers.entries()) {
+      if (labels[index] === "iris") await peer.mode(peer.nickname, "+B");
+      await peer.privmsgConfirmed(this.irc.account, `hello ${this.irc.id}`);
+    }
+    return peers;
+  }
+
+  closePeers(): void {
+    for (const peer of this.#peers) peer.close();
+  }
+
+  /** A change is only dated once MONITOR has reported the peer online. */
+  async expectOnline(nick: string): Promise<void> {
+    await expect(
+      row(this.page, nick).locator('[data-presence="online"]'),
+    ).toBeVisible();
+  }
+
+  async relaunch(): Promise<void> {
+    await this.page.goto(this.irc.url());
+    await this.joined();
+  }
+
   /** A shown channel proves registration, so peers' lines reach us after it. */
-  async joined(channel: string): Promise<void> {
+  async joined(): Promise<void> {
+    const channel = this.irc.channel;
     if (this.layout.name === "phone") {
       await this.page
         .getByRole("button", { exact: true, name: channel })
@@ -160,9 +237,7 @@ class Screens {
 }
 
 function row(page: Page, nick: string): Locator {
-  return page
-    .locator(
-      `[data-buffer-id][aria-label="${nick}"], [data-buffer-id][aria-label^="${nick},"]`,
-    )
-    .first();
+  return page.getByRole("button", {
+    name: new RegExp(`^${escapeRegex(nick)}(?:,|$)`, "u"),
+  });
 }
