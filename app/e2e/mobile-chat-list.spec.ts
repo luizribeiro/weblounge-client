@@ -103,7 +103,7 @@ test.describe("mobile chat list against local Ergo", () => {
     irc,
   }) => {
     const bot = await irc.peer("chips");
-    await openWithDirectChat(page, irc, bot, "direct chat for filters");
+    await openWithDirectChats(page, irc, [bot], "direct chat for filters");
     const channelRow = page.getByRole("button", { name: irc.channel });
 
     const chip = page.getByRole("button", { name: "Direct", exact: true });
@@ -136,7 +136,7 @@ test.describe("mobile chat list against local Ergo", () => {
   }) => {
     test.skip(browserName !== "chromium", "reads the Chromium layer tree");
     const bot = await irc.peer("layers");
-    await openWithDirectChat(page, irc, bot, "rows paint into the list");
+    await openWithDirectChats(page, irc, [bot], "rows paint into the list");
 
     await nativeFeelAudit(page);
 
@@ -148,21 +148,11 @@ test.describe("mobile chat list against local Ergo", () => {
     page,
     irc,
   }) => {
-    await installNativeFeelInstrumentation(page);
-    await page.goto(irc.url());
-    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
-    const directChats = 11;
-    await Promise.all(
-      Array.from({ length: directChats }, async (_, index) => {
-        const bot = await irc.peer(`long${index}`);
-        await bot.privmsgConfirmed(irc.account, "a long chat list");
-      }),
+    const bots = await Promise.all(
+      Array.from({ length: 11 }, (_, index) => irc.peer(`long${index}`)),
     );
+    await openWithDirectChats(page, irc, bots, "a long chat list");
     const list = page.locator("[data-mobile-chat-list]");
-    await expect(
-      list.locator("[data-buffer-id]", { hasText: "a long chat list" }),
-    ).toHaveCount(directChats);
-    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
     await scrollToMiddle(list);
 
     expect(await scrollIndicatorTrackCovers(list)).toEqual([]);
@@ -258,20 +248,22 @@ async function hitsChip(chip: Locator, x: number, y: number) {
 }
 
 /**
- * The new direct chat sorts above the channel row and pushes it down. That shift is setup, and
- * it only counts when it lands after Chromium's post-navigation input window, so it is excluded.
+ * New direct chats sort above the channel row and push it down. That shift is setup, and it only
+ * counts when it lands after Chromium's post-navigation input window, so it is excluded.
  */
-async function openWithDirectChat(
+async function openWithDirectChats(
   page: Page,
   irc: IrcTestAccount,
-  bot: IrcClient,
+  bots: readonly IrcClient[],
   text: string,
 ): Promise<void> {
   await installNativeFeelInstrumentation(page);
   await page.goto(irc.url());
   await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
-  bot.privmsg(irc.account, text);
-  await expect(directRow(page, bot.nickname)).toBeVisible();
+  for (const bot of bots) bot.privmsg(irc.account, text);
+  await expect(page.locator("[data-buffer-id]", { hasText: text })).toHaveCount(
+    bots.length,
+  );
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   await resetNativeFeelLayoutShift(page);
 }
