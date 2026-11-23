@@ -3,10 +3,16 @@
   overflow: clip;
   position: relative;
 }
+/*
+ * iOS composites positioned rows whose stacking context lies outside this
+ * scroller as layers above it, covering its scroll indicator; isolating the
+ * list keeps the rows painting inside the scroller, under the indicator.
+ */
 .list {
   --wl-message-system-font-size: 12px;
   --wl-message-system-line-height: 18px;
   height: 100%;
+  isolation: isolate;
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;

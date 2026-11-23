@@ -2,7 +2,15 @@ import type { Locator, Page } from "@playwright/test";
 import { E2E_CONTENT_SECURITY_POLICY } from "../csp";
 import { messageId } from "./irc-client";
 import { expect, test } from "./irc-fixture";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
+import {
+  scrollIndicatorTrackCovers,
+  scrollToMiddle,
+} from "./scroll-indicator-track";
 import { choosePhoneAppearance } from "./settings-fixture";
 import { expectSettled } from "./settled";
 import { waitForStableGeometry } from "./stable-geometry";
@@ -251,6 +259,40 @@ for (const keyboard of ["closed", "open"] as const)
     expect(heights.size).toBeGreaterThanOrEqual(4);
     expect(await isCapped(composer)).toBe(true);
   });
+
+test("keeps the scroll indicator's track clear over a phone transcript", async ({
+  page,
+  irc,
+}, testInfo) => {
+  test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
+  const channel = irc.channelNamed("indicator");
+  const sender = await irc.peer("indicator-bot", [channel]);
+  for (let index = 0; index < 12; index += 1)
+    sender.privmsg(
+      channel,
+      `indicator backlog ${index} ${irc.id} ${"fill the narrow phone transcript ".repeat(4)}`,
+    );
+  const last = `indicator last ${irc.id}`;
+  await sender.privmsgConfirmed(channel, last);
+  await installNativeFeelInstrumentation(page);
+  await page.goto(irc.url({ autojoin: [channel] }));
+  await page.getByRole("button", { name: channel }).click();
+  await expectSettled(page, { conversation: channel });
+  await expect(messageRow(page, last)).toBeVisible();
+  const transcript = page.locator("[data-message-list]");
+  await scrollToMiddle(transcript);
+  await expectSettled(page, { conversation: channel });
+
+  expect(await scrollIndicatorTrackCovers(transcript)).toEqual([]);
+  await nativeFeelAudit(page);
+
+  await transcript.evaluate((element) => {
+    element.style.isolation = "auto";
+  });
+  expect(await scrollIndicatorTrackCovers(transcript)).toContainEqual(
+    expect.stringMatching(/data-row-key.*paints outside the scroller/u),
+  );
+});
 
 for (const appearance of [
   { theme: "Lounge", density: "Cozy" },
