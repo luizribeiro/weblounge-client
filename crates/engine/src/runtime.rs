@@ -3230,6 +3230,9 @@ fn classify_send_error(error: &papo::Error) -> SendError {
         papo::Error::Disconnected(_) => SendError::Offline,
         papo::Error::Interrupted(_) => SendError::Interrupted,
         papo::Error::TargetGone => SendError::DirectTargetGone,
+        papo::Error::Server(refused) if refused.refusal() == papo::Refusal::NoSuchNick => {
+            SendError::DirectTargetGone
+        }
 
         _ => SendError::Protocol,
     }
@@ -11756,6 +11759,24 @@ async fn delay(duration: Duration) {
             "@time={time} :offline.test NOTICE weblounge :clock"
         ))
         .await;
+    }
+
+    #[test]
+    fn a_dm_to_a_nick_nobody_holds_reports_the_peer_gone() {
+        let refused = papo_testing::ErrorBuilder::numeric(
+            401,
+            vec![
+                "weblounge".into(),
+                "alice".into(),
+                "No such nick/channel".into(),
+            ],
+        )
+        .build();
+
+        assert!(matches!(
+            super::classify_send_error(&refused),
+            super::SendError::DirectTargetGone
+        ));
     }
 
     #[tokio::test]
