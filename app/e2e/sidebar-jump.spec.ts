@@ -76,7 +76,26 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
     expect(await rightEdge(first.locator("[data-sidebar-name]"))).toBe(
       restingEdge,
     );
-    await nativeFeelAudit(page);
+    let auditError: unknown;
+    await nativeFeelAudit(page).catch((error: unknown) => {
+      auditError = error;
+    });
+    if (auditError !== undefined) {
+      const capture = await page.evaluate(() => ({
+        buffers: (Reflect.get(globalThis, "diagBuffers") ?? []) as string[],
+        wire: (Reflect.get(globalThis, "diagWire") ?? []) as string[],
+      }));
+      throw new Error(
+        `${String(auditError)}\nDIAGNOSTIC now=${Date.now()} buffers:\n${capture.buffers
+          .filter((line) => !line.includes(" buffer_added "))
+          .join("\n")}\nDIAGNOSTIC wire:\n${capture.wire
+          .filter(
+            (line) =>
+              !/ (heartbeat|PING|PONG)\b| 00[1-5] | 37[256] /u.test(line),
+          )
+          .join("\n")}`,
+      );
+    }
 
     await page.keyboard.press("2");
     await expect(row(page, ids[1])).toHaveAttribute("aria-current", "page");

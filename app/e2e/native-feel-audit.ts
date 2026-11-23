@@ -84,8 +84,54 @@ export async function installNativeFeelInstrumentation(
         addPortListener.call(this, type, listener, options);
         return;
       }
+      const diagWire = (Reflect.get(globalThis, "diagWire") ?? []) as string[];
+      const diagBuffers = (Reflect.get(globalThis, "diagBuffers") ??
+        []) as string[];
+      const lastBuffers = (Reflect.get(globalThis, "diagLastBuffers") ??
+        new Map()) as Map<number, Record<string, unknown>>;
+      Reflect.set(globalThis, "diagWire", diagWire);
+      Reflect.set(globalThis, "diagBuffers", diagBuffers);
+      Reflect.set(globalThis, "diagLastBuffers", lastBuffers);
       const wrapped: EventListener = (event) => {
-        const data = (event as MessageEvent<unknown>).data;
+        const data = (event as MessageEvent<unknown>).data as {
+          type?: unknown;
+          at?: number;
+          direction?: string;
+          line?: string;
+          event?: string;
+          buffer?: Record<string, unknown> & { id?: number };
+        } | null;
+        if (
+          typeof data?.type === "string" &&
+          data.type.startsWith("history_wire_test")
+        ) {
+          diagWire.push(
+            `${Math.round(data.at ?? 0)} ${data.direction ?? "control"} ${data.line ?? data.event ?? ""}`,
+          );
+          return;
+        }
+        if (
+          (data?.type === "buffer_updated" || data?.type === "buffer_added") &&
+          typeof data.buffer?.id === "number"
+        ) {
+          const previous = lastBuffers.get(data.buffer.id) ?? {};
+          const changes = Object.keys({ ...previous, ...data.buffer })
+            .filter(
+              (key) =>
+                JSON.stringify(previous[key]) !==
+                JSON.stringify(data.buffer?.[key]),
+            )
+            .map((key) =>
+              `${key}: ${JSON.stringify(previous[key])} -> ${JSON.stringify(data.buffer?.[key])}`.slice(
+                0,
+                160,
+              ),
+            );
+          lastBuffers.set(data.buffer.id, data.buffer);
+          diagBuffers.push(
+            `${Date.now()}${metrics.trackingWaste ? " IDLE" : ""} ${data.type} ${data.buffer.id} ${String(data.buffer.title)}: ${changes.join("; ")}`,
+          );
+        }
         if (
           metrics.trackingWaste &&
           typeof data === "object" &&
@@ -108,6 +154,7 @@ export async function installNativeFeelInstrumentation(
       };
       portListeners.set(listener, wrapped);
       addPortListener.call(this, type, wrapped, options);
+      this.postMessage({ type: "history_wire_test_trace_subscribe" });
     };
     MessagePort.prototype.removeEventListener = function (
       type: string,
