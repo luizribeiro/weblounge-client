@@ -201,6 +201,56 @@ test.describe("phone conversation closing against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
+  test("a full fast swipe only opens the row and its button closes or leaves", async ({
+    browserName,
+    page,
+    irc,
+  }) => {
+    const channel = irc.channelNamed("phone-full-swipe");
+    await mkdir(screenshots, { recursive: true });
+    await installNativeFeelInstrumentation(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto(irc.url());
+    await openChannel(page, irc, channel);
+    const peer = await irc.peer("swiper", [channel]);
+    await backToChats(page, channel);
+    const directRow = await receiveDirect(page, irc, peer, "full swipe");
+    const directWrapper = wrapperFor(directRow);
+    const shell = page.locator("[data-mobile-shell]");
+    await expectSettled(page);
+
+    await dragThrough(directWrapper, fullRowFastSwipe);
+    await expect(directWrapper).toHaveAttribute("data-swipe-state", "dragging");
+    await captureThemes(page, shell, "full-swipe-dragging", browserName);
+    await expectOffset(directWrapper, -148);
+    await lift(directWrapper, fullRowFastSwipe);
+    await expectOpenedAfterFullSwipe(directWrapper, "Close");
+    await captureThemes(page, shell, "full-swipe-released", browserName);
+    await touchGesture(directWrapper, rowSwipeBack);
+    await expect(directWrapper).toHaveAttribute("data-swipe-state", "closed");
+    await expectOffset(directWrapper, 0);
+    await touchGesture(directWrapper, fullRowFastSwipe);
+    await expectOpenedAfterFullSwipe(directWrapper, "Close");
+    await tapAction(page, directWrapper, "Close");
+    await expect(directRow).toHaveCount(0);
+
+    const channelWrapper = wrapperFor(rowFor(page, channel));
+    await touchGesture(channelWrapper, fullRowFastSwipe);
+    await expectOpenedAfterFullSwipe(channelWrapper, "Leave");
+    await tapAction(page, channelWrapper, "Leave");
+    const confirmation = page.getByRole("alertdialog", {
+      name: `Leave ${channel}?`,
+    });
+    await expect(confirmation).toBeVisible();
+    const parted = peer.waitForNextPart(channel, irc.account);
+    await confirmation.getByRole("button", { name: "Leave" }).click();
+    await parted;
+    await expect(rowFor(page, channel)).toHaveCount(0);
+
+    await expectSettled(page);
+    await nativeFeelAudit(page);
+  });
+
   test("undo of a DM closed from the chat list keeps the chat list", async ({
     page,
     irc,
@@ -322,22 +372,31 @@ const realisticRevealGestures = [
 
 const verticalScrollSamples = samples(12, 60, 200);
 
+const fullRowFastSwipe = samples(330, 4, 80);
+
+const rowSwipeBack = samples(-148, 2, 200);
+
 const gestureStartTimeStamp = 10_000;
 
 async function touchGesture(
   wrapper: Locator,
   gesture: readonly TouchSample[],
 ): Promise<void> {
+  await dragThrough(wrapper, gesture);
+  await lift(wrapper, gesture);
+}
+
+async function dragThrough(
+  wrapper: Locator,
+  gesture: readonly TouchSample[],
+): Promise<void> {
   const [first, ...rest] = gesture;
-  const last = gesture.at(-1);
-  if (first === undefined || last === undefined)
-    throw new Error("a touch gesture needs samples");
-  const base = gestureStartTimeStamp;
+  if (first === undefined) throw new Error("a touch gesture needs samples");
   await pointer(
     wrapper,
     "pointerdown",
     first.left,
-    base + first.at,
+    gestureStartTimeStamp + first.at,
     first.down,
   );
   for (const sample of rest)
@@ -345,10 +404,24 @@ async function touchGesture(
       wrapper,
       "pointermove",
       sample.left,
-      base + sample.at,
+      gestureStartTimeStamp + sample.at,
       sample.down,
     );
-  await pointer(wrapper, "pointerup", last.left, base + last.at + 8, last.down);
+}
+
+async function lift(
+  wrapper: Locator,
+  gesture: readonly TouchSample[],
+): Promise<void> {
+  const last = gesture.at(-1);
+  if (last === undefined) throw new Error("a touch gesture needs samples");
+  await pointer(
+    wrapper,
+    "pointerup",
+    last.left,
+    gestureStartTimeStamp + last.at + 8,
+    last.down,
+  );
 }
 
 async function touchMoveCancelled(
@@ -401,6 +474,15 @@ async function revealActions(wrapper: Locator): Promise<void> {
   await touchGesture(wrapper, samples(80, 4, 200));
   await expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
   await expectOffset(wrapper, -148);
+}
+
+async function expectOpenedAfterFullSwipe(
+  wrapper: Locator,
+  action: "Close" | "Leave",
+): Promise<void> {
+  await expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+  await expectOffset(wrapper, -148);
+  await expect(wrapper.getByRole("button", { name: action })).toBeVisible();
 }
 
 async function tapAction(
