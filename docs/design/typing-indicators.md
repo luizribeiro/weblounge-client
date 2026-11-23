@@ -68,5 +68,7 @@ Playwright drives the built app against local Ergo with a second IRC client. It 
 channel indicators; done, message, and clock-driven expiry clearing; outgoing throttled active and
 done-on-send. On desktop Chromium and iPhone WebKit it checks that the newest row meets the
 composer's top edge, the line sits inside the composer above the field, and starting or stopping
-typing moves neither the transcript nor the composer. The touched desktop/mobile specs and
+typing moves neither the transcript nor the composer. The typing text starts on the transcript's
+row gutter: on desktop with the time column and the composer field, on phones with the header's
+time and the message text below it. The touched desktop/mobile specs and
 `nativeFeelAudit`, including idle and hidden checks, remain green.

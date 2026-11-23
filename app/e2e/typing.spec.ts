@@ -123,7 +123,11 @@ test.describe("typing indicators", () => {
     const typingText = indicator.locator("[data-typing-text]");
     await expectSharedLeftEdge(
       mobile
-        ? { nick: senderNick, typing: typingText }
+        ? {
+            text: typingRow.locator("[data-selectable]"),
+            time: typingRow.locator("time"),
+            typing: typingText,
+          }
         : {
             composer: page.getByRole("textbox", {
               name: `Message ${typingChannel}`,
