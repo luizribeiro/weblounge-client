@@ -277,6 +277,13 @@ pub(crate) enum DirectAvailability {
 }
 
 impl DirectAvailability {
+    const fn watches(&self) -> bool {
+        match self {
+            Self::Guarded(direct) => direct.watches(),
+            Self::Pending | Self::Resolving => false,
+        }
+    }
+
     const fn is_unresolved(&self) -> bool {
         match self {
             Self::Pending | Self::Resolving => true,
@@ -3171,7 +3178,12 @@ impl NetworkModel {
                 let Some(NameKey::Direct(nick)) = buffer.key.as_ref() else {
                     return None;
                 };
-                let presence = self.peer_evidence.presence(state, nick);
+                let watched = buffer
+                    .direct
+                    .as_ref()
+                    .is_some_and(DirectAvailability::watches)
+                    || self.launch_watches.contains_key(nick);
+                let presence = self.peer_evidence.presence(state, nick, watched);
                 let since = self.peer_evidence.since(nick, presence);
                 let bot = crate::direct_peer::bot(state, nick, buffer.projection.peer_bot);
                 (buffer.projection.peer_presence != presence

@@ -17676,4 +17676,36 @@ async fn delay(duration: Duration) {
             }]
         );
     }
+
+    #[tokio::test]
+    async fn an_unshared_peer_who_messages_shows_online_before_its_monitor_reply() {
+        let mut harness = ReplayHarness::joined(
+            "away-notify extended-monitor account-tag message-tags server-time batch labeled-response",
+        )
+        .await;
+        harness
+            .wire
+            .server(":offline.test 005 weblounge MONITOR=100 WHOX :supported")
+            .await;
+        harness
+            .wire
+            .server("@account=alice;msgid=m1;time=2026-11-23T15:36:18.810Z :alice!~u@cloak.irc PRIVMSG weblounge :hello")
+            .await;
+        assert_eq!(
+            next_sent_containing(&mut harness.wire, "MONITOR").await,
+            "MONITOR + alice"
+        );
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !matches!(
+                harness.receiver.recv().await.expect("runtime remains active"),
+                EngineToUi::BufferUpdated { buffer }
+                    if buffer.title == "alice"
+                        && buffer.peer_presence == Some(crate::PeerPresence::Online)
+            ) {}
+        })
+        .await
+        .expect("alice shows online without waiting for the 730");
+        harness.drain.abort();
+    }
 }

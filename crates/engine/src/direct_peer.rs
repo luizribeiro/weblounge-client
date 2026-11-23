@@ -9,7 +9,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct DirectPeer {
     nick: papo::Nick,
-    _watch: Option<papo::Watch>,
+    watch: Option<papo::Watch>,
 }
 
 impl DirectPeer {
@@ -21,12 +21,16 @@ impl DirectPeer {
         let watch = (!seen).then(|| client.watch(nick.as_str()));
         Self {
             nick: nick.clone(),
-            _watch: watch,
+            watch,
         }
     }
 
     pub(crate) const fn nick(&self) -> &papo::Nick {
         &self.nick
+    }
+
+    pub(crate) const fn watches(&self) -> bool {
+        self.watch.is_some()
     }
 }
 
@@ -35,6 +39,7 @@ impl DirectPeer {
 #[derive(Debug, Default)]
 pub(crate) struct PeerEvidence {
     heard_from: HashSet<papo::Nick>,
+    refused_watches: HashSet<papo::Nick>,
     witnessed: WitnessedPresence,
     away_checks: AwayChecks,
 }
@@ -58,8 +63,12 @@ impl PeerEvidence {
                     self.heard_from.insert(changed.new.clone());
                 }
             }
+            papo::Event::Warning(papo::event::Warning::MonitorListFull { nicks, .. }) => {
+                self.refused_watches.extend(nicks.iter().cloned());
+            }
             papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
                 self.heard_from.clear();
+                self.refused_watches.clear();
             }
             _ => {}
         }
@@ -67,7 +76,12 @@ impl PeerEvidence {
 
     /// Presence the network vouches for: a peer in a shared channel by its reported away state,
     /// and a peer known only through `MONITOR` as online, away or offline.
-    pub(crate) fn presence(&self, state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
+    pub(crate) fn presence(
+        &self,
+        state: &papo::State,
+        nick: &papo::Nick,
+        watched: bool,
+    ) -> Option<PeerPresence> {
         let user = crate::name_key::known_user(state, nick);
         if let Some(user) = user.filter(|user| user.channels().len() != 0) {
             return self.reported_away(user);
@@ -75,7 +89,7 @@ impl PeerEvidence {
         if state.presence(nick).ok()? == papo::Presence::Offline {
             return Some(PeerPresence::Offline);
         }
-        let user = user.filter(|user| self.is_vouched_online(state, user))?;
+        let user = user.filter(|user| self.is_vouched_online(state, user, watched))?;
         Some(
             self.reported_away(user)
                 .unwrap_or_else(|| unreported_monitor_presence(state)),
@@ -83,10 +97,19 @@ impl PeerEvidence {
     }
 
     /// A watched peer's own live line counts as online without waiting for the `MONITOR` reply,
-    /// which a throttling server delays; the watch is what reports its departure.
-    fn is_vouched_online(&self, state: &papo::State, user: &papo::User) -> bool {
-        let heard_and_watched = self.heard_from.contains(user.nick())
-            && state.monitored().any(|watched| watched == user.nick());
+    /// which a throttling server delays; the watch is what reports its departure, so one the
+    /// server refused doesn't count. `watched` is the DM's own hold: papo's `monitored()` omits a
+    /// watch until its driver next runs, and no event follows to resync the row.
+    fn is_vouched_online(&self, state: &papo::State, user: &papo::User, watched: bool) -> bool {
+        let nick = user.nick();
+        let accepted = || {
+            !self.refused_watches.contains(nick)
+                || state.monitored().any(|monitored| monitored == nick)
+        };
+        let heard_and_watched = watched
+            && state.supports(papo::Feature::Monitor)
+            && accepted()
+            && self.heard_from.contains(nick);
         heard_and_watched
             || state
                 .monitor_online()
@@ -154,6 +177,7 @@ pub(crate) const fn may_change(event: &papo::Event) -> bool {
             | papo::Event::Kicked(_)
             | papo::Event::ChannelSynced(_)
             | papo::Event::MembersRefreshed(_)
+            | papo::Event::Warning(papo::event::Warning::MonitorListFull { .. })
     )
 }
 
@@ -239,6 +263,25 @@ mod tests {
         async fn monitored() -> Self {
             let (client, events, wire, nick) = monitoring_alice().await;
             Self::with_direct(client, events, wire, nick)
+        }
+
+        /// A DM whose handle resolved, so it holds its own watch on alice.
+        async fn watched() -> Self {
+            Self::monitored().await.resolved()
+        }
+
+        fn resolved(mut self) -> Self {
+            let nick = self
+                .model
+                .direct_peer(self.alice)
+                .expect("alice is a direct");
+            let direct = super::DirectPeer::resolve(&self.client, &nick);
+            self.model.resolve_direct(
+                self.alice,
+                DirectAvailability::Guarded(direct),
+                &self.client.snapshot(),
+            );
+            self
         }
 
         /// A server that advertises no `MONITOR`, so nothing can watch alice.
@@ -524,7 +567,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_live_line_shows_a_watched_peer_online_before_monitor_answers() {
-        let mut peer = Peer::monitored().await;
+        let mut peer = Peer::watched().await;
         peer.server(
             "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
             message,
@@ -537,8 +580,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_watched_peer_that_quits_after_speaking_is_not_shown_online() {
+    async fn a_peer_whose_watch_the_server_refused_is_not_shown_online_by_its_line() {
+        let mut peer = Peer::watched().await;
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        _ = peer.sync();
+
+        peer.server(
+            ":offline.test 734 weblounge 100 alice :Monitor list is full",
+            |event| {
+                matches!(
+                    event,
+                    papo::Event::Warning(papo::event::Warning::MonitorListFull { .. })
+                )
+            },
+        )
+        .await;
+
+        assert_eq!(peer.sync(), [(peer.alice, None)]);
+    }
+
+    #[tokio::test]
+    async fn a_launch_watch_lets_a_live_line_show_an_unresolved_peer_online() {
         let mut peer = Peer::monitored().await;
+        let nick = peer
+            .model
+            .direct_peer(peer.alice)
+            .expect("alice is a direct");
+        let watch = peer.client.watch(nick.as_str());
+        peer.model.hold_launch_watches([(nick, watch)].into());
+
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+    }
+
+    #[tokio::test]
+    async fn without_monitor_a_resolved_peer_that_speaks_shows_no_presence() {
+        let mut peer = Peer::without_monitor().await.resolved();
+
+        peer.server(
+            "@msgid=hi;time=2026-11-21T14:05:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+
+        assert_eq!(peer.sync(), []);
+    }
+
+    #[tokio::test]
+    async fn a_watched_peer_that_quits_after_speaking_is_not_shown_online() {
+        let mut peer = Peer::watched().await;
         peer.server(
             "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
             message,
@@ -566,7 +665,7 @@ mod tests {
             "message-tags",
         ])
         .await;
-        let mut peer = Peer::with_direct(client, events, wire, nick);
+        let mut peer = Peer::with_direct(client, events, wire, nick).resolved();
         peer.report_connected().await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
         for line in [
