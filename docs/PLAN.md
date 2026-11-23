@@ -2314,12 +2314,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `40c6722`. Bounded newest-page history after a cursor,
-  persistable TLS-host-scoped peer identity pins,
-  per-send `direct_pinned` verification, post-registration SASL account-state hardening, explicit
-  display spelling and folded storage keys, split-send reconciliation, exact live
-  and nested-history multiline concatenation, server name rules, lag diagnostics,
-  channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
-  actor facts, tri-state account/bot evidence, completed JOIN refusals, and bounded request-state
-  failures are integrated. Shared direct MONITOR leases survive peer departure and support guarded
-  reacquisition when the peer returns.
+- **papo:** papo 0.1 pinned at `e277a83` (pre-0.1 API cleanup). DMs send to the nick and hold a
+  papo `Watch` for peers we share no channel with. papo dropped `PeerKey`, so the DM identity guard
+  is the engine's own `PeerPin`: the peer's account on TLS connections (persisted; papo's old pins
+  still read) plus per-connection holder continuity that a rename away, quit or leaving every
+  shared channel ends. Reactions and deletions rebuild their target as a papo saved message
+  reference until rows store `return_address().to_saved()` (F27). The end of papo's event stream
+  counts as a lost connection. Bounded newest-page history after a cursor, server name rules,
+  split-send reconciliation, multiline concatenation, correlated history responses and bounded
+  request-state failures remain integrated as before.
