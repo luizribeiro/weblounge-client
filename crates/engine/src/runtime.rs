@@ -1528,10 +1528,7 @@ impl Runtime {
         let runtime_state = Arc::clone(&self.state);
         spawn_task(async move {
             let alive = if online {
-                tokio::select! {
-                    result = client.ping() => result.is_ok(),
-                    () = delay(FOREGROUND_PROBE_TIMEOUT) => false,
-                }
+                answers_ping(&client).await
             } else {
                 false
             };
@@ -2880,8 +2877,17 @@ struct ConnectConfig {
     allow_insecure: bool,
 }
 
+async fn answers_ping(client: &papo::Client) -> bool {
+    tokio::select! {
+        result = client.ping() => result.is_ok(),
+        () = delay(FOREGROUND_PROBE_TIMEOUT) => false,
+    }
+}
+
 /// papo leaves a live connection alone, so a retry that finds one resumes it instead: no
 /// `Connected` event will come to bring the network back online and flush what waited for it.
+/// A socket that went dead while the device was offline still looks live until papo notices,
+/// so only one that answers a ping is resumed; papo reconnects the other on its own.
 async fn reconnect(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -2890,7 +2896,9 @@ async fn reconnect(
 ) -> Result<(), papo::Error> {
     match client.reconnect().await {
         Err(papo::Error::AlreadyConnected) => {
-            resume_live_connection(state, outbound, instance);
+            if answers_ping(client).await {
+                resume_live_connection(state, outbound, instance);
+            }
             Ok(())
         }
         result => result,
@@ -11808,6 +11816,12 @@ async fn delay(duration: Duration) {
         _ = runtime.request(device(false));
 
         assert!(runtime.request(device(true)).is_empty());
+        let ping = wire.next_sent().await;
+        let token = ping
+            .strip_prefix("PING ")
+            .expect("the resume probes the socket");
+        wire.server(format!(":offline.test PONG offline.test :{token}"))
+            .await;
 
         while !matches!(
             receiver.recv().await,
