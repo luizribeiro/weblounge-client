@@ -75,15 +75,22 @@ impl PeerEvidence {
         if state.presence(nick).ok()? == papo::Presence::Offline {
             return Some(PeerPresence::Offline);
         }
-        let user = user.filter(|user| {
-            state
-                .monitor_online()
-                .any(|online| online.nick() == user.nick())
-        })?;
+        let user = user.filter(|user| self.is_vouched_online(state, user))?;
         Some(
             self.reported_away(user)
                 .unwrap_or_else(|| unreported_monitor_presence(state)),
         )
+    }
+
+    /// A watched peer's own live line counts as online without waiting for the `MONITOR` reply,
+    /// which a throttling server delays; the watch is what reports its departure.
+    fn is_vouched_online(&self, state: &papo::State, user: &papo::User) -> bool {
+        let heard_and_watched = self.heard_from.contains(user.nick())
+            && state.monitored().any(|watched| watched == user.nick());
+        heard_and_watched
+            || state
+                .monitor_online()
+                .any(|online| online.nick() == user.nick())
     }
 
     pub(crate) fn away_checks(&mut self) -> &mut AwayChecks {
@@ -513,6 +520,67 @@ mod tests {
         )
         .await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+    }
+
+    #[tokio::test]
+    async fn a_live_line_shows_a_watched_peer_online_before_monitor_answers() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+
+        peer.report_connected().await;
+        assert_eq!(peer.sync(), []);
+    }
+
+    #[tokio::test]
+    async fn a_watched_peer_that_quits_after_speaking_is_not_shown_online() {
+        let mut peer = Peer::monitored().await;
+        peer.server(
+            "@msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        _ = peer.sync();
+
+        peer.server(":alice!~alice@cloak.example QUIT :bye", |event| {
+            matches!(event, papo::Event::Quit(_))
+        })
+        .await;
+
+        assert_eq!(peer.sync(), [(peer.alice, None)]);
+    }
+
+    #[tokio::test]
+    async fn a_replayed_line_does_not_show_a_watched_peer_online() {
+        let (client, events, wire, nick) = monitoring_alice_with(&[
+            "away-notify",
+            "extended-monitor",
+            "draft/chathistory",
+            "labeled-response",
+            "batch",
+            "server-time",
+            "message-tags",
+        ])
+        .await;
+        let mut peer = Peer::with_direct(client, events, wire, nick);
+        peer.report_connected().await;
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Away))]);
+        for line in [
+            ":offline.test BATCH +playback chathistory alice",
+            "@batch=playback;time=2026-11-14T12:00:00.000Z;msgid=old :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+        ] {
+            peer.wire.server(line).await;
+        }
+        peer.server(":offline.test BATCH -playback", |event| {
+            matches!(event, papo::Event::History(_))
+        })
+        .await;
+
+        assert_eq!(peer.sync(), []);
     }
 
     #[tokio::test]
