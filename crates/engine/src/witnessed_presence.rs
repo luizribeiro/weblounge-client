@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::PeerPresence;
-use crate::state::time_millis;
+use crate::state::event_millis;
 
 /// When this connection saw a DM peer go away or offline. A time is kept only for a change seen
 /// happening: a `731` answering our first `MONITOR +` says the peer was already gone, not when.
@@ -22,11 +22,11 @@ impl WitnessedPresence {
         match event {
             papo::Event::MonitorOnline(online) => {
                 let nick = online.subject.nick();
-                self.seen_online.insert(nick.clone());
-                self.changes.remove(nick);
+                self.changes.remove(&nick);
+                self.seen_online.insert(nick);
             }
             papo::Event::MonitorOffline(offline) => {
-                let nick = &offline.subject;
+                let nick = &offline.subject.nick();
                 if self.seen_online.remove(nick) {
                     self.record(nick, PeerPresence::Offline, now_ms);
                 } else if self.since(nick, PeerPresence::Offline).is_none() {
@@ -34,20 +34,20 @@ impl WitnessedPresence {
                 }
             }
             papo::Event::AwayChanged(changed) => {
-                let nick = changed.actor.nick();
-                if matches!(changed.new, papo::Away::Away { .. }) {
-                    let at = changed.server_time.unwrap_or(changed.received_at);
-                    self.record(nick, PeerPresence::Away, time_millis(at));
+                let nick = &changed.actor.nick();
+                if matches!(changed.away, papo::AwayStatus::Away { .. }) {
+                    let at = event_millis(changed.server_time, changed.received_at);
+                    self.record(nick, PeerPresence::Away, at);
                 } else {
                     self.changes.remove(nick);
                 }
             }
             papo::Event::Quit(quit) => {
-                let at = quit.server_time.unwrap_or(quit.received_at);
-                self.record(quit.actor.nick(), PeerPresence::Offline, time_millis(at));
+                let at = event_millis(quit.server_time, quit.received_at);
+                self.record(&quit.actor.nick(), PeerPresence::Offline, at);
             }
             papo::Event::NickChanged(changed) => {
-                let old = changed.actor.nick();
+                let old = &changed.old;
                 if self.seen_online.remove(old) {
                     self.seen_online.insert(changed.new.clone());
                 }

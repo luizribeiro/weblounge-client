@@ -21,7 +21,12 @@ use crate::{
         self, ChatListSnapshot, SnapshotChanges, SnapshotPresence, SnapshotRemoval,
     },
     commands::{self, Command},
-    filehost, notification_settings, push_device,
+    direct_peer::DirectPeer,
+    filehost,
+    name_key::NameKey,
+    notification_settings,
+    peer_pin::{PeerPin, PinMismatch},
+    push_device,
     pushed_messages::{self, PushedMessage},
     reactions::ReactionAction,
     request_error::{StateLimitOutcome, state_limit_outcome},
@@ -29,7 +34,7 @@ use crate::{
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
         NetworkModel, OwnReactionChange, OwnRedaction, PendingSend, PendingTargetState,
-        ReadAdvance, SendTarget, is_own_nick, time_millis,
+        ReadAdvance, SendTarget, event_millis, is_own_nick, server_time, time_millis,
     },
     timeline::{FixedOffsetCalendar, LocalCalendar},
     upload_target::{self, ConnectionIdentity, UploadContext, UploadCredential},
@@ -109,8 +114,8 @@ struct RunningNetwork {
 
 impl RunningNetwork {
     fn read_markers_server_backed(&self) -> bool {
-        !self.client.state().is_connected()
-            || self.client.state().supports(papo::Feature::ReadMarkers)
+        !self.client.snapshot().is_connected()
+            || self.client.snapshot().supports(papo::Feature::ReadMarkers)
     }
 
     fn record_direct_presence(&mut self, buffer_id: BufferId) {
@@ -634,7 +639,7 @@ impl Runtime {
             };
             let context = UploadContext {
                 identity: running.identity.clone(),
-                filehost: filehost::upload_endpoint(&running.client.state()),
+                filehost: filehost::upload_endpoint(&running.client.snapshot()),
                 online: running.model.is_online(),
                 now_ms: time_millis(papo::time::now()),
             };
@@ -714,7 +719,7 @@ impl Runtime {
                 ));
                 return;
             };
-            let snapshot = running.client.state();
+            let snapshot = running.client.snapshot();
             let mut events = running.model.restore_pushed_messages(messages, &snapshot);
             for advance in running.model.pending_read_advances() {
                 queue_read_advance(&mut running.pending_reads, advance);
@@ -801,7 +806,7 @@ impl Runtime {
         else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let snapshot = running.client.state();
+        let snapshot = running.client.snapshot();
         if let Some(reason) = push_unsupported_reason(&snapshot) {
             let push_state = PushState::Unsupported { reason };
             running.push.state = Some(push_state.clone());
@@ -850,7 +855,7 @@ impl Runtime {
         else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let snapshot = running.client.state();
+        let snapshot = running.client.snapshot();
         let announced = snapshot
             .is_connected()
             .then(|| push_route_event(running, &snapshot))
@@ -907,7 +912,7 @@ impl Runtime {
     fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
         let chantypes = lock(&self.state).network.as_ref().map_or_else(
             || "#&".to_owned(),
-            |running| running.client.state().isupport().chantypes().to_owned(),
+            |running| running.client.snapshot().isupport().chantypes().to_owned(),
         );
         let parsed = commands::parse_with_registry(commands::registry(), input, &chantypes);
         let projected_join = match &parsed {
@@ -1046,7 +1051,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return;
         };
-        if !running.client.state().supports(papo::Feature::Typing) {
+        if !running.client.snapshot().supports(papo::Feature::Typing) {
             _ = running.typing.done(buffer_id);
             return;
         }
@@ -1132,41 +1137,14 @@ impl Runtime {
     }
 
     fn trust_direct_identity(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
-        let state = lock(&self.state);
-        let Some(running) = state.network.as_ref() else {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let Some(nick) = running.model.direct_trust_target(buffer_id) else {
+        let Some(event) = running.model.trust_direct_identity(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
-        let client = running.client.clone();
-        let instance = running.instance;
-        drop(state);
-        let state = Arc::clone(&self.state);
-        let outbound = self.outbound.clone();
-        spawn_task(async move {
-            let Ok(direct) = client.direct(&nick).await else {
-                let _ = outbound.send(command_rejection(
-                    command_id,
-                    EngineMessageKey::DirectUnavailable,
-                ));
-                return;
-            };
-            let event = {
-                let mut state = lock(&state);
-                state
-                    .network
-                    .as_mut()
-                    .filter(|running| running.instance == instance)
-                    .and_then(|running| running.model.trust_direct_identity(buffer_id, direct))
-            };
-            let Some(event) = event else {
-                return;
-            };
-            let _ = outbound.send(event);
-            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
-        });
-        Vec::new()
+        vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
     fn request_members(
@@ -1184,7 +1162,7 @@ impl Runtime {
         let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
-        let snapshot = running.client.state();
+        let snapshot = running.client.snapshot();
         let version = state.member_views.remember(
             view_id,
             MemberView {
@@ -1213,7 +1191,7 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let snapshot = running.client.state();
+        let snapshot = running.client.snapshot();
         let Some(context) = completion_context(
             &input,
             cursor,
@@ -1295,17 +1273,18 @@ impl Runtime {
             DEFAULT_WINDOW_LIMIT,
             Arc::clone(&state.calendar),
         );
+        model.set_tls(endpoint_is_tls(&config.endpoint));
         let (client, events, driver) = build_client(config);
         let cached_snapshot = state
             .cached_snapshot
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
         if let Some(snapshot) = cached_snapshot.as_ref() {
-            model.restore_chat_list(snapshot.clone());
+            model.restore_chat_list(snapshot.clone(), &client.snapshot());
         }
         let pushed = std::mem::take(&mut state.cached_pushed_messages);
         let restored_push = !model
-            .restore_pushed_messages(pushed, &client.state())
+            .restore_pushed_messages(pushed, &client.snapshot())
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if restored_push {
@@ -1385,16 +1364,17 @@ impl Runtime {
             DEFAULT_WINDOW_LIMIT,
             Arc::clone(&state.calendar),
         );
+        model.set_tls(endpoint_is_tls(&endpoint));
         let cached_snapshot = state
             .cached_snapshot
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
         if let Some(snapshot) = cached_snapshot.as_ref() {
-            model.restore_chat_list(snapshot.clone());
+            model.restore_chat_list(snapshot.clone(), &client.snapshot());
         }
         let pushed = std::mem::take(&mut state.cached_pushed_messages);
         let restored_push = !model
-            .restore_pushed_messages(pushed, &client.state())
+            .restore_pushed_messages(pushed, &client.snapshot())
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if restored_push {
@@ -1477,7 +1457,7 @@ impl Runtime {
         drop(state);
 
         spawn_task(async move {
-            let _ = previous.quit(String::new()).await;
+            let _ = previous.quit().await;
         });
         spawn_task(async move {
             let _ = driver.await;
@@ -1517,7 +1497,7 @@ impl Runtime {
             if let Some(endpoint) = push_endpoint {
                 let _ = client.webpush().unregister(endpoint).await;
             }
-            let _ = client.quit(reason.unwrap_or_default()).await;
+            let _ = client.quit().reason(reason.unwrap_or_default()).await;
         });
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
@@ -1563,7 +1543,7 @@ impl Runtime {
                 Ok(())
             } else {
                 cancel_inflight_send(&runtime_state, instance).await;
-                client.reconnect().await
+                reconnect(&client).await
             };
             let event = if result.is_ok() {
                 EngineToUi::CommandResult { id: command_id }
@@ -1601,7 +1581,7 @@ impl Runtime {
             drop(state);
             let outbound = self.outbound.clone();
             spawn_task(async move {
-                let event = if client.reconnect().await.is_ok() {
+                let event = if reconnect(&client).await.is_ok() {
                     EngineToUi::CommandResult { id: command_id }
                 } else {
                     command_rejection(command_id, EngineMessageKey::ConnectionFailed)
@@ -1652,7 +1632,7 @@ impl Runtime {
             if let Some(endpoint) = push_endpoint {
                 let _ = client.webpush().unregister(endpoint).await;
             }
-            let _ = client.quit(String::new()).await;
+            let _ = client.quit().await;
             let _ = chat_list_snapshot::clear(storage.as_ref()).await;
         });
         vec![
@@ -1691,7 +1671,7 @@ impl Runtime {
             .as_ref()
             .filter(|running| running.device_online && running.model.is_online())?;
         let nick = running.model.direct_peer(buffer_id)?;
-        crate::services::sends_unlabelled(&running.client.state(), nick.as_str())
+        crate::services::sends_unlabelled(&running.client.snapshot(), nick.as_str())
             .then(|| nick.to_string())
     }
 
@@ -1716,12 +1696,12 @@ impl Runtime {
             crate::MessageKind::Text => {
                 running
                     .model
-                    .begin_send(buffer_id, text, &running.client.state())
+                    .begin_send(buffer_id, text, &running.client.snapshot())
             }
             crate::MessageKind::Action => {
                 running
                     .model
-                    .begin_action(buffer_id, text, &running.client.state())
+                    .begin_action(buffer_id, text, &running.client.snapshot())
             }
             crate::MessageKind::IrcNotice(_)
             | crate::MessageKind::Notice(_)
@@ -1813,7 +1793,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        if !can_react(&running.client.state()) {
+        if !can_react(&running.client.snapshot()) {
             return rejected_command(command_id, EngineMessageKey::CommandRefused);
         }
         let Some(change) = running
@@ -1907,7 +1887,7 @@ impl Runtime {
         };
         if targets
             .iter()
-            .any(|target| !valid_channel_input(&client.state(), &target.channel))
+            .any(|target| !valid_channel_input(&client.snapshot(), &target.channel))
         {
             return rejected_command(command_id, EngineMessageKey::CommandRefused);
         }
@@ -1995,14 +1975,13 @@ impl Runtime {
         else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let snapshot = client.state();
+        let snapshot = client.snapshot();
         if snapshot.isupport().is_channel(&target) {
             spawn_request(self.outbound.clone(), command_id, async move {
                 client.notice(target, text).await
             });
         } else {
             spawn_request(self.outbound.clone(), command_id, async move {
-                let target = client.direct(target).await?;
                 client.notice(target, text).await
             });
         }
@@ -2039,7 +2018,7 @@ impl Runtime {
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
-            let snapshot = client.state();
+            let snapshot = client.snapshot();
             let nick = crate::services::canonical(&snapshot, nick);
             let known_nick = snapshot.name_rules().map(|rules| rules.nick(nick.clone()));
             let known = lock(&state)
@@ -2051,47 +2030,20 @@ impl Runtime {
                         .as_ref()
                         .and_then(|nick| running.model.direct(nick))
                 });
-            let (nick, direct, degraded) = match known {
-                Some(DirectAvailability::Guarded(direct)) => {
-                    (direct.nick(), DirectAvailability::Guarded(direct), false)
+            let direct = match (known, known_nick) {
+                (Some(DirectAvailability::Guarded(direct)), _) => direct,
+                (_, Some(nick)) => DirectPeer::resolve(&client, &nick),
+                (_, None) => {
+                    let _ = outbound.send(command_rejection(
+                        command_id,
+                        EngineMessageKey::DirectUnavailable,
+                    ));
+                    return;
                 }
-                Some(DirectAvailability::MonitorFull) => {
-                    let Some(nick) = known_nick else {
-                        let _ = outbound.send(command_rejection(
-                            command_id,
-                            EngineMessageKey::DirectUnavailable,
-                        ));
-                        return;
-                    };
-                    (nick, DirectAvailability::MonitorFull, false)
-                }
-                Some(
-                    DirectAvailability::Pending
-                    | DirectAvailability::Resolving
-                    | DirectAvailability::Failed,
-                )
-                | None => match client.direct(&nick).await {
-                    Ok(direct) => (direct.nick(), DirectAvailability::Guarded(direct), false),
-                    Err(papo::Error::MonitorFull { .. }) => {
-                        let Some(nick) = known_nick else {
-                            let _ = outbound.send(command_rejection(
-                                command_id,
-                                EngineMessageKey::DirectUnavailable,
-                            ));
-                            return;
-                        };
-                        (nick, DirectAvailability::MonitorFull, true)
-                    }
-                    Err(_) => {
-                        let _ = outbound.send(command_rejection(
-                            command_id,
-                            EngineMessageKey::DirectUnavailable,
-                        ));
-                        return;
-                    }
-                },
             };
-            let unlabelled = crate::services::take_unlabelled(&client.state(), &nick, &mut text);
+            let nick = direct.nick().clone();
+            let direct = DirectAvailability::Guarded(direct);
+            let unlabelled = crate::services::take_unlabelled(&client.snapshot(), &nick, &mut text);
             let (pending, rejection, output) = {
                 let mut state = lock(&state);
                 let Some(running) = state
@@ -2101,22 +2053,17 @@ impl Runtime {
                 else {
                     return;
                 };
-                let snapshot = running.client.state();
+                let snapshot = running.client.snapshot();
                 let (buffer_id, mut output) =
                     open_direct_with_live_state(&mut running.model, nick, direct, &snapshot);
                 running.record_direct_presence(buffer_id);
-                if degraded {
-                    output.push(EngineToUi::notice(
-                        EngineMessageKey::DirectPresenceUnavailable,
-                    ));
-                }
                 request_buffer_focus(&mut output, focus, &command_id, buffer_id);
                 let mut rejection = None;
                 let pending = text.and_then(|text| {
                     let Some((pending, events)) =
                         running
                             .model
-                            .begin_send(buffer_id, text, &running.client.state())
+                            .begin_send(buffer_id, text, &running.client.snapshot())
                     else {
                         rejection = Some(running.model.send_rejection_key(buffer_id));
                         return None;
@@ -2151,7 +2098,7 @@ impl Runtime {
             requested,
             None,
             |channel, client| async move {
-                Ok(with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)?)
+                Ok(with_channel!(&channel, name => client.part(name).reason(reason.unwrap_or_default()).await)?)
             },
         )
     }
@@ -2170,7 +2117,7 @@ impl Runtime {
             Some(nick.clone()),
             |channel, client| async move {
                 require_member(&client, &channel, &nick)?;
-                Ok(with_channel!(&channel, name => client.kick(name, nick, reason.unwrap_or_default()).await)?)
+                Ok(with_channel!(&channel, name => client.kick(name, nick).reason(reason.unwrap_or_default()).await)?)
             },
         )
     }
@@ -2182,8 +2129,8 @@ impl Runtime {
             None,
             None,
             |channel, client| async move {
-                let mask = crate::ban_mask::ban_mask(&client.state(), &word);
-                let request = with_channel!(&channel, name => client.mode(name));
+                let mask = crate::ban_mask::ban_mask(&client.snapshot(), &word);
+                let request = with_channel!(&channel, name => client.set_modes(name));
                 modes_settled(&request.ban(mask).await?)
             },
         )
@@ -2200,8 +2147,8 @@ impl Runtime {
                     ChannelTarget::Known(name) => Some(name),
                     ChannelTarget::Text(_) => None,
                 };
-                let masks = crate::ban_mask::unban_masks(&client.state(), known, &word);
-                let request = with_channel!(&channel, name => client.mode(name));
+                let masks = crate::ban_mask::unban_masks(&client.snapshot(), known, &word);
+                let request = with_channel!(&channel, name => client.set_modes(name));
                 let request = masks.into_iter().fold(request, papo::SetModes::unban);
                 modes_settled(&request.await?)
             },
@@ -2222,7 +2169,7 @@ impl Runtime {
             Some(nick.clone()),
             |channel, client| async move {
                 require_member(&client, &channel, &nick)?;
-                let mask = crate::ban_mask::ban_mask(&client.state(), &nick);
+                let mask = crate::ban_mask::ban_mask(&client.snapshot(), &nick);
                 let request = with_channel!(&channel, name => client.kickban(name));
                 let outcome = request
                     .nick(nick)
@@ -2248,8 +2195,7 @@ impl Runtime {
             requested,
             Some(nick.clone()),
             |channel, client| async move {
-                let invitee = client.direct(&nick).await?;
-                with_channel!(&channel, name => client.invite(&invitee, name).await)?;
+                with_channel!(&channel, name => client.invite(&nick, name).await)?;
                 let _ = outbound.send(EngineToUi::Notice {
                     key: "notice.invite_sent".into(),
                     values: std::collections::BTreeMap::from([
@@ -2278,7 +2224,7 @@ impl Runtime {
             None,
             |channel, client| async move {
                 let target = channel.label();
-                if client.state().channel(target.as_str()).is_none() {
+                if crate::name_key::known_channel(&client.snapshot(), target.as_str()).is_none() {
                     return Err(ChannelFailure::Refused(papo::Refusal::NotOnChannel));
                 }
                 let mut modes = cached_channel_modes(&client, &target);
@@ -2321,7 +2267,8 @@ impl Runtime {
         text: &str,
     ) -> Vec<EngineToUi> {
         let parsed = lock(&self.state).network.as_ref().map(|running| {
-            let semantics = crate::mode_string::mode_semantics(running.client.state().isupport());
+            let semantics =
+                crate::mode_string::mode_semantics(running.client.snapshot().isupport());
             crate::mode_string::parse_mode_string(&semantics, text)
         });
         let changes = match parsed {
@@ -2340,9 +2287,9 @@ impl Runtime {
             requested,
             single,
             |channel, client| async move {
-                let mut request = with_channel!(&channel, name => client.mode(name));
+                let mut request = with_channel!(&channel, name => client.set_modes(name));
                 for change in changes {
-                    request = apply_mode_change(&client, &channel, request, change).await?;
+                    request = apply_mode_change(&client, &channel, request, change)?;
                 }
                 modes_settled(&request.await?)
             },
@@ -2363,9 +2310,9 @@ impl Runtime {
             None,
             single,
             |channel, client| async move {
-                let mut request = with_channel!(&channel, name => client.mode(name));
+                let mut request = with_channel!(&channel, name => client.set_modes(name));
                 for nick in nicks {
-                    request = mode.apply(&client, &channel, request, nick).await?;
+                    request = mode.apply(&client, &channel, request, nick)?;
                 }
                 modes_settled(&request.await?)
             },
@@ -2425,10 +2372,7 @@ impl Runtime {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         if let Some(peer) = peer {
-            let monitor = running.client.monitor();
-            spawn_task(async move {
-                _ = monitor.remove([peer]).await;
-            });
+            running.model.release_launch_watch(&peer);
         }
         let mut output = advance
             .map(|advance| record_read_advances(running, [advance]))
@@ -2471,7 +2415,7 @@ impl Runtime {
         let client = running.client.clone();
         drop(state);
         spawn_join_request(self.outbound.clone(), command_id, async move {
-            with_channel!(&channel, name => client.part(name, reason.unwrap_or_default()).await)?;
+            with_channel!(&channel, name => client.part(name).reason(reason.unwrap_or_default()).await)?;
             with_channel!(&channel, name => client.join(name).await)
         });
         Vec::new()
@@ -2485,7 +2429,7 @@ impl Runtime {
         else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        if !valid_nick_input(&client.state(), &nick) {
+        if !valid_nick_input(&client.snapshot(), &nick) {
             return rejected_command(command_id, EngineMessageKey::CommandRefused);
         }
         spawn_request(self.outbound.clone(), command_id, async move {
@@ -2522,14 +2466,14 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let snapshot = running.client.state();
+        let snapshot = running.client.snapshot();
         let channel = requested
-            .and_then(|name| snapshot.channel(name))
+            .and_then(|name| crate::name_key::known_channel(&snapshot, name))
             .or_else(|| {
                 running
                     .model
                     .channel_for_buffer(buffer_id)
-                    .and_then(|name| snapshot.channel(name))
+                    .and_then(|name| crate::name_key::known_channel(&snapshot, name))
             });
         let Some(channel) = channel else {
             return rejected_command(command_id, EngineMessageKey::ChannelRequired);
@@ -2608,7 +2552,7 @@ impl Runtime {
     }
 
     fn fill_shown_gap(&self, running: &mut RunningNetwork, buffer_id: BufferId) {
-        if !running.client.state().supports(papo::Feature::History) {
+        if !running.client.snapshot().supports(papo::Feature::History) {
             return;
         }
         if let Some(fetch) = running.model.begin_gap_fill(buffer_id) {
@@ -2706,7 +2650,7 @@ fn attach_shell(running: &mut RunningNetwork, command_id: String) -> Vec<EngineT
         },
     ];
     output.extend(model.take_timeline_changes(true));
-    output.extend(typing_snapshot_events(model, &running.client.state()));
+    output.extend(typing_snapshot_events(model, &running.client.snapshot()));
     if let Some(state) = running.push.state.clone() {
         output.push(EngineToUi::PushStateChanged {
             network_id: model.id(),
@@ -2762,15 +2706,18 @@ fn queue_read_advance(pending: &mut VecDeque<ReadAdvance>, advance: ReadAdvance)
 }
 
 fn start_read_flush(running: &mut RunningNetwork) -> Option<(papo::Client, u64)> {
-    if running.client.state().is_connected()
-        && !running.client.state().supports(papo::Feature::ReadMarkers)
+    if running.client.snapshot().is_connected()
+        && !running
+            .client
+            .snapshot()
+            .supports(papo::Feature::ReadMarkers)
     {
         running.pending_reads.clear();
         running.model.clear_pending_reads();
         return None;
     }
     if !running.device_online
-        || !running.client.state().is_connected()
+        || !running.client.snapshot().is_connected()
         || running.pending_reads.is_empty()
         || running.flushing_reads
     {
@@ -2797,7 +2744,7 @@ fn spawn_read_flush(
                 else {
                     return;
                 };
-                if !running.device_online || !running.client.state().is_connected() {
+                if !running.device_online || !running.client.snapshot().is_connected() {
                     running.flushing_reads = false;
                     return;
                 }
@@ -2814,7 +2761,7 @@ fn spawn_read_flush(
                 .and_then(|running| {
                     running
                         .model
-                        .read_target(advance.buffer_id, &client.state())
+                        .read_target(advance.buffer_id, &client.snapshot())
                 })
             else {
                 engine_log(EngineMessageKey::StateInconsistent.as_str());
@@ -2824,13 +2771,16 @@ fn spawn_read_flush(
                 });
                 continue;
             };
+            let Some(time) = server_time(advance.time) else {
+                continue;
+            };
             let mut retry = ReadRetryState::default();
             loop {
                 let result = match target.clone() {
                     HistoryTarget::Channel(channel) => {
-                        client.mark_read(channel, advance.time).await
+                        client.mark_read(channel).up_to_time(time).await
                     }
-                    HistoryTarget::Direct(nick) => client.mark_read(nick, advance.time).await,
+                    HistoryTarget::Direct(nick) => client.mark_read(nick).up_to_time(time).await,
                 };
                 match result {
                     Ok(_) => {
@@ -2925,21 +2875,47 @@ struct ConnectConfig {
     allow_insecure: bool,
 }
 
-fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Driver) {
-    let sasl = config.authentication.into_sasl();
-    let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
-        .enable(papo::Feature::WebPush)
-        .sasl(sasl)
-        .allow_insecure_auth(config.allow_insecure)
+/// papo leaves a live connection alone, so a retry that finds one has nothing left to do.
+async fn reconnect(client: &papo::Client) -> Result<(), papo::Error> {
+    match client.reconnect().await {
+        Err(papo::Error::AlreadyConnected) => Ok(()),
+        result => result,
+    }
+}
+
+/// A DM peer's account is trusted only as far as the connection that reported it.
+fn endpoint_is_tls(endpoint: &str) -> bool {
+    endpoint.parse::<papo::Endpoint>().is_ok_and(|endpoint| {
+        matches!(
+            endpoint.kind(),
+            papo::EndpointKind::Tls | papo::EndpointKind::SecureWebSocket
+        )
+    })
+}
+
+/// The cached chat list names its conversations before the server sends its name rules, so
+/// papo's default rules build those names until the server's own rules rebuild them.
+fn client_builder(endpoint: &str, nickname: &str, autojoin: Vec<String>) -> papo::Builder {
+    let builder = crate::client_builder(endpoint, nickname)
+        .casemapping(papo::Casemapping::default())
         .reconnect(
             papo::Reconnect::exponential()
                 .max_delay(Duration::from_secs(30))
                 .refused_delay(Duration::from_secs(30)),
         );
-    if !config.autojoin.is_empty() {
-        builder = builder.autojoin(config.autojoin);
+    if autojoin.is_empty() {
+        builder
+    } else {
+        builder.autojoin(autojoin)
     }
-    builder.build()
+}
+
+fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Driver) {
+    let sasl = config.authentication.into_sasl();
+    client_builder(&config.endpoint, &config.nickname, config.autojoin)
+        .sasl(sasl)
+        .allow_insecure_auth(config.allow_insecure)
+        .build()
 }
 
 fn build_pending_hosted_client(
@@ -2947,17 +2923,7 @@ fn build_pending_hosted_client(
     nickname: &str,
     autojoin: Vec<String>,
 ) -> (papo::Client, papo::Events, papo::Driver) {
-    let mut builder = papo::Client::builder(endpoint, nickname)
-        .enable(papo::Feature::WebPush)
-        .reconnect(
-            papo::Reconnect::exponential()
-                .max_delay(Duration::from_secs(30))
-                .refused_delay(Duration::from_secs(30)),
-        );
-    if !autojoin.is_empty() {
-        builder = builder.autojoin(autojoin);
-    }
-    builder.build()
+    client_builder(endpoint, nickname, autojoin).build()
 }
 
 fn hosted_connect_config(
@@ -3033,7 +2999,7 @@ impl ConnectionIdentity {
 enum SendError {
     Protocol,
     DirectTargetGone,
-    PeerPinMismatch(papo::PeerPinMismatch),
+    PeerPinMismatch(PinMismatch, PeerPin),
     Offline,
     Interrupted,
 }
@@ -3043,12 +3009,15 @@ impl SendError {
         match self {
             Self::Protocol | Self::Offline | Self::Interrupted => EngineMessageKey::SendFailed,
             Self::DirectTargetGone => EngineMessageKey::DirectTargetGone,
-            Self::PeerPinMismatch(_) => EngineMessageKey::DirectIdentityMismatch,
+            Self::PeerPinMismatch(..) => EngineMessageKey::DirectIdentityMismatch,
         }
     }
 }
 
-async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent, SendError> {
+async fn send(
+    client: &papo::Client,
+    pending: &PendingSend,
+) -> Result<papo::SendOutcome, SendError> {
     let action = pending.kind == crate::MessageKind::Action;
     match pending.target.clone() {
         SendTarget::Channel(channel) => if action {
@@ -3057,39 +3026,32 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
             client.privmsg(channel, pending.text.clone()).await
         }
         .map_err(|error| classify_send_error(&error)),
-        SendTarget::Direct {
-            nick,
-            recipient,
-            pin,
-        } => {
-            let recipient = direct_recipient(client, &nick, recipient, pin).await?;
+        SendTarget::Direct { nick, pin, tls } => {
+            check_direct_recipient(client, &nick, pin.as_ref(), tls)?;
             if action {
-                client.action(recipient, pending.text.clone()).await
+                client.action(nick, pending.text.clone()).await
             } else {
-                client.privmsg(recipient, pending.text.clone()).await
+                client.privmsg(nick, pending.text.clone()).await
             }
         }
         .map_err(|error| classify_send_error(&error)),
     }
 }
 
-async fn direct_recipient(
+/// A line to a DM peer goes to whoever holds the nick, so it waits until that holder is the
+/// pinned peer as far as papo can tell.
+fn check_direct_recipient(
     client: &papo::Client,
     nick: &papo::Nick,
-    recipient: Option<papo::DirectRef>,
-    pin: Option<papo::PeerKey>,
-) -> Result<papo::DirectRef, SendError> {
-    match (pin, recipient) {
-        (Some(pin), _) => client
-            .direct_pinned(nick, &pin)
-            .await
-            .map_err(|error| match error {
-                papo::Error::PeerPinMismatch(mismatch) => SendError::PeerPinMismatch(mismatch),
-                error => classify_send_error(&error),
-            }),
-        (None, Some(recipient)) => Ok(recipient),
-        (None, None) => Err(SendError::Protocol),
-    }
+    pin: Option<&PeerPin>,
+    tls: bool,
+) -> Result<(), SendError> {
+    let Some(pin) = pin else {
+        return Ok(());
+    };
+    let state = client.snapshot();
+    pin.check_recipient(&state, nick, tls)
+        .map_err(|reason| SendError::PeerPinMismatch(reason, PeerPin::of_holder(&state, nick, tls)))
 }
 
 /// Papo resolves a reaction after its labeled echo only when echoes are negotiated.
@@ -3116,46 +3078,42 @@ fn can_redact(state: &papo::State) -> bool {
     state.supports(papo::Feature::Redaction) && state.supports(papo::Feature::LabeledResponse)
 }
 
-async fn message_reference(
+fn message_reference(
     client: &papo::Client,
-    target: SendTarget,
-    msgid: String,
+    target: &SendTarget,
+    msgid: &str,
 ) -> Result<papo::MessageRef, SendError> {
-    Ok(match target {
-        SendTarget::Channel(channel) => (channel, msgid).into(),
-        SendTarget::Direct {
-            nick,
-            recipient: None,
-            pin: None,
-        } => (
-            client
-                .direct(&nick)
-                .await
-                .map_err(|error| classify_send_error(&error))?,
-            msgid,
-        )
-            .into(),
-        SendTarget::Direct {
-            nick,
-            recipient,
-            pin,
-        } => (
-            direct_recipient(client, &nick, recipient, pin).await?,
-            msgid,
-        )
-            .into(),
-    })
+    let address = match target {
+        SendTarget::Channel(channel) => channel.to_string(),
+        SendTarget::Direct { nick, pin, tls } => {
+            check_direct_recipient(client, nick, pin.as_ref(), *tls)?;
+            nick.to_string()
+        }
+    };
+    client
+        .saved_message(&saved_message_reference(&address, msgid))
+        .map_err(|error| classify_send_error(&error))
+}
+
+// TODO(F27): rows keep only their target and ids, so this writes papo's saved-reference text for
+// them; storing each line's `return_address().to_saved()` would keep its exact audience.
+fn saved_message_reference(address: &str, msgid: &str) -> String {
+    let escape = |value: &str| {
+        value
+            .replace('%', "%25")
+            .replace(';', "%3B")
+            .replace('=', "%3D")
+    };
+    format!("papo-ref:1;to={};id={}", escape(address), escape(msgid))
 }
 
 /// Redacts the row's lines in order and returns how many the server deleted before any error.
 async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> usize {
-    let first = redaction.msgids.first().cloned().unwrap_or_default();
-    let Ok(reference) = message_reference(client, redaction.target.clone(), first).await else {
-        return 0;
-    };
     let mut deleted = 0;
     for msgid in &redaction.msgids {
-        let message = papo::MessageRef::from((&reference, msgid.clone()));
+        let Ok(message) = message_reference(client, &redaction.target, msgid) else {
+            break;
+        };
         if client.redact(message, "").await.is_err() {
             break;
         }
@@ -3165,33 +3123,32 @@ async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> usiz
 }
 
 async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
-    let target = change.target.clone().ok_or(SendError::DirectTargetGone)?;
-    let message = message_reference(client, target, change.msgid.clone()).await?;
+    let target = change.target.as_ref().ok_or(SendError::DirectTargetGone)?;
+    let message = message_reference(client, target, &change.msgid)?;
     let text = change.text.clone();
     match change.action {
         ReactionAction::Added => client.react(message, text).await,
         ReactionAction::Removed => client.unreact(message, text).await,
     }
+    .map(|_| ())
     .map_err(|error| classify_send_error(&error))
 }
 
 fn spawn_typing(client: papo::Client, target: SendTarget, typing: papo::Typing) {
     spawn_task(async move {
-        match target {
-            SendTarget::Channel(channel) => {
-                _ = client.typing(channel, typing).await;
-            }
-            SendTarget::Direct {
-                recipient: Some(recipient),
-                ..
-            } => {
-                _ = client.typing(recipient, typing).await;
-            }
-            SendTarget::Direct {
-                recipient: None, ..
-            } => {}
-        }
+        send_typing(&client, target, typing).await;
     });
+}
+
+async fn send_typing(client: &papo::Client, target: SendTarget, typing: papo::Typing) {
+    match target {
+        SendTarget::Channel(channel) => {
+            _ = client.set_typing(channel, typing).await;
+        }
+        SendTarget::Direct { nick, .. } => {
+            _ = client.set_typing(nick, typing).await;
+        }
+    }
 }
 
 fn spawn_typing_pause(state: Arc<Mutex<RuntimeState>>, instance: u64, pause: crate::typing::Pause) {
@@ -3216,20 +3173,7 @@ fn spawn_typing_pause(state: Arc<Mutex<RuntimeState>>, instance: u64, pause: cra
             })
         };
         if let Some((client, Some(target), typing)) = command {
-            match target {
-                SendTarget::Channel(channel) => {
-                    _ = client.typing(channel, typing).await;
-                }
-                SendTarget::Direct {
-                    recipient: Some(recipient),
-                    ..
-                } => {
-                    _ = client.typing(recipient, typing).await;
-                }
-                SendTarget::Direct {
-                    recipient: None, ..
-                } => {}
-            }
+            send_typing(&client, target, typing).await;
         }
     });
 }
@@ -3317,7 +3261,7 @@ async fn flush_pending_sends(
                     running.pending_sends.push_front(queued);
                     retry_now = running.device_online
                         && running.model.is_online()
-                        && client.state().is_connected();
+                        && client.snapshot().is_connected();
                     if !retry_now {
                         running.flushing_sends = false;
                         return;
@@ -3459,10 +3403,10 @@ async fn finish_send(
         };
         let (events, advance) = match result {
             Ok(sent) => confirm_send_with_read(&mut running.model, pending, &sent),
-            Err(SendError::PeerPinMismatch(mismatch)) => {
+            Err(SendError::PeerPinMismatch(reason, current)) => {
                 let mut events = running
                     .model
-                    .record_direct_mismatch(pending.buffer_id, &mismatch)
+                    .record_direct_mismatch(pending.buffer_id, reason, current)
                     .into_iter()
                     .collect::<Vec<_>>();
                 events.extend(
@@ -3489,7 +3433,7 @@ async fn finish_send(
 fn confirm_send_with_read(
     model: &mut NetworkModel,
     pending: &PendingSend,
-    sent: &papo::Sent,
+    sent: &papo::SendOutcome,
 ) -> (Option<Vec<EngineToUi>>, Option<ReadAdvance>) {
     let message_id = model.pending_message_id(pending);
     let events = model.confirm_send(pending, sent);
@@ -3521,7 +3465,7 @@ fn receive_chat(
     input: ChatInput<'_>,
     history: bool,
     state: &papo::State,
-    direct: Option<papo::DirectRef>,
+    direct: Option<DirectPeer>,
 ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
     model.receive_chat_with_advance(input, history, state, direct)
 }
@@ -3729,13 +3673,9 @@ fn command_requirements_met(spec: &commands::CommandSpec, state: &papo::State) -
         .iter()
         .all(|requirement| match requirement {
             commands::CommandRequirement::Connected => true,
-            commands::CommandRequirement::Feature(name) => papo::Feature::ALL
-                .iter()
-                .find(|feature| {
-                    feature.__variant_name().eq_ignore_ascii_case(name)
-                        || feature.name().eq_ignore_ascii_case(name)
-                })
-                .is_some_and(|feature| state.supports(*feature)),
+            commands::CommandRequirement::Feature(name) => {
+                papo::Feature::from_name(name).is_some_and(|feature| state.supports(feature))
+            }
         })
 }
 
@@ -3780,34 +3720,34 @@ fn person_candidates(
             _ => None,
         })
         .unwrap_or_default();
-    let folded_prefix = state.casemapping().fold(prefix);
+    let casemapping = crate::name_key::casemapping(state);
+    let folded_prefix = casemapping.fold(prefix);
     nicks.extend(
         members
             .iter()
-            .filter(|member| {
-                state
-                    .casemapping()
-                    .fold(&member.nick)
-                    .starts_with(&*folded_prefix)
-            })
+            .filter(|member| casemapping.fold(&member.nick).starts_with(&*folded_prefix))
             .map(|member| member.nick.clone()),
     );
     let mut seen = std::collections::HashSet::new();
     nicks
         .into_iter()
-        .filter(|nick| nick_match.accepts(&state.casemapping().fold(nick), &folded_prefix))
+        .filter(|nick| nick_match.accepts(&casemapping.fold(nick), &folded_prefix))
         .filter(|nick| !is_own_nick(state, nick))
-        .filter(|nick| seen.insert(state.casemapping().fold(nick).into_owned()))
+        .filter(|nick| seen.insert(casemapping.fold(nick).into_owned()))
         .take(COMPLETION_LIMIT)
         .map(|nick| {
-            let member = members.iter().find(|member| {
-                state.casemapping().fold(&member.nick) == state.casemapping().fold(&nick)
-            });
-            let user = state.user(state.casemapping().nick(&nick));
+            let member = members
+                .iter()
+                .find(|member| casemapping.fold(&member.nick) == casemapping.fold(&nick));
+            let user = crate::name_key::known_user(state, nick.as_str());
             CompletionCandidate::Person {
-                nick_color_index: crate::state::nick_color_index(state.casemapping(), &nick),
+                nick_color_index: crate::state::nick_color_index(casemapping, &nick),
                 away: member.map_or_else(
-                    || user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. })),
+                    || {
+                        user.is_some_and(|user| {
+                            matches!(user.away(), papo::AwayStatus::Away { .. })
+                        })
+                    },
                     |member| member.away,
                 ),
                 bot: member.map_or_else(|| user.and_then(papo::User::is_bot), |member| member.bot),
@@ -3822,15 +3762,18 @@ fn channel_candidates(
     prefix: &str,
     state: &papo::State,
 ) -> Vec<CompletionCandidate> {
-    let folded_prefix = state.casemapping().fold(prefix);
+    let casemapping = crate::name_key::casemapping(state);
+    let folded_prefix = casemapping.fold(prefix);
     let mut names = model.channel_names();
     names.sort_by_key(|name| {
-        let joined = state.channel(state.casemapping().channel(name)).is_some();
-        (!joined, state.casemapping().fold(name).into_owned())
+        let joined = state
+            .channel(name.as_str())
+            .is_ok_and(|joined| joined.is_some());
+        (!joined, casemapping.fold(name).into_owned())
     });
     names
         .into_iter()
-        .filter(|name| state.casemapping().fold(name).starts_with(&*folded_prefix))
+        .filter(|name| casemapping.fold(name).starts_with(&*folded_prefix))
         .take(COMPLETION_LIMIT)
         .map(|name| CompletionCandidate::Channel { name })
         .collect()
@@ -3851,6 +3794,68 @@ fn utf16_len(value: &str) -> u32 {
     u32::try_from(value.encode_utf16().count()).unwrap_or(u32::MAX)
 }
 
+/// A read marker's time, which the model compares on the device clock's scale.
+fn read_marker_time(marker: papo::ReadMarker) -> Option<SystemTime> {
+    match marker {
+        papo::ReadMarker::ReadUntil(time) => Some(time.to_system_time()),
+        _ => None,
+    }
+}
+
+/// A line sent only to a channel's ops is shown among the channel's lines, like every other line
+/// of that channel.
+fn unrestricted(event: papo::Event) -> papo::Event {
+    use papo::Event;
+    use papo::event::{Restricted, RestrictedLine as Line};
+    match event {
+        Event::Restricted(Restricted {
+            line: Line::Message(line),
+            ..
+        }) => Event::Message(line),
+        Event::Restricted(Restricted {
+            line: Line::Notice(line),
+            ..
+        }) => Event::Notice(line),
+        Event::Restricted(Restricted {
+            line: Line::Incomplete(line),
+            ..
+        }) => Event::Incomplete(line),
+        Event::Restricted(Restricted {
+            line: Line::ServerNotice(line),
+            ..
+        }) => Event::ServerNotice(line),
+        Event::Restricted(Restricted {
+            line: Line::CtcpQuery(line),
+            ..
+        }) => Event::CtcpQuery(line),
+        Event::Restricted(Restricted {
+            line: Line::CtcpReply(line),
+            ..
+        }) => Event::CtcpReply(line),
+        Event::Restricted(Restricted {
+            line: Line::TagMsg(line),
+            ..
+        }) => Event::TagMsg(line),
+        Event::Restricted(Restricted {
+            line: Line::Reacted(line),
+            ..
+        }) => Event::Reacted(line),
+        Event::Restricted(Restricted {
+            line: Line::Redacted(line),
+            ..
+        }) => Event::Redacted(line),
+        Event::Restricted(Restricted {
+            line: Line::TypingChanged(line),
+            ..
+        }) => Event::TypingChanged(line),
+        Event::Restricted(Restricted {
+            line: Line::Other(line),
+            ..
+        }) => Event::Other(line),
+        event => event,
+    }
+}
+
 async fn drain_events(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
@@ -3859,22 +3864,29 @@ async fn drain_events(
     instance: u64,
 ) {
     let member_changes = Arc::new(Mutex::new(crate::members::Changes::default()));
-    while let Some(event) = events.next().await {
+    while let Some((event, event_state)) = events.next().await {
+        let event = unrestricted(event);
         if let papo::Event::History(page) = event {
             process_history(&state, &outbound, &client, instance, page);
             continue;
         }
         let restore_directs = matches!(event, papo::Event::Connected(_));
         let online_direct = match &event {
-            papo::Event::MonitorOnline(online) => Some(online.subject.nick().clone()),
+            papo::Event::MonitorOnline(online) => Some(online.subject.nick()),
             _ => None,
         };
         let direct_resolution = event_direct_resolution(&event);
-        let schedule_members = lock(&member_changes).record(&event, &client.state());
+        let schedule_members = lock(&member_changes).record(&event, &event_state);
         let history_fetches =
-            process_event_with_direct(&state, &outbound, &client, instance, event, None);
-        if let Some(source) = direct_resolution {
-            spawn_event_direct_resolution(&state, &outbound, &client, instance, source);
+            process_event_at(&state, &outbound, &client, instance, event, &event_state);
+        if let Some(nick) = direct_resolution {
+            spawn_direct_resolution(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                &nick,
+            );
         }
         if let Some(nick) = online_direct {
             spawn_online_direct_resolution(
@@ -3929,69 +3941,22 @@ async fn drain_events(
     }
 }
 
-enum EventDirectSource {
-    Message {
-        nick: papo::Nick,
-        source: papo::Message,
-    },
-    Notice {
-        nick: papo::Nick,
-        source: papo::event::Notice,
-    },
-}
-
-fn event_direct_resolution(event: &papo::Event) -> Option<EventDirectSource> {
+/// The peer of a private line someone else sent, whose DM can now reach them.
+fn event_direct_resolution(event: &papo::Event) -> Option<papo::Nick> {
     match event {
         papo::Event::Message(message)
-            if message.authorship != papo::Authorship::Own
+            if message.actor_party != papo::Party::Me
                 && matches!(message.conversation(), papo::Conversation::Private(_)) =>
         {
-            Some(EventDirectSource::Message {
-                nick: message.actor.nick().clone(),
-                source: message.clone(),
-            })
+            Some(message.actor.nick())
         }
         papo::Event::Notice(notice)
-            if notice.authorship != papo::Authorship::Own
-                && matches!(&notice.conversation, papo::Conversation::Private(_)) =>
+            if notice.actor_party != papo::Party::Me
+                && matches!(notice.conversation(), papo::Conversation::Private(_)) =>
         {
-            Some(EventDirectSource::Notice {
-                nick: notice.actor.nick().clone(),
-                source: notice.clone(),
-            })
+            Some(notice.actor.nick())
         }
         _ => None,
-    }
-}
-
-fn spawn_event_direct_resolution(
-    state: &Arc<Mutex<RuntimeState>>,
-    outbound: &mpsc::UnboundedSender<EngineToUi>,
-    client: &papo::Client,
-    instance: u64,
-    source: EventDirectSource,
-) {
-    match source {
-        EventDirectSource::Message { nick, source } => {
-            spawn_direct_resolution(
-                Arc::clone(state),
-                outbound.clone(),
-                client.clone(),
-                instance,
-                &nick,
-                source,
-            );
-        }
-        EventDirectSource::Notice { nick, source } => {
-            spawn_direct_resolution(
-                Arc::clone(state),
-                outbound.clone(),
-                client.clone(),
-                instance,
-                &nick,
-                source,
-            );
-        }
     }
 }
 
@@ -4011,9 +3976,9 @@ fn spawn_online_direct_resolution(
         return;
     };
     spawn_task(async move {
-        let result = client.direct(&nick).await;
+        let direct = DirectPeer::resolve(&client, &nick);
         drop(previous);
-        apply_direct_resolution(&state, &outbound, instance, buffer_id, result);
+        apply_direct_resolution(&state, &outbound, instance, buffer_id, direct);
     });
 }
 
@@ -4026,18 +3991,17 @@ fn spawn_cached_direct_resolution(
     nick: papo::Nick,
 ) {
     spawn_task(async move {
-        let result = client.direct(&nick).await;
-        apply_direct_resolution(&state, &outbound, instance, buffer_id, result);
+        let direct = DirectPeer::resolve(&client, &nick);
+        apply_direct_resolution(&state, &outbound, instance, buffer_id, direct);
     });
 }
 
-fn spawn_direct_resolution<T: papo::DirectSource + Send + 'static>(
+fn spawn_direct_resolution(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     client: papo::Client,
     instance: u64,
     nick: &papo::Nick,
-    source: T,
 ) {
     let buffer_id = lock(&state)
         .network
@@ -4047,12 +4011,9 @@ fn spawn_direct_resolution<T: papo::DirectSource + Send + 'static>(
     let Some(buffer_id) = buffer_id else {
         return;
     };
+    let nick = nick.clone();
     spawn_task(async move {
-        let (availability, degraded) = match client.direct_to(&source).await {
-            Ok(direct) => (DirectAvailability::Guarded(direct), false),
-            Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
-            Err(_) => (DirectAvailability::Failed, false),
-        };
+        let availability = DirectAvailability::Guarded(DirectPeer::resolve(&client, &nick));
         let mut state = lock(&state);
         let Some(running) = state
             .network
@@ -4064,11 +4025,6 @@ fn spawn_direct_resolution<T: papo::DirectSource + Send + 'static>(
         let presence = resolve_direct(running, buffer_id, availability);
         drop(state);
         send_events(&outbound, presence);
-        if degraded {
-            let _ = outbound.send(EngineToUi::notice(
-                EngineMessageKey::DirectPresenceUnavailable,
-            ));
-        }
     });
 }
 
@@ -4086,13 +4042,12 @@ fn member_windows(
     else {
         return Vec::new();
     };
-    let snapshot = client.state();
+    let snapshot = client.snapshot();
     let buffers = channels
         .into_iter()
         .filter_map(|channel| {
             let buffer_id = running.model.buffer_id_for_channel(&channel)?;
-            let total = snapshot
-                .channel(&channel)
+            let total = crate::name_key::known_channel(&snapshot, &channel)
                 .map(|channel| u32::try_from(channel.members().count()).unwrap_or(u32::MAX))?;
             Some((channel, buffer_id, total))
         })
@@ -4239,7 +4194,7 @@ fn spawn_read_marker_fetch(
     instance: u64,
     target: HistoryTarget,
 ) {
-    if !client.state().supports(papo::Feature::ReadMarkers) {
+    if !client.snapshot().supports(papo::Feature::ReadMarkers) {
         return;
     }
     spawn_task(async move {
@@ -4254,7 +4209,7 @@ async fn fetch_and_apply_read_marker(
     instance: u64,
     target: HistoryTarget,
 ) {
-    if !client.state().supports(papo::Feature::ReadMarkers) {
+    if !client.snapshot().supports(papo::Feature::ReadMarkers) {
         return;
     }
     let read_until = match target.clone() {
@@ -4273,9 +4228,10 @@ async fn fetch_and_apply_read_marker(
         else {
             return;
         };
-        let (mut events, advance) = running
-            .model
-            .apply_server_read_marker_with_advance(&target.conversation(), read_until);
+        let (mut events, advance) = running.model.apply_server_read_marker_with_advance(
+            &target.name_key(),
+            read_marker_time(read_until),
+        );
         events.extend(record_read_advances(running, advance));
         (events, start_read_flush(running))
     };
@@ -4289,7 +4245,7 @@ async fn fetch_and_apply_read_marker(
 async fn fetch_history(
     client: &papo::Client,
     fetch: HistoryFetch,
-) -> Result<papo::HistoryPage, papo::Error> {
+) -> Result<papo::event::HistoryPage, papo::Error> {
     match fetch {
         HistoryFetch::Latest(HistoryTarget::Channel(channel)) => {
             client
@@ -4325,21 +4281,23 @@ async fn fetch_history(
             target: HistoryTarget::Channel(channel),
             newest,
         } => {
-            client
-                .history(channel)
-                .latest_after(newest.reference())
-                .limit(HISTORY_PAGE_SIZE)
-                .await
+            match newest.reference() {
+                Some(newest) => client.history(channel).latest_after(newest),
+                None => client.history(channel).latest(),
+            }
+            .limit(HISTORY_PAGE_SIZE)
+            .await
         }
         HistoryFetch::After {
             target: HistoryTarget::Direct(nick),
             newest,
         } => {
-            client
-                .history(nick)
-                .latest_after(newest.reference())
-                .limit(HISTORY_PAGE_SIZE)
-                .await
+            match newest.reference() {
+                Some(newest) => client.history(nick).latest_after(newest),
+                None => client.history(nick).latest(),
+            }
+            .limit(HISTORY_PAGE_SIZE)
+            .await
         }
     }
 }
@@ -4365,14 +4323,23 @@ fn spawn_target_reconciliation(
                     .checked_sub(RECENT_DIRECT_WINDOW)
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             });
-        if let Ok(recent) = client
-            .recent_conversations(since, until + TARGETS_LATE_ACTIVITY)
-            .await
-        {
+        let recent = match (
+            server_time(since),
+            server_time(until + TARGETS_LATE_ACTIVITY),
+        ) {
+            (Some(since), Some(until)) => client.recent_conversations(since, until).await.ok(),
+            _ => None,
+        };
+        if let Some(recent) = recent {
             let complete = recent.len() < RECENT_TARGET_LIMIT;
             let recent = recent
                 .into_iter()
-                .map(|recent| (recent.conversation, recent.latest_server_time))
+                .filter_map(|recent| {
+                    Some((
+                        NameKey::from_conversation(&recent.conversation)?,
+                        recent.latest_server_time.to_system_time(),
+                    ))
+                })
                 .collect();
             restore_target_rows(
                 &state, &outbound, &client, instance, recent, complete, until,
@@ -4380,13 +4347,13 @@ fn spawn_target_reconciliation(
         } else {
             fallback_target_reconciliation(&state, &outbound, &client, instance, network_id);
         }
-        monitor_shown_direct_peers(&state, &client, instance).await;
+        monitor_shown_direct_peers(&state, &client, instance);
     });
 }
 
 /// Presence for a DM peer who shares no channel only arrives through `MONITOR`, so the peers of
 /// the shown DMs go out in one batch once the launch's history requests are queued.
-async fn monitor_shown_direct_peers(
+fn monitor_shown_direct_peers(
     state: &Arc<Mutex<RuntimeState>>,
     client: &papo::Client,
     instance: u64,
@@ -4397,14 +4364,27 @@ async fn monitor_shown_direct_peers(
         .filter(|running| running.instance == instance)
         .map(|running| running.model.shown_direct_peers())
         .unwrap_or_default();
-    peers.truncate(launch_monitor_budget(client.state().isupport().monitor()));
-    if !peers.is_empty() {
-        _ = client.monitor().add(peers).await;
+    peers.truncate(launch_monitor_budget(
+        client.snapshot().isupport().monitor(),
+    ));
+    let watches = peers
+        .into_iter()
+        .map(|peer| {
+            let watch = client.watch(peer.as_str());
+            (peer, watch)
+        })
+        .collect();
+    if let Some(running) = lock(state)
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    {
+        running.model.hold_launch_watches(watches);
     }
 }
 
-/// Direct handles reserve their own `MONITOR` entries for messaging, so the launch batch takes at
-/// most half the server's list.
+/// The watches open DMs hold take their own `MONITOR` entries, so the launch batch takes at most
+/// half the server's list.
 const fn launch_monitor_budget(limit: Option<papo::isupport::LimitValue>) -> usize {
     match limit {
         Some(papo::isupport::LimitValue::Limited(limit)) => limit / 2,
@@ -4420,7 +4400,7 @@ fn fallback_target_reconciliation(
     instance: u64,
     network_id: NetworkId,
 ) {
-    let history_available = client.state().supports(papo::Feature::History);
+    let history_available = client.snapshot().supports(papo::Feature::History);
     let (fetches, buffers) = {
         let mut state = lock(state);
         let Some(running) = state
@@ -4454,20 +4434,20 @@ fn restore_target_rows(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
     instance: u64,
-    recent: Vec<(papo::Conversation, SystemTime)>,
+    recent: Vec<(NameKey, SystemTime)>,
     complete: bool,
     upper_bound: SystemTime,
 ) {
-    let snapshot = client.state();
+    let snapshot = client.snapshot();
     let target_count = recent.len();
     let mut channel_fetches = Vec::new();
     let mut directs = recent
         .into_iter()
         .filter_map(|(conversation, latest_server_time)| match conversation {
-            papo::Conversation::Private(nick) if !is_own_nick(&snapshot, nick.as_str()) => {
+            NameKey::Direct(nick) if !is_own_nick(&snapshot, nick.as_str()) => {
                 Some((nick, latest_server_time))
             }
-            papo::Conversation::Channel(channel) => {
+            NameKey::Channel(channel) => {
                 let fetch = lock(state)
                     .network
                     .as_mut()
@@ -4478,7 +4458,7 @@ fn restore_target_rows(
                 channel_fetches.extend(fetch);
                 None
             }
-            _ => None,
+            NameKey::Direct(_) => None,
         })
         .collect::<Vec<_>>();
     directs.sort_by(|(first_nick, first_time), (second_nick, second_time)| {
@@ -4650,8 +4630,11 @@ fn resolve_direct(
     buffer_id: BufferId,
     availability: DirectAvailability,
 ) -> Vec<EngineToUi> {
-    running.model.resolve_direct(buffer_id, availability);
-    running.model.sync_direct_peers(&running.client.state())
+    let snapshot = running.client.snapshot();
+    running
+        .model
+        .resolve_direct(buffer_id, availability, &snapshot);
+    running.model.sync_direct_peers(&snapshot)
 }
 
 fn apply_direct_resolution(
@@ -4659,13 +4642,9 @@ fn apply_direct_resolution(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
     buffer_id: BufferId,
-    result: Result<papo::DirectRef, papo::Error>,
+    direct: DirectPeer,
 ) {
-    let (availability, degraded) = match result {
-        Ok(direct) => (DirectAvailability::Guarded(direct), false),
-        Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
-        Err(_) => (DirectAvailability::Failed, false),
-    };
+    let availability = DirectAvailability::Guarded(direct);
     let (client, presence) = {
         let mut state = lock(state);
         let Some(running) = state
@@ -4686,11 +4665,6 @@ fn apply_direct_resolution(
     if let Some(client) = client {
         spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
     }
-    if degraded {
-        let _ = outbound.send(EngineToUi::notice(
-            EngineMessageKey::DirectPresenceUnavailable,
-        ));
-    }
 }
 
 #[cfg(test)]
@@ -4701,18 +4675,20 @@ fn process_event(
     instance: u64,
     event: papo::Event,
 ) -> Vec<HistoryFetch> {
-    process_event_with_direct(state, outbound, client, instance, event, None)
+    process_event_at(state, outbound, client, instance, event, &client.snapshot())
 }
 
-fn process_event_with_direct(
+/// `event_state` is papo's state right after the event, which facts about the event itself
+/// (who left, who joined) must be read from; later events may already have changed `snapshot`.
+fn process_event_at(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
     instance: u64,
     event: papo::Event,
-    direct: Option<papo::DirectRef>,
+    event_state: &papo::State,
 ) -> Vec<HistoryFetch> {
-    let snapshot = client.state();
+    let snapshot = client.snapshot();
     let shared_state = Arc::clone(state);
     let mut state = lock(state);
     let Some(running) = state
@@ -4725,10 +4701,12 @@ fn process_event_with_direct(
     let mut output = Vec::new();
     let peer_facts_may_change = crate::direct_peer::may_change(&event);
     let membership_grew = crate::members::channels_gaining_members(&event, &snapshot);
+    let departed = crate::peer_pin::departures(&event, event_state);
     running
         .model
         .observe_peers(&event, time_millis(papo::time::now()));
-    let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
+    let effects = process_papo_event(running, &snapshot, event, None, &mut output);
+    running.model.note_peer_departures(&departed);
     for channel in &membership_grew {
         running.model.remember_members(&snapshot, channel);
     }
@@ -4768,7 +4746,7 @@ fn process_papo_event(
     running: &mut RunningNetwork,
     snapshot: &papo::State,
     event: papo::Event,
-    direct: Option<papo::DirectRef>,
+    direct: Option<DirectPeer>,
     output: &mut Vec<EngineToUi>,
 ) -> EventEffects {
     let mut effects = EventEffects::default();
@@ -4809,7 +4787,7 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::NickChanged(changed) => {
-            process_nick_change(&mut running.model, &changed, output);
+            process_nick_change(&mut running.model, snapshot, &changed, output);
             Vec::new()
         }
         papo::Event::ModeChanged(changed) => process_mode_change(&mut running.model, &changed),
@@ -4841,9 +4819,9 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::TypingChanged(changed) => {
-            if changed.authorship != papo::Authorship::Own
-                && let Some(event) =
-                    typing_changed_event(&running.model, snapshot, &changed.conversation)
+            if changed.actor_party != papo::Party::Me
+                && let Some(event) = NameKey::from_conversation(changed.conversation())
+                    .and_then(|key| typing_changed_event(&running.model, snapshot, &key))
             {
                 output.push(event);
             }
@@ -4891,7 +4869,7 @@ fn receive_redaction(
 
 fn process_disconnected(
     running: &mut RunningNetwork,
-    disconnected: &papo::Disconnected,
+    disconnected: &papo::event::Disconnected,
     output: &mut Vec<EngineToUi>,
     effects: &mut EventEffects,
 ) -> Vec<HistoryFetch> {
@@ -4906,7 +4884,7 @@ fn process_account_event(
     output: &mut Vec<EngineToUi>,
 ) {
     process_account_change(&mut running.model, changed, output);
-    if changed.authorship == papo::Authorship::Own {
+    if changed.actor_party == papo::Party::Me {
         connected_push_action(running, snapshot, output);
     }
 }
@@ -4915,7 +4893,7 @@ fn live_chat(
     running: &mut RunningNetwork,
     snapshot: &papo::State,
     input: ChatInput<'_>,
-    direct: Option<papo::DirectRef>,
+    direct: Option<DirectPeer>,
     output: &mut Vec<EngineToUi>,
 ) -> Option<(papo::Client, u64)> {
     let (received, advances) = receive_chat(&mut running.model, input, false, snapshot, direct);
@@ -4943,13 +4921,13 @@ fn live_cursor_time(event: &papo::Event) -> Option<SystemTime> {
     if matches!(event, papo::Event::AccountChanged(_)) {
         return None;
     }
-    event.server_time()
+    event.server_time().map(papo::ServerTime::to_system_time)
 }
 
 fn typing_snapshot_events(model: &NetworkModel, state: &papo::State) -> Vec<EngineToUi> {
     model
         .conversation_buffers()
-        .filter_map(|(_, conversation)| typing_snapshot_event(model, state, &conversation))
+        .filter_map(|(_, key)| typing_snapshot_event(model, state, &key))
         .collect()
 }
 
@@ -4959,9 +4937,9 @@ fn open_direct_with_live_state(
     direct: DirectAvailability,
     state: &papo::State,
 ) -> (BufferId, Vec<EngineToUi>) {
-    let conversation = papo::Conversation::Private(nick.clone());
+    let key = NameKey::Direct(nick.clone());
     let (buffer_id, mut output) = model.open_direct(nick, direct, state);
-    output.extend(typing_snapshot_event(model, state, &conversation));
+    output.extend(typing_snapshot_event(model, state, &key));
     output.extend(model.sync_direct_peers(state));
     (buffer_id, output)
 }
@@ -4969,9 +4947,9 @@ fn open_direct_with_live_state(
 fn typing_snapshot_event(
     model: &NetworkModel,
     state: &papo::State,
-    conversation: &papo::Conversation,
+    key: &NameKey,
 ) -> Option<EngineToUi> {
-    let event = typing_changed_event(model, state, conversation)?;
+    let event = typing_changed_event(model, state, key)?;
     let EngineToUi::TypingChanged { typers, .. } = &event else {
         unreachable!("typing_changed_event returned another event kind")
     };
@@ -4981,26 +4959,24 @@ fn typing_snapshot_event(
 fn typing_changed_event(
     model: &NetworkModel,
     state: &papo::State,
-    conversation: &papo::Conversation,
+    key: &NameKey,
 ) -> Option<EngineToUi> {
     Some(EngineToUi::TypingChanged {
-        buffer_id: model.buffer_id_for_conversation(conversation)?,
-        typers: typing_projection(state, conversation),
+        buffer_id: model.buffer_id_for_name(key)?,
+        typers: typing_projection(state, key),
     })
 }
 
-fn typing_projection(
-    state: &papo::State,
-    conversation: &papo::Conversation,
-) -> Vec<TypingProjection> {
-    state
-        .typing(conversation)
+fn typing_projection(state: &papo::State, key: &NameKey) -> Vec<TypingProjection> {
+    let casemapping = crate::name_key::casemapping(state);
+    let typers = match key {
+        NameKey::Channel(channel) => state.typing(channel),
+        NameKey::Direct(nick) => state.typing(nick),
+    };
+    typers
         .map(|typer| TypingProjection {
             nick: typer.nick().to_string(),
-            nick_color_index: crate::state::nick_color_index(
-                state.casemapping(),
-                typer.nick().as_str(),
-            ),
+            nick_color_index: crate::state::nick_color_index(casemapping, typer.nick().as_str()),
             paused: typer.is_paused(),
         })
         .collect()
@@ -5029,13 +5005,13 @@ fn spawn_event_flushes(
 
 fn stop_client(client: papo::Client) {
     spawn_task(async move {
-        let _ = client.quit(String::new()).await;
+        let _ = client.quit().await;
     });
 }
 
 fn process_disconnected_event(
     running: &mut RunningNetwork,
-    disconnected: &papo::Disconnected,
+    disconnected: &papo::event::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.typing = crate::typing::OutgoingTyping::default();
@@ -5194,7 +5170,7 @@ fn push_route_event(running: &RunningNetwork, snapshot: &papo::State) -> Option<
 
 fn process_disconnect(
     running: &mut RunningNetwork,
-    disconnected: &papo::Disconnected,
+    disconnected: &papo::event::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running
@@ -5254,7 +5230,9 @@ fn process_lagged(
             continue;
         };
         let last = gap.last_server_time.unwrap_or(first);
-        model.note_lagged_gap(&gap.conversation, time_millis(first), time_millis(last));
+        if let Some(key) = NameKey::from_conversation(&gap.conversation) {
+            model.note_lagged_gap(&key, first.as_millis(), last.as_millis());
+        }
     }
     output.extend(model.sync_channels(snapshot));
     output.push(model.buffers_event());
@@ -5263,13 +5241,14 @@ fn process_lagged(
 
 fn process_nick_change(
     model: &mut NetworkModel,
+    snapshot: &papo::State,
     changed: &papo::event::NickChanged,
     output: &mut Vec<EngineToUi>,
 ) {
-    if changed.authorship == papo::Authorship::Own {
+    if changed.actor_party == papo::Party::Me {
         output.push(model.set_nickname(changed.new.to_string()));
     }
-    model.receive_nick_change(changed);
+    model.receive_nick_change(changed, snapshot);
 }
 
 fn process_account_change(
@@ -5277,7 +5256,7 @@ fn process_account_change(
     changed: &papo::event::AccountChanged,
     output: &mut Vec<EngineToUi>,
 ) {
-    output.extend(model.update_direct_account(changed.actor.nick(), &changed.new));
+    output.extend(model.update_direct_account(&changed.actor.nick(), &changed.account));
 }
 
 fn process_read_marker(
@@ -5286,9 +5265,12 @@ fn process_read_marker(
     output: &mut Vec<EngineToUi>,
     effects: &mut EventEffects,
 ) {
+    let Some(key) = NameKey::from_conversation(&marker.conversation) else {
+        return;
+    };
     let (events, advance) = running
         .model
-        .apply_server_read_marker_with_advance(&marker.conversation, marker.read_until);
+        .apply_server_read_marker_with_advance(&key, read_marker_time(marker.marker));
     output.extend(events);
     output.extend(record_read_advances(running, advance));
     effects.read_flush = start_read_flush(running);
@@ -5300,7 +5282,7 @@ enum ConnectionTransition {
     },
     Connected,
     Disconnected {
-        event: papo::Disconnected,
+        event: papo::event::Disconnected,
         attempt: u32,
         hosted_authentication_failed: bool,
         device_online: bool,
@@ -5362,7 +5344,7 @@ fn connecting_transition(connecting: &papo::event::Connecting) -> ConnectionTran
 }
 
 fn disconnected_state(
-    disconnected: &papo::Disconnected,
+    disconnected: &papo::event::Disconnected,
     attempt: u32,
     hosted_authentication_failed: bool,
     device_online: bool,
@@ -5402,7 +5384,7 @@ fn disconnected_state(
 }
 
 fn connection_failure_notice(
-    disconnected: &papo::Disconnected,
+    disconnected: &papo::event::Disconnected,
     hosted_authentication_failed: bool,
 ) -> Option<EngineToUi> {
     (disconnected.reconnect_in.is_none()
@@ -5416,7 +5398,7 @@ fn connection_failure_notice(
     })
 }
 
-fn is_sasl_failure(disconnected: &papo::Disconnected) -> bool {
+fn is_sasl_failure(disconnected: &papo::event::Disconnected) -> bool {
     matches!(
         &disconnected.cause,
         papo::DisconnectCause::Connect(error)
@@ -5430,18 +5412,18 @@ fn process_part(
     parted: &papo::event::Parted,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryTarget> {
-    if parted.authorship == papo::Authorship::Own {
-        if let Some(event) = model.remove_channel(&parted.channel) {
+    if parted.actor_party == papo::Party::Me {
+        if let Some(event) = model.remove_channel(&parted.channel.name()) {
             output.push(event);
         }
     } else {
         let _ = model.receive_membership_event(
-            &parted.channel,
+            &parted.channel.name(),
             MembershipKind::Parted,
             parted.actor.nick().to_string(),
             parted.reason.clone(),
             parted.msgid.as_ref().map(ToString::to_string),
-            parted.server_time.map(time_millis),
+            parted.server_time.map(papo::ServerTime::as_millis),
             time_millis(parted.received_at),
         );
     }
@@ -5469,16 +5451,14 @@ fn process_part_event(
     parted: &papo::event::Parted,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryFetch> {
-    if parted.authorship == papo::Authorship::Own
+    if parted.actor_party == papo::Party::Me
         && let Some(conversation) = running
             .model
-            .snapshot_conversation_for_channel(&parted.channel)
+            .snapshot_conversation_for_channel(&parted.channel.name())
     {
         running.chat_list.removed.push(SnapshotRemoval {
             conversation,
-            removed_at_ms: parted
-                .server_time
-                .map_or_else(|| time_millis(parted.received_at), time_millis),
+            removed_at_ms: event_millis(parted.server_time, parted.received_at),
         });
     }
     process_part(&mut running.model, snapshot, parted, output)
@@ -5496,16 +5476,14 @@ fn process_join_event(
 ) -> Vec<HistoryFetch> {
     let targets = process_join(running, snapshot, joined, output);
     effects.read_flush = start_read_flush(running);
-    if joined.authorship == papo::Authorship::Own
+    if joined.actor_party == papo::Party::Me
         && let Some(conversation) = running
             .model
-            .snapshot_conversation_for_channel(&joined.channel)
+            .snapshot_conversation_for_channel(&joined.channel.name())
     {
         running.chat_list.joined.push(SnapshotPresence {
             conversation,
-            joined_at_ms: joined
-                .server_time
-                .map_or_else(|| time_millis(joined.received_at), time_millis),
+            joined_at_ms: event_millis(joined.server_time, joined.received_at),
         });
     }
     targets.into_iter().map(HistoryFetch::Latest).collect()
@@ -5528,7 +5506,7 @@ fn process_channel_line(
         }
         papo::Event::ChannelSynced(synced) => {
             output.extend(model.sync_channels(snapshot));
-            if let Some(channel) = snapshot.channel(&synced.channel) {
+            if let Some(channel) = crate::name_key::known_channel(snapshot, &synced.channel) {
                 model.show_pending_topic_card(channel);
             }
         }
@@ -5539,12 +5517,12 @@ fn process_channel_line(
 fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit) {
     for channel in &quit.channels {
         let _ = model.receive_membership_event(
-            channel,
+            &channel.name(),
             MembershipKind::Quit,
             quit.actor.nick().to_string(),
             quit.reason.clone(),
             quit.msgid.as_ref().map(ToString::to_string),
-            quit.server_time.map(time_millis),
+            quit.server_time.map(papo::ServerTime::as_millis),
             time_millis(quit.received_at),
         );
     }
@@ -5557,19 +5535,20 @@ fn process_join(
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryTarget> {
     output.extend(running.model.sync_channels(snapshot));
-    if joined.authorship == papo::Authorship::Own {
+    if joined.actor_party == papo::Party::Me {
         running.model.anchor_topic_card(joined);
-        if let Some(papo::ReadMarker::ReadUntil(read_until)) = snapshot.read_marker(&joined.channel)
+        if let Some(papo::ReadMarker::ReadUntil(read_until)) =
+            snapshot.read_marker(joined.channel.name())
         {
             let (events, advance) = running.model.apply_server_read_marker_with_advance(
-                &papo::Conversation::Channel(joined.channel.clone()),
-                Some(read_until),
+                &NameKey::Channel(joined.channel.name()),
+                Some(read_until.to_system_time()),
             );
             output.extend(events);
             output.extend(record_read_advances(running, advance));
         }
-        let target = running.model.request_latest_channel(&joined.channel);
-        if let Some(buffer_id) = running.model.buffer_id_for_channel(&joined.channel)
+        let target = running.model.request_latest_channel(&joined.channel.name());
+        if let Some(buffer_id) = running.model.buffer_id_for_channel(&joined.channel.name())
             && target.is_some()
             && let Some(event) = running.model.buffer_updated(buffer_id)
         {
@@ -5578,12 +5557,12 @@ fn process_join(
         target.into_iter().collect()
     } else {
         let _ = running.model.receive_membership_event(
-            &joined.channel,
+            &joined.channel.name(),
             MembershipKind::Joined,
             joined.actor.nick().to_string(),
             None,
             joined.msgid.as_ref().map(ToString::to_string),
-            joined.server_time.map(time_millis),
+            joined.server_time.map(papo::ServerTime::as_millis),
             time_millis(joined.received_at),
         );
         Vec::new()
@@ -5595,11 +5574,13 @@ fn process_history(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
     instance: u64,
-    page: papo::HistoryPage,
+    page: papo::event::HistoryPage,
 ) {
     let shared_state = Arc::clone(state);
-    let conversation = page.conversation.clone();
-    let (item_count, end) = (page.items.len(), page.end);
+    let Some(conversation) = NameKey::from_conversation(&page.conversation) else {
+        return;
+    };
+    let (item_count, end) = (page.items.len(), page.exhausted);
     let bounds = history_page_bounds(&page);
     let mut state = lock(state);
     let Some(running) = state
@@ -5654,11 +5635,11 @@ fn receive_history_items(
     client: &papo::Client,
     items: Vec<papo::Event>,
 ) -> Vec<EngineToUi> {
-    let snapshot = client.state();
+    let snapshot = client.snapshot();
     let mut output = Vec::new();
     let mut read_advances = Vec::new();
     for item in items {
-        match item {
+        match unrestricted(item) {
             papo::Event::Message(message) => {
                 let (received, advance) =
                     receive_chat(&mut running.model, (&message).into(), true, &snapshot, None);
@@ -5682,42 +5663,42 @@ fn receive_history_items(
             papo::Event::Redacted(redacted) => {
                 output.extend(running.model.receive_redaction(&redacted));
             }
-            other => receive_history_system_event(&mut running.model, other),
+            other => receive_history_system_event(&mut running.model, other, &snapshot),
         }
     }
     output.extend(record_read_advances(running, read_advances));
     output
 }
 
-fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
+fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event, state: &papo::State) {
     match event {
-        papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
+        papo::Event::Joined(joined) if joined.actor_party != papo::Party::Me => {
             let _ = model.receive_membership_event(
-                &joined.channel,
+                &joined.channel.name(),
                 MembershipKind::Joined,
                 joined.actor.nick().to_string(),
                 None,
                 joined.msgid.as_ref().map(ToString::to_string),
-                joined.server_time.map(time_millis),
+                joined.server_time.map(papo::ServerTime::as_millis),
                 time_millis(joined.received_at),
             );
         }
-        papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
+        papo::Event::Parted(parted) if parted.actor_party != papo::Party::Me => {
             let _ = model.receive_membership_event(
-                &parted.channel,
+                &parted.channel.name(),
                 MembershipKind::Parted,
                 parted.actor.nick().to_string(),
                 parted.reason.clone(),
                 parted.msgid.as_ref().map(ToString::to_string),
-                parted.server_time.map(time_millis),
+                parted.server_time.map(papo::ServerTime::as_millis),
                 time_millis(parted.received_at),
             );
         }
         papo::Event::Quit(quit) => process_quit(model, &quit),
-        papo::Event::NickChanged(changed) => history_nick(model, &changed),
+        papo::Event::NickChanged(changed) => history_nick(model, &changed, state),
         papo::Event::ModeChanged(changed) => _ = model.receive_mode_change(&changed),
         papo::Event::Invited(invited) => _ = model.receive_invite(&invited),
-        papo::Event::Kicked(kicked) if kicked.subject_authorship != papo::Authorship::Own => {
+        papo::Event::Kicked(kicked) if kicked.subject_party != papo::Party::Me => {
             _ = model.receive_kick(&kicked, false);
         }
         papo::Event::TopicChanged(changed) => model.receive_topic_change(&changed),
@@ -5725,9 +5706,9 @@ fn receive_history_system_event(model: &mut NetworkModel, event: papo::Event) {
     }
 }
 
-fn history_nick(model: &mut NetworkModel, changed: &papo::event::NickChanged) {
-    if changed.authorship != papo::Authorship::Own {
-        model.receive_nick_change(changed);
+fn history_nick(model: &mut NetworkModel, changed: &papo::event::NickChanged, state: &papo::State) {
+    if changed.actor_party != papo::Party::Me {
+        model.receive_nick_change(changed, state);
     }
 }
 
@@ -5747,7 +5728,7 @@ fn process_mode_change(
 fn finish_history_page(
     model: &mut NetworkModel,
     load: Option<HistoryLoad>,
-    conversation: &papo::Conversation,
+    conversation: &NameKey,
     bounds: HistoryPageBounds,
     item_count: usize,
     end: bool,
@@ -5952,12 +5933,15 @@ struct HistoryPageBounds {
     newest: Option<HistoryCursor>,
 }
 
-fn history_page_bounds(page: &papo::HistoryPage) -> HistoryPageBounds {
+fn history_page_bounds(page: &papo::event::HistoryPage) -> HistoryPageBounds {
     let oldest = page
         .items
         .iter()
         .filter_map(|event| {
-            let time = event.server_time().or_else(|| event.received_at())?;
+            let time = event
+                .server_time()
+                .map(papo::ServerTime::to_system_time)
+                .or_else(|| event.received_at())?;
             let reference = event
                 .msgid()
                 .cloned()
@@ -5972,7 +5956,7 @@ fn history_page_bounds(page: &papo::HistoryPage) -> HistoryPageBounds {
         .iter()
         .filter_map(|event| {
             event.server_time().map(|time| {
-                HistoryCursor::new(event.msgid().map(ToString::to_string), time_millis(time))
+                HistoryCursor::new(event.msgid().map(ToString::to_string), time.as_millis())
             })
         })
         .fold(None, |newest: Option<HistoryCursor>, cursor| {
@@ -6061,7 +6045,7 @@ fn push_failure(error: &papo::Error) -> PushFailure {
         papo::Error::Disconnected(_)
         | papo::Error::Interrupted(_)
         | papo::Error::Timeout
-        | papo::Error::Unconfirmed
+        | papo::Error::NotVerified
         | papo::Error::Connect(_) => PushFailure::Connection,
         _ => PushFailure::Other,
     }
@@ -6173,9 +6157,8 @@ fn sync_joined_channel(
     command_id: &str,
     channel_name: &str,
 ) -> Option<(Vec<EngineToUi>, bool)> {
-    let snapshot = client.state();
-    let channel = snapshot
-        .channel(channel_name)
+    let snapshot = client.snapshot();
+    let channel = crate::name_key::known_channel(&snapshot, channel_name)
         .map(|channel| channel.name().clone());
     let mut state = lock(state);
     let running = state
@@ -6318,7 +6301,7 @@ fn spawn_push_refresh(
                     .as_ref()
                     .is_some_and(|route| route.route_id == task.route.route_id)
         });
-        if current && client.state().is_connected() {
+        if current && client.snapshot().is_connected() {
             task.unregister.clear();
             spawn_push_register(state, outbound, client, task, None);
         }
@@ -6390,7 +6373,7 @@ enum MemberMode {
 }
 
 impl MemberMode {
-    async fn apply(
+    fn apply(
         self,
         client: &papo::Client,
         channel: &ChannelTarget,
@@ -6399,19 +6382,19 @@ impl MemberMode {
     ) -> Result<papo::SetModes, ChannelFailure> {
         require_member(client, channel, &nick)?;
         Ok(match self {
-            Self::Op => request.op(&client.direct(nick).await?),
+            Self::Op => request.op(nick),
             Self::Deop => request.deop(nick),
-            Self::Voice => request.voice(&client.direct(nick).await?),
+            Self::Voice => request.voice(nick),
             Self::Devoice => request.devoice(nick),
-            Self::Dehalfop => request.dehalfop(nick),
-            Self::Grant(mode) => request.prefix(mode, &client.direct(nick).await?),
+            Self::Dehalfop => request.remove_with('h', nick),
+            Self::Grant(mode) => request.add_with(mode, nick),
         })
     }
 }
 
 fn cached_channel_modes(client: &papo::Client, channel: &str) -> Option<String> {
-    let state = client.state();
-    let joined = state.channel(channel)?;
+    let state = client.snapshot();
+    let joined = crate::name_key::known_channel(&state, channel)?;
     joined
         .modes()
         .next()
@@ -6419,7 +6402,7 @@ fn cached_channel_modes(client: &papo::Client, channel: &str) -> Option<String> 
         .then(|| crate::mode_string::describe_channel_modes(joined))
 }
 
-async fn apply_mode_change(
+fn apply_mode_change(
     client: &papo::Client,
     channel: &ChannelTarget,
     request: papo::SetModes,
@@ -6441,9 +6424,7 @@ async fn apply_mode_change(
             // prefix removal for owner or admin modes such as `-q` and `-a`.
             (_, false) => return Err(ChannelFailure::Rejected(EngineMessageKey::CommandRefused)),
         };
-        return member
-            .apply(client, channel, request, argument.unwrap_or_default())
-            .await;
+        return member.apply(client, channel, request, argument.unwrap_or_default());
     }
     Ok(match (mode, set, argument) {
         ('k', true, Some(key)) => request.key(papo::Secret::new(key)),
@@ -6463,10 +6444,8 @@ fn require_member(
     nick: &str,
 ) -> Result<(), ChannelFailure> {
     if let ChannelTarget::Known(name) = channel
-        && client
-            .state()
-            .channel(name)
-            .is_some_and(|joined| joined.member(nick).is_none())
+        && crate::name_key::known_channel(&client.snapshot(), name)
+            .is_some_and(|joined| joined.member(nick).ok().flatten().is_none())
     {
         return Err(ChannelFailure::Rejected(EngineMessageKey::NickNotInChannel));
     }
@@ -6485,17 +6464,15 @@ impl From<papo::Error> for ChannelFailure {
     }
 }
 
-fn modes_settled(outcome: &papo::ModesApplied) -> Result<(), ChannelFailure> {
+fn modes_settled(outcome: &papo::ModesOutcome) -> Result<(), ChannelFailure> {
     if !outcome.applied.is_empty() {
         return Ok(());
     }
-    Err(
-        match (outcome.refused.first(), outcome.unconfirmed.first()) {
-            (Some((_, refusal)), _) => ChannelFailure::Refused(*refusal),
-            (None, Some((_, error))) => ChannelFailure::Request(error.clone()),
-            (None, None) => ChannelFailure::Rejected(EngineMessageKey::CommandRefused),
-        },
-    )
+    Err(match (outcome.refused.first(), outcome.failed.first()) {
+        (Some((_, refusal)), _) => ChannelFailure::Refused(*refusal),
+        (None, Some((_, error))) => ChannelFailure::Request(error.clone()),
+        (None, None) => ChannelFailure::Rejected(EngineMessageKey::CommandRefused),
+    })
 }
 
 struct RefusalNames {
@@ -6604,6 +6581,12 @@ use gap_fill::{catch_up_gap_fill, spawn_gap_fill};
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        direct_peer::DirectPeer,
+        name_key::NameKey,
+        peer_pin::{PeerPin, PinMismatch},
+        test_events::NextEvent,
+    };
     mod away_check;
     mod direct_routing;
     mod gap_fill;
@@ -6782,7 +6765,7 @@ async fn delay(duration: Duration) {
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
 
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = known_channel(&client, "#room");
         let buffer_id = model
             .buffer_id_for_channel(&channel)
@@ -6799,11 +6782,11 @@ async fn delay(duration: Duration) {
         let papo::Event::Message(history) = history else {
             panic!("history message expected")
         };
-        model.receive(&history, true, &client.state(), None);
+        model.receive(&history, true, &client.snapshot(), None);
         let newest = HistoryCursor::new(Some("authoritative-edge".into()), 100);
         model
             .finish_history(
-                &papo::Conversation::Channel(channel.clone()),
+                &NameKey::Channel(channel.clone()),
                 Some(papo::HistoryReference::from(papo::MessageId::from(
                     "authoritative-edge",
                 ))),
@@ -6814,7 +6797,7 @@ async fn delay(duration: Duration) {
             )
             .expect("initial history finishes");
         let pushed = pushed_channel_message("pushed-edge", "provisional while suspended");
-        model.restore_pushed_messages(vec![pushed], &client.state());
+        model.restore_pushed_messages(vec![pushed], &client.snapshot());
         let pushed_buffer_id = changed_messages(&model.take_timeline_changes(false))
             .first()
             .map(|(buffer_id, _)| *buffer_id)
@@ -6834,7 +6817,7 @@ async fn delay(duration: Duration) {
             ),
             "{fetch:?}"
         );
-        let conversation = papo::Conversation::Channel(channel);
+        let conversation = NameKey::Channel(channel);
         let load = model.history_load(&conversation);
         _ = finish_history_page(
             &mut model,
@@ -7121,7 +7104,7 @@ async fn delay(duration: Duration) {
                 "ping timeout schedules papo retry",
                 crate::NetworkConnectionState::Online,
                 ConnectionTransition::Disconnected {
-                    event: papo::Disconnected::new(
+                    event: disconnected(
                         papo::DisconnectCause::PingTimeout,
                         Some(Duration::from_secs(2)),
                     ),
@@ -7175,7 +7158,7 @@ async fn delay(duration: Duration) {
 
     #[test]
     fn unexpected_disconnects_emit_a_human_notice() {
-        let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
+        let disconnected = disconnected(papo::DisconnectCause::PingTimeout, None);
         assert!(matches!(
             connection_failure_notice(&disconnected, false),
             Some(EngineToUi::Notice { key, .. })
@@ -7185,7 +7168,7 @@ async fn delay(duration: Duration) {
 
     #[test]
     fn reconnecting_disconnects_do_not_emit_a_failure_notice() {
-        let disconnected = papo::Disconnected::new(
+        let disconnected = disconnected(
             papo::DisconnectCause::PingTimeout,
             Some(Duration::from_secs(1)),
         );
@@ -7967,7 +7950,7 @@ async fn delay(duration: Duration) {
             confirmation_action: None,
             secret_arguments: false,
         };
-        assert!(!super::command_requirements_met(&spec, &client.state()));
+        assert!(!super::command_requirements_met(&spec, &client.snapshot()));
     }
 
     #[test]
@@ -8012,7 +7995,7 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge")
                 .casemapping(papo::Casemapping::default()),
         );
-        let snapshot = client.state();
+        let snapshot = client.snapshot();
         let rules = snapshot.name_rules().expect("seeded name rules");
         assert_eq!(rules.check_nick("alice"), papo::NameCheck::Unknown);
         assert!(matches!(
@@ -8020,8 +8003,8 @@ async fn delay(duration: Duration) {
             papo::NameCheck::Invalid(_)
         ));
         drop(snapshot);
-        assert!(super::valid_nick_input(&client.state(), "alice"));
-        assert!(!super::valid_nick_input(&client.state(), "bad nick"));
+        assert!(super::valid_nick_input(&client.snapshot(), "alice"));
+        assert!(!super::valid_nick_input(&client.snapshot(), "bad nick"));
         wire.register(&[]).await;
         _ = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Connected(_))
@@ -8029,13 +8012,13 @@ async fn delay(duration: Duration) {
         .await;
         assert_eq!(
             client
-                .state()
+                .snapshot()
                 .name_rules()
                 .expect("registered name rules")
                 .check_nick("alice"),
             papo::NameCheck::Valid
         );
-        assert!(super::valid_nick_input(&client.state(), "alice"));
+        assert!(super::valid_nick_input(&client.snapshot(), "alice"));
     }
 
     #[tokio::test]
@@ -8069,7 +8052,7 @@ async fn delay(duration: Duration) {
         let buffer_id = {
             let mut runtime = lock(&state);
             let running = runtime.network.as_mut().expect("network remains running");
-            running.model.sync_channels(&client.state());
+            running.model.sync_channels(&client.snapshot());
             running
                 .model
                 .buffer_id_for_channel(&known_channel(&client, "#large"))
@@ -8131,7 +8114,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn resolving_a_direct_publishes_the_presence_papo_learned_on_the_way() {
+    async fn resolving_a_direct_publishes_the_presence_papo_already_knows() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -8140,20 +8123,15 @@ async fn delay(duration: Duration) {
         })
         .await;
         enable_test_monitor(&mut events, &mut wire, 100).await;
-        let request = tokio::spawn({
-            let client = client.clone();
-            async move { client.direct("alice").await }
-        });
+        let alice = known_nick(&client, "alice");
+        let direct = DirectPeer::resolve(&client, &alice);
         assert_eq!(wire.next_sent().await, "MONITOR + alice");
-        assert_eq!(wire.next_sent().await, "WHO alice %na");
-        wire.server(":offline.test 354 weblounge alice alice-account")
+        wire.server(":offline.test 730 weblounge :alice!~alice@cloak.example")
             .await;
-        wire.server(":offline.test 315 weblounge alice :End of WHO list")
-            .await;
-        let direct = request
-            .await
-            .expect("direct task completes")
-            .expect("direct");
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::MonitorOnline(_))
+        })
+        .await;
         wire.server(":alice!~alice@cloak.example AWAY").await;
         _ = next_matching(&mut events, |event| {
             matches!(event, papo::Event::AwayChanged(_))
@@ -8168,11 +8146,11 @@ async fn delay(duration: Duration) {
             .open_direct(
                 direct.nick().clone(),
                 DirectAvailability::Pending,
-                &client.state(),
+                &client.snapshot(),
             )
             .0;
 
-        super::apply_direct_resolution(&state, &outbound, 1, alice, Ok(direct));
+        super::apply_direct_resolution(&state, &outbound, 1, alice, direct);
 
         assert!(collect(&mut receiver).iter().any(|event| matches!(event,
             EngineToUi::BufferUpdated { buffer }
@@ -8191,7 +8169,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .open_direct(nick, DirectAvailability::Pending, &client.snapshot())
             .0;
         let presence_updates = |receiver: &mut mpsc::UnboundedReceiver<EngineToUi>| {
             collect(receiver)
@@ -8247,9 +8225,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         let (state, outbound, mut receiver) = harness(client.clone());
-        let nick = client
-            .state()
-            .user("alice")
+        let nick = crate::name_key::known_user(&client.snapshot(), "alice")
             .map(|user| user.nick().clone())
             .expect("alice shares #room");
         let alice = lock(&state)
@@ -8257,7 +8233,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .open_direct(nick, DirectAvailability::Pending, &client.snapshot())
             .0;
 
         for line in [
@@ -8288,7 +8264,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .open_direct(nick, DirectAvailability::Pending, &client.snapshot())
             .0;
 
         for line in [
@@ -8470,11 +8446,6 @@ async fn delay(duration: Duration) {
                 .is_empty()
         );
         assert_eq!(wire.next_sent().await, "MONITOR + alice");
-        assert_eq!(wire.next_sent().await, "WHO alice %na");
-        wire.server(":offline.test 354 WebLounge alice alice-account")
-            .await;
-        wire.server(":offline.test 315 WebLounge alice :End of WHO list")
-            .await;
 
         let mut output = Vec::new();
         loop {
@@ -8896,11 +8867,6 @@ async fn delay(duration: Duration) {
                 .is_empty()
         );
         assert_eq!(wire.next_sent().await, "MONITOR + alice");
-        assert_eq!(wire.next_sent().await, "WHO alice %na");
-        wire.server(":offline.test 354 weblounge alice alice-account")
-            .await;
-        wire.server(":offline.test 315 weblounge alice :End of WHO list")
-            .await;
         let mut output = Vec::new();
         loop {
             let event = receiver.recv().await.expect("open output");
@@ -8958,8 +8924,15 @@ async fn delay(duration: Duration) {
 
     #[tokio::test]
     async fn closing_an_unresolved_direct_drops_its_peer_from_the_monitor_batch() {
-        let (client, _events, mut wire, nick) =
-            crate::direct_peer::test_support::monitoring_alice().await;
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+        let nick = known_nick(&client, "alice");
         let (state, outbound, _receiver) = harness(client.clone());
         let alice = {
             let mut runtime = lock(&state);
@@ -8970,9 +8943,11 @@ async fn delay(duration: Duration) {
                 .model;
             model.set_connection(crate::NetworkConnectionState::Online, None);
             model
-                .open_direct(nick, DirectAvailability::Pending, &client.state())
+                .open_direct(nick, DirectAvailability::Pending, &client.snapshot())
                 .0
         };
+        monitor_shown_direct_peers(&state, &client, 1);
+        assert_eq!(wire.next_sent().await, "MONITOR + alice");
         let runtime = Runtime {
             state: Arc::clone(&state),
             outbound,
@@ -9000,22 +8975,9 @@ async fn delay(duration: Duration) {
         .await;
         enable_test_monitor(&mut events, &mut wire, 100).await;
 
-        let request = tokio::spawn({
-            let client = client.clone();
-            async move { client.direct("alice").await }
-        });
+        let direct = DirectPeer::resolve(&client, &known_nick(&client, "alice"));
         assert_eq!(wire.next_sent().await, "MONITOR + alice");
-        assert_eq!(wire.next_sent().await, "WHO alice %na");
-        wire.server(":offline.test 354 weblounge alice alice-account")
-            .await;
-        wire.server(":offline.test 315 weblounge alice :End of WHO list")
-            .await;
-        let direct = request
-            .await
-            .expect("direct task completes")
-            .expect("direct");
-        let nick = direct.nick();
-        let first_key = direct.peer_key().clone();
+        let nick = direct.nick().clone();
         let (state, outbound, _receiver) = harness(client.clone());
         lock(&state)
             .network
@@ -9025,7 +8987,7 @@ async fn delay(duration: Duration) {
             .open_direct(
                 nick.clone(),
                 DirectAvailability::Guarded(direct),
-                &client.state(),
+                &client.snapshot(),
             );
         let held = lock(&state)
             .network
@@ -9055,13 +9017,8 @@ async fn delay(duration: Duration) {
             outbound,
             client,
             1,
-            online.subject.nick().clone(),
+            online.subject.nick(),
         );
-        assert_eq!(wire.next_sent().await, "WHO alice %na");
-        wire.server(":offline.test 354 weblounge alice alice-account")
-            .await;
-        wire.server(":offline.test 315 weblounge alice :End of WHO list")
-            .await;
 
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
@@ -9071,14 +9028,8 @@ async fn delay(duration: Duration) {
                     .expect("network remains active")
                     .model
                     .direct(&nick);
-                if matches!(
-                    current,
-                    Some(DirectAvailability::Guarded(ref refreshed))
-                        if matches!(
-                            first_key.check(refreshed.peer_key()),
-                            papo::PeerKeyCheck::Match | papo::PeerKeyCheck::Upgrade(_)
-                        )
-                ) {
+                if matches!(current, Some(DirectAvailability::Guarded(ref refreshed)) if *refreshed.nick() == nick)
+                {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -9284,7 +9235,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn a_full_monitor_list_opens_the_direct_but_disables_sending() {
+    async fn a_full_monitor_list_still_sends_the_direct() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -9293,7 +9244,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         enable_test_monitor(&mut events, &mut wire, 1).await;
-        client.monitor().add(["bob"]).await.expect("monitor fills");
+        crate::direct_peer::test_support::keep_watching(client.watch("bob"));
         assert_eq!(wire.next_sent().await, "MONITOR + bob");
         let (state, outbound, mut receiver) = harness(client);
         lock(&state)
@@ -9318,26 +9269,20 @@ async fn delay(duration: Duration) {
         let mut output = Vec::new();
         while !output
             .iter()
-            .any(|event| matches!(event, EngineToUi::CommandRejected { .. }))
+            .any(|event| matches!(event, EngineToUi::BufferAdded { .. }))
         {
             output.push(receiver.recv().await.expect("direct output"));
         }
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::Notice { key, .. }
-                if key == EngineMessageKey::DirectPresenceUnavailable.as_str()
-        )));
         assert!(
             output
                 .iter()
                 .any(|event| matches!(event, EngineToUi::BufferAdded { buffer }
                 if buffer.kind == BufferKind::Direct && buffer.title == "alice"))
         );
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::CommandRejected { message_key, .. }
-                if *message_key == EngineMessageKey::DirectMonitorFull
-        )));
+        assert_eq!(
+            next_sent_containing(&mut wire, "PRIVMSG alice").await,
+            "PRIVMSG alice hello"
+        );
     }
 
     #[tokio::test]
@@ -9678,12 +9623,12 @@ async fn delay(duration: Duration) {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "Luiz"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":Luiz!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
 
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "Luiz".into(), 50);
-        let state = client.state();
+        let state = client.snapshot();
         model.sync_channels(&state);
         let buffer_id = model
             .buffer_id_for_target(&SendTarget::Channel(known_channel(&client, "#new")))
@@ -9714,7 +9659,7 @@ async fn delay(duration: Duration) {
         let buffer_id = {
             let mut runtime = lock(&state);
             let running = runtime.network.as_mut().expect("network remains running");
-            running.model.sync_channels(&client.state());
+            running.model.sync_channels(&client.snapshot());
             running
                 .model
                 .buffer_id_for_channel(&known_channel(&client, "#room"))
@@ -9790,7 +9735,7 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
@@ -9820,7 +9765,7 @@ async fn delay(duration: Duration) {
         let buffer_id = {
             let mut state = lock(&runtime.state);
             let running = state.network.as_mut().expect("network remains running");
-            running.model.sync_channels(&running.client.state());
+            running.model.sync_channels(&running.client.snapshot());
             let target = SendTarget::Channel(known_channel(&running.client, "#new"));
             running
                 .model
@@ -9881,13 +9826,13 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #projects/weblounge")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let buffer_id = model
             .buffer_id_for_channel(&known_channel(&client, "#projects/weblounge"))
             .expect("joined buffer exists");
@@ -10106,14 +10051,14 @@ async fn delay(duration: Duration) {
         wire.register(&[]).await;
         wire.server(":offline.test 005 weblounge MODES=2 CHANMODES=beI,k,l,imnst :are supported")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         for source in std::iter::once(&"weblounge!u@host").chain(members) {
             wire.server(format!(":{source} JOIN #room")).await;
             _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         }
         let (outbound, receiver) = mpsc::unbounded_channel();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let buffer_id = model
             .buffer_id_for_channel(&known_channel(&client, "#room"))
             .expect("joined buffer exists");
@@ -10178,7 +10123,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn member_modes_batch_at_the_server_limit() {
+    async fn member_modes_go_out_one_member_at_a_time() {
         let (runtime, mut receiver, mut wire, buffer_id) =
             joined_room_runtime_with(&["mel!m@mel.host", "iris!i@iris.host", "ana!a@ana.host"])
                 .await;
@@ -10193,17 +10138,25 @@ async fn delay(duration: Duration) {
                 })
                 .is_empty()
         );
-        confirm_mode_request(&mut wire, "MODE #room +oo mel iris").await;
-        confirm_mode_request(&mut wire, "MODE #room +o ana").await;
+        for sent in [
+            "MODE #room +o mel",
+            "MODE #room +o iris",
+            "MODE #room +o ana",
+        ] {
+            confirm_mode_request(&mut wire, sent).await;
+        }
         assert_eq!(
             next_output(&mut receiver).await,
             EngineToUi::CommandResult { id: "op".into() }
         );
 
         for (input, sent) in [
-            ("/deop mel iris", "MODE #room -oo mel iris"),
-            ("/voice mel", "MODE #room +v mel"),
-            ("/devoice mel", "MODE #room -v mel"),
+            (
+                "/deop mel iris",
+                &["MODE #room -o mel", "MODE #room -o iris"][..],
+            ),
+            ("/voice mel", &["MODE #room +v mel"]),
+            ("/devoice mel", &["MODE #room -v mel"]),
         ] {
             assert!(
                 runtime
@@ -10216,7 +10169,9 @@ async fn delay(duration: Duration) {
                     })
                     .is_empty()
             );
-            confirm_mode_request(&mut wire, sent).await;
+            for sent in sent {
+                confirm_mode_request(&mut wire, sent).await;
+            }
             assert_eq!(
                 next_output(&mut receiver).await,
                 EngineToUi::CommandResult { id: input.into() }
@@ -10452,12 +10407,17 @@ async fn delay(duration: Duration) {
         );
 
         for (input, sent) in [
-            ("/mode +m", "MODE #room +m"),
-            ("/mode +ol mel 50", "MODE #room +ol mel 50"),
-            ("/mode -k", "MODE #room -k *"),
+            ("/mode +m", &["MODE #room +m"][..]),
+            (
+                "/mode +ol mel 50",
+                &["MODE #room +o mel", "MODE #room +l 50"],
+            ),
+            ("/mode -k", &["MODE #room -k *"]),
         ] {
             submit(&runtime, buffer_id, input);
-            confirm_mode_request(&mut wire, sent).await;
+            for sent in sent {
+                confirm_mode_request(&mut wire, sent).await;
+            }
             assert_eq!(
                 next_output(&mut receiver).await,
                 EngineToUi::CommandResult { id: input.into() }
@@ -10551,12 +10511,12 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let buffer_id = model
             .buffer_id_for_channel(&known_channel(&client, "#room"))
             .expect("joined buffer exists");
@@ -10661,7 +10621,7 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
@@ -10733,8 +10693,6 @@ async fn delay(duration: Duration) {
         wire.server(":alice!a@host JOIN #room alice-one :Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let direct = client.direct("alice").await.expect("shared user is direct");
-
         wire.server(":alice!a@host NICK bob").await;
         let changed = next_matching(&mut events, |event| {
             matches!(event, papo::Event::NickChanged(_))
@@ -10743,14 +10701,13 @@ async fn delay(duration: Duration) {
         let papo::Event::NickChanged(changed) = changed else {
             panic!("nick change expected")
         };
-        assert_eq!(direct.nick(), changed.new);
         let pending = PendingSend {
             buffer_id: BufferId(2),
             local_send_id: crate::LocalSendId(1),
             target: SendTarget::Direct {
                 nick: changed.new,
-                recipient: Some(direct),
                 pin: None,
+                tls: false,
             },
             text: "still you".into(),
             kind: crate::MessageKind::Text,
@@ -10807,11 +10764,9 @@ async fn delay(duration: Duration) {
             .network
             .as_ref()
             .and_then(|running| {
-                running
-                    .model
-                    .buffer_id_for_conversation(&papo::Conversation::Private(
-                        client.state().name_rules()?.nick("alice"),
-                    ))
+                running.model.buffer_id_for_name(&NameKey::Direct(
+                    client.snapshot().name_rules()?.nick("alice"),
+                ))
             })
             .expect("alice buffer");
         _ = collect(&mut receiver);
@@ -10895,10 +10850,10 @@ async fn delay(duration: Duration) {
         let unavailable_id = {
             let mut state = lock(&state);
             let running = state.network.as_mut().expect("network remains active");
-            running.model.rebuild_name_keys(&client.state());
+            running.model.rebuild_name_keys(&client.snapshot());
             running.model.restore_pushed_messages(
                 vec![pushed_channel_message("gone-unread", "still unread")],
-                &client.state(),
+                &client.snapshot(),
             );
             _ = running.model.mark_vanished_restored_rows();
             _ = running.model.take_timeline_changes(false);
@@ -10950,6 +10905,7 @@ async fn delay(duration: Duration) {
                 .is_err()
         );
 
+        stamp_server_clock(&mut wire, "2026-11-03T12:34:57.000Z").await;
         let marked = runtime.request(EngineRequestEnvelope {
             id: "mark-direct".into(),
             request: EngineRequest::MarkRead {
@@ -10983,13 +10939,16 @@ async fn delay(duration: Duration) {
         wire.server(":alice!a@host JOIN #room alice-one :Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let direct = client.direct("alice").await.expect("shared user is direct");
-        let nick = direct.nick();
+        let direct = DirectPeer::resolve(&client, &known_nick(&client, "alice"));
+        let nick = direct.nick().clone();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let (buffer_id, _) =
-            model.open_direct(nick, DirectAvailability::Guarded(direct), &client.state());
+        let (buffer_id, _) = model.open_direct(
+            nick,
+            DirectAvailability::Guarded(direct),
+            &client.snapshot(),
+        );
         let (pending, _) = model
-            .begin_send(buffer_id, "hi".into(), &client.state())
+            .begin_send(buffer_id, "hi".into(), &client.snapshot())
             .expect("direct is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -11041,40 +11000,38 @@ async fn delay(duration: Duration) {
         wire.server(":alice!a@host JOIN #room alice-one :Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let direct = client.direct("alice").await.expect("shared user is direct");
-        let nick = client
-            .state()
-            .name_rules()
-            .expect("registered test client has name rules")
-            .nick("alice");
+        let nick = known_nick(&client, "alice");
+        let direct = DirectPeer::resolve(&client, &nick);
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let (buffer_id, _) = model.open_direct(
             nick.clone(),
             DirectAvailability::Guarded(direct.clone()),
-            &client.state(),
+            &client.snapshot(),
         );
         let (pending, _) = model
-            .begin_send(buffer_id, "not for you".into(), &client.state())
+            .begin_send(buffer_id, "not for you".into(), &client.snapshot())
             .expect("direct is sendable");
         model.close_direct(buffer_id).expect("direct closes");
 
         wire.server(":alice!a@host QUIT :gone").await;
-        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
+        let quit = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
+        model.note_peer_departures(&crate::peer_pin::departures(&quit, &client.snapshot()));
         wire.server(":alice!other@host JOIN #room alice-two :Other Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let Err(super::SendError::PeerPinMismatch(mismatch)) = super::send(&client, &pending).await
+        let Err(super::SendError::PeerPinMismatch(reason, current)) =
+            super::send(&client, &pending).await
         else {
             panic!("reused nick must fail its pin check")
         };
         assert!(matches!(
-            model.record_direct_mismatch(buffer_id, &mismatch),
+            model.record_direct_mismatch(buffer_id, reason, current),
             Some(EngineToUi::BufferUpdated { buffer })
                 if buffer.direct_identity == Some(crate::DirectIdentityState::CannotVerify)
         ));
         assert!(
             model
-                .begin_send(buffer_id, "still blocked".into(), &client.state())
+                .begin_send(buffer_id, "still blocked".into(), &client.snapshot())
                 .is_none()
         );
         let failures = model.fail_send(&pending, EngineMessageKey::DirectIdentityMismatch);
@@ -11161,7 +11118,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .sync_channels(&client.state());
+            .sync_channels(&client.snapshot());
         let runtime = Runtime { state, outbound };
 
         let output = runtime.request(EngineRequestEnvelope {
@@ -11200,7 +11157,7 @@ async fn delay(duration: Duration) {
         {
             let mut state = lock(&state);
             let model = &mut state.network.as_mut().expect("network").model;
-            model.restore_chat_list(ChatListSnapshot::new(
+            model.restore_cached_chat_list(ChatListSnapshot::new(
                 "network".into(),
                 vec![SnapshotRow {
                     conversation: SnapshotConversation::Channel {
@@ -11255,7 +11212,7 @@ async fn delay(duration: Duration) {
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
         );
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
@@ -11356,7 +11313,7 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = known_channel(&client, "#room");
         let buffer_id = model
             .buffer_id_for_channel(&channel)
@@ -11390,7 +11347,7 @@ async fn delay(duration: Duration) {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
@@ -11460,7 +11417,7 @@ async fn delay(duration: Duration) {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
@@ -11552,7 +11509,10 @@ async fn delay(duration: Duration) {
         predicate: impl Fn(&papo::Event) -> bool,
     ) -> papo::Event {
         loop {
-            let event = events.next().await.expect("papo event stream remains open");
+            let event = events
+                .next_event()
+                .await
+                .expect("papo event stream remains open");
             if predicate(&event) {
                 return event;
             }
@@ -11614,7 +11574,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model;
-        model.restore_pushed_messages(vec![pushed], &client.state());
+        model.restore_pushed_messages(vec![pushed], &client.snapshot());
         changed_messages(&model.take_timeline_changes(false))
             .first()
             .map(|(buffer_id, message)| (*buffer_id, message.id))
@@ -11694,10 +11654,68 @@ async fn delay(duration: Duration) {
 
     fn known_channel(client: &papo::Client, name: &str) -> papo::ChannelName {
         client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registered test client has name rules")
             .channel(name)
+    }
+
+    /// papo marks read only up to a time the server has reached, which a stamped line tells it.
+    async fn stamp_server_clock(wire: &mut Wire, time: &str) {
+        wire.server(format!(
+            "@time={time} :offline.test NOTICE weblounge :clock"
+        ))
+        .await;
+    }
+
+    #[test]
+    fn saved_message_references_restore_the_row_they_were_written_for() {
+        let (client, _events, _driver) = papo::Client::builder("irc://offline.test", "weblounge")
+            .casemapping(papo::Casemapping::Rfc1459)
+            .build();
+        for (address, msgid) in [("#room", "m1"), ("alice", "id;with=odd%chars")] {
+            let restored = client
+                .saved_message(&super::saved_message_reference(address, msgid))
+                .expect("papo restores the reference");
+            assert_eq!(
+                restored.msgid().map(ToString::to_string).as_deref(),
+                Some(msgid)
+            );
+            assert_eq!(
+                restored.to_saved(),
+                super::saved_message_reference(address, msgid)
+            );
+        }
+    }
+
+    fn known_nick(client: &papo::Client, name: &str) -> papo::Nick {
+        client
+            .snapshot()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .nick(name)
+    }
+
+    fn disconnected(
+        cause: papo::DisconnectCause,
+        reconnect_in: Option<Duration>,
+    ) -> papo::event::Disconnected {
+        match papo_testing::ErrorBuilder::disconnected(cause, 1, reconnect_in).build() {
+            papo::Error::Disconnected(disconnected) => disconnected,
+            other => panic!("disconnect fixture built {other:?}"),
+        }
+    }
+
+    fn wire_time(time: std::time::SystemTime) -> String {
+        papo::ServerTime::from_stored_millis(crate::state::time_millis(time))
+            .expect("test times are server times")
+            .to_string()
+    }
+
+    fn parse_wire_time(text: &str) -> Option<std::time::SystemTime> {
+        papo::ServerTime::from_stored(text)
+            .ok()
+            .map(papo::ServerTime::to_system_time)
     }
 
     async fn begin_send(
@@ -11707,9 +11725,9 @@ async fn delay(duration: Duration) {
         buffer_id: BufferId,
         text: &str,
         expected_line: &str,
-    ) -> (PendingSend, papo::Sent) {
+    ) -> (PendingSend, papo::SendOutcome) {
         let (pending, immediate) = model
-            .begin_send(buffer_id, text.into(), &client.state())
+            .begin_send(buffer_id, text.into(), &client.snapshot())
             .expect("buffer is sendable");
         let timeline = model.take_timeline_changes(false);
         assert!(
@@ -11852,7 +11870,7 @@ async fn delay(duration: Duration) {
     fn restore_cached_room(state: &Arc<Mutex<RuntimeState>>) {
         let mut state = lock(state);
         let running = state.network.as_mut().expect("network remains active");
-        running.model.restore_chat_list(
+        running.model.restore_cached_chat_list(
             ChatListSnapshot::new(
                 "network".into(),
                 vec![SnapshotRow {
@@ -11889,11 +11907,11 @@ async fn delay(duration: Duration) {
         client: &papo::Client,
     ) -> HistoryTarget {
         let nick = client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registration established name rules")
             .nick("alice");
-        let conversation = papo::Conversation::Private(nick.clone());
+        let conversation = NameKey::Direct(nick.clone());
         let mut state = lock(state);
         let running = state.network.as_mut().expect("network remains active");
         running
@@ -11903,8 +11921,8 @@ async fn delay(duration: Duration) {
             .model
             .buffer_id_for_target(&SendTarget::Direct {
                 nick: nick.clone(),
-                recipient: None,
                 pin: None,
+                tls: false,
             })
             .expect("direct buffer exists");
         assert!(
@@ -11970,7 +11988,7 @@ async fn delay(duration: Duration) {
         let storage = {
             let mut state = lock(state);
             let running = state.network.as_mut().expect("network remains active");
-            running.model.restore_chat_list(snapshot.clone());
+            running.model.restore_cached_chat_list(snapshot.clone());
             running.chat_list.snapshot = Some(snapshot.clone());
             Arc::clone(&state.storage)
         };
@@ -12293,7 +12311,7 @@ async fn delay(duration: Duration) {
         fetch: crate::state::HistoryFetch,
         expected_suffix: &str,
         items: &[&str],
-    ) -> papo::HistoryPage {
+    ) -> papo::event::HistoryPage {
         fetch_requested_page_with_end(client, wire, fetch, expected_suffix, items, false).await
     }
 
@@ -12304,7 +12322,7 @@ async fn delay(duration: Duration) {
         expected_suffix: &str,
         items: &[&str],
         end: bool,
-    ) -> papo::HistoryPage {
+    ) -> papo::event::HistoryPage {
         let fetch_client = client.clone();
         let task = tokio::spawn(async move { fetch_history(&fetch_client, fetch).await });
         let request = wire.next_sent().await;
@@ -12463,7 +12481,7 @@ async fn delay(duration: Duration) {
             .split_whitespace()
             .nth(4)
             .and_then(|bound| bound.strip_prefix("timestamp="))
-            .and_then(papo_proto::time::parse)
+            .and_then(parse_wire_time)
             .expect("TARGETS end bound");
         assert!(end > own_flush_stamp, "{targets}");
 
@@ -12565,11 +12583,11 @@ async fn delay(duration: Duration) {
                 .open_direct(
                     message.actor.nick().clone(),
                     DirectAvailability::Pending,
-                    &client.state(),
+                    &client.snapshot(),
                 );
         }
 
-        monitor_shown_direct_peers(&state, &client, 1).await;
+        monitor_shown_direct_peers(&state, &client, 1);
 
         let sent = wire.next_sent().await;
         assert!(
@@ -12609,7 +12627,8 @@ async fn delay(duration: Duration) {
         register_for_history(&mut wire).await;
         let (state, outbound, _receiver) = harness(client.clone());
         restore_cached_room(&state);
-        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+        let channel =
+            papo_testing::channel(crate::name_key::casemapping(&client.snapshot()), "#room");
 
         restore_target_rows(
             &state,
@@ -12617,7 +12636,7 @@ async fn delay(duration: Duration) {
             &client,
             1,
             vec![(
-                papo::Conversation::Channel(channel),
+                NameKey::Channel(channel),
                 UNIX_EPOCH + Duration::from_millis(300),
             )],
             true,
@@ -12658,7 +12677,7 @@ async fn delay(duration: Duration) {
                 .as_mut()
                 .expect("network remains active")
                 .model
-                .restore_chat_list(ChatListSnapshot::new(
+                .restore_cached_chat_list(ChatListSnapshot::new(
                     "network".into(),
                     vec![SnapshotRow {
                         conversation: SnapshotConversation::Direct {
@@ -12714,8 +12733,7 @@ async fn delay(duration: Duration) {
         }
 
         let label = request_label(&request);
-        let marker = papo_proto::time::format(UNIX_EPOCH + Duration::from_millis(100))
-            .expect("marker formats");
+        let marker = wire_time(UNIX_EPOCH + Duration::from_millis(100));
         wire.server(format!(
             "@label={label} :offline.test MARKREAD alice timestamp={marker}"
         ))
@@ -12739,7 +12757,7 @@ async fn delay(duration: Duration) {
         receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
         cursor: std::time::SystemTime,
     ) -> String {
-        let cursor_text = papo_proto::time::format(cursor).expect("direct cursor formats");
+        let cursor_text = wire_time(cursor);
         wire.server(format!(
             "@account=alice;msgid=alice-live;time={cursor_text} :Alice!a@host PRIVMSG weblounge :first live direct"
         ))
@@ -12792,7 +12810,7 @@ async fn delay(duration: Duration) {
             model.finish_target_sync(Some(earlier));
             model.set_connection(NetworkConnectionState::Online, None);
         }
-        let time = papo_proto::time::format(message_time).expect("message time formats");
+        let time = wire_time(message_time);
 
         wire.server(format!(
             "@msgid=channel-live;time={time} :Bob!b@host PRIVMSG #room :channel live"
@@ -12870,10 +12888,8 @@ async fn delay(duration: Duration) {
             .model
             .cursor()
             .expect("initial target sync settles the cursor");
-        let live_cursor_text = papo_proto::time::format(settled_cursor + Duration::from_millis(1))
-            .expect("live cursor formats");
-        let live_cursor =
-            papo_proto::time::parse(&live_cursor_text).expect("formatted live cursor parses");
+        let live_cursor_text = wire_time(settled_cursor + Duration::from_millis(1));
+        let live_cursor = parse_wire_time(&live_cursor_text).expect("formatted live cursor parses");
         assert!(live_cursor > settled_cursor);
         wire.server(format!(
             "@time={live_cursor_text} :offline.test NOTICE weblounge :live cursor"
@@ -12901,6 +12917,9 @@ async fn delay(duration: Duration) {
         .await;
 
         wire.close().await;
+        while client.snapshot().is_connected() {
+            tokio::task::yield_now().await;
+        }
         client.reconnect().await.expect("manual reconnect starts");
         register_for_history(&mut wire).await;
         let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
@@ -13420,7 +13439,7 @@ async fn delay(duration: Duration) {
             papo::Event::Connected(
                 ConnectedBuilder::new(
                     client
-                        .state()
+                        .snapshot()
                         .name_rules()
                         .expect("registered test client has name rules")
                         .nick("weblounge"),
@@ -13509,6 +13528,7 @@ async fn delay(duration: Duration) {
             running.flushing_reads = false;
         }
         _ = collect(&mut receiver);
+        stamp_server_clock(&mut replacement_wire, "2026-10-27T12:00:01.000Z").await;
         process_event(&state, &outbound, &replacement, 2, connected);
 
         let request = loop {
@@ -13548,6 +13568,7 @@ async fn delay(duration: Duration) {
             state: Arc::clone(&state),
             outbound: outbound.clone(),
         };
+        stamp_server_clock(&mut wire, "2026-11-03T12:34:57.000Z").await;
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "mark-pushed".into(),
@@ -13633,7 +13654,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         let nick = client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registered client has name rules")
             .nick("alice");
@@ -13641,29 +13662,31 @@ async fn delay(duration: Duration) {
         let fetch = {
             let mut state = lock(&state);
             let running = state.network.as_mut().expect("network remains active");
-            running.model.restore_chat_list(ChatListSnapshot::new(
-                "network".into(),
-                vec![SnapshotRow {
-                    conversation: SnapshotConversation::Direct {
-                        key: "alice".into(),
-                    },
-                    title: "Alice".into(),
-                    last_activity_ms: Some(100),
-                    stubs: snapshot_stubs(1, 1, 100),
-                    redacted_stubs: Vec::new(),
-                    gap_until: None,
-                    preview: Some("cached unread".into()),
-                    newest: Some(SnapshotCursor {
-                        msgid: Some("cached".into()),
-                        server_time_ms: 100,
-                    }),
-                    read_at_ms: Some(50),
-                    raw_read_at_ms: Some(50),
-                    pending_read_at_ms: None,
-                    peer_pin: None,
-                    peer_bot: false,
-                }],
-            ));
+            running
+                .model
+                .restore_cached_chat_list(ChatListSnapshot::new(
+                    "network".into(),
+                    vec![SnapshotRow {
+                        conversation: SnapshotConversation::Direct {
+                            key: "alice".into(),
+                        },
+                        title: "Alice".into(),
+                        last_activity_ms: Some(100),
+                        stubs: snapshot_stubs(1, 1, 100),
+                        redacted_stubs: Vec::new(),
+                        gap_until: None,
+                        preview: Some("cached unread".into()),
+                        newest: Some(SnapshotCursor {
+                            msgid: Some("cached".into()),
+                            server_time_ms: 100,
+                        }),
+                        read_at_ms: Some(50),
+                        raw_read_at_ms: Some(50),
+                        pending_read_at_ms: None,
+                        peer_pin: None,
+                        peer_bot: false,
+                    }],
+                ));
             running
                 .model
                 .restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200))
@@ -13891,7 +13914,7 @@ async fn delay(duration: Duration) {
             .model
             .restore_pushed_messages(
                 vec![pushed_channel_message("join-push", "before join")],
-                &client.state(),
+                &client.snapshot(),
             );
         wire.server("@time=2026-11-03T12:34:56.790Z;msgid=join-push :alice!u@host PRIVMSG #room :before join")
             .await;
@@ -13929,12 +13952,12 @@ async fn delay(duration: Duration) {
             .model
             .restore_pushed_messages(
                 vec![pushed_channel_message("local-push", "local carry")],
-                &client.state(),
+                &client.snapshot(),
             );
         wire.server("@time=2026-11-03T12:34:56.790Z;msgid=local-push :alice!u@host PRIVMSG #room :local carry")
             .await;
         process_next_message(&mut events, &state, &outbound, &client).await;
-        let conversation = papo::Conversation::Channel(known_channel(&client, "#room"));
+        let conversation = NameKey::Channel(known_channel(&client, "#room"));
         let flush = {
             let mut state_guard = lock(&state);
             let running = state_guard
@@ -14015,16 +14038,18 @@ async fn delay(duration: Duration) {
             ("target gone", papo::Error::TargetGone, true),
             (
                 "invalid input",
-                papo::Error::InvalidInput(papo::InvalidInput::InvalidRequest("bad marker".into())),
+                papo::Error::InvalidInput(papo::InvalidInput::EmptyText),
                 true,
             ),
             (
                 "server internal error",
-                papo::Error::Server(papo::ServerError::standard(
+                papo_testing::ErrorBuilder::standard(
                     "MARKREAD",
                     "INTERNAL_ERROR",
+                    Vec::new(),
                     "try again",
-                )),
+                )
+                .build(),
                 false,
             ),
             ("timeout", papo::Error::Timeout, false),
@@ -14125,7 +14150,9 @@ async fn delay(duration: Duration) {
         })
         .await;
         let conversation = match &newer {
-            papo::Event::ReadMarkerChanged(marker) => marker.conversation.clone(),
+            papo::Event::ReadMarkerChanged(marker) => {
+                NameKey::from_conversation(&marker.conversation).expect("a channel marker")
+            }
             _ => unreachable!("matching event is a read marker"),
         };
         process_event(&state, &outbound, &client, 1, newer);
@@ -14897,7 +14924,7 @@ async fn delay(duration: Duration) {
 
         wire.server(":weblounge!u@host ACCOUNT account").await;
         let account_changed = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::AccountChanged(changed) if changed.authorship == papo::Authorship::Own)
+            matches!(event, papo::Event::AccountChanged(changed) if changed.actor_party == papo::Party::Me)
         })
         .await;
         process_runtime_event(&runtime, account_changed);
@@ -15153,14 +15180,9 @@ async fn delay(duration: Duration) {
                 .model
                 .buffer_id_for_target(&SendTarget::Channel(channel.clone()))
                 .expect("join projects the room");
-            running.model.finish_history(
-                &papo::Conversation::Channel(channel),
-                None,
-                None,
-                None,
-                0,
-                true,
-            );
+            running
+                .model
+                .finish_history(&NameKey::Channel(channel), None, None, None, 0, true);
             running.model.advance_read(
                 buffer_id,
                 papo::time::now() + Duration::from_secs(60),
@@ -15228,7 +15250,7 @@ async fn delay(duration: Duration) {
             wire.server(line).await;
             _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         }
-        let direct = client.direct("alice").await.expect("shared user is direct");
+        let direct = DirectPeer::resolve(&client, &known_nick(&client, "alice"));
         let cached = ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
@@ -15262,9 +15284,10 @@ async fn delay(duration: Duration) {
                 EngineToUi::BuffersChanged { buffers, .. } => buffers[1].id,
                 _ => unreachable!("buffer list event"),
             };
+            let snapshot = client.snapshot();
             running
                 .model
-                .resolve_direct(buffer_id, DirectAvailability::Guarded(direct));
+                .resolve_direct(buffer_id, DirectAvailability::Guarded(direct), &snapshot);
             assert!(
                 running
                     .model
@@ -15315,7 +15338,8 @@ async fn delay(duration: Duration) {
         wire.register(&[]).await;
         let (state, outbound, mut receiver) = harness(client.clone());
         restore_cached_room(&state);
-        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+        let channel =
+            papo_testing::channel(crate::name_key::casemapping(&client.snapshot()), "#room");
         {
             let mut state = lock(&state);
             let running = state.network.as_mut().expect("network remains active");
@@ -15325,7 +15349,7 @@ async fn delay(duration: Duration) {
                 .expect("cached channel exists");
             let (pending, _) = running
                 .model
-                .begin_send(buffer_id, "cannot deliver".into(), &client.state())
+                .begin_send(buffer_id, "cannot deliver".into(), &client.snapshot())
                 .expect("cached channel accepts an optimistic send");
             _ = running.model.take_timeline_changes(false);
             _ = running.model.mark_vanished_restored_rows();
@@ -15369,7 +15393,8 @@ async fn delay(duration: Duration) {
         let (state, outbound, _receiver) = harness(client.clone());
         restore_cached_room(&state);
         set_harness_device_online(&state, false);
-        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+        let channel =
+            papo_testing::channel(crate::name_key::casemapping(&client.snapshot()), "#room");
         let buffer_id = lock(&state)
             .network
             .as_ref()
@@ -15527,7 +15552,7 @@ async fn delay(duration: Duration) {
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         wire.server(":alice!a@host JOIN #room alice :Alice").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let direct = client.direct("alice").await.expect("shared user is direct");
+        let direct = DirectPeer::resolve(&client, &known_nick(&client, "alice"));
 
         let (state, outbound, mut receiver) = harness(client.clone());
         process_event(&state, &outbound, &client, 1, connected);
@@ -15539,9 +15564,9 @@ async fn delay(duration: Duration) {
                 .expect("network remains active")
                 .model
                 .open_direct(
-                    direct.nick(),
+                    direct.nick().clone(),
                     DirectAvailability::Guarded(direct),
-                    &client.state(),
+                    &client.snapshot(),
                 )
                 .0
         };
@@ -15726,7 +15751,7 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (state, outbound, mut receiver) = harness(client.clone());
-        let snapshot = client.state();
+        let snapshot = client.snapshot();
         lock(&state)
             .network
             .as_mut()
@@ -15926,7 +15951,6 @@ async fn delay(duration: Duration) {
         .await;
         wire.server(":offline.test 005 weblounge PREFIX=(qov)~@+ CHANMODES=b,k,l,imnst :supported")
             .await;
-        _ = next_matching(&mut events, |_| true).await;
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         wire.server(":alice!a@host JOIN #room").await;
@@ -15945,7 +15969,7 @@ async fn delay(duration: Duration) {
         apply_test_mode(&mut wire, &mut events, "+o alice").await;
 
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let snapshot = client.state();
+        let snapshot = client.snapshot();
         let channel = known_channel(&client, "#room");
         model.sync_channels(&snapshot);
         let buffer_id = model
@@ -15996,7 +16020,7 @@ async fn delay(duration: Duration) {
         else {
             panic!("history message expected");
         };
-        model.receive(&history, true, &client.state(), None);
+        model.receive(&history, true, &client.snapshot(), None);
         let historical = model.take_timeline_changes(false);
 
         wire.server(":alice!a@host PRIVMSG #room :live line").await;
@@ -16007,7 +16031,7 @@ async fn delay(duration: Duration) {
         else {
             panic!("live message expected");
         };
-        model.receive(&live, false, &client.state(), None);
+        model.receive(&live, false, &client.snapshot(), None);
         let live = model.take_timeline_changes(false);
         for (events, text) in [(historical, "historical line"), (live, "live line")] {
             assert!(
@@ -16030,7 +16054,7 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = model
             .history_targets()
             .into_iter()
@@ -16051,9 +16075,9 @@ async fn delay(duration: Duration) {
         else {
             panic!("peer message expected");
         };
-        model.receive(&peer, false, &client.state(), None);
+        model.receive(&peer, false, &client.snapshot(), None);
         let (pending, _) = model
-            .begin_action(buffer_id, "waves".into(), &client.state())
+            .begin_action(buffer_id, "waves".into(), &client.snapshot())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -16107,13 +16131,13 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = known_channel(&client, "#room");
         let buffer_id = model
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("joined channel is projected");
         let (pending, _) = model
-            .begin_action(buffer_id, "hides".into(), &client.state())
+            .begin_action(buffer_id, "hides".into(), &client.snapshot())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -16164,14 +16188,14 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = known_channel(&client, "#room");
         let buffer_id = model
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("joined channel is projected");
         let queued = ["first queued", "second queued", "third queued"].map(|text| {
             model
-                .begin_send(buffer_id, text.into(), &client.state())
+                .begin_send(buffer_id, text.into(), &client.snapshot())
                 .expect("channel is sendable")
                 .0
         });
@@ -16258,14 +16282,14 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = known_channel(&client, "#room");
         let buffer_id = model
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("joined channel is projected");
         let text = "deployment update ".repeat(40);
         let (pending, _) = model
-            .begin_send(buffer_id, text.clone(), &client.state())
+            .begin_send(buffer_id, text.clone(), &client.snapshot())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -16329,7 +16353,7 @@ async fn delay(duration: Duration) {
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         let channel = model
             .history_targets()
             .into_iter()
@@ -16343,7 +16367,7 @@ async fn delay(duration: Duration) {
             .expect("projected channel has a stable id");
         let text = "a".repeat(600);
         let (pending, _) = model
-            .begin_send(buffer_id, text, &client.state())
+            .begin_send(buffer_id, text, &client.snapshot())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -16722,7 +16746,7 @@ async fn delay(duration: Duration) {
                 .as_mut()
                 .expect("network remains active")
                 .model;
-            model.restore_pushed_messages(vec![pushed], &client.state());
+            model.restore_pushed_messages(vec![pushed], &client.snapshot());
             model.take_timeline_changes(false)
         };
         let provisional = timeline_messages(&restored)
@@ -17092,14 +17116,18 @@ async fn delay(duration: Duration) {
                 .model;
             let alice = harness
                 .client
-                .state()
+                .snapshot()
                 .name_rules()
                 .expect("registered test client has name rules")
                 .nick("alice");
             let buffer_id = model
-                .buffer_id_for_conversation(&papo::Conversation::Private(alice))
+                .buffer_id_for_name(&NameKey::Direct(alice))
                 .expect("direct buffer");
-            model.resolve_direct(buffer_id, DirectAvailability::Failed);
+            _ = model.record_direct_mismatch(
+                buffer_id,
+                PinMismatch::CannotVerify,
+                PeerPin::default(),
+            );
             let message_id = model
                 .projected_messages(buffer_id)
                 .into_iter()

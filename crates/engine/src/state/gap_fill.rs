@@ -1,8 +1,4 @@
-use std::time::SystemTime;
-
-use super::{
-    BufferId, BufferState, HistoryTarget, NetworkModel, RecordBody, system_time_from_millis,
-};
+use super::{BufferId, BufferState, HistoryTarget, NetworkModel, RecordBody};
 
 /// One gap backfill in flight per buffer; a request while it loads asks for the next page.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -36,8 +32,8 @@ pub(crate) struct GapFetch {
 const EDGE_OVERLAP_MS: i64 = 10;
 
 impl GapFetch {
-    pub(crate) fn before(&self) -> SystemTime {
-        system_time_from_millis(self.span.to_ms.saturating_add(EDGE_OVERLAP_MS))
+    pub(crate) fn before(&self) -> Option<papo::ServerTime> {
+        papo::ServerTime::from_stored_millis(self.span.to_ms.saturating_add(EDGE_OVERLAP_MS)).ok()
     }
 }
 
@@ -203,7 +199,7 @@ mod tests {
                 to_ms: 700
             }
         );
-        assert_eq!(fetch.before(), super::system_time_from_millis(710));
+        assert_eq!(fetch.before().map(papo::ServerTime::as_millis), Some(710));
     }
 
     #[test]

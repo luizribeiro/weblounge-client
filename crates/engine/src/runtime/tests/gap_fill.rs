@@ -5,7 +5,7 @@ use super::{
     collect, known_channel, lock, next_sent_containing, request_label, send_ergo_history_page,
     timeline_texts,
 };
-use crate::{BufferId, HistoryDirection, timeline::ItemBody};
+use crate::{BufferId, HistoryDirection, name_key::NameKey, timeline::ItemBody};
 
 const GAP_FROM_MS: i64 = 1_793_102_400_000;
 const GAP_TO_MS: i64 = GAP_FROM_MS + 5_000;
@@ -19,9 +19,7 @@ async fn joined_with_gap() -> (ReplayHarness, BufferId, String) {
         let room = room(&harness);
         let mut state = lock(&harness.state);
         let model = &mut state.network.as_mut().expect("network").model;
-        let buffer_id = model
-            .buffer_id_for_conversation(&room)
-            .expect("joined room");
+        let buffer_id = model.buffer_id_for_name(&room).expect("joined room");
         model
             .record_gap(buffer_id, GAP_FROM_MS, GAP_TO_MS)
             .expect("gap");
@@ -201,8 +199,8 @@ fn gap_fill_loading(harness: &ReplayHarness, buffer_id: BufferId) -> bool {
         .gap_fill_loading(buffer_id)
 }
 
-fn room(harness: &ReplayHarness) -> papo::Conversation {
-    papo::Conversation::Channel(known_channel(&harness.client, "#room"))
+fn room(harness: &ReplayHarness) -> NameKey {
+    NameKey::Channel(known_channel(&harness.client, "#room"))
 }
 
 #[tokio::test]

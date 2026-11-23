@@ -19,12 +19,12 @@ impl AwayChecks {
             papo::Event::MonitorOnline(online) => {
                 let nick = online.subject.nick();
                 if self.asked.insert(nick.clone()) {
-                    self.queue.push_back(nick.clone());
+                    self.queue.push_back(nick);
                 }
             }
-            papo::Event::MonitorOffline(offline) => self.forget(&offline.subject),
-            papo::Event::Quit(quit) => self.forget(quit.actor.nick()),
-            papo::Event::NickChanged(changed) => self.rename(changed.actor.nick(), &changed.new),
+            papo::Event::MonitorOffline(offline) => self.forget(&offline.subject.nick()),
+            papo::Event::Quit(quit) => self.forget(&quit.actor.nick()),
+            papo::Event::NickChanged(changed) => self.rename(&changed.old, &changed.new),
             papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
                 self.asked.clear();
                 self.queue.clear();
@@ -46,8 +46,7 @@ impl AwayChecks {
     /// `WHO` reports it, and asking again would add a request to every launch's catch-up.
     pub(crate) fn next(&mut self, state: &papo::State) -> Option<papo::Nick> {
         while let Some(nick) = self.queue.pop_front() {
-            if state
-                .user(&nick)
+            if crate::name_key::known_user(state, &nick)
                 .is_some_and(|user| user.channels().len() == 0 && !away_reported(user.away()))
             {
                 return Some(nick);
@@ -57,15 +56,15 @@ impl AwayChecks {
         None
     }
 
-    pub(crate) fn answer(&mut self, nick: &papo::Nick, away: &papo::Away) {
+    pub(crate) fn answer(&mut self, nick: &papo::Nick, away: &papo::AwayStatus) {
         if !self.asked.contains(nick) {
             return;
         }
         match away {
-            papo::Away::Away { .. } => {
+            papo::AwayStatus::Away { .. } => {
                 self.answers.insert(nick.clone(), PeerPresence::Away);
             }
-            papo::Away::Present => {
+            papo::AwayStatus::Present => {
                 self.answers.insert(nick.clone(), PeerPresence::Online);
             }
             _ => {}
@@ -97,6 +96,9 @@ impl AwayChecks {
     }
 }
 
-const fn away_reported(away: &papo::Away) -> bool {
-    matches!(away, papo::Away::Away { .. } | papo::Away::Present)
+const fn away_reported(away: &papo::AwayStatus) -> bool {
+    matches!(
+        away,
+        papo::AwayStatus::Away { .. } | papo::AwayStatus::Present
+    )
 }

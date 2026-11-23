@@ -277,6 +277,10 @@ async fn own_redaction_tombstones_once_papo_resolves_it() {
         .wire
         .server(format!("@label={} :offline.test ACK", line_label(&sent)))
         .await;
+    harness
+        .wire
+        .server("@time=2026-10-27T13:02:00.000Z;msgid=r1 :weblounge!u@host REDACT #room mine")
+        .await;
     let (redacted, _) = harness
         .message_until(message_id, |message| {
             matches!(message.kind, MessageKind::Redacted(_))
@@ -285,10 +289,6 @@ async fn own_redaction_tombstones_once_papo_resolves_it() {
     assert_eq!(redacted.kind, MessageKind::Redacted(Redaction { by: None }));
     assert_eq!((redacted.text.as_str(), redacted.own_redaction), ("", None));
 
-    harness
-        .wire
-        .server("@time=2026-10-27T13:02:00.000Z;msgid=r1 :weblounge!u@host REDACT #room mine")
-        .await;
     harness
         .wire
         .server(":louro!l@host PRIVMSG #room :after")

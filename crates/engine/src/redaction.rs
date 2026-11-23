@@ -53,10 +53,10 @@ pub(crate) struct EarlyRedaction {
 }
 
 /// The name shown for whoever redacted a message: a user's nick, or the server's name.
-pub(crate) fn redactor_name(actor: &papo::Source) -> String {
+pub(crate) fn redactor_name(actor: &papo::Actor) -> String {
     match actor {
-        papo::Source::User(user) => user.nick().to_string(),
-        papo::Source::Server(server) => server.to_string(),
+        papo::Actor::User(user) => user.nick().to_string(),
+        papo::Actor::Server(server) => server.to_string(),
         _ => String::new(),
     }
 }

@@ -16,7 +16,10 @@ pub(crate) fn ban_mask(state: &papo::State, word: &str) -> String {
     if is_mask(word) {
         return word.to_owned();
     }
-    derived_ban_mask(word, state.user(word).and_then(papo::User::host))
+    derived_ban_mask(
+        word,
+        crate::name_key::known_user(state, word).and_then(papo::User::host),
+    )
 }
 
 /// The masks `/unban <word>` removes: every fetched ban matching the member, or the mask a
@@ -29,15 +32,20 @@ pub(crate) fn unban_masks(
     if is_mask(word) {
         return vec![word.to_owned()];
     }
-    let user = state.user(word);
+    let user = crate::name_key::known_user(state, word);
+    let casemapping = crate::name_key::casemapping(state);
     let matching = user
         .and_then(|user| {
             let identity = format!("{}!{}@{}", user.nick(), user.username()?, user.host()?);
-            let bans = state.channel(channel?)?.list(papo::ListMode::Ban)?;
+            let bans = state
+                .channel(channel?)
+                .ok()
+                .flatten()?
+                .list(papo::ListMode::Ban)?;
             Some(
                 bans.iter()
                     .map(|ban| ban.mask.as_str())
-                    .filter(|mask| mask_matches(state.casemapping(), mask, &identity))
+                    .filter(|mask| mask_matches(casemapping, mask, &identity))
                     .map(str::to_owned)
                     .collect::<Vec<_>>(),
             )

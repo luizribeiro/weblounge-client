@@ -1,4 +1,5 @@
 use super::{collect, harness, lock, process_event, wire};
+use crate::test_events::NextEvent;
 use crate::{
     EngineToUi,
     timeline::{ItemBody, LineEvent, SystemLine},
@@ -58,7 +59,11 @@ impl Session {
 
     async fn process_until_connected(&mut self) {
         loop {
-            let event = self.events.next().await.expect("papo events stay open");
+            let event = self
+                .events
+                .next_event()
+                .await
+                .expect("papo events stay open");
             let connected = matches!(event, papo::Event::Connected(_));
             process_event(&self.state, &self.outbound, &self.client, 1, event);
             if connected {
@@ -70,6 +75,18 @@ impl Session {
 
     async fn reconnect(&mut self, motd: &[&str]) {
         self.wire.close().await;
+        loop {
+            let event = self
+                .events
+                .next_event()
+                .await
+                .expect("papo events stay open");
+            let disconnected = matches!(event, papo::Event::Disconnected(_));
+            process_event(&self.state, &self.outbound, &self.client, 1, event);
+            if disconnected {
+                break;
+            }
+        }
         self.client
             .reconnect()
             .await

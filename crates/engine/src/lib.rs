@@ -11,6 +11,7 @@ mod members;
 mod mode_string;
 mod name_key;
 mod notification_settings;
+mod peer_pin;
 mod protocol;
 mod public_suffix;
 mod push_device;
@@ -163,9 +164,24 @@ pub fn client_builder(endpoint: &str, nickname: &str) -> papo::Builder {
 }
 
 #[cfg(test)]
+mod test_events {
+    /// papo pairs each event with the state right after it; these tests only read the event.
+    pub(crate) trait NextEvent {
+        async fn next_event(&mut self) -> Option<papo::Event>;
+    }
+
+    impl NextEvent for papo::Events {
+        async fn next_event(&mut self) -> Option<papo::Event> {
+            self.next().await.map(|(event, _)| event)
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use papo_testing::wire;
 
+    use crate::test_events::NextEvent;
     use crate::{
         Engine, EngineMessageKey, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
         ShellKind, UiToEngine,
@@ -179,7 +195,7 @@ mod tests {
         wire.register(&[]).await;
 
         loop {
-            match events.next().await {
+            match events.next_event().await {
                 Some(papo::Event::Connected(connected)) => {
                     assert_eq!(connected.welcome, "Welcome to the ErgoTest IRC Network");
                     break;

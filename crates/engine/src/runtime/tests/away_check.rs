@@ -29,7 +29,7 @@ impl Session {
             .as_mut()
             .expect("network remains active")
             .model
-            .open_direct(nick, DirectAvailability::Pending, &client.state())
+            .open_direct(nick, DirectAvailability::Pending, &client.snapshot())
             .0;
         Self {
             client,
@@ -74,11 +74,8 @@ impl Session {
 
     /// Something the client sends next; any WHO queued before it would have gone out first.
     async fn expect_no_who_before_marker(&mut self, marker: &str) {
-        let monitor = self.client.monitor();
-        let nick = marker.to_owned();
-        let add = tokio::spawn(async move { monitor.add([nick.as_str()]).await });
+        crate::direct_peer::test_support::keep_watching(self.client.watch(marker));
         assert_eq!(self.wire.next_sent().await, format!("MONITOR + {marker}"));
-        add.await.expect("monitor task").expect("monitor accepts");
     }
 
     async fn presence_update(&mut self) -> Option<PeerPresence> {

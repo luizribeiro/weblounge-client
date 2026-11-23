@@ -56,31 +56,32 @@ fn affected_channels(event: &papo::Event, state: &papo::State) -> Vec<papo::Chan
                 .map(|channel| channel.name().clone())
                 .collect()
         }
-        papo::Event::ChannelSynced(event) => vec![event.channel.clone()],
-        papo::Event::MembersRefreshed(event) => vec![event.channel.clone()],
-        papo::Event::Joined(event) => vec![event.channel.clone()],
-        papo::Event::Parted(event) => vec![event.channel.clone()],
-        papo::Event::Kicked(event) => vec![event.channel.clone()],
-        papo::Event::Quit(event) => event.channels.clone(),
-        papo::Event::NickChanged(event) => event.channels.clone(),
-        papo::Event::AwayChanged(event) => channels_for_nick(state, event.actor.nick()),
-        papo::Event::AccountChanged(event) => channels_for_nick(state, event.actor.nick()),
+        papo::Event::ChannelSynced(event) => vec![event.channel.name()],
+        papo::Event::MembersRefreshed(event) => vec![event.channel.name()],
+        papo::Event::Joined(event) => vec![event.channel.name()],
+        papo::Event::Parted(event) => vec![event.channel.name()],
+        papo::Event::Kicked(event) => vec![event.channel.name()],
+        papo::Event::Quit(event) => event.channels.iter().map(papo::ChannelRef::name).collect(),
+        papo::Event::NickChanged(event) => {
+            event.channels.iter().map(papo::ChannelRef::name).collect()
+        }
+        papo::Event::AwayChanged(event) => channels_for_nick(state, &event.actor.nick()),
+        papo::Event::AccountChanged(event) => channels_for_nick(state, &event.actor.nick()),
         papo::Event::ModeChanged(event) => event.subject.channel().map_or_else(
             || {
                 event
                     .subject
                     .nick()
-                    .map_or_else(Vec::new, |nick| channels_for_nick(state, nick))
+                    .map_or_else(Vec::new, |nick| channels_for_nick(state, &nick))
             },
-            |channel| vec![channel.clone()],
+            |channel| vec![channel.name()],
         ),
         _ => Vec::new(),
     }
 }
 
 fn channels_for_nick(state: &papo::State, nick: &papo::Nick) -> Vec<papo::ChannelName> {
-    state
-        .user(nick)
+    crate::name_key::known_user(state, nick)
         .into_iter()
         .flat_map(papo::User::channels)
         .cloned()
@@ -96,14 +97,18 @@ pub(crate) fn project(
     offset: u32,
     filter: &str,
 ) -> Option<EngineToUi> {
-    let folded_filter = state.casemapping().fold(filter);
+    let casemapping = crate::name_key::casemapping(state);
+    let folded_filter = casemapping.fold(filter);
     let mut rows = state
-        .channel(channel)?
+        .channel(channel)
+        .ok()
+        .flatten()?
         .members()
         .filter(|member| member_matches_filter(member.nick(), folded_filter.as_ref()))
         .map(|member| {
-            let user = state.user(member.nick());
-            let away = user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. }));
+            let user = crate::name_key::known_user(state, member.nick());
+            let away =
+                user.is_some_and(|user| matches!(user.away(), papo::AwayStatus::Away { .. }));
             let bot = user.and_then(papo::User::is_bot);
             let group = classify(member, away, bot == Some(true));
             (group, member, user, away, bot)
@@ -134,7 +139,7 @@ pub(crate) fn project(
             away,
             bot,
             account: account_projection(user.map(papo::User::account)),
-            nick_color_index: nick_color_index(state.casemapping(), member.nick().key()),
+            nick_color_index: nick_color_index(casemapping, member.nick().key()),
             is_you: member.nick() == state.nick(),
         })
         .collect();
@@ -155,10 +160,10 @@ fn member_matches_filter(nick: &papo::Nick, folded_filter: &str) -> bool {
     nick.key().contains(folded_filter)
 }
 
-fn account_projection(account: Option<&papo::Account>) -> AccountProjection {
+fn account_projection(account: Option<&papo::AccountStatus>) -> AccountProjection {
     match account {
-        Some(papo::Account::LoggedOut) => AccountProjection::LoggedOut,
-        Some(papo::Account::LoggedIn(name)) => AccountProjection::LoggedIn {
+        Some(papo::AccountStatus::LoggedOut) => AccountProjection::LoggedOut,
+        Some(papo::AccountStatus::LoggedIn(name)) => AccountProjection::LoggedIn {
             name: name.to_string(),
         },
         Some(_) | None => AccountProjection::Unknown,
@@ -170,7 +175,7 @@ fn classify(member: &papo::Member, away: bool, bot: bool) -> MemberGroup {
         MemberGroup::Bots
     } else if away {
         MemberGroup::Away
-    } else if member.rank() >= Some(papo::Rank::Op) {
+    } else if member.is_at_least_op() {
         MemberGroup::Operators
     } else if !member.prefixes().is_empty() {
         MemberGroup::Voiced
@@ -191,6 +196,7 @@ const fn order(group: MemberGroup) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_events::NextEvent;
     use papo_testing::{StateBuilder, wire};
 
     use super::{Changes, member_matches_filter, project};
@@ -211,8 +217,8 @@ mod tests {
     #[test]
     fn folded_member_filter_uses_the_name_key_not_display_spelling() {
         let state = StateBuilder::new("weblounge").build();
-        let nick = papo_testing::nick(state.casemapping(), "[Garden]");
-        let folded_filter = state.casemapping().fold("{garden}");
+        let nick = papo_testing::nick(crate::name_key::casemapping(&state), "[Garden]");
+        let folded_filter = crate::name_key::casemapping(&state).fold("{garden}");
 
         assert!(!nick.as_str().contains(folded_filter.as_ref()));
         assert!(member_matches_filter(&nick, folded_filter.as_ref()));
@@ -230,7 +236,7 @@ mod tests {
             "multi-prefix",
         ])
         .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@h JOIN #room").await;
         wire.server(
             ":offline.test 353 weblounge = #room :@+Alpha +bravo charlie service @weblounge",
@@ -238,22 +244,28 @@ mod tests {
         .await;
         wire.server(":offline.test 366 weblounge #room :End of NAMES")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ChannelSynced(_))
+        ) {}
         wire.server(":Alpha!u@h ACCOUNT alice").await;
         wire.server(":charlie!u@h AWAY :lunch").await;
         wire.server("@bot :service!u@h PRIVMSG #room :ready").await;
         wire.server(":service!u@h ACCOUNT *").await;
-        for _ in 0..4 {
-            _ = events.next().await;
-        }
+        wire.server(":offline.test NOTICE weblounge :facts sent")
+            .await;
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ServerNotice(_))
+        ) {}
 
-        let channel = channel(&client.state(), "#room");
+        let channel = channel(&client.snapshot(), "#room");
         let Some(EngineToUi::MembersChanged {
             counts,
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(7), "test", 0, 1, "")
+        }) = project(&client.snapshot(), &channel, BufferId(7), "test", 0, 1, "")
         else {
             panic!("member window")
         };
@@ -287,28 +299,23 @@ mod tests {
             "setname",
         ])
         .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server("@account=alice;bot;draft/oper=network-admin;time=2026-10-30T12:34:56.789Z :alice!u@h SETNAME :Alice Smith")
             .await;
 
         let changed = loop {
-            if let Some(papo::Event::RealnameChanged(changed)) = events.next().await {
+            if let Some(papo::Event::RealnameChanged(changed)) = events.next_event().await {
                 break changed;
             }
         };
         assert_eq!(changed.actor.nick(), "alice");
         assert!(
-            matches!(changed.actor.account(), papo::Account::LoggedIn(account) if account == "alice")
-        );
-        assert_eq!(changed.actor.is_bot(), Some(true));
-        assert_eq!(
-            changed.actor.oper().and_then(|oper| oper.name.as_deref()),
-            Some("network-admin")
+            matches!(changed.actor_account(), papo::AccountStatus::LoggedIn(account) if account == "alice")
         );
         assert_eq!(changed.new, "Alice Smith");
-        assert_eq!(changed.authorship, papo::Authorship::Other);
-        assert!(changed.server_time.is_some());
-        assert!(changed.received_at >= changed.server_time.expect("server time"));
+        assert_eq!(changed.actor_party, papo::Party::Other);
+        let server_time = changed.server_time.expect("server time");
+        assert!(changed.received_at >= server_time.to_system_time());
     }
 
     #[tokio::test]
@@ -316,7 +323,7 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
 
         let whois = tokio::spawn({
             let client = client.clone();
@@ -327,8 +334,12 @@ mod tests {
             .await;
         wire.server(":offline.test 318 weblounge alice :End of /WHOIS list")
             .await;
-        let whois = whois.await.expect("WHOIS task").expect("WHOIS reply");
-        assert_eq!(whois.account, papo::Account::Unknown);
+        let whois = whois
+            .await
+            .expect("WHOIS task")
+            .expect("WHOIS reply")
+            .expect("alice is online");
+        assert_eq!(whois.account, papo::AccountStatus::Unknown);
         assert_eq!(whois.is_bot, None);
 
         let who = tokio::spawn({
@@ -358,25 +369,36 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["multi-prefix"]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@h JOIN #large").await;
         wire.server(":offline.test 353 weblounge = #large :@weblounge")
             .await;
         wire.server(":offline.test 366 weblounge #large :End of NAMES")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ChannelSynced(_))
+        ) {}
         for index in 0..2_000 {
             wire.server(format!(":u{index:04}!u@h JOIN #large")).await;
-            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+            while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         }
 
-        let channel = channel(&client.state(), "#large");
+        let channel = channel(&client.snapshot(), "#large");
         let Some(EngineToUi::MembersChanged {
             counts,
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(8), "test", 0, 1_000, "")
+        }) = project(
+            &client.snapshot(),
+            &channel,
+            BufferId(8),
+            "test",
+            0,
+            1_000,
+            "",
+        )
         else {
             panic!("member window")
         };
@@ -390,16 +412,19 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@h JOIN #large").await;
         wire.server(":offline.test 353 weblounge = #large :weblounge")
             .await;
         wire.server(":offline.test 366 weblounge #large :End of NAMES")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ChannelSynced(_))
+        ) {}
         for index in 0..500 {
             wire.server(format!(":u{index:03}!u@h JOIN #large")).await;
-            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+            while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         }
 
         let mut changes = Changes::default();
@@ -407,15 +432,15 @@ mod tests {
         for index in 0..500 {
             wire.server(format!(":u{index:03}!u@h QUIT :split")).await;
             let event = loop {
-                if let Some(event @ papo::Event::Quit(_)) = events.next().await {
+                if let Some(event @ papo::Event::Quit(_)) = events.next_event().await {
                     break event;
                 }
             };
-            scheduled += usize::from(changes.record(&event, &client.state()));
+            scheduled += usize::from(changes.record(&event, &client.snapshot()));
         }
 
         assert_eq!(scheduled, 1);
-        assert_eq!(changes.drain(), [channel(&client.state(), "#large")]);
+        assert_eq!(changes.drain(), [channel(&client.snapshot(), "#large")]);
     }
 
     #[tokio::test]
@@ -423,7 +448,7 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["away-notify", "multi-prefix"]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":offline.test 005 weblounge BOT=B :supported")
             .await;
         wire.server(":weblounge!u@h JOIN #room").await;
@@ -431,7 +456,10 @@ mod tests {
             .await;
         wire.server(":offline.test 366 weblounge #room :End of NAMES")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ChannelSynced(_))
+        ) {}
 
         let mut changes = Changes::default();
         for (line, expected) in [
@@ -445,7 +473,7 @@ mod tests {
             (":offline.test MODE weblounge +B", "mode"),
         ] {
             wire.server(line).await;
-            let event = events.next().await.expect("typed member event");
+            let event = events.next_event().await.expect("typed member event");
             let kind = match event {
                 papo::Event::Joined(_) => "join",
                 papo::Event::ModeChanged(_) => "mode",
@@ -456,12 +484,12 @@ mod tests {
                 _ => "other",
             };
             assert_eq!(kind, expected);
-            assert_channel_change(&mut changes, &event, &client.state());
+            assert_channel_change(&mut changes, &event, &client.snapshot());
         }
 
-        let channel = channel(&client.state(), "#room");
+        let channel = channel(&client.snapshot(), "#room");
         let Some(EngineToUi::MembersChanged { members, .. }) =
-            project(&client.state(), &channel, BufferId(9), "test", 0, 0, "")
+            project(&client.snapshot(), &channel, BufferId(9), "test", 0, 0, "")
         else {
             panic!("member window")
         };
@@ -479,22 +507,25 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@h JOIN #room").await;
         wire.server(":offline.test 353 weblounge = #room :weblounge [Garden]")
             .await;
         wire.server(":offline.test 366 weblounge #room :End of NAMES")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::ChannelSynced(_))
+        ) {}
 
-        let channel = channel(&client.state(), "#room");
+        let channel = channel(&client.snapshot(), "#room");
         let Some(EngineToUi::MembersChanged {
             total,
             members,
             filter,
             ..
         }) = project(
-            &client.state(),
+            &client.snapshot(),
             &channel,
             BufferId(10),
             "test",

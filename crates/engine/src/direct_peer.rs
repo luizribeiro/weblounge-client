@@ -4,6 +4,32 @@ use crate::{
     EngineToUi, PeerPresence, away_check::AwayChecks, witnessed_presence::WitnessedPresence,
 };
 
+/// A DM's hold on its peer. Lines go to the nick; a peer we share no channel with is watched, so
+/// the network keeps reporting its presence for as long as the DM holds this.
+#[derive(Clone, Debug)]
+pub(crate) struct DirectPeer {
+    nick: papo::Nick,
+    _watch: Option<papo::Watch>,
+}
+
+impl DirectPeer {
+    pub(crate) fn resolve(client: &papo::Client, nick: &papo::Nick) -> Self {
+        let state = client.snapshot();
+        let holder = crate::name_key::known_user(&state, nick);
+        let seen =
+            holder.is_some_and(|user| user.nick() == state.nick() || user.channels().len() != 0);
+        let watch = (!seen).then(|| client.watch(nick.as_str()));
+        Self {
+            nick: nick.clone(),
+            _watch: watch,
+        }
+    }
+
+    pub(crate) const fn nick(&self) -> &papo::Nick {
+        &self.nick
+    }
+}
+
 /// What this connection's events say about DM peers beyond papo's state: papo keeps a peer whose
 /// direct handle is held in `monitor_online` after a `MONITOR` offline reply, and it does not treat
 /// a peer's own line as a report of its away state.
@@ -21,20 +47,21 @@ impl PeerEvidence {
         self.away_checks.observe(event);
         match event {
             papo::Event::MonitorOffline(offline) => {
-                self.heard_from.remove(&offline.subject);
-                self.reported_offline.insert(offline.subject.clone());
+                let nick = offline.subject.nick();
+                self.heard_from.remove(&nick);
+                self.reported_offline.insert(nick);
             }
             papo::Event::MonitorOnline(online) => {
-                self.reported_offline.remove(online.subject.nick());
+                self.reported_offline.remove(&online.subject.nick());
             }
-            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
-                self.heard_from.insert(message.actor.nick().clone());
+            papo::Event::Message(message) if message.actor_party != papo::Party::Me => {
+                self.heard_from.insert(message.actor.nick());
             }
             papo::Event::Quit(quit) => {
-                self.heard_from.remove(quit.actor.nick());
+                self.heard_from.remove(&quit.actor.nick());
             }
             papo::Event::NickChanged(changed) => {
-                if self.heard_from.remove(changed.actor.nick()) {
+                if self.heard_from.remove(&changed.old) {
                     self.heard_from.insert(changed.new.clone());
                 }
             }
@@ -49,7 +76,7 @@ impl PeerEvidence {
     /// Presence the network vouches for: a peer in a shared channel by its reported away state,
     /// and a peer known only through `MONITOR` as online, away or offline.
     pub(crate) fn presence(&self, state: &papo::State, nick: &papo::Nick) -> Option<PeerPresence> {
-        let user = state.user(nick);
+        let user = crate::name_key::known_user(state, nick);
         if let Some(user) = user.filter(|user| user.channels().len() != 0) {
             return self.reported_away(user);
         }
@@ -80,8 +107,8 @@ impl PeerEvidence {
 
     fn reported_away(&self, user: &papo::User) -> Option<PeerPresence> {
         match user.away() {
-            papo::Away::Away { .. } => Some(PeerPresence::Away),
-            papo::Away::Present => Some(PeerPresence::Online),
+            papo::AwayStatus::Away { .. } => Some(PeerPresence::Away),
+            papo::AwayStatus::Present => Some(PeerPresence::Online),
             _ => self.away_checks.answered(user.nick()).or_else(|| {
                 self.heard_from
                     .contains(user.nick())
@@ -106,8 +133,7 @@ fn unreported_monitor_presence(state: &papo::State) -> PeerPresence {
 /// papo forgets a peer once it leaves our view, so an unknown answer keeps what was last reported:
 /// being a bot is part of who the peer is, not of whether it is connected.
 pub(crate) fn bot(state: &papo::State, nick: &papo::Nick, last_reported: bool) -> bool {
-    state
-        .user(nick)
+    crate::name_key::known_user(state, nick)
         .and_then(papo::User::is_bot)
         .unwrap_or(last_reported)
 }
@@ -142,6 +168,7 @@ pub(crate) const fn reveals_buffers(event: &EngineToUi) -> bool {
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use crate::test_events::NextEvent;
     use papo_testing::{Wire, wire};
 
     /// A registered client with `away-notify` and `extended-monitor` that monitors `alice`.
@@ -165,14 +192,10 @@ pub(crate) mod test_support {
             matches!(event, papo::Event::FeaturesChanged { .. })
         })
         .await;
-        client
-            .monitor()
-            .add(["alice"])
-            .await
-            .expect("monitor accepts");
+        keep_watching(client.watch("alice"));
         assert_eq!(wire.next_sent().await, "MONITOR + alice");
         let nick = client
-            .state()
+            .snapshot()
             .monitored()
             .next()
             .cloned()
@@ -180,8 +203,18 @@ pub(crate) mod test_support {
         (client, events, wire, nick)
     }
 
+    /// The fixture's watch outlives the fixture, as a DM the test opens would keep it.
+    pub(crate) fn keep_watching(watch: papo::Watch) {
+        std::mem::forget(watch);
+    }
+
     pub(crate) async fn next(events: &mut papo::Events, predicate: impl Fn(&papo::Event) -> bool) {
-        while !predicate(&events.next().await.expect("papo event stream remains open")) {}
+        while !predicate(
+            &events
+                .next_event()
+                .await
+                .expect("papo event stream remains open"),
+        ) {}
     }
 }
 
@@ -190,6 +223,7 @@ mod tests {
     use papo_testing::Wire;
 
     use super::test_support::{monitoring_alice, monitoring_alice_with, next};
+    use crate::test_events::NextEvent;
     use crate::{
         BufferId, BufferProjection, EngineToUi, NetworkId, PeerPresence,
         state::{DirectAvailability, NetworkModel},
@@ -218,12 +252,12 @@ mod tests {
                 matches!(event, papo::Event::Connected(_))
             })
             .await;
-            assert!(matches!(
-                client.monitor().add(["alice"]).await,
-                Err(papo::Error::Unsupported(unsupported))
-                    if unsupported.feature == papo::Feature::Monitor
-            ));
-            let nick = client.state().casemapping().nick("alice");
+            assert!(!client.watch("alice").is_live());
+            let nick = client
+                .snapshot()
+                .name_rules()
+                .expect("registered client knows the name rules")
+                .nick("alice");
             Self::with_direct(client, events, wire, nick)
         }
 
@@ -262,9 +296,7 @@ mod tests {
                 matches!(event, papo::Event::ChannelSynced(_))
             })
             .await;
-            let nick = client
-                .state()
-                .user("alice")
+            let nick = crate::name_key::known_user(&client.snapshot(), "alice")
                 .map(|user| user.nick().clone())
                 .expect("alice shares #room");
             Self::with_direct(client, events, wire, nick)
@@ -277,7 +309,8 @@ mod tests {
             nick: papo::Nick,
         ) -> Self {
             let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-            let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
+            let (alice, _) =
+                model.open_direct(nick, DirectAvailability::Pending, &client.snapshot());
             Self {
                 client,
                 events,
@@ -298,7 +331,7 @@ mod tests {
             loop {
                 let event = self
                     .events
-                    .next()
+                    .next_event()
                     .await
                     .expect("papo event stream remains open");
                 self.model.observe_peers(&event, OBSERVED_AT_MS);
@@ -325,7 +358,7 @@ mod tests {
 
         fn sync_fact<T>(&mut self, fact: impl Fn(&BufferProjection) -> T) -> Vec<(BufferId, T)> {
             self.model
-                .sync_direct_peers(&self.client.state())
+                .sync_direct_peers(&self.client.snapshot())
                 .into_iter()
                 .map(|event| match event {
                     EngineToUi::BufferUpdated { buffer } => (buffer.id, fact(&buffer)),
@@ -576,9 +609,9 @@ mod tests {
         wire.server(":alice!~alice@cloak.example AWAY").await;
         next(&mut events, away_changed).await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.state());
+        let (alice, _) = model.open_direct(nick, DirectAvailability::Pending, &client.snapshot());
 
-        let updates = model.sync_direct_peers(&client.state());
+        let updates = model.sync_direct_peers(&client.snapshot());
 
         assert!(matches!(
             updates.as_slice(),
@@ -612,21 +645,11 @@ mod tests {
     #[tokio::test]
     async fn a_peer_held_by_a_direct_handle_still_goes_offline_on_a_731() {
         let mut peer = Peer::monitored().await;
-        let request = tokio::spawn({
-            let client = peer.client.clone();
-            async move { client.direct("alice").await }
-        });
-        assert_eq!(peer.wire.next_sent().await, "WHO alice %na");
-        peer.wire
-            .server(":offline.test 354 weblounge alice alice-account")
-            .await;
-        peer.wire
-            .server(":offline.test 315 weblounge alice :End of WHO list")
-            .await;
-        let _held = request
-            .await
-            .expect("direct task completes")
-            .expect("direct");
+        let nick = peer
+            .model
+            .direct_peer(peer.alice)
+            .expect("alice is a direct");
+        let _held = super::DirectPeer::resolve(&peer.client, &nick);
         peer.report_online().await;
         assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
 

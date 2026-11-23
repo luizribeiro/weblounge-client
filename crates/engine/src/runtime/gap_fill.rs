@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     EngineToUi,
+    name_key::NameKey,
     state::{GapFetch, GapPage, HistoryLoad, NetworkModel},
 };
 
@@ -15,12 +16,12 @@ use crate::{
 pub(super) fn catch_up_gap_fill(
     model: &mut NetworkModel,
     load: Option<HistoryLoad>,
-    conversation: &papo::Conversation,
+    conversation: &NameKey,
 ) -> Option<GapFetch> {
     if !matches!(load, Some(HistoryLoad::Latest | HistoryLoad::Refresh)) {
         return None;
     }
-    let buffer_id = model.buffer_id_for_conversation(conversation)?;
+    let buffer_id = model.buffer_id_for_name(conversation)?;
     model.begin_gap_fill(buffer_id)
 }
 
@@ -42,7 +43,7 @@ pub(super) fn spawn_gap_fill(
             else {
                 return;
             };
-            let (events, next) = if let Ok(page) = page {
+            let (events, next) = if let Some(page) = page {
                 receive_gap_page(running, &client, &fetch, page)
             } else {
                 running.model.fail_gap_fill(&fetch);
@@ -61,24 +62,26 @@ pub(super) fn spawn_gap_fill(
 async fn fetch_gap_page(
     client: &papo::Client,
     fetch: &GapFetch,
-) -> Result<papo::HistoryPage, papo::Error> {
-    client
-        .history(fetch.target.conversation())
-        .before(fetch.before())
+) -> Option<papo::event::HistoryPage> {
+    fetch
+        .target
+        .history(client)
+        .before(fetch.before()?)
         .limit(HISTORY_PAGE_SIZE)
         .await
+        .ok()
 }
 
 pub(super) fn receive_gap_page(
     running: &mut RunningNetwork,
     client: &papo::Client,
     fetch: &GapFetch,
-    page: papo::HistoryPage,
+    page: papo::event::HistoryPage,
 ) -> (Vec<EngineToUi>, Option<GapFetch>) {
     let filled = GapPage {
         oldest_time_ms: history_page_bounds(&page).oldest_time_ms,
         item_count: page.items.len(),
-        end: page.end,
+        end: page.exhausted,
     };
     let mut events = receive_history_items(running, client, page.items);
     let (buffer_id, next) = running.model.finish_gap_fill(fetch, filled);

@@ -634,7 +634,7 @@ pub enum MessageDelivery {
     Received,
     /// Locally inserted while papo sends it.
     Optimistic,
-    /// Reconciled from `papo::Sent`.
+    /// Reconciled from `papo::SendOutcome`.
     Confirmed,
     /// The send attempt failed and may be retried.
     Failed,

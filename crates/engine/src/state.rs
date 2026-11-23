@@ -14,7 +14,9 @@ use crate::{
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
+    direct_peer::DirectPeer,
     name_key::NameKey,
+    peer_pin::{PeerPin, PinCheck, PinMismatch},
     pushed_messages::{PushedMessage, PushedMessageKind},
     reactions::{ReactionAction, ReactionActor, ReactionIndex, ReactionUpdate, ReactionVersion},
     read_model::{
@@ -69,12 +71,12 @@ impl IncomingDestination {
 
 #[derive(Clone, Copy)]
 pub(crate) enum ChatInput<'a> {
-    Message(&'a papo::Message),
+    Message(&'a papo::event::Message),
     Notice(&'a papo::event::Notice),
 }
 
-impl<'a> From<&'a papo::Message> for ChatInput<'a> {
-    fn from(message: &'a papo::Message) -> Self {
+impl<'a> From<&'a papo::event::Message> for ChatInput<'a> {
+    fn from(message: &'a papo::event::Message) -> Self {
         Self::Message(message)
     }
 }
@@ -89,21 +91,28 @@ impl ChatInput<'_> {
     fn conversation(&self) -> &papo::Conversation {
         match self {
             Self::Message(message) => message.conversation(),
-            Self::Notice(notice) => &notice.conversation,
+            Self::Notice(notice) => notice.conversation(),
         }
     }
 
-    fn actor(&self) -> &papo::UserSource {
+    const fn actor(&self) -> &papo::UserRef {
         match self {
             Self::Message(message) => &message.actor,
             Self::Notice(notice) => &notice.actor,
         }
     }
 
-    pub(crate) const fn authorship(&self) -> papo::Authorship {
+    const fn actor_account(&self) -> &papo::AccountStatus {
         match self {
-            Self::Message(message) => message.authorship,
-            Self::Notice(notice) => notice.authorship,
+            Self::Message(message) => message.actor_account(),
+            Self::Notice(notice) => notice.actor_account(),
+        }
+    }
+
+    pub(crate) const fn authorship(&self) -> papo::Party {
+        match self {
+            Self::Message(message) => message.actor_party,
+            Self::Notice(notice) => notice.actor_party,
         }
     }
 
@@ -127,11 +136,11 @@ impl ChatInput<'_> {
     fn msgid(&self) -> Option<String> {
         match self {
             Self::Message(message) => message.msgid().map(ToString::to_string),
-            Self::Notice(notice) => notice.msgid.as_ref().map(ToString::to_string),
+            Self::Notice(notice) => notice.msgid().map(ToString::to_string),
         }
     }
 
-    const fn server_time(&self) -> Option<SystemTime> {
+    const fn server_time(&self) -> Option<papo::ServerTime> {
         match self {
             Self::Message(message) => message.server_time,
             Self::Notice(notice) => notice.server_time,
@@ -161,8 +170,8 @@ impl DirectKey {
 
 #[derive(Clone, Debug)]
 struct DirectMismatch {
-    reason: papo::PeerKeyMismatch,
-    current: papo::PeerKey,
+    reason: PinMismatch,
+    current: PeerPin,
     deferred: bool,
 }
 
@@ -225,7 +234,7 @@ struct BufferState {
     topic_card: Option<PendingTopicCard>,
     emitted_timeline: Vec<TimelineItem>,
     direct: Option<DirectAvailability>,
-    direct_pin: Option<papo::PeerKey>,
+    direct_pin: Option<PeerPin>,
     direct_mismatch: Option<DirectMismatch>,
     read_facts: ReadFacts,
     history: HistoryState,
@@ -264,16 +273,14 @@ struct PendingTargetSync {
 pub(crate) enum DirectAvailability {
     Pending,
     Resolving,
-    Guarded(papo::DirectRef),
-    MonitorFull,
-    Failed,
+    Guarded(DirectPeer),
 }
 
 impl DirectAvailability {
     const fn is_unresolved(&self) -> bool {
         match self {
             Self::Pending | Self::Resolving => true,
-            Self::Guarded(_) | Self::MonitorFull | Self::Failed => false,
+            Self::Guarded(_) => false,
         }
     }
 }
@@ -354,10 +361,10 @@ impl HistoryCursor {
         }
     }
 
-    pub(crate) fn reference(&self) -> papo::HistoryReference {
+    pub(crate) fn reference(&self) -> Option<papo::HistoryReference> {
         self.msgid.as_ref().map_or_else(
-            || papo::HistoryReference::from(self.server_time),
-            papo::HistoryReference::from,
+            || server_time(self.server_time).map(papo::HistoryReference::from),
+            |msgid| Some(papo::HistoryReference::from(msgid)),
         )
     }
 
@@ -399,17 +406,17 @@ impl HistoryTarget {
         }
     }
 
-    fn name_key(&self) -> NameKey {
+    pub(crate) fn name_key(&self) -> NameKey {
         match self {
             Self::Channel(channel) => NameKey::Channel(channel.clone()),
             Self::Direct(nick) => NameKey::Direct(nick.clone()),
         }
     }
 
-    pub(crate) fn conversation(&self) -> papo::Conversation {
+    pub(crate) fn history(&self, client: &papo::Client) -> papo::History {
         match self {
-            Self::Channel(channel) => papo::Conversation::Channel(channel.clone()),
-            Self::Direct(nick) => papo::Conversation::Private(nick.clone()),
+            Self::Channel(channel) => client.history(channel),
+            Self::Direct(nick) => client.history(nick),
         }
     }
 }
@@ -420,8 +427,8 @@ pub(crate) enum SendTarget {
     Channel(papo::ChannelName),
     Direct {
         nick: papo::Nick,
-        recipient: Option<papo::DirectRef>,
-        pin: Option<papo::PeerKey>,
+        pin: Option<PeerPin>,
+        tls: bool,
     },
 }
 
@@ -429,25 +436,19 @@ impl SendTarget {
     fn from_buffer(
         key: NameKey,
         direct: Option<&DirectAvailability>,
-        pin: Option<&papo::PeerKey>,
+        pin: Option<&PeerPin>,
         mismatched: bool,
+        tls: bool,
     ) -> Option<Self> {
         match key {
             NameKey::Channel(channel) => Some(Self::Channel(channel)),
             NameKey::Direct(nick) if !mismatched => match direct? {
-                DirectAvailability::Guarded(recipient) => Some(Self::Direct {
+                DirectAvailability::Guarded(_) => Some(Self::Direct {
                     nick,
-                    recipient: Some(recipient.clone()),
                     pin: pin.cloned(),
+                    tls,
                 }),
-                DirectAvailability::MonitorFull => Some(Self::Direct {
-                    nick,
-                    recipient: None,
-                    pin: pin.cloned(),
-                }),
-                DirectAvailability::Pending
-                | DirectAvailability::Resolving
-                | DirectAvailability::Failed => None,
+                DirectAvailability::Pending | DirectAvailability::Resolving => None,
             },
             NameKey::Direct(_) => None,
         }
@@ -549,6 +550,8 @@ pub(crate) struct NetworkModel {
     name_rebuilds: usize,
     peer_evidence: crate::direct_peer::PeerEvidence,
     join_requests: HashSet<String>,
+    tls: bool,
+    launch_watches: HashMap<papo::Nick, papo::Watch>,
 }
 
 impl NetworkModel {
@@ -572,58 +575,7 @@ impl NetworkModel {
     ) -> Self {
         let server_id = BufferId(1);
         let casemapping = papo::Casemapping::default();
-        let server = BufferState {
-            projection: BufferProjection {
-                id: server_id,
-                network_id: id,
-                kind: BufferKind::Server,
-                sync_state: BufferSyncState::Synced,
-                channel_status: None,
-                available: None,
-                title: label.clone(),
-                nick_color_index: None,
-                direct_identity: None,
-                peer_presence: None,
-                peer_presence_since_ms: None,
-                peer_bot: false,
-                draft_key: draft_key(&label, &label, casemapping),
-                topic: None,
-                member_count: None,
-                unread: 0,
-                mentions: 0,
-                read_at_ms: None,
-                last_message: None,
-                last_activity_ms: None,
-                preview: None,
-            },
-            restored_from_snapshot: false,
-            provisional_activity_ms: None,
-            provisional_preview: None,
-            key: None,
-            direct_key: None,
-            timeline: Vec::new(),
-            remembered_nicks: HashSet::new(),
-            chat_metadata: HashMap::new(),
-            system_server_times: HashMap::new(),
-            topic_card: None,
-            system_dedup: HashMap::new(),
-            emitted_timeline: Vec::new(),
-            direct: None,
-            direct_pin: None,
-            direct_mismatch: None,
-            read_facts: ReadFacts::default(),
-            history: HistoryState::Ready {
-                oldest: None,
-                at_start: true,
-            },
-            refresh_from_ms: None,
-            pending_lag_gap: None,
-            pending_reconnect_gap: None,
-            gap_fill: GapFill::Idle,
-            newest: None,
-            pushed_history_pending: false,
-            pushed_history_retry_available: false,
-        };
+        let server = server_buffer(server_id, id, &label, casemapping);
         Self {
             calendar,
             network: NetworkProjection {
@@ -668,7 +620,15 @@ impl NetworkModel {
             name_rebuilds: 0,
             peer_evidence: crate::direct_peer::PeerEvidence::default(),
             join_requests: HashSet::new(),
+            tls: false,
+            launch_watches: HashMap::new(),
         }
+    }
+
+    /// Whether the connection to the server is TLS, without which no reported account is
+    /// trusted to identify a DM peer.
+    pub(crate) const fn set_tls(&mut self, tls: bool) {
+        self.tls = tls;
     }
 
     pub(crate) const fn id(&self) -> NetworkId {
@@ -739,14 +699,51 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn restore_chat_list(&mut self, snapshot: ChatListSnapshot) {
+    /// The model's key for a conversation stored by name. papo builds names only once it knows
+    /// the server's rules, which the client's seed provides from the start; tests that run the
+    /// model without a client key it by origin-free names.
+    fn stored_key(&self, state: &papo::State, conversation: StoredName) -> Option<NameKey> {
+        let Some(rules) = state.name_rules() else {
+            return self.offline_key(conversation);
+        };
+        Some(match conversation {
+            StoredName::Channel(text) => NameKey::Channel(rules.channel(text)),
+            StoredName::Direct(text) => NameKey::Direct(rules.nick(text)),
+        })
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::unnecessary_wraps)]
+    fn offline_key(&self, conversation: StoredName) -> Option<NameKey> {
+        Some(match conversation {
+            StoredName::Channel(text) => {
+                NameKey::Channel(papo_testing::channel(self.casemapping, text))
+            }
+            StoredName::Direct(text) => NameKey::Direct(papo_testing::nick(self.casemapping, text)),
+        })
+    }
+
+    #[cfg(not(test))]
+    #[allow(clippy::unused_self)]
+    fn offline_key(&self, _conversation: StoredName) -> Option<NameKey> {
+        None
+    }
+
+    #[cfg(test)]
+    pub(crate) fn restore_cached_chat_list(&mut self, snapshot: ChatListSnapshot) {
+        let state = papo_testing::StateBuilder::new(self.network.nickname.clone()).build();
+        self.restore_chat_list(snapshot, &state);
+    }
+
+    pub(crate) fn restore_chat_list(&mut self, snapshot: ChatListSnapshot, state: &papo::State) {
         let cursor = snapshot.cursor_ms.map(system_time_from_millis);
         for row in snapshot.rows {
-            let key = match row.conversation {
-                SnapshotConversation::Channel { key } => {
-                    NameKey::Channel(self.casemapping.channel(key))
-                }
-                SnapshotConversation::Direct { key } => NameKey::Direct(self.casemapping.nick(key)),
+            let stored = match row.conversation {
+                SnapshotConversation::Channel { key } => StoredName::Channel(key),
+                SnapshotConversation::Direct { key } => StoredName::Direct(key),
+            };
+            let Some(key) = self.stored_key(state, stored) else {
+                continue;
             };
             let kind = match key {
                 NameKey::Channel(_) => BufferKind::Channel,
@@ -785,7 +782,7 @@ impl NetworkModel {
                 if buffer.projection.kind == BufferKind::Channel {
                     buffer.projection.channel_status = None;
                 }
-                buffer.direct_pin = row.peer_pin.and_then(|pin| pin.parse().ok());
+                buffer.direct_pin = row.peer_pin.as_deref().and_then(PeerPin::restore);
                 buffer.projection.peer_bot = row.peer_bot;
                 buffer.projection.direct_identity = direct_identity(buffer);
                 derive_read_projection(buffer);
@@ -1078,7 +1075,7 @@ impl NetworkModel {
         {
             self.name_rebuilds += 1;
         }
-        self.casemapping = state.casemapping();
+        self.casemapping = crate::name_key::casemapping(state);
         self.names.clear();
         self.directs.clear();
         let network_label = self.network.label.clone();
@@ -1135,22 +1132,29 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
-    pub(crate) fn receive_nick_change(&mut self, changed: &papo::event::NickChanged) {
-        let old = changed.actor.nick();
+    pub(crate) fn receive_nick_change(
+        &mut self,
+        changed: &papo::event::NickChanged,
+        state: &papo::State,
+    ) {
+        let old = &changed.old;
         let mut buffer_ids = changed
             .channels
             .iter()
-            .filter_map(|channel| self.names.get(&NameKey::Channel(channel.clone())).copied())
+            .filter_map(|channel| self.names.get(&NameKey::Channel(channel.name())).copied())
             .collect::<Vec<_>>();
-        if changed.authorship == papo::Authorship::Own {
+        let account = crate::name_key::known_user(state, &changed.new)
+            .map_or(&papo::AccountStatus::Unknown, papo::User::account);
+        let current = PeerPin::observed(state, &changed.new, account, self.tls);
+        if changed.actor_party == papo::Party::Me {
             buffer_ids.push(self.server_buffer_id());
         } else if let Some(id) = self.names.get(&NameKey::Direct(old.clone())).copied()
             && self.buffers.get(&id).is_some_and(|buffer| {
                 buffer.direct_pin.as_ref().is_some_and(|stored| {
-                    changed.peer_key().is_some_and(|current| {
+                    current.as_ref().is_some_and(|current| {
                         matches!(
                             stored.check(current),
-                            papo::PeerKeyCheck::Match | papo::PeerKeyCheck::Upgrade(_)
+                            PinCheck::Match | PinCheck::Upgrade(_)
                         )
                     })
                 })
@@ -1171,7 +1175,7 @@ impl NetworkModel {
         changed: &papo::event::NickChanged,
     ) {
         let msgid = changed.msgid.as_ref().map(ToString::to_string);
-        let server_time_ms = changed.server_time.map(time_millis);
+        let server_time_ms = changed.server_time.map(papo::ServerTime::as_millis);
         let dedup = system_dedup_reference(
             buffer_id,
             msgid.clone(),
@@ -1181,7 +1185,7 @@ impl NetworkModel {
             Some(new.to_string()),
         );
         let casemapping = self.casemapping;
-        let own = changed.authorship == papo::Authorship::Own;
+        let own = changed.actor_party == papo::Party::Me;
         let who = |nick: &papo::Nick| {
             let nick = nick.to_string();
             crate::timeline::Who {
@@ -1206,12 +1210,12 @@ impl NetworkModel {
     }
 
     pub(crate) fn receive_invite(&mut self, invited: &papo::event::Invited) -> Option<()> {
-        if invited.subject_authorship == papo::Authorship::Own {
+        if invited.subject_party == papo::Party::Me {
             return None;
         }
-        let buffer_id = *self.names.get(&NameKey::Channel(invited.channel.clone()))?;
+        let buffer_id = *self.names.get(&NameKey::Channel(invited.channel.name()))?;
         let msgid = invited.msgid.as_ref().map(ToString::to_string);
-        let server_time_ms = invited.server_time.map(time_millis);
+        let server_time_ms = invited.server_time.map(papo::ServerTime::as_millis);
         let dedup = system_dedup_reference(
             buffer_id,
             msgid.clone(),
@@ -1222,7 +1226,7 @@ impl NetworkModel {
         );
         let nick = invited.subject.to_string();
         let body = RecordBody::Fold(FoldEvent::Invited {
-            actor: source_actor(self.casemapping, &invited.actor, invited.authorship)?,
+            actor: source_actor(self.casemapping, &invited.actor, invited.actor_party)?,
             subject: crate::timeline::Who {
                 key: self.casemapping.fold(&nick).into_owned(),
                 nick_color_index: nick_color_index(self.casemapping, &nick),
@@ -1245,7 +1249,7 @@ impl NetworkModel {
         let papo::Subject::Channel(channel) = &event.subject else {
             return None;
         };
-        let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let buffer_id = *self.names.get(&NameKey::Channel(channel.name()))?;
         let projected = event
             .changes
             .iter()
@@ -1256,8 +1260,8 @@ impl NetworkModel {
             return None;
         }
         let msgid = event.msgid.as_ref().map(ToString::to_string);
-        let server_time_ms = event.server_time.map(time_millis);
-        let actor = source_actor(self.casemapping, &event.actor, event.authorship)?;
+        let server_time_ms = event.server_time.map(papo::ServerTime::as_millis);
+        let actor = source_actor(self.casemapping, &event.actor, event.actor_party)?;
         let dedup = system_dedup_reference(
             buffer_id,
             msgid,
@@ -1283,10 +1287,10 @@ impl NetworkModel {
     #[cfg(test)]
     pub(crate) fn receive(
         &mut self,
-        message: &papo::Message,
+        message: &papo::event::Message,
         history: bool,
         state: &papo::State,
-        direct: Option<papo::DirectRef>,
+        direct: Option<DirectPeer>,
     ) -> Vec<EngineToUi> {
         let (mut events, read_advances) =
             self.receive_chat_with_advance(message.into(), history, state, direct);
@@ -1301,7 +1305,7 @@ impl NetworkModel {
         input: ChatInput<'_>,
         history: bool,
         state: &papo::State,
-        direct: Option<papo::DirectRef>,
+        direct: Option<DirectPeer>,
     ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
         let Some(conversation) = NameKey::from_conversation(input.conversation()) else {
             return (
@@ -1322,31 +1326,29 @@ impl NetworkModel {
             NameKey::Channel(_) => None,
         };
         let actor = input.actor();
+        let account = input.actor_account();
         let authorship = input.authorship();
         let incoming = Incoming {
             direct: direct.map(DirectAvailability::Guarded),
             direct_key,
-            peer_key: (authorship != papo::Authorship::Own)
-                .then(|| actor.peer_key().cloned())
+            peer_key: (authorship != papo::Party::Me)
+                .then(|| PeerPin::observed(state, &actor.nick(), account, self.tls))
                 .flatten(),
-            legacy_account_key: actor
-                .account()
-                .name()
-                .map(|account| account.key().to_owned()),
+            legacy_account_key: account.name().map(|account| account.key().to_owned()),
             provisional_identity: None,
             destination,
             author: actor.nick().to_string(),
             text: input.text().to_owned(),
             kind: input.kind(),
-            bot: actor.is_bot(),
+            bot: crate::name_key::known_user(state, actor).and_then(papo::User::is_bot),
             authorship: map_authorship(authorship),
             msgid: input.msgid(),
-            server_time_ms: input.server_time().map(time_millis),
+            server_time_ms: input.server_time().map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(input.received_at()),
             origin,
         };
         let received = self.receive_incoming_result(incoming, state);
-        let own_advance = (authorship == papo::Authorship::Own)
+        let own_advance = (authorship == papo::Party::Me)
             .then(|| {
                 received
                     .message
@@ -1366,10 +1368,10 @@ impl NetworkModel {
         state: &papo::State,
     ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
         let destination = match &notice.to {
-            papo::event::Audience::Channel(channel) => {
-                IncomingDestination::Conversation(NameKey::Channel(channel.clone()))
+            papo::event::NoticeTarget::Channel(channel) => {
+                IncomingDestination::Conversation(NameKey::Channel(channel.name()))
             }
-            papo::event::Audience::Me | papo::event::Audience::Broadcast(_) => {
+            papo::event::NoticeTarget::Me | papo::event::NoticeTarget::Broadcast(_) => {
                 IncomingDestination::Server
             }
             _ => return (Vec::new(), Vec::new()),
@@ -1384,10 +1386,14 @@ impl NetworkModel {
             author: notice.actor.to_string(),
             text: notice.text.clone(),
             kind: MessageKind::IrcNotice(server_notice_source(&notice.actor)),
-            bot: notice.actor.user().and_then(papo::UserSource::is_bot),
-            authorship: map_authorship(notice.authorship),
-            msgid: notice.msgid.as_ref().map(ToString::to_string),
-            server_time_ms: notice.server_time.map(time_millis),
+            bot: notice
+                .actor
+                .user()
+                .and_then(|user| crate::name_key::known_user(state, user))
+                .and_then(papo::User::is_bot),
+            authorship: map_authorship(notice.actor_party),
+            msgid: notice.msgid().map(ToString::to_string),
+            server_time_ms: notice.server_time.map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(notice.received_at),
             origin: if history {
                 TimelineOrigin::History
@@ -1396,7 +1402,7 @@ impl NetworkModel {
             },
         };
         let received = self.receive_incoming_result(incoming, state);
-        let own_advance = (notice.authorship == papo::Authorship::Own)
+        let own_advance = (notice.actor_party == papo::Party::Me)
             .then(|| {
                 received
                     .message
@@ -1424,7 +1430,7 @@ impl NetworkModel {
         let actor = ReactionActor {
             key: reaction_actor_key(&reaction.actor),
             nick: reaction.actor.nick().to_string(),
-            mine: reaction.authorship == papo::Authorship::Own,
+            mine: reaction.actor_party == papo::Party::Me,
         };
         let action = match reaction.action {
             papo::event::ReactionAction::Added => ReactionAction::Added,
@@ -1432,7 +1438,7 @@ impl NetworkModel {
             _ => return None,
         };
         let version = ReactionVersion::new(
-            time_millis(reaction.server_time.unwrap_or(reaction.received_at)),
+            event_millis(reaction.server_time, reaction.received_at),
             reaction
                 .msgid()
                 .map(ToString::to_string)
@@ -1497,7 +1503,7 @@ impl NetworkModel {
     pub(crate) fn confirm_own_reaction(&mut self, change: &OwnReactionChange, time_ms: i64) {
         let nick = self.network.nickname.clone();
         let actor = ReactionActor {
-            key: nick_reaction_actor_key(&self.casemapping.nick(nick.clone())),
+            key: nick_reaction_actor_key(&self.casemapping.fold(&nick)),
             nick,
             mine: true,
         };
@@ -1714,44 +1720,29 @@ impl NetworkModel {
         mut messages: Vec<PushedMessage>,
         state: &papo::State,
     ) -> Vec<EngineToUi> {
-        messages.sort_by_key(|message| papo_proto::time::parse(&message.time).map(time_millis));
+        messages.sort_by_key(|message| pushed_time_millis(&message.time));
         let mut events = Vec::new();
         for message in messages {
             if message.network_label != self.network.label {
                 continue;
             }
-            let Some(server_time_ms) = papo_proto::time::parse(&message.time).map(time_millis)
-            else {
+            let Some(server_time_ms) = pushed_time_millis(&message.time) else {
                 continue;
             };
-            let direct = state.name_rules().map_or_else(
-                || !state.isupport().is_channel(&message.target),
-                |rules| {
-                    !matches!(
-                        rules.target(&message.target),
-                        Ok((_, papo::Conversation::Channel(_)))
-                    )
-                },
-            );
-            let (conversation, direct_key, availability) = if direct {
-                let nick = state.name_rules().map_or_else(
-                    || self.casemapping.nick(message.sender.clone()),
-                    |rules| rules.nick(message.sender.clone()),
-                );
-                (
-                    NameKey::Direct(nick.clone()),
-                    Some(DirectKey::from_nick(&nick)),
-                    Some(DirectAvailability::Pending),
-                )
+            let stored = if addresses_channel(state, &message.target) {
+                StoredName::Channel(message.target.clone())
             } else {
-                (
-                    NameKey::Channel(state.name_rules().map_or_else(
-                        || self.casemapping.channel(message.target.clone()),
-                        |rules| rules.channel(message.target.clone()),
-                    )),
-                    None,
-                    None,
-                )
+                StoredName::Direct(message.sender.clone())
+            };
+            let Some(conversation) = self.stored_key(state, stored) else {
+                continue;
+            };
+            let (direct_key, availability) = match &conversation {
+                NameKey::Direct(nick) => (
+                    Some(DirectKey::from_nick(nick)),
+                    Some(DirectAvailability::Pending),
+                ),
+                NameKey::Channel(_) => (None, None),
             };
             let conversation_key = conversation.clone();
             let received = self.receive_incoming_result(
@@ -1952,13 +1943,8 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn note_lagged_gap(
-        &mut self,
-        conversation: &papo::Conversation,
-        first_ms: i64,
-        last_ms: i64,
-    ) {
-        let Some(buffer_id) = self.buffer_id_for_conversation(conversation) else {
+    pub(crate) fn note_lagged_gap(&mut self, key: &NameKey, first_ms: i64, last_ms: i64) {
+        let Some(buffer_id) = self.buffer_id_for_name(key) else {
             return;
         };
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
@@ -1967,12 +1953,8 @@ impl NetworkModel {
         buffer.pending_lag_gap = Some(merge_span(buffer.pending_lag_gap, (first_ms, last_ms)));
     }
 
-    pub(crate) fn finish_lagged_gap(
-        &mut self,
-        conversation: &papo::Conversation,
-        oldest_time_ms: Option<i64>,
-    ) {
-        let Some(buffer_id) = self.buffer_id_for_conversation(conversation) else {
+    pub(crate) fn finish_lagged_gap(&mut self, key: &NameKey, oldest_time_ms: Option<i64>) {
+        let Some(buffer_id) = self.buffer_id_for_name(key) else {
             return;
         };
         let Some((first_ms, last_ms)) = self
@@ -2083,15 +2065,16 @@ impl NetworkModel {
                 &direct,
                 Some(DirectAvailability::Pending | DirectAvailability::Resolving)
             );
+        let tls = self.tls;
         let target =
-            SendTarget::from_buffer(key.clone(), direct.as_ref(), pin.as_ref(), mismatched)
+            SendTarget::from_buffer(key.clone(), direct.as_ref(), pin.as_ref(), mismatched, tls)
                 .or_else(|| {
                     if awaits_live_target && !mismatched {
                         match key.clone() {
                             NameKey::Direct(nick) => Some(SendTarget::Direct {
                                 nick,
-                                recipient: None,
                                 pin: None,
+                                tls,
                             }),
                             NameKey::Channel(_) => None,
                         }
@@ -2099,16 +2082,6 @@ impl NetworkModel {
                         None
                     }
                 })?;
-        if matches!(
-            &target,
-            SendTarget::Direct {
-                recipient: None,
-                ..
-            }
-        ) && !awaits_live_target
-        {
-            return None;
-        }
         let local_send_id = LocalSendId(self.next_local_send_id);
         self.next_local_send_id += 1;
         let message = MessageProjection {
@@ -2116,9 +2089,12 @@ impl NetworkModel {
             author: self.network.nickname.clone(),
             text: collapse_blank_lines(text.clone()),
             kind: kind.clone(),
-            bot: state.user(state.nick()).and_then(papo::User::is_bot),
+            bot: crate::name_key::known_user(state, state.nick()).and_then(papo::User::is_bot),
             authorship: MessageAuthorship::Own,
-            nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
+            nick_color_index: nick_color_index(
+                crate::name_key::casemapping(state),
+                &self.network.nickname,
+            ),
             highlighted: false,
             mentions: None,
             unverified_sender: None,
@@ -2174,11 +2150,11 @@ impl NetworkModel {
                 pending.target = SendTarget::Channel(channel.clone());
                 PendingTargetState::Ready
             }
-            (Some(NameKey::Direct(nick)), Some(DirectAvailability::Guarded(recipient))) => {
+            (Some(NameKey::Direct(nick)), Some(DirectAvailability::Guarded(_))) => {
                 pending.target = SendTarget::Direct {
                     nick: nick.clone(),
-                    recipient: Some(recipient.clone()),
                     pin: buffer.direct_pin.clone(),
+                    tls: self.tls,
                 };
                 PendingTargetState::Ready
             }
@@ -2322,9 +2298,9 @@ impl NetworkModel {
         kicked: &papo::event::Kicked,
         update_status: bool,
     ) -> Option<Vec<EngineToUi>> {
-        let buffer_id = *self.names.get(&NameKey::Channel(kicked.channel.clone()))?;
-        let subject_own = kicked.subject_authorship == papo::Authorship::Own;
-        let server_time_ms = kicked.server_time.map(time_millis);
+        let buffer_id = *self.names.get(&NameKey::Channel(kicked.channel.name()))?;
+        let subject_own = kicked.subject_party == papo::Party::Me;
+        let server_time_ms = kicked.server_time.map(papo::ServerTime::as_millis);
         let dedup = system_dedup_reference(
             buffer_id,
             kicked.msgid.as_ref().map(ToString::to_string),
@@ -2334,7 +2310,7 @@ impl NetworkModel {
             Some(kicked.subject.to_string()),
         );
         let line = LineEvent::Kick {
-            actor: source_actor(self.casemapping, &kicked.actor, kicked.authorship)?,
+            actor: source_actor(self.casemapping, &kicked.actor, kicked.actor_party)?,
             subject: if subject_own {
                 Subject::You
             } else {
@@ -2367,12 +2343,12 @@ impl NetworkModel {
     pub(crate) fn receive_topic_change(&mut self, changed: &papo::event::TopicChanged) {
         let Some(buffer_id) = self
             .names
-            .get(&NameKey::Channel(changed.channel.clone()))
+            .get(&NameKey::Channel(changed.channel.name()))
             .copied()
         else {
             return;
         };
-        let server_time_ms = changed.server_time.map(time_millis);
+        let server_time_ms = changed.server_time.map(papo::ServerTime::as_millis);
         let dedup = system_dedup_reference(
             buffer_id,
             changed.msgid.as_ref().map(ToString::to_string),
@@ -2381,7 +2357,8 @@ impl NetworkModel {
             changed.actor.to_string(),
             changed.topic.clone(),
         );
-        let Some(actor) = source_actor(self.casemapping, &changed.actor, changed.authorship) else {
+        let Some(actor) = source_actor(self.casemapping, &changed.actor, changed.actor_party)
+        else {
             return;
         };
         let line = LineEvent::Topic {
@@ -2398,7 +2375,7 @@ impl NetworkModel {
     }
 
     pub(crate) fn anchor_topic_card(&mut self, joined: &papo::event::Joined) {
-        let Some(buffer_id) = self.buffer_id_for_channel(&joined.channel) else {
+        let Some(buffer_id) = self.buffer_id_for_channel(&joined.channel.name()) else {
             return;
         };
         if self
@@ -2409,7 +2386,7 @@ impl NetworkModel {
             return;
         }
         let order = self.allocate_order(
-            joined.server_time.map(time_millis),
+            joined.server_time.map(papo::ServerTime::as_millis),
             time_millis(joined.received_at),
         );
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
@@ -2465,7 +2442,7 @@ impl NetworkModel {
     pub(crate) fn confirm_send(
         &mut self,
         pending: &PendingSend,
-        sent: &papo::Sent,
+        sent: &papo::SendOutcome,
     ) -> Option<Vec<EngineToUi>> {
         self.reconcilable_failed_sends
             .remove(&pending.local_send_id);
@@ -2477,15 +2454,12 @@ impl NetworkModel {
         let record = buffer.timeline.remove(index);
         let original = chat_projection(&record)?.clone();
         buffer.chat_metadata.remove(&record.id);
-        let (lines, server_time) = match sent.outcome() {
-            papo::SentOutcome::Confirmed {
-                lines, server_time, ..
-            } if !lines.is_empty() => (Some(lines), server_time.map(time_millis)),
-            _ => (None, None),
-        };
+        let (lines, server_time) = confirmed_lines(sent).map_or((None, None), |(lines, time)| {
+            (Some(lines), time.map(papo::ServerTime::as_millis))
+        });
         let messages = if let Some(lines) = lines {
             lines
-                .iter()
+                .into_iter()
                 .enumerate()
                 .map(|(index, (msgid, text))| {
                     let mut message = original.clone();
@@ -2614,6 +2588,7 @@ impl NetworkModel {
             buffer.direct.as_ref(),
             buffer.direct_pin.as_ref(),
             buffer.direct_mismatch.is_some(),
+            self.tls,
         )?;
         let message_id = buffer.timeline.iter().find_map(|record| {
             let message = chat_projection(record)?;
@@ -2857,9 +2832,8 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn history_load(&self, conversation: &papo::Conversation) -> Option<HistoryLoad> {
-        let key = NameKey::from_conversation(conversation)?;
-        let buffer = self.buffers.get(self.names.get(&key)?)?;
+    pub(crate) fn history_load(&self, key: &NameKey) -> Option<HistoryLoad> {
+        let buffer = self.buffers.get(self.names.get(key)?)?;
         match buffer.history {
             HistoryState::LoadingLatest => Some(HistoryLoad::Latest),
             HistoryState::LoadingOlder { .. } => Some(HistoryLoad::Older),
@@ -2873,15 +2847,14 @@ impl NetworkModel {
 
     pub(crate) fn finish_history(
         &mut self,
-        conversation: &papo::Conversation,
+        key: &NameKey,
         oldest: Option<papo::HistoryReference>,
         oldest_time_ms: Option<i64>,
         newest: Option<HistoryCursor>,
         item_count: usize,
         end: bool,
     ) -> Option<HistoryCompletion> {
-        let key = NameKey::from_conversation(conversation)?;
-        let buffer_id = self.names.get(&key).copied()?;
+        let buffer_id = self.names.get(key).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let loading_older = matches!(buffer.history, HistoryState::LoadingOlder { .. });
         let newest_time_ms = newest
@@ -2957,7 +2930,7 @@ impl NetworkModel {
             let _ = self.record_gap(buffer_id, from_ms, to_ms);
         }
         self.settle_reconnect_gap(buffer_id, reconnect_filled);
-        self.settle_target_history(&key, true);
+        self.settle_target_history(key, true);
         Some(completion)
     }
 
@@ -3017,9 +2990,10 @@ impl NetworkModel {
         let Some(buffer_id) = self.buffer_id_for_channel(channel) else {
             return;
         };
-        let (Some(buffer), Some(channel)) =
-            (self.buffers.get_mut(&buffer_id), state.channel(channel))
-        else {
+        let (Some(buffer), Some(channel)) = (
+            self.buffers.get_mut(&buffer_id),
+            crate::name_key::known_channel(state, channel),
+        ) else {
             return;
         };
         let mut learned = false;
@@ -3090,16 +3064,23 @@ impl NetworkModel {
             .copied()
     }
 
-    pub(crate) fn conversation_buffers(
-        &self,
-    ) -> impl Iterator<Item = (BufferId, papo::Conversation)> + '_ {
-        self.buffers.iter().filter_map(|(buffer_id, buffer)| {
-            let conversation = match buffer.key.as_ref()? {
-                NameKey::Channel(channel) => papo::Conversation::Channel(channel.clone()),
-                NameKey::Direct(nick) => papo::Conversation::Private(nick.clone()),
-            };
-            Some((*buffer_id, conversation))
-        })
+    pub(crate) fn buffer_id_for_name(&self, key: &NameKey) -> Option<BufferId> {
+        self.names.get(key).copied()
+    }
+
+    /// Lets the launch's presence watches on the shown DMs' peers last until the next launch.
+    pub(crate) fn hold_launch_watches(&mut self, watches: HashMap<papo::Nick, papo::Watch>) {
+        self.launch_watches = watches;
+    }
+
+    pub(crate) fn release_launch_watch(&mut self, peer: &papo::Nick) {
+        self.launch_watches.remove(peer);
+    }
+
+    pub(crate) fn conversation_buffers(&self) -> impl Iterator<Item = (BufferId, NameKey)> + '_ {
+        self.buffers
+            .iter()
+            .filter_map(|(buffer_id, buffer)| Some((*buffer_id, buffer.key.clone()?)))
     }
 
     pub(crate) fn send_target(&self, buffer_id: BufferId) -> Option<SendTarget> {
@@ -3109,6 +3090,7 @@ impl NetworkModel {
             buffer.direct.as_ref(),
             buffer.direct_pin.as_ref(),
             buffer.direct_mismatch.is_some(),
+            self.tls,
         )
     }
 
@@ -3127,8 +3109,8 @@ impl NetworkModel {
                 .is_none_or(DirectAvailability::is_unresolved);
             (unresolved && buffer.direct_mismatch.is_none()).then(|| SendTarget::Direct {
                 nick: nick.clone(),
-                recipient: None,
                 pin: buffer.direct_pin.clone(),
+                tls: self.tls,
             })
         })
     }
@@ -3213,8 +3195,8 @@ impl NetworkModel {
                 buffer.direct = Some(DirectAvailability::Pending);
                 if buffer
                     .direct_pin
-                    .as_ref()
-                    .is_some_and(|pin| !pin.is_verified())
+                    .as_mut()
+                    .is_some_and(|pin| !pin.forget_connection())
                 {
                     buffer.direct_pin = None;
                     buffer.direct_mismatch = None;
@@ -3227,7 +3209,7 @@ impl NetworkModel {
     pub(crate) fn update_direct_account(
         &mut self,
         nick: &papo::Nick,
-        account: &papo::Account,
+        account: &papo::AccountStatus,
     ) -> Vec<EngineToUi> {
         let Some(buffer_id) = self.names.get(&NameKey::Direct(nick.clone())).copied() else {
             return Vec::new();
@@ -3253,7 +3235,7 @@ impl NetworkModel {
         prefix: &str,
         state: &papo::State,
     ) -> Vec<String> {
-        let folded_prefix = state.casemapping().fold(prefix);
+        let folded_prefix = crate::name_key::casemapping(state).fold(prefix);
         let mut seen = std::collections::HashSet::new();
         self.buffers
             .get(&buffer_id)
@@ -3262,8 +3244,14 @@ impl NetworkModel {
             .filter_map(chat_projection)
             .map(|message| message.author.clone())
             .filter(|nick| !is_own_nick(state, nick))
-            .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
-            .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
+            .filter(|value| {
+                crate::name_key::casemapping(state)
+                    .fold(value)
+                    .starts_with(&*folded_prefix)
+            })
+            .filter(|value| {
+                seen.insert(crate::name_key::casemapping(state).fold(value).into_owned())
+            })
             .collect()
     }
 
@@ -3282,15 +3270,14 @@ impl NetworkModel {
         direct: DirectAvailability,
         state: &papo::State,
     ) -> (BufferId, Vec<EngineToUi>) {
-        let legacy_account = state
-            .user(&nick)
+        let legacy_account = crate::name_key::known_user(state, &nick)
             .and_then(|user| user.account().name())
             .map(|account| account.key().to_owned());
         let direct_key = DirectKey::from_nick(&nick);
         let (buffer_id, added) =
             self.ensure_buffer(NameKey::Direct(nick), Some(direct_key), Some(direct));
         let newly_added = added.is_some();
-        self.capture_direct_pin(buffer_id);
+        self.capture_direct_pin(buffer_id, state);
         let mut events = Vec::new();
         if let Some(buffer) = added.or_else(|| self.reveal_buffer(buffer_id)) {
             events.push(EngineToUi::BufferAdded { buffer });
@@ -3455,16 +3442,12 @@ impl NetworkModel {
     }
 
     pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> EngineMessageKey {
-        let buffer = self.buffers.get(&buffer_id);
-        if buffer
+        if self
+            .buffers
+            .get(&buffer_id)
             .is_some_and(|buffer| buffer.projection.channel_status == Some(ChannelStatus::Kicked))
         {
             EngineMessageKey::ChannelRejoinRequired
-        } else if buffer
-            .and_then(|buffer| buffer.direct.as_ref())
-            .is_some_and(|direct| matches!(direct, DirectAvailability::MonitorFull))
-        {
-            EngineMessageKey::DirectMonitorFull
         } else {
             EngineMessageKey::BufferNotSendable
         }
@@ -3499,7 +3482,7 @@ impl NetworkModel {
     pub(crate) fn begin_online_direct_resolution(
         &mut self,
         nick: &papo::Nick,
-    ) -> Option<(BufferId, Option<papo::DirectRef>)> {
+    ) -> Option<(BufferId, Option<DirectPeer>)> {
         let buffer_id = self.names.get(&NameKey::Direct(nick.clone())).copied()?;
         let direct = self
             .buffers
@@ -3507,9 +3490,9 @@ impl NetworkModel {
             .and_then(|buffer| buffer.direct.as_mut())?;
         let previous = match std::mem::replace(direct, DirectAvailability::Resolving) {
             DirectAvailability::Guarded(direct) => Some(direct),
-            DirectAvailability::Resolving | DirectAvailability::Failed => None,
+            DirectAvailability::Resolving => None,
             // A pending handle resolves when it is used, so a peer reported online costs no WHO.
-            current @ (DirectAvailability::MonitorFull | DirectAvailability::Pending) => {
+            current @ DirectAvailability::Pending => {
                 *direct = current;
                 return None;
             }
@@ -3517,23 +3500,44 @@ impl NetworkModel {
         Some((buffer_id, previous))
     }
 
-    pub(crate) fn resolve_direct(&mut self, buffer_id: BufferId, availability: DirectAvailability) {
+    pub(crate) fn resolve_direct(
+        &mut self,
+        buffer_id: BufferId,
+        availability: DirectAvailability,
+        state: &papo::State,
+    ) {
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             buffer.direct = Some(availability);
         }
-        self.capture_direct_pin(buffer_id);
+        self.capture_direct_pin(buffer_id, state);
     }
 
-    fn capture_direct_pin(&mut self, buffer_id: BufferId) {
-        let current = self.buffers.get(&buffer_id).and_then(|buffer| {
-            let DirectAvailability::Guarded(direct) = buffer.direct.as_ref()? else {
-                return None;
-            };
-            Some(direct.peer_key().clone())
-        });
-        if let Some(current) = current {
-            self.apply_direct_peer_key(buffer_id, current);
+    /// A newly reachable peer is checked against its pin the way a send would check it; with no
+    /// pin yet, what papo knows about the nick's holder becomes the pin.
+    fn capture_direct_pin(&mut self, buffer_id: BufferId, state: &papo::State) {
+        let tls = self.tls;
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        let Some(DirectAvailability::Guarded(direct)) = buffer.direct.as_ref() else {
+            return;
+        };
+        let current = PeerPin::of_holder(state, direct.nick(), tls);
+        match buffer.direct_pin.as_ref() {
+            None => {
+                buffer.direct_pin = current.is_known().then_some(current);
+            }
+            Some(stored) => {
+                if let Err(reason) = stored.check_recipient(state, direct.nick(), tls) {
+                    buffer.direct_mismatch = Some(DirectMismatch {
+                        reason,
+                        current,
+                        deferred: false,
+                    });
+                }
+            }
         }
+        buffer.projection.direct_identity = direct_identity(buffer);
     }
 
     fn incoming_identity(
@@ -3552,7 +3556,7 @@ impl NetworkModel {
     fn apply_direct_peer_key(
         &mut self,
         buffer_id: BufferId,
-        current: papo::PeerKey,
+        current: PeerPin,
     ) -> DirectIdentityState {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return DirectIdentityState::Unverified;
@@ -3566,12 +3570,12 @@ impl NetworkModel {
                 buffer.direct_pin = Some(current);
                 buffer.direct_mismatch = None;
             }
-            Some(papo::PeerKeyCheck::Match) => buffer.direct_mismatch = None,
-            Some(papo::PeerKeyCheck::Upgrade(upgraded)) => {
+            Some(PinCheck::Match) => buffer.direct_mismatch = None,
+            Some(PinCheck::Upgrade(upgraded)) => {
                 buffer.direct_pin = Some(upgraded);
                 buffer.direct_mismatch = None;
             }
-            Some(papo::PeerKeyCheck::Mismatch(reason)) => {
+            Some(PinCheck::Mismatch(reason)) => {
                 buffer.direct_mismatch = Some(DirectMismatch {
                     reason,
                     current,
@@ -3589,18 +3593,35 @@ impl NetworkModel {
     pub(crate) fn record_direct_mismatch(
         &mut self,
         buffer_id: BufferId,
-        mismatch: &papo::PeerPinMismatch,
+        reason: PinMismatch,
+        current: PeerPin,
     ) -> Option<EngineToUi> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         buffer.direct_mismatch = Some(DirectMismatch {
-            reason: mismatch.reason(),
-            current: mismatch.current_key().clone(),
+            reason,
+            current,
             deferred: false,
         });
         buffer.projection.direct_identity = direct_identity(buffer);
         Some(EngineToUi::BufferUpdated {
             buffer: buffer.projection.clone(),
         })
+    }
+
+    /// The pins of DMs whose peers gave their nick up stop vouching for its next holder.
+    pub(crate) fn note_peer_departures(&mut self, departed: &[papo::Nick]) {
+        for nick in departed {
+            let Some(buffer_id) = self.names.get(&NameKey::Direct(nick.clone())) else {
+                continue;
+            };
+            if let Some(pin) = self
+                .buffers
+                .get_mut(buffer_id)
+                .and_then(|buffer| buffer.direct_pin.as_ref())
+            {
+                pin.holder_left();
+            }
+        }
     }
 
     pub(crate) fn defer_direct_identity(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
@@ -3623,36 +3644,12 @@ impl NetworkModel {
             .collect()
     }
 
-    pub(crate) fn direct_trust_target(&self, buffer_id: BufferId) -> Option<papo::Nick> {
-        let buffer = self.buffers.get(&buffer_id)?;
-        buffer.direct_mismatch.as_ref()?;
-        buffer.direct_nick().cloned()
-    }
-
-    pub(crate) fn trust_direct_identity(
-        &mut self,
-        buffer_id: BufferId,
-        direct: papo::DirectRef,
-    ) -> Option<EngineToUi> {
+    /// The user accepts the identity that failed the pin, so it becomes the pin; one that proves
+    /// nothing leaves the peer unpinned until its next line.
+    pub(crate) fn trust_direct_identity(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let mismatch = buffer.direct_mismatch.take()?;
-        let current = direct.peer_key().clone();
-        buffer.direct_pin = match mismatch.current.check(&current) {
-            papo::PeerKeyCheck::Match => Some(current),
-            papo::PeerKeyCheck::Upgrade(upgraded) => Some(upgraded),
-            papo::PeerKeyCheck::Mismatch(reason) => {
-                buffer.direct_mismatch = Some(DirectMismatch {
-                    reason,
-                    current,
-                    deferred: false,
-                });
-                buffer.projection.direct_identity = direct_identity(buffer);
-                return Some(EngineToUi::BufferUpdated {
-                    buffer: buffer.projection.clone(),
-                });
-            }
-        };
-        buffer.direct = Some(DirectAvailability::Guarded(direct));
+        buffer.direct_pin = mismatch.current.is_known().then_some(mismatch.current);
         buffer.projection.direct_identity = direct_identity(buffer);
         Some(EngineToUi::BufferUpdated {
             buffer: buffer.projection.clone(),
@@ -3745,27 +3742,25 @@ impl NetworkModel {
     }
 
     #[cfg(test)]
+    #[cfg(test)]
     pub(crate) fn apply_server_read_marker(
         &mut self,
-        conversation: &papo::Conversation,
+        key: &NameKey,
         read_until: Option<SystemTime>,
     ) -> Vec<EngineToUi> {
-        self.apply_server_read_marker_with_advance(conversation, read_until)
+        self.apply_server_read_marker_with_advance(key, read_until)
             .0
     }
 
     pub(crate) fn apply_server_read_marker_with_advance(
         &mut self,
-        conversation: &papo::Conversation,
+        key: &NameKey,
         read_until: Option<SystemTime>,
     ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
         let Some(time) = read_until else {
             return (Vec::new(), None);
         };
-        let Some(key) = NameKey::from_conversation(conversation) else {
-            return (Vec::new(), None);
-        };
-        let Some(buffer_id) = self.names.get(&key).copied() else {
+        let Some(buffer_id) = self.names.get(key).copied() else {
             return (Vec::new(), None);
         };
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
@@ -4164,7 +4159,10 @@ impl NetworkModel {
             kind: incoming.kind.clone(),
             bot: incoming.bot,
             authorship: incoming.authorship,
-            nick_color_index: nick_color_index(state.casemapping(), &incoming.author),
+            nick_color_index: nick_color_index(
+                crate::name_key::casemapping(state),
+                &incoming.author,
+            ),
             highlighted: incoming.authorship != MessageAuthorship::Own
                 && matches_highlight_rules(&incoming.text, state),
             mentions: None,
@@ -4645,7 +4643,7 @@ fn advance_incoming_cursor(
         set_history_state(
             buffer,
             HistoryState::Ready {
-                oldest: Some(cursor.reference()),
+                oldest: cursor.reference(),
                 at_start: false,
             },
         );
@@ -4695,11 +4693,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
         stubs: buffer.read_facts.stubs().to_vec(),
         redacted_stubs: buffer.read_facts.redacted().to_vec(),
         gap_until: buffer.read_facts.gap_until(),
-        peer_pin: buffer
-            .direct_pin
-            .as_ref()
-            .and_then(papo::PeerKey::as_verified_str)
-            .map(str::to_owned),
+        peer_pin: buffer.direct_pin.as_ref().and_then(PeerPin::stored),
         peer_bot: buffer.projection.peer_bot,
     })
 }
@@ -4921,22 +4915,22 @@ fn topic_card(channel: &papo::Channel) -> RecordBody {
     RecordBody::Line(LineEvent::TopicCard {
         topic: channel.topic().unwrap_or_default().to_owned(),
         setter: channel.topic_set_by().map(ToString::to_string),
-        set_at_ms: channel.topic_set_at().map(time_millis),
+        set_at_ms: channel.topic_set_at().map(papo::ServerTime::as_millis),
     })
 }
 
 fn source_actor(
     casemapping: papo::Casemapping,
-    source: &papo::Source,
-    authorship: papo::Authorship,
+    source: &papo::Actor,
+    authorship: papo::Party,
 ) -> Option<Actor> {
     match source {
-        papo::Source::User(_) => Some(Actor::User(person(
+        papo::Actor::User(_) => Some(Actor::User(person(
             casemapping,
             source.to_string(),
-            authorship == papo::Authorship::Own,
+            authorship == papo::Party::Me,
         ))),
-        papo::Source::Server(server) => Some(Actor::Server {
+        papo::Actor::Server(server) => Some(Actor::Server {
             name: server.to_string(),
         }),
         _ => None,
@@ -4951,15 +4945,15 @@ fn project_mode(
 ) -> ModeProjection {
     let added = change.action == papo::ModeAction::Add;
     let meaning = match (&change.arg, change.mode) {
-        (Some(papo::ModeArg::Member { nick, prefix, .. }), _) => ModeMeaning::Rank {
+        (Some(papo::ModeArg::Member { user, prefix, .. }), _) => ModeMeaning::Rank {
             rank: MemberRank {
                 mode: prefix.mode(),
                 symbol: prefix.symbol(),
             },
             member: person(
                 casemapping,
-                nick.to_string(),
-                event.about(change) == papo::Authorship::Own,
+                user.nick().to_string(),
+                event.subject_party(change) == papo::Party::Me,
             ),
         },
         (Some(papo::ModeArg::Mask(mask)), 'b') => ModeMeaning::Ban {
@@ -5003,15 +4997,15 @@ fn safe_raw_mode(change: &papo::ModeChange) -> String {
     };
     let mut raw = format!("{sign}{}", change.mode);
     let argument = match &change.arg {
-        Some(papo::ModeArg::Member { nick, .. }) => Some(nick.as_str()),
-        Some(papo::ModeArg::Mask(mask)) => Some(mask.as_str()),
-        Some(papo::ModeArg::Key(_)) => Some("*"),
-        Some(papo::ModeArg::Value(value)) => Some(value.as_str()),
+        Some(papo::ModeArg::Member { user, .. }) => Some(user.nick().to_string()),
+        Some(papo::ModeArg::Mask(mask)) => Some(mask.to_string()),
+        Some(papo::ModeArg::Key(_)) => Some("*".to_owned()),
+        Some(papo::ModeArg::Value(value)) => Some(value.clone()),
         _ => None,
     };
     if let Some(argument) = argument {
         raw.push(' ');
-        raw.push_str(argument);
+        raw.push_str(&argument);
     }
     raw
 }
@@ -5269,24 +5263,14 @@ fn direct_identity(buffer: &BufferState) -> Option<DirectIdentityState> {
     }
     if let Some(mismatch) = &buffer.direct_mismatch {
         return Some(match (mismatch.reason, mismatch.deferred) {
-            (papo::PeerKeyMismatch::DifferentAccount, false) => {
-                DirectIdentityState::DifferentAccount
-            }
-            (papo::PeerKeyMismatch::CannotVerify, false) => DirectIdentityState::CannotVerify,
-            (papo::PeerKeyMismatch::DifferentAccount, true) => {
-                DirectIdentityState::DeferredDifferentAccount
-            }
-            (papo::PeerKeyMismatch::CannotVerify, true) => {
-                DirectIdentityState::DeferredCannotVerify
-            }
+            (PinMismatch::DifferentAccount, false) => DirectIdentityState::DifferentAccount,
+            (PinMismatch::CannotVerify, false) => DirectIdentityState::CannotVerify,
+            (PinMismatch::DifferentAccount, true) => DirectIdentityState::DeferredDifferentAccount,
+            (PinMismatch::CannotVerify, true) => DirectIdentityState::DeferredCannotVerify,
         });
     }
     Some(
-        if buffer
-            .direct_pin
-            .as_ref()
-            .is_some_and(papo::PeerKey::is_verified)
-        {
+        if buffer.direct_pin.as_ref().is_some_and(PeerPin::is_verified) {
             DirectIdentityState::Verified
         } else {
             DirectIdentityState::Unverified
@@ -5299,7 +5283,7 @@ struct Incoming {
     destination: IncomingDestination,
     direct: Option<DirectAvailability>,
     direct_key: Option<DirectKey>,
-    peer_key: Option<papo::PeerKey>,
+    peer_key: Option<PeerPin>,
     legacy_account_key: Option<String>,
     provisional_identity: Option<ProvisionalIdentity>,
     author: String,
@@ -5320,15 +5304,15 @@ struct IncomingResult {
     message: Option<(BufferId, MessageId)>,
 }
 
-fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
+fn map_authorship(authorship: papo::Party) -> MessageAuthorship {
     match authorship {
-        papo::Authorship::Own => MessageAuthorship::Own,
-        papo::Authorship::Other => MessageAuthorship::Other,
+        papo::Party::Me => MessageAuthorship::Own,
+        papo::Party::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
 }
 
-fn server_notice_source(actor: &papo::Source) -> NoticeSource {
+fn server_notice_source(actor: &papo::Actor) -> NoticeSource {
     if actor.user().is_some() {
         NoticeSource::Service
     } else {
@@ -5339,31 +5323,52 @@ fn server_notice_source(actor: &papo::Source) -> NoticeSource {
 #[cfg(test)]
 mod notice_source_tests {
     use super::*;
+    use crate::test_events::NextEvent;
 
-    #[test]
-    fn classifies_typed_server_notice_sources() {
-        let service = papo::Source::from_proto(
-            papo_proto::Source::__user("NickServ", Some("service"), Some("services.test")),
-            papo::Casemapping::Ascii,
-        );
-        let server = papo::Source::from_proto(
-            papo_proto::Source::Server("irc.example.test"),
-            papo::Casemapping::Ascii,
-        );
+    async fn server_notice_actor(
+        wire: &mut papo_testing::Wire,
+        events: &mut papo::Events,
+        line: &str,
+    ) -> papo::Actor {
+        wire.server(line).await;
+        loop {
+            if let Some(papo::Event::ServerNotice(notice)) = events.next_event().await {
+                return notice.actor;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn classifies_typed_server_notice_sources() {
+        let (_client, mut events, mut wire) =
+            papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let service = server_notice_actor(
+            &mut wire,
+            &mut events,
+            ":Global!service@services.test NOTICE $* :network maintenance",
+        )
+        .await;
+        let server = server_notice_actor(
+            &mut wire,
+            &mut events,
+            ":offline.test NOTICE weblounge :hello",
+        )
+        .await;
 
         assert_eq!(server_notice_source(&service), NoticeSource::Service);
         assert_eq!(server_notice_source(&server), NoticeSource::Server);
     }
 }
 
-fn reaction_actor_key(actor: &papo::UserSource) -> String {
+fn reaction_actor_key(actor: &papo::UserRef) -> String {
     // History can omit an account tag that was present live. Existing facts retain the
     // nick-at-event across later nick changes; a subsequent reaction uses the new nick.
-    nick_reaction_actor_key(actor.nick())
+    nick_reaction_actor_key(actor.nick().key())
 }
 
-fn nick_reaction_actor_key(nick: &papo::Nick) -> String {
-    format!("nick:{}", nick.key())
+fn nick_reaction_actor_key(folded_nick: &str) -> String {
+    format!("nick:{folded_nick}")
 }
 
 fn nonempty_reactions(
@@ -5373,7 +5378,11 @@ fn nonempty_reactions(
 }
 
 fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
-    contains_nick_token(text, state.nick().as_str(), state.casemapping())
+    contains_nick_token(
+        text,
+        state.nick().as_str(),
+        crate::name_key::casemapping(state),
+    )
 }
 
 fn contains_nick_token(text: &str, nick: &str, casemapping: papo::Casemapping) -> bool {
@@ -5494,6 +5503,121 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
     }
 }
 
+enum StoredName {
+    Channel(String),
+    Direct(String),
+}
+
+/// The network's own buffer, where server lines and the user's own state changes land.
+fn server_buffer(
+    id: BufferId,
+    network_id: NetworkId,
+    label: &str,
+    casemapping: papo::Casemapping,
+) -> BufferState {
+    BufferState {
+        projection: BufferProjection {
+            id,
+            network_id,
+            kind: BufferKind::Server,
+            sync_state: BufferSyncState::Synced,
+            channel_status: None,
+            available: None,
+            title: label.to_owned(),
+            nick_color_index: None,
+            direct_identity: None,
+            peer_presence: None,
+            peer_presence_since_ms: None,
+            peer_bot: false,
+            draft_key: draft_key(label, label, casemapping),
+            topic: None,
+            member_count: None,
+            unread: 0,
+            mentions: 0,
+            read_at_ms: None,
+            last_message: None,
+            last_activity_ms: None,
+            preview: None,
+        },
+        restored_from_snapshot: false,
+        provisional_activity_ms: None,
+        provisional_preview: None,
+        key: None,
+        direct_key: None,
+        timeline: Vec::new(),
+        remembered_nicks: HashSet::new(),
+        chat_metadata: HashMap::new(),
+        system_server_times: HashMap::new(),
+        topic_card: None,
+        system_dedup: HashMap::new(),
+        emitted_timeline: Vec::new(),
+        direct: None,
+        direct_pin: None,
+        direct_mismatch: None,
+        read_facts: ReadFacts::default(),
+        history: HistoryState::Ready {
+            oldest: None,
+            at_start: true,
+        },
+        refresh_from_ms: None,
+        pending_lag_gap: None,
+        pending_reconnect_gap: None,
+        gap_fill: GapFill::Idle,
+        newest: None,
+        pushed_history_pending: false,
+        pushed_history_retry_available: false,
+    }
+}
+
+/// Whether a line's target is a channel, including one behind a status prefix such as `@#ops`.
+fn addresses_channel(state: &papo::State, target: &str) -> bool {
+    let statusmsg = state.isupport().statusmsg().unwrap_or_default();
+    state
+        .isupport()
+        .is_channel(target.trim_start_matches(|sign| statusmsg.contains(sign)))
+}
+
+/// A pushed message's time is the server stamp the push relay copied from the line.
+fn pushed_time_millis(time: &str) -> Option<i64> {
+    papo::ServerTime::from_stored(time)
+        .ok()
+        .map(papo::ServerTime::as_millis)
+}
+
+type ConfirmedLines<'a> = (
+    Vec<(&'a papo::MessageId, &'a str)>,
+    Option<papo::ServerTime>,
+);
+
+/// The id and text of every line of a send, with the first stamp among them; `None` unless the
+/// server confirmed every line.
+fn confirmed_lines(sent: &papo::SendOutcome) -> Option<ConfirmedLines<'_>> {
+    let mut time = None;
+    let mut lines = Vec::with_capacity(sent.lines.len());
+    for line in &sent.lines {
+        let papo::Confirmation::Confirmed {
+            msgid, server_time, ..
+        } = &line.confirmation
+        else {
+            return None;
+        };
+        time = time.or(*server_time);
+        lines.push((msgid, line.text.as_str()));
+    }
+    (!lines.is_empty()).then_some((lines, time))
+}
+
+/// The server-clock value of a time the model kept from a server stamp; `None` only for a time
+/// outside papo's server-time range, which no server stamp produces.
+pub(crate) fn server_time(time: SystemTime) -> Option<papo::ServerTime> {
+    papo::ServerTime::from_stored_millis(time_millis(time)).ok()
+}
+
+/// When an event happened: the server's stamp when it sent one, else when the line arrived.
+pub(crate) fn event_millis(server_time: Option<papo::ServerTime>, received_at: SystemTime) -> i64 {
+    server_time.map_or_else(|| time_millis(received_at), papo::ServerTime::as_millis)
+}
+
 fn merge_span(current: Option<(i64, i64)>, next: (i64, i64)) -> (i64, i64) {
     let (next_from, next_to) = (next.0.min(next.1), next.0.max(next.1));
     current.map_or((next_from, next_to), |(from_ms, to_ms)| {
@@ -5503,6 +5627,7 @@ fn merge_span(current: Option<(i64, i64)>, next: (i64, i64)) -> (i64, i64) {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_events::NextEvent;
     use std::{
         sync::Arc,
         time::{Duration, SystemTime, UNIX_EPOCH},
@@ -5532,10 +5657,16 @@ mod tests {
         },
     };
 
+    fn secure_model() -> NetworkModel {
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.set_tls(true);
+        model
+    }
+
     fn secure_wire_builder() -> papo::Builder {
         // The in-memory connector never performs a handshake, so platform roots only add a host dependency.
         papo::Client::builder("ircs://verified.example", "weblounge")
-            .tls_ca_pem(include_bytes!("../tests/data/secure-wire-ca.pem"))
+            .tls_only_ca_pem(include_bytes!("../tests/data/secure-wire-ca.pem"))
     }
 
     async fn next_mode(events: &mut papo::Events) -> papo::event::ModeChanged {
@@ -5551,7 +5682,7 @@ mod tests {
         pick: impl Fn(papo::Event) -> Option<T>,
     ) -> T {
         loop {
-            if let Some(picked) = events.next().await.and_then(&pick) {
+            if let Some(picked) = events.next_event().await.and_then(&pick) {
                 return picked;
             }
         }
@@ -5569,8 +5700,8 @@ mod tests {
             matches!(event, papo::Event::Joined(_)).then_some(())
         })
         .await;
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        let mut model = secure_model();
+        model.sync_channels(&client.snapshot());
         model.take_timeline_changes(false);
         (client, events, wire, model)
     }
@@ -5731,7 +5862,7 @@ mod tests {
             | HistoryFetch::After { target, .. } => target,
         };
         let completion = model
-            .finish_history(&target.conversation(), None, None, None, 0, true)
+            .finish_history(&target.name_key(), None, None, None, 0, true)
             .expect("history finishes");
         assert_eq!(completion.buffer_id, buffer_id);
         assert_eq!(completion.at_start, Some(true));
@@ -5787,12 +5918,24 @@ mod tests {
         );
     }
 
+    pub(super) fn stamp(millis: i64) -> papo::ServerTime {
+        papo::ServerTime::from_stored_millis(millis).expect("test stamps are in range")
+    }
+
     pub(super) fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
-        papo_testing::channel(state.casemapping(), name)
+        papo_testing::channel(crate::name_key::casemapping(state), name)
+    }
+
+    fn client_nick(client: &papo::Client, name: &str) -> papo::Nick {
+        client
+            .snapshot()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .nick(name)
     }
 
     fn nick_name(state: &papo::State, name: &str) -> papo::Nick {
-        papo_testing::nick(state.casemapping(), name)
+        papo_testing::nick(crate::name_key::casemapping(state), name)
     }
 
     fn incoming(
@@ -6022,7 +6165,7 @@ mod tests {
                 unreachable!("ready conversations fetch after their newest message")
             };
             model
-                .finish_history(&target.conversation(), None, None, None, 0, true)
+                .finish_history(&target.name_key(), None, None, None, 0, true)
                 .expect("catch-up reaches the end");
         }
 
@@ -6043,17 +6186,17 @@ mod tests {
     #[test]
     fn covering_history_clears_the_gap_badge_and_restores_the_exact_count() {
         let (mut model, state, _channel_id, direct_id) = model_with_gap_badges();
-        let conversation = papo::Conversation::Private(nick_name(&state, "alice"));
+        let conversation = NameKey::Direct(nick_name(&state, "alice"));
         model.record_gap(direct_id, 15, 35).expect("gap");
         assert_eq!(model.buffers[&direct_id].projection.unread, 100);
         model.buffers.get_mut(&direct_id).expect("direct").history = HistoryState::LoadingOlder {
-            oldest: papo::HistoryReference::from(system_time_from_millis(40)),
+            oldest: papo::HistoryReference::from(stamp(40)),
         };
 
         model
             .finish_history(
                 &conversation,
-                Some(papo::HistoryReference::from(system_time_from_millis(10))),
+                Some(papo::HistoryReference::from(stamp(10))),
                 Some(10),
                 Some(HistoryCursor::new(Some("covered-gap".into()), 40)),
                 2,
@@ -6135,7 +6278,7 @@ mod tests {
         .expect("beta snapshot migrates");
         let (mut model, state) = model(10);
 
-        model.restore_chat_list(restored);
+        model.restore_cached_chat_list(restored);
 
         let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
         let buffer = &model.buffers[&buffer_id];
@@ -6146,7 +6289,7 @@ mod tests {
     #[test]
     fn covered_lag_refetch_leaves_badges_exact() {
         let (mut model, state, channel_id, direct_id) = model_with_gap_badges();
-        let conversation = papo::Conversation::Channel(channel_name(&state, "#room"));
+        let conversation = NameKey::Channel(channel_name(&state, "#room"));
 
         model.note_lagged_gap(&conversation, 100, 150);
         model.finish_lagged_gap(&conversation, Some(100));
@@ -6222,7 +6365,7 @@ mod tests {
     fn lagged_refetch_records_only_an_unreached_span() {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
-        let conversation = papo::Conversation::Channel(channel.clone());
+        let conversation = NameKey::Channel(channel.clone());
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel), None, None);
 
         model.note_lagged_gap(&conversation, 100, 150);
@@ -6245,7 +6388,7 @@ mod tests {
     fn failed_catchup_records_and_an_older_covering_page_clears_the_gap() {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
-        let conversation = papo::Conversation::Channel(channel.clone());
+        let conversation = NameKey::Channel(channel.clone());
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
         model.begin_disconnect_gap(100);
         model.finish_disconnect_gap(200, true);
@@ -6260,12 +6403,12 @@ mod tests {
         );
 
         model.buffers.get_mut(&buffer_id).expect("channel").history = HistoryState::LoadingOlder {
-            oldest: papo::HistoryReference::from(system_time_from_millis(200)),
+            oldest: papo::HistoryReference::from(stamp(200)),
         };
         model
             .finish_history(
                 &conversation,
-                Some(papo::HistoryReference::from(system_time_from_millis(90))),
+                Some(papo::HistoryReference::from(stamp(90))),
                 Some(90),
                 Some(HistoryCursor::new(Some("cover".into()), 210)),
                 2,
@@ -6313,10 +6456,8 @@ mod tests {
         };
         model
             .finish_history(
-                &papo::Conversation::Channel(channel),
-                Some(papo::HistoryReference::from(system_time_from_millis(
-                    oldest,
-                ))),
+                &NameKey::Channel(channel),
+                Some(papo::HistoryReference::from(stamp(oldest))),
                 Some(oldest),
                 Some(HistoryCursor::new(None, newest)),
                 OLDER_PAGE_LINES,
@@ -6536,7 +6677,10 @@ mod tests {
         let nick = nick_name(&state, "alice");
         let live = MessageBuilder::new("#room", "live")
             .actor(nick.clone(), None, None)
-            .account(papo_testing::account(state.casemapping(), "alice"))
+            .account(papo_testing::account(
+                crate::name_key::casemapping(&state),
+                "alice",
+            ))
             .build();
         let history = MessageBuilder::new("#room", "history")
             .actor(nick, None, None)
@@ -6776,8 +6920,8 @@ mod tests {
     async fn pushed_message_reuses_the_running_clients_name_origin() {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["message-tags", "server-time"]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        let state = client.state();
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
+        let state = client.snapshot();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 10);
         let channel = state
             .name_rules()
@@ -6832,7 +6976,7 @@ mod tests {
             .expect("initial history starts");
         model
             .finish_history(
-                &papo::Conversation::Channel(channel.clone()),
+                &NameKey::Channel(channel.clone()),
                 Some(papo::HistoryReference::from(papo::MessageId::from(
                     "oldest",
                 ))),
@@ -6929,19 +7073,19 @@ mod tests {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["account-tag", "message-tags", "server-time"])
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.restore_pushed_messages(vec![pushed_from_louro()], &client.state());
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
+        let mut model = secure_model();
+        model.restore_pushed_messages(vec![pushed_from_louro()], &client.snapshot());
         take_changed_messages(&mut model);
 
         wire.server("@account=mallory;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :louro-pi!l@example.test PRIVMSG weblounge :push test from louro-pi")
             .await;
         let history = loop {
-            if let Some(papo::Event::Message(message)) = events.next().await {
+            if let Some(papo::Event::Message(message)) = events.next_event().await {
                 break message;
             }
         };
-        model.receive(&history, true, &client.state(), None);
+        model.receive(&history, true, &client.snapshot(), None);
 
         let updated = take_changed_messages(&mut model);
         assert_eq!(
@@ -6957,20 +7101,20 @@ mod tests {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["account-tag", "message-tags", "server-time"])
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.restore_pushed_messages(vec![pushed_from_louro()], &client.state());
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
+        let mut model = secure_model();
+        model.restore_pushed_messages(vec![pushed_from_louro()], &client.snapshot());
         let restored = take_changed_messages(&mut model);
         assert!(restored[0].1.unverified_sender.is_none());
 
         wire.server("@account=louro;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :louro-pi!l@example.test PRIVMSG weblounge :push test from louro-pi")
             .await;
         let history = loop {
-            if let Some(papo::Event::Message(message)) = events.next().await {
+            if let Some(papo::Event::Message(message)) = events.next_event().await {
                 break message;
             }
         };
-        model.receive(&history, true, &client.state(), None);
+        model.receive(&history, true, &client.snapshot(), None);
         let updated = take_changed_messages(&mut model);
         assert!(updated.first().is_some_and(|(_, message)| {
             message.author == "louro-pi" && message.unverified_sender.is_none()
@@ -7056,7 +7200,7 @@ mod tests {
         let persisted = model.chat_list_snapshot("network".into());
         assert!(persisted.rows[0].peer_pin.is_some());
         let mut restored = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        restored.restore_chat_list(persisted);
+        restored.restore_cached_chat_list(persisted);
         assert!(restored.buffers.values().any(|buffer| {
             buffer.projection.direct_identity == Some(crate::DirectIdentityState::Verified)
         }));
@@ -7071,7 +7215,9 @@ mod tests {
         Incoming {
             destination: IncomingDestination::Conversation(NameKey::Direct(nick_name(state, nick))),
             direct: None,
-            direct_key: Some(DirectKey(state.casemapping().fold(nick).into_owned())),
+            direct_key: Some(DirectKey(
+                crate::name_key::casemapping(state).fold(nick).into_owned(),
+            )),
             peer_key: None,
             legacy_account_key: None,
             provisional_identity: None,
@@ -7272,7 +7418,7 @@ mod tests {
         let decoded = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
         let (mut restored, _) = model(10);
 
-        restored.restore_chat_list(decoded);
+        restored.restore_cached_chat_list(decoded);
 
         let rows = restored
             .ordered_buffers()
@@ -7308,7 +7454,7 @@ mod tests {
         let decoded = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
         let (mut restored, _) = model(10);
 
-        restored.restore_chat_list(decoded);
+        restored.restore_cached_chat_list(decoded);
 
         let bots = restored
             .ordered_buffers()
@@ -7341,7 +7487,7 @@ mod tests {
         )
         .expect("schema 5 fixture migrates");
         let (mut model, state) = model(10);
-        model.restore_chat_list(snapshot);
+        model.restore_cached_chat_list(snapshot);
         let nick = nick_name(&state, "alice");
 
         let (unchanged, _, _) =
@@ -7354,8 +7500,7 @@ mod tests {
         assert!(matches!(
             changed,
             Some(HistoryFetch::After { ref newest, .. })
-                if newest.reference()
-                    == papo::HistoryReference::from(UNIX_EPOCH + Duration::from_millis(100))
+                if newest.reference() == Some(papo::HistoryReference::from(stamp(100)))
         ));
         for time in [200, 300, 400] {
             model.receive_incoming(
@@ -7365,7 +7510,7 @@ mod tests {
         }
         model
             .finish_history(
-                &papo::Conversation::Private(nick.clone()),
+                &NameKey::Direct(nick.clone()),
                 None,
                 None,
                 Some(HistoryCursor::new(Some("alice-400".into()), 400)),
@@ -7407,7 +7552,7 @@ mod tests {
                 peer_bot: false,
             }],
         );
-        model.restore_chat_list(restored.clone());
+        model.restore_cached_chat_list(restored.clone());
         let nick = nick_name(&state, "alice");
         _ = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(100));
         let buffer_id = model.names[&NameKey::Direct(nick)];
@@ -7443,7 +7588,7 @@ mod tests {
     #[test]
     fn unchanged_conversation_restores_its_unread_facts_without_a_fetch() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7479,7 +7624,7 @@ mod tests {
     #[test]
     fn ready_direct_with_stubs_still_needs_its_server_marker() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7516,7 +7661,7 @@ mod tests {
     #[test]
     fn newer_server_marker_prunes_restored_unread_facts() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7540,7 +7685,7 @@ mod tests {
             }],
         ));
         let nick = nick_name(&state, "alice");
-        let conversation = papo::Conversation::Private(nick.clone());
+        let conversation = NameKey::Direct(nick.clone());
 
         model
             .apply_server_read_marker(&conversation, Some(UNIX_EPOCH + Duration::from_millis(299)));
@@ -7552,7 +7697,7 @@ mod tests {
     #[test]
     fn catching_up_a_read_cached_direct_leaves_its_earlier_history_reachable() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7585,7 +7730,7 @@ mod tests {
         let arrived_reference = papo::HistoryReference::from(papo::MessageId::from("arrived"));
         let completion = model
             .finish_history(
-                &papo::Conversation::Private(nick.clone()),
+                &NameKey::Direct(nick.clone()),
                 Some(arrived_reference.clone()),
                 Some(200),
                 None,
@@ -7618,7 +7763,7 @@ mod tests {
 
         let completion = model
             .finish_history(
-                &papo::Conversation::Private(nick),
+                &NameKey::Direct(nick),
                 Some(papo::HistoryReference::from(papo::MessageId::from(
                     "caught-up",
                 ))),
@@ -7639,7 +7784,7 @@ mod tests {
     #[test]
     fn targets_refreshes_a_changed_cached_direct_after_its_newest_position() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7666,9 +7811,7 @@ mod tests {
         assert!(matches!(
             fetch,
             Some(HistoryFetch::After { newest, .. })
-                if newest.reference() == papo::HistoryReference::from(
-                    UNIX_EPOCH + Duration::from_millis(100)
-                )
+                if newest.reference() == Some(papo::HistoryReference::from(stamp(100)))
         ));
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
         assert!(matches!(buffer.history, HistoryState::Refreshing { .. }));
@@ -7678,7 +7821,7 @@ mod tests {
     #[test]
     fn target_sync_boundary_waits_for_changed_history() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(
+        model.restore_cached_chat_list(
             ChatListSnapshot::new(
                 "network".into(),
                 vec![SnapshotRow {
@@ -7730,7 +7873,7 @@ mod tests {
             panic!("changed cached channel uses AFTER")
         };
         model
-            .finish_history(&target.conversation(), None, None, None, 1, true)
+            .finish_history(&target.name_key(), None, None, None, 1, true)
             .expect("delta finishes");
         assert_eq!(
             model.cursor(),
@@ -7762,7 +7905,7 @@ mod tests {
     #[test]
     fn target_failure_falls_back_to_cached_latest_without_stranding_the_list() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -7815,7 +7958,7 @@ mod tests {
     #[test]
     fn targets_loads_latest_for_a_changed_cached_direct_without_a_cursor() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -7848,7 +7991,7 @@ mod tests {
     #[test]
     fn targets_loads_latest_for_a_changed_cached_channel_without_a_cursor() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -7882,7 +8025,7 @@ mod tests {
     fn cached_channel_latest_preserves_the_join_read_marker() {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -7937,14 +8080,7 @@ mod tests {
             );
         }
         model
-            .finish_history(
-                &papo::Conversation::Channel(channel),
-                None,
-                None,
-                None,
-                3,
-                true,
-            )
+            .finish_history(&NameKey::Channel(channel), None, None, None, 3, true)
             .expect("latest history finishes");
 
         let buffer = &model.buffers[&buffer_id];
@@ -8000,7 +8136,7 @@ mod tests {
     #[test]
     fn a_read_mark_past_the_cached_newest_line_catches_up_from_that_line() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![cached_direct_row(100, 250)],
         ));
@@ -8011,15 +8147,14 @@ mod tests {
         assert!(matches!(
             fetch,
             Some(HistoryFetch::After { newest, .. })
-                if newest.reference()
-                    == papo::HistoryReference::from(papo::MessageId::from("cached-newest"))
+                if newest.reference() == Some(papo::HistoryReference::from(papo::MessageId::from("cached-newest")))
         ));
     }
 
     #[test]
     fn a_read_mark_at_the_cached_newest_line_catches_up_from_the_mark() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![cached_direct_row(100, 100)],
         ));
@@ -8030,16 +8165,14 @@ mod tests {
         assert!(matches!(
             fetch,
             Some(HistoryFetch::After { newest, .. })
-                if newest.reference() == papo::HistoryReference::from(
-                    UNIX_EPOCH + Duration::from_millis(100)
-                )
+                if newest.reference() == Some(papo::HistoryReference::from(stamp(100)))
         ));
     }
 
     #[test]
     fn changed_cached_direct_fetches_the_newest_page_after_its_read_position() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -8069,9 +8202,7 @@ mod tests {
         assert!(matches!(
             fetch,
             Some(HistoryFetch::After { newest, .. })
-                if newest.reference() == papo::HistoryReference::from(
-                    UNIX_EPOCH + Duration::from_millis(50)
-                )
+                if newest.reference() == Some(papo::HistoryReference::from(stamp(50)))
         ));
         assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
 
@@ -8081,14 +8212,7 @@ mod tests {
             model.receive_incoming(history, &state);
         }
         model
-            .finish_history(
-                &papo::Conversation::Private(nick),
-                None,
-                Some(299),
-                None,
-                2,
-                false,
-            )
+            .finish_history(&NameKey::Direct(nick), None, Some(299), None, 2, false)
             .expect("capped refresh finishes");
         assert_eq!(
             model.buffers[&buffer_id].read_facts.gap_until(),
@@ -8111,7 +8235,7 @@ mod tests {
     #[test]
     fn capped_refresh_shows_the_newest_page_preview_and_target_activity() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -8152,7 +8276,7 @@ mod tests {
         );
         model
             .finish_history(
-                &papo::Conversation::Channel(channel.clone()),
+                &NameKey::Channel(channel.clone()),
                 None,
                 None,
                 None,
@@ -8194,8 +8318,7 @@ mod tests {
         assert!(matches!(
             fetch,
             Some(HistoryFetch::After { newest, .. })
-                if newest.reference()
-                    == papo::HistoryReference::from(papo::MessageId::from("alice-100"))
+                if newest.reference() == Some(papo::HistoryReference::from(papo::MessageId::from("alice-100")))
         ));
         assert!(matches!(
             model.buffers[&buffer_id].history,
@@ -8206,14 +8329,7 @@ mod tests {
         history.origin = TimelineOrigin::History;
         model.receive_incoming(history, &state);
         model
-            .finish_history(
-                &papo::Conversation::Private(nick),
-                None,
-                None,
-                None,
-                1,
-                true,
-            )
+            .finish_history(&NameKey::Direct(nick), None, None, None, 1, true)
             .expect("catch-up finishes");
 
         assert_eq!(
@@ -8629,15 +8745,16 @@ mod tests {
             _ => None,
         })
         .await;
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         model.anchor_topic_card(&joined);
         let synced = next_event(events, |event| match event {
             papo::Event::ChannelSynced(synced) => Some(synced),
             _ => None,
         })
         .await;
-        let state = client.state();
-        let channel = state.channel(&synced.channel).expect("synced channel");
+        let state = client.snapshot();
+        let channel =
+            crate::name_key::known_channel(&state, &synced.channel).expect("synced channel");
         model.show_pending_topic_card(channel);
         take_changed_items(model)
             .into_iter()
@@ -8658,8 +8775,8 @@ mod tests {
             matches!(event, papo::Event::Connected(_)).then_some(())
         })
         .await;
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.rebuild_name_keys(&client.state());
+        let mut model = secure_model();
+        model.rebuild_name_keys(&client.snapshot());
         (client, events, wire, model)
     }
 
@@ -8692,7 +8809,7 @@ mod tests {
             .find(|record| matches!(record.body, RecordBody::Line(_)))
             .expect("card record");
         assert_eq!(card.order.primary_ms(), 1_793_700_000_000);
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         assert!(take_changed_items(&mut model).is_empty());
     }
 
@@ -8700,7 +8817,7 @@ mod tests {
     async fn a_join_into_an_existing_buffer_shows_no_topic_card() {
         let (client, mut events, mut wire, mut model) = registered().await;
         let room = client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registered test client has name rules")
             .channel("#room");
@@ -8739,7 +8856,7 @@ mod tests {
     async fn a_requested_join_into_a_restored_buffer_shows_the_topic_card() {
         let (client, mut events, mut wire, mut model) = registered().await;
         let room = client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registered test client has name rules")
             .channel("#room");
@@ -8797,7 +8914,7 @@ mod tests {
             _ => None,
         })
         .await;
-        model.sync_channels(&client.state());
+        model.sync_channels(&client.snapshot());
         model.anchor_topic_card(&joined);
         model.set_connection(
             NetworkConnectionState::Reconnecting {
@@ -9149,7 +9266,7 @@ mod tests {
             ),
             &state,
         );
-        let conversation = papo::Conversation::Channel(channel_name(&state, "#room"));
+        let conversation = NameKey::Channel(channel_name(&state, "#room"));
 
         let (_, advance) = model.apply_server_read_marker_with_advance(
             &conversation,
@@ -9186,8 +9303,8 @@ mod tests {
             .expect("encode snapshot");
         let snapshot = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
         let (mut restored, restored_state) = model(10);
-        restored.restore_chat_list(snapshot);
-        let conversation = papo::Conversation::Channel(channel_name(&restored_state, "#room"));
+        restored.restore_cached_chat_list(snapshot);
+        let conversation = NameKey::Channel(channel_name(&restored_state, "#room"));
 
         restored
             .apply_server_read_marker(&conversation, Some(system_time_from_millis(pushed_time)));
@@ -9326,7 +9443,7 @@ mod tests {
 
         let snapshot = live.chat_list_snapshot("network".into());
         let (mut relaunched, _) = model(2);
-        relaunched.restore_chat_list(snapshot);
+        relaunched.restore_cached_chat_list(snapshot);
         let restored = relaunched
             .buffers
             .values()
@@ -9354,7 +9471,7 @@ mod tests {
         );
         let snapshot = live.chat_list_snapshot("network".into());
         let (mut relaunched, _) = model(10);
-        relaunched.restore_chat_list(snapshot);
+        relaunched.restore_cached_chat_list(snapshot);
 
         relaunched.receive_incoming(
             incoming(
@@ -9607,7 +9724,10 @@ mod tests {
 
         assert_eq!(
             buffer.nick_color_index,
-            Some(nick_color_index(state.casemapping(), "Alice["))
+            Some(nick_color_index(
+                crate::name_key::casemapping(&state),
+                "Alice["
+            ))
         );
     }
 
@@ -9633,19 +9753,20 @@ mod tests {
             "message-tags",
         ])
         .await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room * :WebLounge")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #room * :Alice").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
 
-        let before_account = client.direct("alice").await.expect("shared user is direct");
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let alice = client_nick(&client, "alice");
+        let before_account = super::DirectPeer::resolve(&client, &alice);
+        let mut model = secure_model();
         let (buffer_id, _) = model.open_direct(
-            before_account.nick(),
-            super::DirectAvailability::Guarded(before_account.clone()),
-            &client.state(),
+            before_account.nick().clone(),
+            super::DirectAvailability::Guarded(before_account),
+            &client.snapshot(),
         );
         assert_eq!(
             model.buffers[&buffer_id].projection.direct_identity,
@@ -9658,12 +9779,12 @@ mod tests {
 
         wire.server(":alice!a@host ACCOUNT alice-account").await;
         let account_changed = loop {
-            if let Some(papo::Event::AccountChanged(changed)) = events.next().await {
+            if let Some(papo::Event::AccountChanged(changed)) = events.next_event().await {
                 break changed;
             }
         };
         let identity_events =
-            model.update_direct_account(account_changed.actor.nick(), &account_changed.new);
+            model.update_direct_account(&account_changed.actor.nick(), &account_changed.account);
         assert_eq!(
             model.directs.get(&DirectKey("alice".into())),
             Some(&buffer_id)
@@ -9676,31 +9797,30 @@ mod tests {
         wire.server("@account=alice-account :alice!a@host PRIVMSG weblounge :hello after account")
             .await;
         let message = loop {
-            if let Some(papo::Event::Message(message)) = events.next().await {
+            if let Some(papo::Event::Message(message)) = events.next_event().await {
                 break message;
             }
         };
-        let _after_account = client
-            .direct_to(&message)
-            .await
-            .expect("private message proves its sender");
 
-        let received = model.receive(&message, false, &client.state(), None);
+        let received = model.receive(&message, false, &client.snapshot(), None);
         assert_verified_account_upgrade(&model, buffer_id, &nick_draft_key, read_at, &received);
 
         wire.server(":alice!a@host ACCOUNT replacement-account")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::AccountChanged(_))) {}
+        while !matches!(
+            events.next_event().await,
+            Some(papo::Event::AccountChanged(_))
+        ) {}
         wire.server(
             "@account=replacement-account :alice!a@host PRIVMSG weblounge :replacement sender",
         )
         .await;
         let replacement_message = loop {
-            if let Some(papo::Event::Message(message)) = events.next().await {
+            if let Some(papo::Event::Message(message)) = events.next_event().await {
                 break message;
             }
         };
-        model.receive(&replacement_message, false, &client.state(), None);
+        model.receive(&replacement_message, false, &client.snapshot(), None);
         assert_eq!(
             model.buffers[&buffer_id].projection.direct_identity,
             Some(crate::DirectIdentityState::DifferentAccount)
@@ -9713,15 +9833,7 @@ mod tests {
                 .and_then(|message| message.unverified_sender),
             Some(crate::UnverifiedSender::DifferentAccount)
         );
-        let replacement = client
-            .direct_to(&replacement_message)
-            .await
-            .expect("replacement direct opens");
-        assert!(
-            model
-                .trust_direct_identity(buffer_id, replacement.clone())
-                .is_some()
-        );
+        assert!(model.trust_direct_identity(buffer_id).is_some());
         assert_eq!(
             model.buffers[&buffer_id].projection.direct_identity,
             Some(crate::DirectIdentityState::Verified)
@@ -9732,27 +9844,27 @@ mod tests {
     async fn nick_change_routes_to_shared_channels_and_matching_direct() {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["extended-join"]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room * :WebLounge")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #room * :Alice").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":weblounge!u@host JOIN #other * :WebLounge")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #other * :Alice").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
-        let direct = client.direct("alice").await.expect("direct opens");
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
+        let direct = super::DirectPeer::resolve(&client, &client_nick(&client, "alice"));
+        let mut model = secure_model();
         let (old_buffer, _) = model.open_direct(
-            direct.nick(),
+            direct.nick().clone(),
             super::DirectAvailability::Guarded(direct),
-            &client.state(),
+            &client.snapshot(),
         );
         wire.server(":alice!a@host NICK alicia").await;
         let changed = loop {
-            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+            if let Some(papo::Event::NickChanged(changed)) = events.next_event().await {
                 break changed;
             }
         };
@@ -9761,11 +9873,11 @@ mod tests {
             .iter()
             .map(|channel| {
                 model
-                    .ensure_buffer(NameKey::Channel(channel.clone()), None, None)
+                    .ensure_buffer(NameKey::Channel(channel.name()), None, None)
                     .0
             })
             .collect::<Vec<_>>();
-        model.receive_nick_change(&changed);
+        model.receive_nick_change(&changed, &client.snapshot());
         let patches = model.take_timeline_changes(false);
         let destinations = patches
             .iter()
@@ -9797,20 +9909,20 @@ mod tests {
 
     #[tokio::test]
     async fn own_nick_change_routes_to_channels_and_server_only() {
-        let (_client, mut events, mut wire) = wire(secure_wire_builder());
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
+        let mut model = secure_model();
         wire.server(":weblounge!u@host NICK WebLounge").await;
         let changed = loop {
-            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+            if let Some(papo::Event::NickChanged(changed)) = events.next_event().await {
                 break changed;
             }
         };
-        model.ensure_buffer(NameKey::Channel(changed.channels[0].clone()), None, None);
-        model.receive_nick_change(&changed);
+        model.ensure_buffer(NameKey::Channel(changed.channels[0].name()), None, None);
+        model.receive_nick_change(&changed, &client.snapshot());
         let patches = model.take_timeline_changes(false);
 
         assert_eq!(patches.len(), 2);
@@ -9831,22 +9943,22 @@ mod tests {
 
     #[tokio::test]
     async fn nick_change_without_a_projected_shared_buffer_emits_nothing() {
-        let (_client, mut events, mut wire) = wire(secure_wire_builder());
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #room").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host NICK alicia").await;
         let changed = loop {
-            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+            if let Some(papo::Event::NickChanged(changed)) = events.next_event().await {
                 break changed;
             }
         };
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let mut model = secure_model();
 
-        model.receive_nick_change(&changed);
+        model.receive_nick_change(&changed, &client.snapshot());
 
         assert!(model.take_timeline_changes(false).is_empty());
     }
@@ -9855,18 +9967,17 @@ mod tests {
     async fn channel_modes_project_meanings_fold_and_never_expose_keys() {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(
             ":offline.test 005 weblounge PREFIX=(ohv)@%+ CHANMODES=qIbe,k,l,imnpst :supported",
         )
         .await;
-        let _ = events.next().await;
         for nick in ["weblounge", "alice", "bob"] {
             wire.server(format!(":{nick}!u@host JOIN #room")).await;
-            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+            while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         }
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        let mut model = secure_model();
+        model.sync_channels(&client.snapshot());
 
         for line in [
             ":mel!u@host MODE #room +ov alice bob",
@@ -9909,11 +10020,11 @@ mod tests {
     async fn invites_of_others_fold_into_the_channel() {
         let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&[]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room").await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.state());
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
+        let mut model = secure_model();
+        model.sync_channels(&client.snapshot());
 
         for (line, recorded) in [
             (":mel!u@host INVITE iris #room", true),
@@ -9957,34 +10068,29 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["extended-join"]).await;
-        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room own-account :WebLounge")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice!a@host JOIN #room alice-account :Alice")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
         wire.server(":alice-phone!a@phone JOIN #room alice-account :Alice Phone")
             .await;
-        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
-        let desktop = client
-            .direct("alice")
-            .await
-            .expect("desktop nick is directly addressable");
-        let same_account = client
-            .direct("alice-phone")
-            .await
-            .expect("second nick is directly addressable");
+        while !matches!(events.next_event().await, Some(papo::Event::Joined(_))) {}
+        let desktop = super::DirectPeer::resolve(&client, &client_nick(&client, "alice"));
+        let same_account =
+            super::DirectPeer::resolve(&client, &client_nick(&client, "alice-phone"));
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let (buffer_id, _) = model.open_direct(
-            desktop.nick(),
+            desktop.nick().clone(),
             super::DirectAvailability::Guarded(desktop),
-            &client.state(),
+            &client.snapshot(),
         );
         let (phone_buffer, added) = model.open_direct(
-            same_account.nick(),
+            same_account.nick().clone(),
             super::DirectAvailability::Guarded(same_account),
-            &client.state(),
+            &client.snapshot(),
         );
         assert_ne!(phone_buffer, buffer_id);
         assert!(!added.is_empty());
@@ -9992,7 +10098,7 @@ mod tests {
         assert!(model.buffers[&buffer_id].direct_pin.is_some());
         model.invalidate_direct_handles();
         let alice = client
-            .state()
+            .snapshot()
             .name_rules()
             .expect("registered test client has name rules")
             .nick("alice");
@@ -10224,7 +10330,7 @@ mod tests {
         }
         model
             .finish_history(
-                &papo::Conversation::Channel(channel),
+                &NameKey::Channel(channel),
                 None,
                 None,
                 Some(HistoryCursor::new(Some("history-latest".into()), 200)),
@@ -10267,7 +10373,7 @@ mod tests {
     #[test]
     fn pushed_channel_message_remains_unread_before_reconnect_seed() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(
+        model.restore_cached_chat_list(
             ChatListSnapshot::new("network".into(), Vec::new()).with_cursor_ms(Some(100)),
         );
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
@@ -10346,7 +10452,7 @@ mod tests {
         );
         first
             .finish_history(
-                &papo::Conversation::Channel(channel.clone()),
+                &NameKey::Channel(channel.clone()),
                 None,
                 None,
                 Some(HistoryCursor::new(Some("old-history".into()), 200)),
@@ -10361,7 +10467,7 @@ mod tests {
         assert_eq!(snapshot.cursor_ms, Some(300));
 
         let mut relaunched = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 10);
-        relaunched.restore_chat_list(snapshot);
+        relaunched.restore_cached_chat_list(snapshot);
         relaunched.begin_target_sync(UNIX_EPOCH + Duration::from_millis(400));
         let buffer_id = relaunched.names[&NameKey::Channel(channel.clone())];
         relaunched
@@ -10380,7 +10486,7 @@ mod tests {
         );
         relaunched
             .finish_history(
-                &papo::Conversation::Channel(channel),
+                &NameKey::Channel(channel),
                 None,
                 None,
                 Some(HistoryCursor::new(Some("offline-traffic".into()), 350)),
@@ -10509,8 +10615,8 @@ mod tests {
     fn send_targets_round_trip_through_name_keys() {
         let (_, state) = model(10);
         let channel = NameKey::Channel(channel_name(&state, "#room"));
-        let target =
-            SendTarget::from_buffer(channel.clone(), None, None, false).expect("channel target");
+        let target = SendTarget::from_buffer(channel.clone(), None, None, false, false)
+            .expect("channel target");
         assert_eq!(target.name_key(), channel);
     }
 
@@ -10520,12 +10626,10 @@ mod tests {
         let nick = nick_name(&state, "alice");
         let (buffer_id, _) =
             model.open_direct(nick.clone(), super::DirectAvailability::Pending, &state);
-        let pin: papo::PeerKey = "papo-pin:1;server=irc.example;casemap=rfc1459;account=alice"
-            .parse()
-            .expect("peer key");
+        let pin = crate::peer_pin::PeerPin::restore("account=alice").expect("peer pin");
         let resolving = |model: &mut NetworkModel,
                          direct: Option<super::DirectAvailability>,
-                         pin: Option<papo::PeerKey>| {
+                         pin: Option<crate::peer_pin::PeerPin>| {
             let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
             buffer.direct = direct;
             buffer.direct_pin = pin;
@@ -10541,22 +10645,20 @@ mod tests {
             let target = resolving(&mut model, direct.clone(), None);
             assert!(matches!(
                 target,
-                Some(SendTarget::Direct { nick: ref target, recipient: None, pin: None })
+                Some(SendTarget::Direct { nick: ref target, pin: None, .. })
                     if *target == nick
             ));
             let target = resolving(&mut model, direct, Some(pin.clone()));
             assert!(matches!(
                 target,
-                Some(SendTarget::Direct { recipient: None, pin: Some(ref kept), .. })
-                    if kept.as_verified_str() == pin.as_verified_str()
+                Some(SendTarget::Direct { pin: Some(ref kept), .. })
+                    if kept.stored() == pin.stored()
             ));
         }
-        let failed = resolving(&mut model, Some(super::DirectAvailability::Failed), None);
-        assert!(failed.is_none());
 
         let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
         buffer.direct_mismatch = Some(super::DirectMismatch {
-            reason: papo::PeerKeyMismatch::DifferentAccount,
+            reason: crate::peer_pin::PinMismatch::DifferentAccount,
             current: pin.clone(),
             deferred: false,
         });
@@ -10567,7 +10669,7 @@ mod tests {
     #[test]
     fn cached_direct_send_keeps_waiting_when_targets_reports_no_change() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -10635,8 +10737,8 @@ mod tests {
             matches!(event, papo::Event::Connected(_)).then_some(())
         })
         .await;
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.restore_chat_list(cached_channel_with_mention("#room"));
+        let mut model = secure_model();
+        model.restore_cached_chat_list(cached_channel_with_mention("#room"));
         let counts = |model: &NetworkModel| {
             let buffer = model
                 .buffers
@@ -10660,15 +10762,15 @@ mod tests {
             matches!(event, papo::Event::Joined(_)).then_some(())
         })
         .await;
-        model.rebuild_name_keys(&client.state());
-        model.sync_channels(&client.state());
+        model.rebuild_name_keys(&client.snapshot());
+        model.sync_channels(&client.snapshot());
         assert_eq!(counts(&model), (1, 1));
     }
 
     #[test]
     fn opened_cached_channel_still_vanishes_when_targets_omit_it() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -10721,7 +10823,7 @@ mod tests {
     #[test]
     fn opened_cached_direct_becomes_live_even_without_new_traffic() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -10765,7 +10867,7 @@ mod tests {
             panic!("cached direct requests latest history")
         };
         let completion = model
-            .finish_history(&target.conversation(), None, None, None, 0, false)
+            .finish_history(&target.name_key(), None, None, None, 0, false)
             .expect("latest history completes");
         assert_eq!(completion.buffer_id, buffer_id);
         assert_eq!(completion.at_start, Some(true));
@@ -10781,7 +10883,7 @@ mod tests {
     #[test]
     fn invalid_cached_peer_pin_is_treated_as_unverified() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -10853,7 +10955,7 @@ mod tests {
                 },
             ],
         );
-        model.restore_chat_list(previous.clone());
+        model.restore_cached_chat_list(previous.clone());
 
         let alice = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
         let slow = model.names[&NameKey::Channel(channel_name(&state, "#slow"))];
@@ -10901,7 +11003,7 @@ mod tests {
                 peer_bot: false,
             }],
         );
-        model.restore_chat_list(previous.clone());
+        model.restore_cached_chat_list(previous.clone());
         let iris = model.names[&NameKey::Direct(nick_name(&state, "iris"))];
         model
             .buffers
@@ -10955,7 +11057,7 @@ mod tests {
         };
         let cached =
             ChatListSnapshot::new("network".into(), vec![cached_direct, unresolved.clone()]);
-        model.restore_chat_list(cached.clone());
+        model.restore_cached_chat_list(cached.clone());
         let slow = model.names[&NameKey::Channel(channel_name(&state, "#slow"))];
         model.buffers.get_mut(&slow).expect("slow buffer").history = HistoryState::LoadingLatest;
 
@@ -11012,7 +11114,7 @@ mod tests {
                 peer_bot: false,
             }],
         );
-        model.restore_chat_list(previous.clone());
+        model.restore_cached_chat_list(previous.clone());
 
         model.receive_incoming(
             direct_incoming(&state, "alice", "authoritative live direct", 1_000),
@@ -11066,7 +11168,7 @@ mod tests {
             peer_bot: false,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
-        model.restore_chat_list(previous.clone());
+        model.restore_cached_chat_list(previous.clone());
         let channel = channel_name(&state, "#room");
         let buffer_id = model.names[&NameKey::Channel(channel)];
 
@@ -11107,7 +11209,7 @@ mod tests {
             peer_bot: false,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
-        model.restore_chat_list(previous.clone());
+        model.restore_cached_chat_list(previous.clone());
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
             "network_label": "Test",
@@ -11147,7 +11249,7 @@ mod tests {
     #[test]
     fn pushed_message_covered_by_cached_cursor_is_not_counted_twice() {
         let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
+        model.restore_cached_chat_list(ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Direct {
@@ -11225,13 +11327,14 @@ mod tests {
         isupport: &str,
         source: &str,
     ) -> Option<crate::UnverifiedSender> {
-        notice_unverified_sender(secure_wire_builder(), isupport, source).await
+        notice_unverified_sender(secure_wire_builder(), isupport, source, true).await
     }
 
     async fn notice_unverified_sender(
         builder: papo::Builder,
         isupport: &str,
         source: &str,
+        tls: bool,
     ) -> Option<crate::UnverifiedSender> {
         let (client, mut events, mut wire) = wire(builder);
         wire.register(&["message-tags", "account-tag"]).await;
@@ -11249,7 +11352,8 @@ mod tests {
         })
         .await;
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.receive_chat_with_advance((&notice).into(), false, &client.state(), None);
+        model.set_tls(tls);
+        model.receive_chat_with_advance((&notice).into(), false, &client.snapshot(), None);
         model
             .buffers
             .values()
@@ -11296,6 +11400,7 @@ mod tests {
                 papo::Client::builder("irc://plain.example", "weblounge"),
                 "SAFERATE",
                 tagged,
+                false,
             )
             .await,
             Some(crate::UnverifiedSender::UnprovenAccount)

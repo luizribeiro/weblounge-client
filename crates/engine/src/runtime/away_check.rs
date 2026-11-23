@@ -28,10 +28,14 @@ pub(super) fn start_away_checks(
             else {
                 return;
             };
-            if let Some(entry) = reply.iter().flatten().find(|entry| entry.nick == nick) {
+            if let Some(entry) = reply
+                .iter()
+                .flatten()
+                .find(|entry| entry.user.nick() == nick)
+            {
                 running.model.away_checks().answer(&nick, &entry.away);
             }
-            let events = running.model.sync_direct_peers(&running.client.state());
+            let events = running.model.sync_direct_peers(&running.client.snapshot());
             drop(guard);
             send_events(&outbound, events);
         }
@@ -44,6 +48,6 @@ fn next_check(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> Option<papo::N
         .network
         .as_mut()
         .filter(|running| running.instance == instance)?;
-    let snapshot = running.client.state();
+    let snapshot = running.client.snapshot();
     running.model.away_checks().next(&snapshot)
 }

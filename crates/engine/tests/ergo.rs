@@ -100,7 +100,8 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
     .await
     .expect("Ergo confirms the sent message");
     reader
-        .quit("multiline regression complete")
+        .quit()
+        .reason("multiline regression complete")
         .await
         .expect("second client quits cleanly");
 }
@@ -134,7 +135,8 @@ async fn production_profile_pages_always_on_history_paths() {
     .await;
     wait_for_own_join(&mut first_events, "weblounge", "#lounge").await;
     first
-        .quit("always-on history setup")
+        .quit()
+        .reason("always-on history setup")
         .await
         .expect("first device quits cleanly");
 
@@ -149,7 +151,10 @@ async fn production_profile_pages_always_on_history_paths() {
     wait_for_own_join(&mut bot_events, "history-bot", "#lounge").await;
     verify_mixed_history(&bot).await;
     verify_history_paging(&bot).await;
-    bot.quit("history seeded").await.expect("bot quits cleanly");
+    bot.quit()
+        .reason("history seeded")
+        .await
+        .expect("bot quits cleanly");
 
     let (fresh, mut fresh_events) = connect_account(
         &endpoint,
@@ -161,7 +166,8 @@ async fn production_profile_pages_always_on_history_paths() {
     .await;
     wait_for_own_join(&mut fresh_events, "weblounge", "#lounge").await;
     fresh
-        .quit("fresh profile verified")
+        .quit()
+        .reason("fresh profile verified")
         .await
         .expect("fresh device quits cleanly");
 }
@@ -188,9 +194,7 @@ async fn verify_mixed_history(bot: &papo::Client) {
         .limit(3)
         .await
         .expect("latest history is available");
-    let oldest = latest
-        .oldest_reference()
-        .expect("latest history has a paging cursor");
+    let oldest = latest.cursor().expect("latest history has a paging cursor");
     let before = bot
         .history("#lounge")
         .before(oldest)
@@ -237,7 +241,7 @@ async fn verify_history_paging(bot: &papo::Client) {
         .collect::<Vec<_>>();
     loop {
         let oldest = page
-            .oldest_reference()
+            .cursor()
             .expect("a non-empty history page has a cursor");
         page = bot
             .history("#lounge")
@@ -296,13 +300,15 @@ async fn connect_account(
 async fn wait_for_own_join(events: &mut papo::Events, nickname: &str, channel: &str) {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            match events.next().await {
+            match events.next().await.map(|(event, _)| event) {
                 Some(papo::Event::Joined(joined))
-                    if joined.actor.nick() == nickname && joined.channel == channel =>
+                    if joined.actor.nick() == nickname && joined.channel.name() == channel =>
                 {
                     break;
                 }
-                Some(papo::Event::ChannelSynced(synced)) if synced.channel == channel => break,
+                Some(papo::Event::ChannelSynced(synced)) if synced.channel.name() == channel => {
+                    break;
+                }
                 Some(papo::Event::Disconnected(disconnected)) => {
                     panic!("client disconnected before join: {disconnected}");
                 }
@@ -328,10 +334,10 @@ async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
         .expect("second client connects to Ergo");
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            match events.next().await {
+            match events.next().await.map(|(event, _)| event) {
                 Some(papo::Event::Joined(joined))
                     if joined.actor.nick() == "multiline-reader"
-                        && joined.channel == "#weblounge-test" =>
+                        && joined.channel.name() == "#weblounge-test" =>
                 {
                     break;
                 }
@@ -348,10 +354,10 @@ async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
     (reader, events)
 }
 
-async fn receive_weblounge_message(events: &mut papo::Events) -> papo::Message {
+async fn receive_weblounge_message(events: &mut papo::Events) -> papo::event::Message {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            match events.next().await {
+            match events.next().await.map(|(event, _)| event) {
                 Some(papo::Event::Message(message)) if message.actor.nick() == "weblounge" => {
                     break message;
                 }
