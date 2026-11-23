@@ -8,6 +8,10 @@ import {
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
+import {
+  scrollIndicatorTrackCovers,
+  scrollToMiddle,
+} from "./scroll-indicator-track";
 import { choosePhoneAppearance } from "./settings-fixture";
 
 test.use({
@@ -138,6 +142,38 @@ test.describe("mobile chat list against local Ergo", () => {
 
     // iOS stacks a composited row above the list's overlay scroll indicator.
     expect(await compositedLayerOwners(page, "[data-buffer-id]")).toEqual([]);
+  });
+
+  test("keeps the scroll indicator's track clear over a long chat list", async ({
+    page,
+    irc,
+  }) => {
+    await installNativeFeelInstrumentation(page);
+    await page.goto(irc.url());
+    await expect(page.getByRole("button", { name: irc.channel })).toBeVisible();
+    const directChats = 11;
+    await Promise.all(
+      Array.from({ length: directChats }, async (_, index) => {
+        const bot = await irc.peer(`long${index}`);
+        await bot.privmsgConfirmed(irc.account, "a long chat list");
+      }),
+    );
+    const list = page.locator("[data-mobile-chat-list]");
+    await expect(
+      list.locator("[data-buffer-id]", { hasText: "a long chat list" }),
+    ).toHaveCount(directChats);
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await scrollToMiddle(list);
+
+    expect(await scrollIndicatorTrackCovers(list)).toEqual([]);
+    await nativeFeelAudit(page);
+
+    await list.evaluate((element) => {
+      element.style.isolation = "auto";
+    });
+    expect(await scrollIndicatorTrackCovers(list)).toContainEqual(
+      expect.stringMatching(/data-buffer-id.*paints outside the scroller/u),
+    );
   });
 
   test("moves the most recently active chat to the top", async ({

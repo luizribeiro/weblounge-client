@@ -337,7 +337,7 @@ export default defineConfig({
     {
       name: "webkit-mobile-chat-list",
       testMatch: "**/mobile-chat-list.spec.ts",
-      grep: /reaction-only TARGETS activity/u,
+      grep: /reaction-only TARGETS activity|scroll indicator's track/u,
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {

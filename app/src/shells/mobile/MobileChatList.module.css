@@ -112,8 +112,14 @@
   color: var(--wl-color-accent-fg);
 }
 
+/*
+ * iOS composites positioned rows whose stacking context lies outside this
+ * scroller as layers above it, covering its scroll indicator; isolating the
+ * list keeps the rows painting inside the scroller, under the indicator.
+ */
 .list {
   flex: 1;
+  isolation: isolate;
   min-height: 0;
   overflow-anchor: none;
   overflow-y: auto;
