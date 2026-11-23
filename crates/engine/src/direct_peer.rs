@@ -89,31 +89,38 @@ impl PeerEvidence {
         if state.presence(nick).ok()? == papo::Presence::Offline {
             return Some(PeerPresence::Offline);
         }
-        let user = user.filter(|user| self.is_vouched_online(state, user, watched))?;
-        Some(
-            self.reported_away(user)
-                .unwrap_or_else(|| unreported_monitor_presence(state)),
-        )
+        let reported_online = user.filter(|user| {
+            state
+                .monitor_online()
+                .any(|online| online.nick() == user.nick())
+        });
+        if let Some(user) = reported_online {
+            return Some(
+                self.reported_away(user)
+                    .unwrap_or_else(|| unreported_monitor_presence(state)),
+            );
+        }
+        self.heard_while_watched(state, nick, watched).then(|| {
+            user.and_then(|user| self.reported_away(user))
+                .unwrap_or(PeerPresence::Online)
+        })
     }
 
     /// A watched peer's own live line counts as online without waiting for the `MONITOR` reply,
     /// which a throttling server delays; the watch is what reports its departure, so one the
-    /// server refused doesn't count. `watched` is the DM's own hold: papo's `monitored()` omits a
-    /// watch until its driver next runs, and no event follows to resync the row.
-    fn is_vouched_online(&self, state: &papo::State, user: &papo::User, watched: bool) -> bool {
-        let nick = user.nick();
+    /// server refused doesn't count. papo forgets a peer it shares no channel with until that
+    /// reply, so this asks only what the connection heard. `watched` is the DM's own hold:
+    /// papo's `monitored()` omits a watch until its driver next runs, and no event follows to
+    /// resync the row.
+    fn heard_while_watched(&self, state: &papo::State, nick: &papo::Nick, watched: bool) -> bool {
         let accepted = || {
             !self.refused_watches.contains(nick)
                 || state.monitored().any(|monitored| monitored == nick)
         };
-        let heard_and_watched = watched
+        watched
             && state.supports(papo::Feature::Monitor)
             && accepted()
-            && self.heard_from.contains(nick);
-        heard_and_watched
-            || state
-                .monitor_online()
-                .any(|online| online.nick() == user.nick())
+            && self.heard_from.contains(nick)
     }
 
     pub(crate) fn away_checks(&mut self) -> &mut AwayChecks {
@@ -294,6 +301,30 @@ mod tests {
             })
             .await;
             assert!(!client.watch("alice").is_live());
+            let nick = client
+                .snapshot()
+                .name_rules()
+                .expect("registered client knows the name rules")
+                .nick("alice");
+            Self::with_direct(client, events, wire, nick)
+        }
+
+        /// A server with `MONITOR` where nothing watches alice yet, as when her first line
+        /// opens the DM.
+        async fn monitor_available() -> Self {
+            let (client, mut events, mut wire) =
+                papo_testing::wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            wire.register(&["away-notify", "extended-monitor"]).await;
+            next(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            wire.server(":offline.test 005 weblounge MONITOR=100 :supported")
+                .await;
+            next(&mut events, |event| {
+                matches!(event, papo::Event::FeaturesChanged { .. })
+            })
+            .await;
             let nick = client
                 .snapshot()
                 .name_rules()
@@ -628,6 +659,27 @@ mod tests {
 
         peer.server(
             "@msgid=hi;time=2026-11-21T14:05:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+
+        assert_eq!(peer.sync(), []);
+    }
+
+    #[tokio::test]
+    async fn a_peer_watched_after_its_first_line_stays_online_when_another_peer_speaks() {
+        let mut peer = Peer::monitor_available().await;
+        peer.server(
+            "@account=alice;msgid=hi;time=2026-11-14T12:00:00.000Z :alice!~alice@cloak.example PRIVMSG weblounge :hi",
+            message,
+        )
+        .await;
+        let mut peer = peer.resolved();
+        assert_eq!(peer.wire.next_sent().await, "MONITOR + alice");
+        assert_eq!(peer.sync(), [(peer.alice, Some(PeerPresence::Online))]);
+
+        peer.server(
+            "@account=bob;msgid=yo;time=2026-11-14T12:00:01.000Z :bob!~bob@cloak.example PRIVMSG weblounge :yo",
             message,
         )
         .await;
