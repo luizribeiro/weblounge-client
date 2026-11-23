@@ -366,6 +366,21 @@ to its ordinary bottom padding with the reduced-motion-aware platform motion tok
 pinned to the live edge. No component reads raw `env()` or ships the prototype's iPhone
 measurements.
 
+### Phone message rows
+
+Phones put a text message's sender on a header line above the text; desktop keeps the one-line
+row. Messages group under one header while the sender, the authorship, the unverified-sender
+reason and the minute all stay the same, so a later message in a group has the header's minute and
+never needs a time of its own (Luiz, 2026-11-09). There are no letter avatars; a bot shows the
+robot icon in its nick colour right after the nick.
+
+The header reads time, nick, robot icon, unverified-sender mark, then the pending or failed status,
+for example `14:05 alice`. The time is muted monospace in the shared `formatTime` format and
+appears once per header (F54, Luiz, 2026-11-23). It reserves the widest time the locale's format
+can produce (`--wl-message-time-column`, less its trailing space), so every nick starts at the same
+inline offset whatever the hour. The header track is exactly one line box, and the smaller time and
+status text share the nick's baseline inside it, so a header never changes the row's height.
+
 ## Boundaries
 
 This subsystem owns density measurements, the platform-environment contract, shell selection,
@@ -401,6 +416,10 @@ themes, or virtual-list behavior.
   keyboard. Closing restores the safe-area inset without moving the background transcript.
   Desktop WebKit cannot reproduce the real iOS software keyboard or its compositor pan, so these
   tests prove the event policy and published geometry; an iPhone remains the final motion check.
+- `phone-layout.spec.ts` drives the iPhone WebKit and Android Chromium profiles against local Ergo:
+  each group header shows its formatted time once, before the nick and on the nick's line; a later
+  message in the group shows none; a bot's icon follows its nick; a long nick starts at the same
+  offset as a short one and stays inside the one-line header.
 - Playwright also covers one through six panes, explicit/automatic zoom, chromeless mode, browser
   zoom, and theme × density combinations.
 - Accessibility tests cover focus rings, separators, and 44px touch targets.
