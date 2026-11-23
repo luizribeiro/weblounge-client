@@ -19,7 +19,7 @@ pub(super) fn start_away_checks(
     let (client, instance) = (running.client.clone(), running.instance);
     spawn_task(async move {
         while let Some(nick) = next_check(&state, instance) {
-            let reply = client.who(nick.as_str()).await;
+            _ = client.who(nick.as_str()).await;
             let mut guard = lock(&state);
             let Some(running) = guard
                 .network
@@ -28,13 +28,6 @@ pub(super) fn start_away_checks(
             else {
                 return;
             };
-            if let Some(entry) = reply
-                .iter()
-                .flatten()
-                .find(|entry| entry.user.nick() == nick)
-            {
-                running.model.away_checks().answer(&nick, &entry.away);
-            }
             let events = running.model.sync_direct_peers(&running.client.snapshot());
             drop(guard);
             send_events(&outbound, events);

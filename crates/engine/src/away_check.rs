@@ -1,15 +1,12 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-
-use crate::PeerPresence;
+use std::collections::{HashSet, VecDeque};
 
 /// A `MONITOR` online reply carries no away state, and a server with extended-monitor reports only
-/// later changes, so a watched peer who comes online gets exactly one `WHO` (Luiz, F53). Its
-/// answer stands until the peer goes offline; `away-notify` keeps it current after that.
+/// later changes, so a watched peer who comes online gets exactly one `WHO` (Luiz, F53). papo
+/// records its answer as the peer's away state, which `away-notify` keeps current after that.
 #[derive(Debug, Default)]
 pub(crate) struct AwayChecks {
     asked: HashSet<papo::Nick>,
     queue: VecDeque<papo::Nick>,
-    answers: HashMap<papo::Nick, PeerPresence>,
     working: bool,
 }
 
@@ -28,7 +25,6 @@ impl AwayChecks {
             papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
                 self.asked.clear();
                 self.queue.clear();
-                self.answers.clear();
             }
             _ => {}
         }
@@ -56,28 +52,8 @@ impl AwayChecks {
         None
     }
 
-    pub(crate) fn answer(&mut self, nick: &papo::Nick, away: &papo::AwayStatus) {
-        if !self.asked.contains(nick) {
-            return;
-        }
-        match away {
-            papo::AwayStatus::Away { .. } => {
-                self.answers.insert(nick.clone(), PeerPresence::Away);
-            }
-            papo::AwayStatus::Present => {
-                self.answers.insert(nick.clone(), PeerPresence::Online);
-            }
-            _ => {}
-        }
-    }
-
-    pub(crate) fn answered(&self, nick: &papo::Nick) -> Option<PeerPresence> {
-        self.answers.get(nick).copied()
-    }
-
     fn forget(&mut self, nick: &papo::Nick) {
         self.asked.remove(nick);
-        self.answers.remove(nick);
         self.queue.retain(|queued| queued != nick);
     }
 
@@ -85,9 +61,7 @@ impl AwayChecks {
         if self.asked.remove(old) {
             self.asked.insert(new.clone());
         }
-        if let Some(answer) = self.answers.remove(old) {
-            self.answers.insert(new.clone(), answer);
-        }
+
         for queued in &mut self.queue {
             if queued == old {
                 new.clone_into(queued);

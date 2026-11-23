@@ -30,12 +30,10 @@ impl DirectPeer {
     }
 }
 
-/// What this connection's events say about DM peers beyond papo's state: papo keeps a peer whose
-/// direct handle is held in `monitor_online` after a `MONITOR` offline reply, and it does not treat
-/// a peer's own line as a report of its away state.
+/// What this connection's events say about DM peers beyond papo's state: papo does not treat a
+/// peer's own line as a report of its away state.
 #[derive(Debug, Default)]
 pub(crate) struct PeerEvidence {
-    reported_offline: HashSet<papo::Nick>,
     heard_from: HashSet<papo::Nick>,
     witnessed: WitnessedPresence,
     away_checks: AwayChecks,
@@ -47,12 +45,7 @@ impl PeerEvidence {
         self.away_checks.observe(event);
         match event {
             papo::Event::MonitorOffline(offline) => {
-                let nick = offline.subject.nick();
-                self.heard_from.remove(&nick);
-                self.reported_offline.insert(nick);
-            }
-            papo::Event::MonitorOnline(online) => {
-                self.reported_offline.remove(&online.subject.nick());
+                self.heard_from.remove(&offline.subject.nick());
             }
             papo::Event::Message(message) if message.actor_party != papo::Party::Me => {
                 self.heard_from.insert(message.actor.nick());
@@ -66,7 +59,6 @@ impl PeerEvidence {
                 }
             }
             papo::Event::Connected(_) | papo::Event::Disconnected(_) => {
-                self.reported_offline.clear();
                 self.heard_from.clear();
             }
             _ => {}
@@ -80,7 +72,7 @@ impl PeerEvidence {
         if let Some(user) = user.filter(|user| user.channels().len() != 0) {
             return self.reported_away(user);
         }
-        if self.reported_offline.contains(nick) {
+        if state.presence(nick).ok()? == papo::Presence::Offline {
             return Some(PeerPresence::Offline);
         }
         let user = user.filter(|user| {
@@ -109,11 +101,10 @@ impl PeerEvidence {
         match user.away() {
             papo::AwayStatus::Away { .. } => Some(PeerPresence::Away),
             papo::AwayStatus::Present => Some(PeerPresence::Online),
-            _ => self.away_checks.answered(user.nick()).or_else(|| {
-                self.heard_from
-                    .contains(user.nick())
-                    .then_some(PeerPresence::Online)
-            }),
+            _ => self
+                .heard_from
+                .contains(user.nick())
+                .then_some(PeerPresence::Online),
         }
     }
 }
