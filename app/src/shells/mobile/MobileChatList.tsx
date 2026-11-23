@@ -58,9 +58,7 @@ interface MobileChatListProps extends NotificationPromptControls {
         invoker: HTMLButtonElement,
       ) => void)
     | undefined;
-  readonly onRequestClose?:
-    | ((buffer: BufferProjection) => Promise<boolean>)
-    | undefined;
+  readonly onRequestClose?: ((buffer: BufferProjection) => void) | undefined;
   readonly onQuery: (query: string) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly showConnectionError?: boolean | undefined;

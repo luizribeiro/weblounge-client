@@ -297,12 +297,10 @@ export function MobileShell(props: MobileShellProps) {
       ? closeDirect(buffer)
       : props.onSend(bufferId, text);
   };
-  const requestClose = async (buffer: BufferProjection): Promise<boolean> => {
-    if (buffer.kind === "channel") {
+  const requestClose = (buffer: BufferProjection) => {
+    if (buffer.kind === "channel")
       setLeaveConfirmation({ bufferId: buffer.id });
-      return true;
-    }
-    return closeDirect(buffer);
+    else void closeDirect(buffer);
   };
   const markRead = (buffer: BufferProjection) => {
     const through = newestMessageIds().get(buffer.id);
@@ -798,9 +796,9 @@ export function MobileShell(props: MobileShellProps) {
           )}
           onDismiss={dismissChatActions}
           onMarkRead={() => markRead(actionSheetBuffer() as BufferProjection)}
-          onRequestClose={() => {
-            void requestClose(actionSheetBuffer() as BufferProjection);
-          }}
+          onRequestClose={() =>
+            requestClose(actionSheetBuffer() as BufferProjection)
+          }
           rowRect={chatActions()?.rowRect ?? new DOMRect()}
         />
       )}
