@@ -38,7 +38,8 @@ the look:
 **Away check** (Luiz, 2026-11-21). Ergo never sends a peer's away state with its `730`, so each
 watched peer reported online gets exactly one `WHO nick`; its `H` or `G` stands until the peer goes
 offline, and `away-notify` reports changes after that. No `WHO` on DM open, none for a peer whose
-away state papo already knows, and another only after the peer goes offline and comes back. One
+away state papo already knows or who shares a channel with us (that channel's `WHO` reports it),
+and another only after the peer goes offline and comes back. One
 `WHO` is in flight at a time, so a reconnect that brings many peers online doesn't burst the
 server; papo has no send pacing of its own. This fixes iris, a present peer sharing no channel.
 

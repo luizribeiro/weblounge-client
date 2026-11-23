@@ -41,13 +41,14 @@ impl AwayChecks {
         start
     }
 
-    /// The next queued peer whose away state is still unreported; a peer papo learned about in
-    /// the meantime is dropped without a `WHO`.
+    /// The next queued peer whose away state only a `WHO nick` can give. A peer papo learned
+    /// about in the meantime is dropped, and so is one in a shared channel: that channel's own
+    /// `WHO` reports it, and asking again would add a request to every launch's catch-up.
     pub(crate) fn next(&mut self, state: &papo::State) -> Option<papo::Nick> {
         while let Some(nick) = self.queue.pop_front() {
             if state
                 .user(&nick)
-                .is_some_and(|user| !away_reported(user.away()))
+                .is_some_and(|user| user.channels().len() == 0 && !away_reported(user.away()))
             {
                 return Some(nick);
             }

@@ -171,6 +171,27 @@ async fn a_peer_whose_away_state_is_known_is_not_asked() {
 }
 
 #[tokio::test]
+async fn a_peer_in_a_shared_channel_is_left_to_that_channels_who() {
+    let mut session = Session::watching_alice().await;
+    session.wire.server(":weblounge!u@h JOIN #room").await;
+    session
+        .wire
+        .server(":offline.test 353 weblounge = #room :weblounge alice")
+        .await;
+    session
+        .deliver(":offline.test 366 weblounge #room :End of NAMES", |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+    assert_eq!(session.wire.next_sent().await, "MODE #room");
+    assert_eq!(session.wire.next_sent().await, "WHO #room");
+
+    session.report_online(ALICE_ONLINE).await;
+
+    session.expect_no_who_before_marker("carol").await;
+}
+
+#[tokio::test]
 async fn a_peer_is_asked_again_after_going_offline_and_coming_back() {
     let mut session = Session::watching_alice().await;
     session.report_online(ALICE_ONLINE).await;
