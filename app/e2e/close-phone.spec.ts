@@ -78,9 +78,8 @@ test.describe("phone conversation closing against local Ergo", () => {
     await captureThemes(page, shell, "long-press-sheet", browserName);
     await actions.getByRole("button", { name: "Cancel" }).click();
 
-    await pointer(directWrapper(), "pointerdown", 0, 4_000);
-    await pointer(directWrapper(), "pointermove", 270, 4_100);
-    await pointer(directWrapper(), "pointerup", 270, 4_150);
+    await revealActions(directWrapper());
+    await tapAction(page, directWrapper(), "Close");
     await expect(directRow()).toHaveCount(0);
     const toast = page.getByRole("status").filter({
       hasText: `Closed chat with ${peer.nickname}`,

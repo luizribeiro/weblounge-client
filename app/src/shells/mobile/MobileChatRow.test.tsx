@@ -13,6 +13,7 @@ import type {
 import { MessageList } from "../../features/conversation/MessageList";
 import { observeTouchMoveLock } from "../../platform/touch-move-lock";
 import { MobileChatRow } from "./MobileChatRow";
+import { mobileRowActionWidth } from "./mobile-row-swipe";
 
 afterEach(() => vi.useRealTimers());
 
@@ -342,24 +343,44 @@ it("closes revealed actions on a tap on the row without opening it", () => {
   expect(open).not.toHaveBeenCalled();
 });
 
-it("full-swipes a direct conversation into the existing close callback", () => {
-  const close = vi.fn();
-  const { container } = render(() => (
-    <MobileChatRow
-      buffer={buffer({ kind: "direct", title: "mel" })}
-      onOpen={vi.fn()}
-      onRequestClose={close}
-      previews={true}
-    />
-  ));
-  const wrapper = mobileRowWrapper(container);
+it.each([
+  ["direct", "mel", "Close"],
+  ["channel", "#garden", "Leave"],
+] as const)(
+  "only reveals a %s row's actions after a full fast swipe",
+  (kind, title, action) => {
+    const close = vi.fn();
+    const Harness = () => {
+      const [revealed, setRevealed] = createSignal(false);
+      return (
+        <MobileChatRow
+          buffer={buffer({ kind, title })}
+          onOpen={vi.fn()}
+          onRequestClose={close}
+          onReset={() => setRevealed(false)}
+          onReveal={() => setRevealed(true)}
+          previews={true}
+          revealed={revealed()}
+        />
+      );
+    };
+    const { container } = render(Harness);
+    const wrapper = mobileRowWrapper(container);
 
-  fireEvent.pointerDown(wrapper, pointer(390, 100, 0));
-  fireEvent.pointerMove(wrapper, pointer(130, 100, 100));
-  fireEvent.pointerUp(wrapper, pointer(130, 100, 150));
+    timedPointer(wrapper, "pointerDown", pointer(390, 100, 0));
+    timedPointer(wrapper, "pointerMove", pointer(200, 100, 16));
+    timedPointer(wrapper, "pointerMove", pointer(10, 100, 32));
+    timedPointer(wrapper, "pointerUp", pointer(10, 100, 40));
 
-  expect(close).toHaveBeenCalledOnce();
-});
+    expect(close).not.toHaveBeenCalled();
+    expect(wrapper).toHaveAttribute("data-swipe-state", "revealed");
+    expect(wrapper.style.getPropertyValue("--wl-mobile-row-offset")).toBe(
+      `${mobileRowActionWidth}px`,
+    );
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    expect(close).toHaveBeenCalledOnce();
+  },
+);
 
 it("opens the action sheet after an unmoved long press", () => {
   vi.useFakeTimers();

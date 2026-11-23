@@ -34,9 +34,7 @@ interface MobileChatRowProps {
   readonly onReveal?: (() => void) | undefined;
   readonly onReset?: (() => void) | undefined;
   readonly onMarkRead?: (() => void) | undefined;
-  readonly onRequestClose?:
-    | (() => boolean | Promise<boolean> | void)
-    | undefined;
+  readonly onRequestClose?: (() => void) | undefined;
   readonly onRequestActions?:
     | ((rect: DOMRect, invoker: HTMLButtonElement) => void)
     | undefined;
@@ -120,13 +118,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
         props.onPressStart?.(event);
         pointerId = event.pointerId;
         samples = [{ time: event.timeStamp, x: event.clientX }];
-        swipe = beginMobileRowSwipe(
-          props.buffer.kind === "channel" ? "channel" : "direct",
-          event.currentTarget.getBoundingClientRect().width,
-          event.clientX,
-          event.clientY,
-          revealed(),
-        );
+        swipe = beginMobileRowSwipe(event.clientX, event.clientY, revealed());
         clearLongPress();
         if (!revealed()) {
           // wait-ok: this is the product's fixed long-press recognition window.
@@ -171,15 +163,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
           return;
         }
         suppressClick = true;
-        if (result === "close") {
-          setDragging(false);
-          setOffset(event.currentTarget.getBoundingClientRect().width);
-          void Promise.resolve(props.onRequestClose?.()).then((closed) => {
-            if (closed === false) settle("reset");
-          });
-        } else {
-          settle(result);
-        }
+        settle(result);
       }}
       ref={wrapper}
       style={{ "--wl-mobile-row-offset": `${offset()}px` }}

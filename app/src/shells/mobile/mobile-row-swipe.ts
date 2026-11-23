@@ -5,8 +5,6 @@ export type MobileRowSwipeState =
   | { readonly phase: "idle"; readonly revealed: boolean }
   | {
       readonly phase: "tracking" | "dragging";
-      readonly kind: "channel" | "direct";
-      readonly rowWidth: number;
       readonly startX: number;
       readonly startY: number;
       readonly startOffset: number;
@@ -14,11 +12,9 @@ export type MobileRowSwipeState =
     }
   | { readonly phase: "cancelled"; readonly revealed: boolean };
 
-export type MobileRowSwipeRelease = "close" | "reveal" | "reset" | "tap";
+export type MobileRowSwipeRelease = "reveal" | "reset" | "tap";
 
 export function beginMobileRowSwipe(
-  kind: "channel" | "direct",
-  rowWidth: number,
   x: number,
   y: number,
   revealed: boolean,
@@ -26,8 +22,6 @@ export function beginMobileRowSwipe(
   const startOffset = revealed ? mobileRowActionWidth : 0;
   return {
     phase: "tracking",
-    kind,
-    rowWidth,
     startX: x,
     startY: y,
     startOffset,
@@ -58,7 +52,7 @@ export function moveMobileRowSwipe(
   return {
     ...state,
     phase: "dragging",
-    offset: clamp(state.startOffset - deltaX, 0, state.rowWidth),
+    offset: clamp(state.startOffset - deltaX, 0, mobileRowActionWidth),
   };
 }
 
@@ -68,10 +62,6 @@ export function releaseMobileRowSwipe(
 ): MobileRowSwipeRelease {
   if (state.phase === "idle" || state.phase === "cancelled") return "reset";
   if (state.phase === "tracking") return "tap";
-  if (state.kind === "direct" && state.offset >= state.rowWidth * 0.6)
-    return "close";
-  if (state.kind === "channel" && state.offset >= state.rowWidth * 0.6)
-    return "reveal";
   if (releaseVelocityX <= -0.25 || state.offset >= mobileRowActionWidth * 0.4)
     return "reveal";
   return "reset";
