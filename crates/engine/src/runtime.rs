@@ -1543,7 +1543,7 @@ impl Runtime {
                 Ok(())
             } else {
                 cancel_inflight_send(&runtime_state, instance).await;
-                reconnect(&client).await
+                reconnect(&runtime_state, &outbound, &client, instance).await
             };
             let event = if result.is_ok() {
                 EngineToUi::CommandResult { id: command_id }
@@ -1578,10 +1578,15 @@ impl Runtime {
                 ];
             }
             let client = running.client.clone();
+            let instance = running.instance;
             drop(state);
             let outbound = self.outbound.clone();
+            let state = Arc::clone(&self.state);
             spawn_task(async move {
-                let event = if reconnect(&client).await.is_ok() {
+                let event = if reconnect(&state, &outbound, &client, instance)
+                    .await
+                    .is_ok()
+                {
                     EngineToUi::CommandResult { id: command_id }
                 } else {
                     command_rejection(command_id, EngineMessageKey::ConnectionFailed)
@@ -2875,12 +2880,54 @@ struct ConnectConfig {
     allow_insecure: bool,
 }
 
-/// papo leaves a live connection alone, so a retry that finds one has nothing left to do.
-async fn reconnect(client: &papo::Client) -> Result<(), papo::Error> {
+/// papo leaves a live connection alone, so a retry that finds one resumes it instead: no
+/// `Connected` event will come to bring the network back online and flush what waited for it.
+async fn reconnect(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+) -> Result<(), papo::Error> {
     match client.reconnect().await {
-        Err(papo::Error::AlreadyConnected) => Ok(()),
+        Err(papo::Error::AlreadyConnected) => {
+            resume_live_connection(state, outbound, instance);
+            Ok(())
+        }
         result => result,
     }
+}
+
+fn resume_live_connection(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+) {
+    let mut guard = lock(state);
+    let Some(running) = guard
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance && running.device_online)
+    else {
+        return;
+    };
+    if !running.client.snapshot().is_connected() {
+        return;
+    }
+    let mut output = Vec::new();
+    if *running.model.connection() != NetworkConnectionState::Online {
+        output.push(
+            running
+                .model
+                .set_connection(NetworkConnectionState::Online, None),
+        );
+    }
+    let flush_sends = !running.pending_sends.is_empty() && !running.flushing_sends;
+    running.flushing_sends |= flush_sends;
+    let read_flush = start_read_flush(running);
+    let client = running.client.clone();
+    drop(guard);
+    send_events(outbound, output);
+    spawn_event_flushes(state, outbound, &client, instance, flush_sends, read_flush);
 }
 
 /// A DM peer's account is trusted only as far as the connection that reported it.
@@ -3183,6 +3230,7 @@ fn classify_send_error(error: &papo::Error) -> SendError {
         papo::Error::Disconnected(_) => SendError::Offline,
         papo::Error::Interrupted(_) => SendError::Interrupted,
         papo::Error::TargetGone => SendError::DirectTargetGone,
+
         _ => SendError::Protocol,
     }
 }
@@ -11708,6 +11756,45 @@ async fn delay(duration: Duration) {
             "@time={time} :offline.test NOTICE weblounge :clock"
         ))
         .await;
+    }
+
+    #[tokio::test]
+    async fn coming_back_online_to_a_live_connection_resumes_it() {
+        let (client, events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound.clone(),
+            client.clone(),
+            events,
+            1,
+        ));
+        wire.register(&[]).await;
+        while !matches!(
+            receiver.recv().await,
+            Some(EngineToUi::NetworkStateChanged { ref network })
+                if network.state == NetworkConnectionState::Online
+        ) {}
+        let runtime = Runtime { state, outbound };
+        let device = |online| EngineRequestEnvelope {
+            id: format!("online-{online}"),
+            request: EngineRequest::SetDeviceOnline {
+                network_id: NetworkId(1),
+                online,
+            },
+        };
+        _ = runtime.request(device(false));
+
+        assert!(runtime.request(device(true)).is_empty());
+
+        while !matches!(
+            receiver.recv().await,
+            Some(EngineToUi::NetworkStateChanged { ref network })
+                if network.state == NetworkConnectionState::Online
+        ) {}
+        assert!(client.snapshot().is_connected());
+        drain.abort();
     }
 
     #[tokio::test]
