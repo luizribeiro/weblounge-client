@@ -14,7 +14,7 @@ test("shows the connection in the server buffer on a first load", async ({
   await expect(connectionLines(page)).toHaveCount(1);
 });
 
-test("shows the message of the day folded above the connection", async ({
+test("shows the message of the day folded below the connection", async ({
   page,
   irc,
 }, testInfo) => {
@@ -26,7 +26,7 @@ test("shows the message of the day folded above the connection", async ({
   await expect(lines.first()).toContainText(
     "Welcome to the WebLounge local test network.",
   );
-  expect(await verticalOrder(card, connectionLines(page))).toBe("above");
+  expect(await verticalOrder(connectionLines(page), card)).toBe("above");
 
   await card.getByRole("button", { name: "Show all 6 lines" }).click();
   await expect(lines).toHaveCount(6);

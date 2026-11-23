@@ -345,6 +345,11 @@ changes in channels and channel modes by others, kicks of others, and topic chan
 | catch-up shortfall, `Lagged` gap | the affected conversation | never (counts keep `gap_until`) |
 | DM identity mismatch or restore | that DM (`Note`) | never |
 
+Each connection shows its `Connected` line first and then its MOTD card, as other IRC clients
+do, although papo reports the MOTD before `Connected`; the engine holds the MOTD until the
+connection line is written. Every reconnect shows both again (Luiz, 2026-11-23: "do what other
+IRC clients do").
+
 The server-buffer rule is unchanged: a row adds a stub to the server buffer's own row and never to
 the app badge (`irc-notice`). The invite to you is the only system item with a stub, because the
 canvas shows it unread. It uses its msgid, or a `local:` id. System lines are never highlighted.
@@ -458,7 +463,8 @@ copy text (`copy-rows.ts`), the accessible name and the size estimate.
   4 px apart, with reasons.
 - **Buttons:** Rejoin on the newest `Kick { You }` while the buffer is `Kicked`, and Join on
   `InvitedYou`.
-- **MOTD:** four monospace lines, then "Show all N lines".
+- **MOTD:** four monospace lines, then "Show all N lines"; the card sits right after its
+  connection's "Connected to" line.
 - **Start caption:** "Server history starts {date}", from the oldest loaded item's day; omitted when
   there are no items.
 - **Gap label:** "Messages may be missing · {from} to {to}".
@@ -701,6 +707,8 @@ None.
 - Your own JOIN and PART make no line. The topic card is shown only for a JOIN this client sent.
 - Your own nick change appears in the server buffer and every shared channel.
 - The invite to you is the one system item with an unread stub.
+- Luiz, 2026-11-23: the server buffer follows other IRC clients. Each connection shows "Connected
+  to …" and then its MOTD card, and every reconnect repeats both, with no setting.
 - Redaction removes the deleted text everywhere and leaves read facts unchanged.
 - The canvas's line-row spacing (12/4) remains, except after dividers where the row adds no top
   padding. Divider spacing is asymmetric (20/8 on phone, 14/6 on desktop), with the same

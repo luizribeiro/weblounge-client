@@ -535,6 +535,7 @@ pub(crate) struct NetworkModel {
     early_redactions: EarlyRedactions,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     dirty_timelines: HashSet<BufferId>,
+    held_motd: Option<Vec<String>>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
     cursor: Option<SystemTime>,
@@ -653,6 +654,7 @@ impl NetworkModel {
             early_redactions: EarlyRedactions::default(),
             fallbacks: HashMap::new(),
             dirty_timelines: HashSet::new(),
+            held_motd: None,
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
             cursor: None,
@@ -2296,14 +2298,23 @@ impl NetworkModel {
         Some(id)
     }
 
-    pub(crate) fn push_server_line(&mut self, line: LineEvent, received_at_ms: i64) {
-        self.push_system_record(
-            self.server_buffer_id(),
-            RecordBody::Line(line),
-            None,
-            None,
-            received_at_ms,
-        );
+    /// papo reports the MOTD before `Connected`; the server buffer shows it after the
+    /// connection line, as other IRC clients do.
+    pub(crate) fn hold_motd(&mut self, lines: Option<Vec<String>>) {
+        self.held_motd = lines;
+    }
+
+    pub(crate) fn show_connection(&mut self, connected: Option<LineEvent>, received_at_ms: i64) {
+        let motd = self.held_motd.take().map(|lines| LineEvent::Motd { lines });
+        for line in connected.into_iter().chain(motd) {
+            self.push_system_record(
+                self.server_buffer_id(),
+                RecordBody::Line(line),
+                None,
+                None,
+                received_at_ms,
+            );
+        }
     }
 
     pub(crate) fn receive_kick(

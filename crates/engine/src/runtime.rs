@@ -4875,10 +4875,7 @@ fn process_papo_event(
 
 fn process_server_buffer_event(model: &mut NetworkModel, event: papo::Event) -> Vec<HistoryFetch> {
     if let papo::Event::Motd(motd) = event {
-        model.push_server_line(
-            crate::timeline::LineEvent::Motd { lines: motd.lines },
-            time_millis(papo::time::now()),
-        );
+        model.hold_motd(Some(motd.lines));
     }
     Vec::new()
 }
@@ -5088,6 +5085,7 @@ fn process_connecting(
     output: &mut Vec<EngineToUi>,
 ) {
     running.connection_attempt = u32::try_from(connecting.attempt).unwrap_or(u32::MAX);
+    running.model.hold_motd(None);
     let state = if running.device_online {
         next_connection_state(
             running.model.connection(),
@@ -5119,11 +5117,10 @@ fn process_connected(
             .map(|account| account.key().to_owned()),
     );
     project_own_change_actions(&mut running.model, Some(snapshot));
-    if let Some(line) = connected_line(&running.identity.endpoint) {
-        running
-            .model
-            .push_server_line(line, time_millis(papo::time::now()));
-    }
+    running.model.show_connection(
+        connected_line(&running.identity.endpoint),
+        time_millis(papo::time::now()),
+    );
     running.model.finish_disconnect_gap(
         time_millis(papo::time::now()),
         snapshot.supports(papo::Feature::History),

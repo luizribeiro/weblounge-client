@@ -133,7 +133,7 @@ async fn each_reconnect_adds_another_connection_line() {
 }
 
 #[tokio::test]
-async fn the_message_of_the_day_precedes_the_connection_line() {
+async fn the_message_of_the_day_follows_the_connection_line() {
     let motd = ["pull up a chair.", "", "be kind, ship things."];
     let mut session = Session::new();
     session.register(&motd).await;
@@ -141,10 +141,10 @@ async fn the_message_of_the_day_precedes_the_connection_line() {
     assert_eq!(
         session.server_lines(),
         [
+            connected(),
             LineEvent::Motd {
                 lines: motd.map(String::from).to_vec(),
             },
-            connected(),
         ]
     );
 }
@@ -160,7 +160,25 @@ async fn each_reconnect_shows_that_connection_s_message_of_the_day() {
 
     assert_eq!(
         session.server_lines(),
-        [motd.clone(), connected(), motd, connected()]
+        [connected(), motd.clone(), connected(), motd]
+    );
+}
+
+#[tokio::test]
+async fn a_reconnect_without_a_message_of_the_day_shows_only_its_connection() {
+    let mut session = Session::new();
+    session.register(&["be kind, ship things."]).await;
+    session.reconnect(&[]).await;
+
+    assert_eq!(
+        session.server_lines(),
+        [
+            connected(),
+            LineEvent::Motd {
+                lines: vec!["be kind, ship things.".into()],
+            },
+            connected(),
+        ]
     );
 }
 
