@@ -204,6 +204,46 @@ it("keeps phone rows out of the tab order and free of the hover toolbar", () => 
   expect(screen.queryByRole("toolbar")).toBeNull();
 });
 
+it("reads a phone header as its time, then the nick and bot icon", () => {
+  const sentAt = new Date(2026, 10, 23, 14, 5, 10).getTime();
+  const first: MessageProjection = {
+    ...message,
+    bot: true,
+    highlighted: false,
+    delivery: "received",
+    server_time_ms: sentAt,
+  };
+  const grouped: MessageProjection = {
+    ...first,
+    id: 2,
+    text: "same minute",
+    server_time_ms: sentAt + 20_000,
+  };
+  render(() => (
+    <MessageList messages={[first, grouped]} presentation="mobile" />
+  ));
+  const header = screen
+    .getByText("hello weblounge")
+    .closest<HTMLElement>("[data-message-row]");
+  if (header === null) throw new Error("message row is missing");
+  const [time, ...extraTimes] = header.querySelectorAll("time");
+  const nick = within(header).getByText("alice");
+  const icon = within(header).getByRole("img", { name: "bot" });
+
+  expect(header).toHaveAttribute("data-message-group-start", "true");
+  expect(time).toHaveTextContent(formatTime(sentAt));
+  expect(extraTimes).toEqual([]);
+  expect(time?.compareDocumentPosition(nick)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(nick.compareDocumentPosition(icon)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(
+    screen.getByText("same minute").closest("[data-message-row]"),
+  ).toHaveAttribute("data-message-group-start", "false");
+});
+
 it("draws a redacted message as aria-hidden bars with no toolbar or reactions", () => {
   const redacted: MessageProjection = {
     ...message,

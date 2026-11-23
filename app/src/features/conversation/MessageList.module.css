@@ -291,7 +291,7 @@
   column-gap: var(--wl-space-list-gap);
   display: grid;
   grid-template-areas:
-    "nick time status"
+    "time nick status"
     "content content content";
   grid-template-columns: max-content max-content minmax(0, 1fr);
   /* Baseline-aligning the nick with the smaller monospace time would size
@@ -334,8 +334,10 @@
     --wl-density-message-mobile-continuation-highlight-inset
   );
 }
+/* Sized for the locale's widest time so nicks align across headers. */
 .list[data-presentation="mobile"] .time {
   grid-area: time;
+  min-inline-size: calc(var(--wl-message-time-column, 9ch) - 1ch);
 }
 .list[data-presentation="mobile"] .nickColumn {
   align-items: center;

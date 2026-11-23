@@ -155,6 +155,62 @@ test("groups phone messages without losing timestamps or the live edge", async (
   await expect(visibleBotRow.locator("[data-message-avatar]")).toHaveCount(0);
 });
 
+test("starts each phone header with its time before the nick", async ({
+  page,
+  irc,
+}, testInfo) => {
+  test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
+  const channel = irc.channelNamed("header-time");
+  const bot = await irc.peer("time-bot", [channel]);
+  const longPeer = await irc.peer("longwinded-header-peer", [channel]);
+  const first = `time first ${irc.id}`;
+  const grouped = `time grouped ${irc.id}`;
+  const longNick = `time long nick ${irc.id}`;
+  await bot.mode(bot.nickname, "+B");
+  const oneDigitHour = new Date();
+  oneDigitHour.setDate(oneDigitHour.getDate() - 1);
+  oneDigitHour.setHours(9, 5, 10, 0);
+  const twoDigitHour = new Date(oneDigitHour);
+  twoDigitHour.setHours(12, 5, 10, 0);
+  await Promise.all([
+    armMessageTime(first, oneDigitHour.getTime()),
+    armMessageTime(grouped, oneDigitHour.getTime() + 20_000),
+    armMessageTime(longNick, twoDigitHour.getTime()),
+  ]);
+  await useDedicatedWorker(page);
+  await page.goto(irc.url({ autojoin: [channel] }));
+  await page.getByRole("button", { name: channel }).click();
+  await expectSettled(page, { conversation: channel });
+
+  await bot.privmsgConfirmed(channel, first);
+  await bot.privmsgConfirmed(channel, grouped);
+  await longPeer.privmsgConfirmed(channel, longNick);
+  await expect(messageRow(page, grouped)).toHaveAttribute(
+    "data-message-group-start",
+    "false",
+  );
+  await expect(messageRow(page, grouped).locator("time")).toBeHidden();
+
+  const headers = [
+    await headerTimeLayout(messageRow(page, first), bot.nickname),
+    await headerTimeLayout(messageRow(page, longNick), longPeer.nickname),
+  ];
+  for (const header of headers) {
+    expect(header.timeText).toBe(header.formattedTime);
+    expect(header.timeOccurrences).toBe(1);
+    expect(header.timeRight).toBeLessThanOrEqual(header.nickLeft);
+    expect(header.sharesNickLine).toBe(true);
+  }
+  expect(headers[0]?.timeText.length).toBeLessThan(
+    headers[1]?.timeText.length ?? 0,
+  );
+  expect(headers[0]?.nickLeft).toBeCloseTo(headers[1]?.nickLeft ?? 0, 1);
+  expect(headers[0]?.iconLeft).toBeGreaterThanOrEqual(
+    headers[0]?.nickRight ?? Number.POSITIVE_INFINITY,
+  );
+  expect(await headerOverflow(messageRow(page, longNick))).toBeCloseTo(0, 2);
+});
+
 for (const keyboard of ["closed", "open"] as const)
   test(`keeps the latest message above a wrapping phone composer with the keyboard ${keyboard}`, async ({
     page,
@@ -408,6 +464,49 @@ function headerOverflow(row: Locator): Promise<number> {
       ...boxes.map((box) => Math.max(top - box.top, box.bottom - bottom)),
     );
   });
+}
+
+interface HeaderTimeLayout {
+  readonly formattedTime: string;
+  readonly iconLeft: number | undefined;
+  readonly nickLeft: number;
+  readonly nickRight: number;
+  readonly sharesNickLine: boolean;
+  readonly timeOccurrences: number;
+  readonly timeRight: number;
+  readonly timeText: string;
+}
+
+function headerTimeLayout(
+  row: Locator,
+  nick: string,
+): Promise<HeaderTimeLayout> {
+  return row.evaluate((element, expectedNick) => {
+    const time = element.querySelector("time");
+    const author = element.querySelector<HTMLElement>(
+      `[title="${expectedNick}"]`,
+    );
+    if (time === null || author === null)
+      throw new Error(`header of ${expectedNick} is not laid out`);
+    const timeBox = time.getBoundingClientRect();
+    const nickBox = author.getBoundingClientRect();
+    const timeText = time.textContent ?? "";
+    return {
+      formattedTime: new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(Date.parse(time.dateTime)),
+      iconLeft: element.querySelector('[role="img"]')?.getBoundingClientRect()
+        .left,
+      nickLeft: nickBox.left,
+      nickRight: nickBox.right,
+      sharesNickLine:
+        timeBox.top < nickBox.bottom && timeBox.bottom > nickBox.top,
+      timeOccurrences: element.innerText.split(timeText).length - 1,
+      timeRight: timeBox.right,
+      timeText,
+    };
+  }, nick);
 }
 
 function maskImageOrigin(icon: Locator): Promise<string> {
