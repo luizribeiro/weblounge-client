@@ -2554,7 +2554,7 @@ impl Runtime {
     }
 
     fn fill_shown_gap(&self, running: &mut RunningNetwork, buffer_id: BufferId) {
-        if !running.client.snapshot().supports(papo::Feature::History) {
+        if !can_fetch_history(&running.client.snapshot()) {
             return;
         }
         if let Some(fetch) = running.model.begin_gap_fill(buffer_id) {
@@ -3126,6 +3126,18 @@ fn project_own_change_actions(model: &mut NetworkModel, online: Option<&papo::St
         online.is_some_and(can_react),
         online.is_some_and(can_redact),
     );
+}
+
+/// Papo matches a history reply to its request through a labeled batch, and refuses the request
+/// up front on a server that can't label or batch one.
+fn can_fetch_history(state: &papo::State) -> bool {
+    [
+        papo::Feature::History,
+        papo::Feature::LabeledResponse,
+        papo::Feature::Batches,
+    ]
+    .into_iter()
+    .all(|feature| state.supports(feature))
 }
 
 /// Papo resolves a redaction only after its labeled response.
@@ -4495,7 +4507,7 @@ fn fallback_target_reconciliation(
     instance: u64,
     network_id: NetworkId,
 ) {
-    let history_available = client.snapshot().supports(papo::Feature::History);
+    let history_available = can_fetch_history(&client.snapshot());
     let (fetches, buffers) = {
         let mut state = lock(state);
         let Some(running) = state
@@ -5184,10 +5196,9 @@ fn process_connected(
         connected_line(&running.identity.endpoint),
         time_millis(papo::time::now()),
     );
-    running.model.finish_disconnect_gap(
-        time_millis(papo::time::now()),
-        snapshot.supports(papo::Feature::History),
-    );
+    running
+        .model
+        .finish_disconnect_gap(time_millis(papo::time::now()), can_fetch_history(snapshot));
     let next = next_connection_state(
         running.model.connection(),
         ConnectionTransition::Connected,
@@ -12585,6 +12596,33 @@ async fn delay(duration: Duration) {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn history_is_fetched_only_where_papo_can_correlate_the_reply() {
+        for (caps, expected) in [
+            (HISTORY_CAPS, true),
+            ("draft/chathistory batch server-time message-tags", false),
+            (
+                "draft/chathistory labeled-response server-time message-tags",
+                false,
+            ),
+            ("labeled-response batch server-time message-tags", false),
+        ] {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            register_with_caps(&mut wire, caps).await;
+            _ = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+
+            assert_eq!(
+                super::can_fetch_history(&client.snapshot()),
+                expected,
+                "{caps}"
+            );
+        }
     }
 
     #[tokio::test]
