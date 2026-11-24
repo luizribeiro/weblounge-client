@@ -1527,12 +1527,10 @@ impl Runtime {
         let outbound = self.outbound.clone();
         let runtime_state = Arc::clone(&self.state);
         spawn_task(async move {
-            let alive = if online {
-                answers_ping(&client).await
-            } else {
-                false
-            };
-            let result = if alive {
+            let result = if online {
+                if !answers_probe(&client).await {
+                    cancel_inflight_send(&runtime_state, instance).await;
+                }
                 Ok(())
             } else if hosted {
                 cancel_inflight_send(&runtime_state, instance).await;
@@ -2873,17 +2871,18 @@ struct ConnectConfig {
     allow_insecure: bool,
 }
 
-async fn answers_ping(client: &papo::Client) -> bool {
-    tokio::select! {
-        result = client.ping() => result.is_ok(),
-        () = delay(FOREGROUND_PROBE_TIMEOUT) => false,
-    }
+/// A socket that went dead while the device slept still looks live until papo notices. papo ends
+/// one that stays silent past the deadline and redials it at once, and that disconnect brings the
+/// usual recovery.
+async fn answers_probe(client: &papo::Client) -> bool {
+    client
+        .check_connection(FOREGROUND_PROBE_TIMEOUT)
+        .await
+        .is_ok()
 }
 
 /// papo leaves a live connection alone, so a retry that finds one resumes it instead: no
 /// `Connected` event will come to bring the network back online and flush what waited for it.
-/// A socket that went dead while the device was offline still looks live until papo notices,
-/// so only one that answers a ping is resumed; papo reconnects the other on its own.
 async fn reconnect(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -2892,7 +2891,7 @@ async fn reconnect(
 ) -> Result<(), papo::Error> {
     match client.reconnect().await {
         Err(papo::Error::AlreadyConnected) => {
-            if answers_ping(client).await {
+            if answers_probe(client).await {
                 resume_live_connection(state, outbound, instance);
             }
             Ok(())
@@ -11841,6 +11840,49 @@ async fn delay(duration: Duration) {
                 if network.state == NetworkConnectionState::Online
         ) {}
         assert!(client.snapshot().is_connected());
+        drain.abort();
+    }
+
+    #[tokio::test]
+    async fn a_foreground_probe_that_goes_unanswered_redials_the_connection() {
+        let (client, events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge")
+                .reconnect(papo::Reconnect::exponential()),
+        );
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound.clone(),
+            client,
+            events,
+            1,
+        ));
+        wire.register(&[]).await;
+        while !matches!(
+            receiver.recv().await,
+            Some(EngineToUi::NetworkStateChanged { ref network })
+                if network.state == NetworkConnectionState::Online
+        ) {}
+        let runtime = Runtime { state, outbound };
+
+        _ = runtime.request(EngineRequestEnvelope {
+            id: "foreground".into(),
+            request: EngineRequest::Reconnect {
+                network_id: NetworkId(1),
+            },
+        });
+
+        assert!(
+            wire.next_sent().await.starts_with("PING "),
+            "the foreground probes the socket"
+        );
+        tokio::time::timeout(super::FOREGROUND_PROBE_TIMEOUT * 2, async {
+            while wire.next_sent_or_closed().await.is_some() {}
+        })
+        .await
+        .expect("papo ends a socket that stays silent past the probe deadline");
+        wire.close().await;
+        assert_eq!(wire.next_sent().await, "CAP LS 302", "papo redials it");
         drain.abort();
     }
 
