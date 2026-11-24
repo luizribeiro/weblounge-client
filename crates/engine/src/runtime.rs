@@ -114,8 +114,8 @@ struct RunningNetwork {
 
 impl RunningNetwork {
     fn read_markers_server_backed(&self) -> bool {
-        !self.client.snapshot().is_connected()
-            || self.client.snapshot().supports(papo::Feature::ReadMarkers)
+        let snapshot = self.client.snapshot();
+        !snapshot.is_connected() || can_sync_read_markers(&snapshot)
     }
 
     fn record_direct_presence(&mut self, buffer_id: BufferId) {
@@ -2708,12 +2708,8 @@ fn queue_read_advance(pending: &mut VecDeque<ReadAdvance>, advance: ReadAdvance)
 }
 
 fn start_read_flush(running: &mut RunningNetwork) -> Option<(papo::Client, u64)> {
-    if running.client.snapshot().is_connected()
-        && !running
-            .client
-            .snapshot()
-            .supports(papo::Feature::ReadMarkers)
-    {
+    let snapshot = running.client.snapshot();
+    if snapshot.is_connected() && !can_sync_read_markers(&snapshot) {
         running.pending_reads.clear();
         running.model.clear_pending_reads();
         return None;
@@ -3138,6 +3134,11 @@ fn can_fetch_history(state: &papo::State) -> bool {
     ]
     .into_iter()
     .all(|feature| state.supports(feature))
+}
+
+/// Papo reads and moves a read marker only through a labeled response.
+fn can_sync_read_markers(state: &papo::State) -> bool {
+    state.supports(papo::Feature::ReadMarkers) && state.supports(papo::Feature::LabeledResponse)
 }
 
 /// Papo resolves a redaction only after its labeled response.
@@ -4301,7 +4302,7 @@ fn spawn_read_marker_fetch(
     instance: u64,
     target: HistoryTarget,
 ) {
-    if !client.snapshot().supports(papo::Feature::ReadMarkers) {
+    if !can_sync_read_markers(&client.snapshot()) {
         return;
     }
     spawn_task(async move {
@@ -4316,7 +4317,7 @@ async fn fetch_and_apply_read_marker(
     instance: u64,
     target: HistoryTarget,
 ) {
-    if !client.snapshot().supports(papo::Feature::ReadMarkers) {
+    if !can_sync_read_markers(&client.snapshot()) {
         return;
     }
     let read_until = match target.clone() {
@@ -12596,6 +12597,32 @@ async fn delay(duration: Duration) {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn read_markers_sync_only_where_papo_can_correlate_the_reply() {
+        for (caps, expected) in [
+            (
+                "draft/read-marker labeled-response batch server-time message-tags",
+                true,
+            ),
+            ("draft/read-marker batch server-time message-tags", false),
+            ("labeled-response batch server-time message-tags", false),
+        ] {
+            let (client, mut events, mut wire) =
+                wire(papo::Client::builder("irc://offline.test", "weblounge"));
+            register_with_caps(&mut wire, caps).await;
+            _ = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+
+            assert_eq!(
+                super::can_sync_read_markers(&client.snapshot()),
+                expected,
+                "{caps}"
+            );
+        }
     }
 
     #[tokio::test]
