@@ -176,17 +176,17 @@
     "papo-test-infra": {
       "flake": false,
       "locked": {
-        "lastModified": 1795425624,
-        "narHash": "sha256-SspAfRUkiThbmR6kGaggq3cag0iaK5RIwDLsB+Q1SCM=",
+        "lastModified": 1795519064,
+        "narHash": "sha256-tD2T2459p8NPXpgrrI+7prfuywuTm0Y+jrN001I9zZI=",
         "owner": "luizribeiro",
         "repo": "papo",
-        "rev": "1f64caa80d72dedae0e7a87999e45f3c9b1ef425",
+        "rev": "7c7884aec81fa24ccc88011ab9fc302c940d0879",
         "type": "github"
       },
       "original": {
         "owner": "luizribeiro",
         "repo": "papo",
-        "rev": "1f64caa80d72dedae0e7a87999e45f3c9b1ef425",
+        "rev": "7c7884aec81fa24ccc88011ab9fc302c940d0879",
         "type": "github"
       }
     },
