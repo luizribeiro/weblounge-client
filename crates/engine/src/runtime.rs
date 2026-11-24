@@ -17600,6 +17600,40 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn a_requested_history_row_is_a_bot_by_its_own_tag() {
+        let mut harness = ReplayHarness::joined(
+            "draft/chathistory labeled-response batch server-time message-tags account-tag",
+        )
+        .await;
+        harness
+            .wire
+            .server(":offline.test 005 weblounge BOT=B :are supported")
+            .await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(
+            &mut harness.wire,
+            &latest,
+            &[
+                "@batch={batch};bot;account=warm;time=2026-10-27T12:00:00.000Z;msgid=h1 :warm!w@host PRIVMSG #room :tagged bot",
+                "@batch={batch};account=human;time=2026-10-27T12:00:01.000Z;msgid=h2 :human!h@host PRIVMSG #room :untagged",
+            ],
+        )
+        .await;
+
+        let output = harness.page_output("bot-sentinel").await;
+        let bot = |text: &str| {
+            timeline_messages(&output)
+                .into_iter()
+                .find(|message| message.text == text)
+                .expect("history row")
+                .bot
+        };
+        assert_eq!(bot("tagged bot"), Some(true));
+        assert_eq!(bot("untagged"), None);
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
     async fn live_and_replayed_actor_bot_facts_match_without_guessing_unknown() {
         let mut harness = ReplayHarness::joined(
             "draft/chathistory labeled-response batch server-time message-tags account-tag draft/oper-tag",

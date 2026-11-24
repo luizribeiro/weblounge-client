@@ -153,6 +153,22 @@ impl ChatInput<'_> {
             Self::Notice(notice) => notice.received_at,
         }
     }
+
+    fn tags(&self) -> &papo::Tags {
+        match self {
+            Self::Message(message) => &message.tags,
+            Self::Notice(notice) => &notice.tags,
+        }
+    }
+
+    /// papo keeps replayed lines out of its live user facts, so a history row's own `bot` tag is
+    /// the only witness that its sender spoke as a bot; an untagged row says nothing either way.
+    fn bot(&self, state: &papo::State, history: bool) -> Option<bool> {
+        if history && self.tags().contains("bot") {
+            return Some(true);
+        }
+        crate::name_key::known_user(state, self.actor()).and_then(papo::User::is_bot)
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1347,7 +1363,7 @@ impl NetworkModel {
             author: actor.nick().to_string(),
             text: input.text().to_owned(),
             kind: input.kind(),
-            bot: crate::name_key::known_user(state, actor).and_then(papo::User::is_bot),
+            bot: input.bot(state, history),
             authorship: map_authorship(authorship),
             msgid: input.msgid(),
             server_time_ms: input.server_time().map(papo::ServerTime::as_millis),
