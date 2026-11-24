@@ -200,6 +200,12 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - DC2: update design 14 for the switcher vs command palette split and design 29 for how "Add network" fits Settings.
 
 ### Done recently
+- 2026-11-24: a DM peer who messages us shows online at once instead of after its `MONITOR`
+  reply, which Ergo's fakelag spaces 500 ms apart, so a burst of DMs kept updating the sidebar
+  for seconds (the `sidebar-jump.spec.ts` idle audit). A live line from a peer the DM watches
+  counts as online, decided from the DM's own watch and the connection's evidence, because papo
+  forgets an unshared peer, and lists a new watch, only later; a refused watch (734) doesn't
+  count. e11ad84f, 911ebf4e, bfed5609; `direct_peer.rs` and runtime tests.
 - 2026-11-23: F55, a phone chat-row swipe only opens the row. The row stops at its 148px of
   actions however far or fast the finger goes, and a released swipe settles open instead of
   closing a DM past 60% of the row; Close and Leave run only from their buttons. The close
@@ -2314,7 +2320,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `1f64caa` (API final for 0.1). DMs send to the nick and hold a
+- **papo:** papo 0.1 pinned at `7c7884a` (not for landing: papo 2b906f48d and later mask
+  credentials that also appear as ordinary text in replies; repin to papo's fix first). The
+  foreground and pageshow probe is `Client::check_connection`, which ends and redials a socket that
+  stays silent past the 4s deadline. History needs chathistory, labeled-response and batch, and
+  read markers need labeled-response, or papo refuses them up front; the engine treats either as
+  unavailable then. DMs send to the nick and hold a
   papo `Watch` for peers we share no channel with. papo dropped `PeerKey`, so the DM identity guard
   is the engine's own `PeerPin`: the peer's account on TLS connections (persisted; papo's old pins
   still read) plus per-connection holder continuity that a rename away, quit or leaving every
