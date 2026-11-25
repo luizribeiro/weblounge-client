@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import {
   appBadgeCount,
+  clearAppPushState,
   closeMessageNotifications,
   closeReadConversationNotifications,
   conversationNotificationCounts,
@@ -199,4 +200,34 @@ it("writes the counts, then sets the badge through the host's notification cente
     ["counts", [{ tag: "Lounge/mel", count: 0 }]],
     ["clear"],
   ]);
+});
+
+it("withdraws every delivered notification, the counts and the badge", async () => {
+  const calls: unknown[] = [];
+  const delivered = [
+    { data: { conversationTag: "Lounge/mel" }, close: vi.fn() },
+    { data: undefined, close: vi.fn() },
+  ];
+  await clearAppPushState({
+    badge: {
+      setAppBadge: async (count?: number) => {
+        calls.push(["set", count]);
+      },
+      clearAppBadge: async () => {
+        calls.push(["clear"]);
+      },
+    },
+    registrations: {
+      getRegistration: async () => ({
+        getNotifications: async () => delivered,
+      }),
+    },
+    writeCounts: async (counts: readonly unknown[]) => {
+      calls.push(["counts", counts]);
+    },
+  });
+
+  for (const notification of delivered)
+    expect(notification.close).toHaveBeenCalledOnce();
+  expect(calls).toEqual([["counts", []], ["clear"]]);
 });

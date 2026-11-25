@@ -106,12 +106,9 @@ export async function closeReadConversationNotifications(
   registrations: RegistrationProvider,
 ): Promise<void> {
   const readMarkers = conversationReadMarkers(buffers, networkLabels);
-  const registration = await registrations.getRegistration("/");
-  const notifications = await registration?.getNotifications();
-  for (const notification of notifications ?? []) {
-    if (notificationDataIsRead(notification.data, readMarkers))
-      notification.close();
-  }
+  await closeDeliveredNotifications(registrations, (data) =>
+    notificationDataIsRead(data, readMarkers),
+  );
 }
 
 /** Withdraws pushed notifications whose message was deleted. */
@@ -119,18 +116,33 @@ export async function closeMessageNotifications(
   msgids: readonly string[],
   registrations: RegistrationProvider,
 ): Promise<void> {
-  const registration = await registrations.getRegistration("/");
-  const notifications = await registration?.getNotifications();
-  for (const notification of notifications ?? []) {
-    const data: unknown = notification.data;
-    if (
+  await closeDeliveredNotifications(
+    registrations,
+    (data) =>
       typeof data === "object" &&
       data !== null &&
       "messageId" in data &&
       typeof data.messageId === "string" &&
-      msgids.includes(data.messageId)
-    )
-      notification.close();
+      msgids.includes(data.messageId),
+  );
+}
+
+/** Withdraws everything the host shows for the signed-in member: notifications, counts and badge. */
+export async function clearAppPushState(
+  center: NotificationCenter,
+): Promise<void> {
+  await closeDeliveredNotifications(center.registrations, () => true);
+  await syncAppBadge([], new Map(), center);
+}
+
+async function closeDeliveredNotifications(
+  registrations: RegistrationProvider,
+  shouldClose: (data: unknown) => boolean,
+): Promise<void> {
+  const registration = await registrations.getRegistration("/");
+  const notifications = await registration?.getNotifications();
+  for (const notification of notifications ?? []) {
+    if (shouldClose(notification.data)) notification.close();
   }
 }
 
