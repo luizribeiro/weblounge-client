@@ -30,6 +30,7 @@ import { t } from "../../strings";
 import { ConfirmationDialog } from "../../ui/ConfirmationDialog";
 import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
+import type { SendText } from "../send-text";
 import { MobileChannelDetails } from "./MobileChannelDetails";
 import { MobileChatActionSheet } from "./MobileChatActionSheet";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
@@ -291,11 +292,11 @@ export function MobileShell(props: MobileShellProps) {
     });
     return true;
   };
-  const send = (bufferId: number, text: string): Promise<boolean> => {
+  const send: SendText = (bufferId, text, replyTo) => {
     const buffer = props.buffers.find((candidate) => candidate.id === bufferId);
     return buffer !== undefined && closesDirect(buffer, text)
       ? closeDirect(buffer)
-      : props.onSend(bufferId, text);
+      : props.onSend(bufferId, text, replyTo);
   };
   const requestClose = (buffer: BufferProjection) => {
     if (buffer.kind === "channel")
@@ -772,6 +773,7 @@ export function MobileShell(props: MobileShellProps) {
                 returnScrollTop = nextScrollTop;
             }}
             onSend={send}
+            replyDrafts={props.replyDrafts}
             onTurnOnNotifications={props.onTurnOnNotifications}
             onOpenSettings={
               props.onChangeSetting === undefined ? undefined : openSettings

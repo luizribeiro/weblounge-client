@@ -115,6 +115,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
       {platform.environment().shell === "mobile" ? (
         <MobileShell
           {...sharedProps}
+          replyDrafts={replyDrafts}
           bufferRemoval={props.bufferRemoval}
           focusRequest={pendingFocusRequest()}
           initialBufferId={mobileInitialBufferId() ?? props.activeBufferId}

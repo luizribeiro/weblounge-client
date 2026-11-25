@@ -17,6 +17,7 @@ import type {
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
 import { Composer } from "../../features/composer/Composer";
+import type { ReplyDrafts } from "../../features/composer/reply-drafts";
 import { ConversationTitle } from "../../features/conversation/ConversationTitle";
 import {
   DirectIdentityBanner,
@@ -39,6 +40,10 @@ import {
   type RedactBufferMessage,
 } from "../../features/conversation/redact-target";
 import {
+  bufferReply,
+  replyTarget,
+} from "../../features/conversation/reply-target";
+import {
   createReadDwell,
   newestCommittedMessageId,
   newestCommittedTimelineMessageId,
@@ -48,6 +53,7 @@ import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { copyText } from "../../ui/copy-text";
 import { Line } from "../../ui/Line";
+import type { SendText } from "../send-text";
 import { MobileMessageActionSheet } from "./MobileMessageActionSheet";
 import styles from "./MobileShell.module.css";
 import { messageSheetActions } from "./message-sheet-actions";
@@ -91,7 +97,8 @@ export interface MobileConversationProps {
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
-  readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly onSend: SendText;
+  readonly replyDrafts?: ReplyDrafts | undefined;
   readonly onToggleReaction?: ToggleBufferReaction | undefined;
   readonly onRedactMessage?: RedactBufferMessage | undefined;
   readonly visible?: boolean | undefined;
@@ -120,10 +127,9 @@ export function MobileConversation(props: MobileConversationProps) {
       focusBeforeActions.focus({ preventScroll: true });
     focusBeforeActions = null;
   };
-  // Dismissing the sheet hands focus back to where it was, so the confirmation must open after
-  // that or it would lose focus.
-  const confirmDeleteAfterSheet = (message: MessageProjection) =>
-    queueMicrotask(() => listController?.confirmDelete(message.id));
+  // Dismissing the sheet hands focus back to where it was, so whatever takes focus next (the
+  // delete confirmation, the composer for a reply) must run after that.
+  const afterSheetCloses = (run: () => void) => () => queueMicrotask(run);
   const toggleReaction = createMemo(() =>
     bufferReactionToggle(
       props.buffer.id,
@@ -134,6 +140,10 @@ export function MobileConversation(props: MobileConversationProps) {
   const redactMessage = createMemo(() =>
     bufferRedaction(props.buffer.id, props.network, props.onRedactMessage),
   );
+  const replyMessage = createMemo(() =>
+    bufferReply(props.buffer.id, props.network, props.replyDrafts?.start),
+  );
+
   const newestMessageId = createMemo(() =>
     props.timeline === undefined
       ? newestCommittedMessageId(props.messages)
@@ -295,6 +305,8 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             onToggleReaction={toggleReaction()}
             onRedactMessage={redactMessage()}
+            onReplyMessage={replyMessage()}
+            replyingTo={props.replyDrafts?.draft(props.buffer.id)?.messageId}
             onMessageActions={openMessageActions}
             heldMessageId={heldMessage()?.id}
             presentation="mobile"
@@ -341,7 +353,13 @@ export function MobileConversation(props: MobileConversationProps) {
               props.buffer.channel_status === "kicked" ||
               directIdentityBlocked(props.buffer)
             }
-            onSend={(text) => props.onSend(props.buffer.id, text)}
+            onCancelReply={(reply) =>
+              props.replyDrafts?.cancel(props.buffer.id, reply)
+            }
+            onSend={(text, replyTo) =>
+              props.onSend(props.buffer.id, text, replyTo)
+            }
+            reply={props.replyDrafts?.draft(props.buffer.id)}
             typers={props.typers}
             uploads={
               props.network === undefined
@@ -352,19 +370,26 @@ export function MobileConversation(props: MobileConversationProps) {
         </Show>
       </div>
       <Show when={heldMessage()} keyed>
-        {(message) => (
-          <MobileMessageActionSheet
-            actions={messageSheetActions(message, {
-              copyText,
-              delete: canRedact(message, redactMessage())
-                ? () => confirmDeleteAfterSheet(message)
-                : undefined,
-            })}
-            message={message}
-            onDismiss={dismissMessageActions}
-            onReact={reactionTarget(message, toggleReaction())}
-          />
-        )}
+        {(message) => {
+          const reply = replyTarget(message, replyMessage());
+          return (
+            <MobileMessageActionSheet
+              actions={messageSheetActions(message, {
+                copyText,
+                reply:
+                  reply === undefined ? undefined : afterSheetCloses(reply),
+                delete: canRedact(message, redactMessage())
+                  ? afterSheetCloses(() =>
+                      listController?.confirmDelete(message.id),
+                    )
+                  : undefined,
+              })}
+              message={message}
+              onDismiss={dismissMessageActions}
+              onReact={reactionTarget(message, toggleReaction())}
+            />
+          );
+        }}
       </Show>
     </section>
   );

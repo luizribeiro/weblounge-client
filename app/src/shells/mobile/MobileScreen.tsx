@@ -13,6 +13,7 @@ import type {
   TypingProjection,
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
+import type { ReplyDrafts } from "../../features/composer/reply-drafts";
 import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
 import type { RedactBufferMessage } from "../../features/conversation/redact-target";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
@@ -23,6 +24,7 @@ import {
 import type { NotificationSwitch } from "../../features/settings/push-settings";
 import type { NetworkUploads } from "../../features/uploads/types";
 import { movingTransform } from "../../ui/transform-motion";
+import type { SendText } from "../send-text";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
 import styles from "./MobileShell.module.css";
@@ -71,7 +73,8 @@ export interface MobileShellData extends NotificationPromptControls {
     cursor: number,
     explicit: boolean,
   ) => void;
-  readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly onSend: SendText;
+  readonly replyDrafts?: ReplyDrafts | undefined;
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
@@ -235,6 +238,7 @@ export function MobileScreen(props: MobileScreenProps) {
           showConnectionError={!props.retained}
           onRetry={props.onRetry}
           onSend={props.onSend}
+          replyDrafts={props.replyDrafts}
           onToggleReaction={props.onToggleReaction}
           onRedactMessage={props.onRedactMessage}
           visible={!props.inactive && !props.retained}
