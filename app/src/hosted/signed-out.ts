@@ -1,6 +1,6 @@
 type MarkerStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const signedOutKey = "weblounge.account.signed-out";
+export const signedOutKey = "weblounge.account.signed-out";
 
 /**
  * The members' session outlives a sign-out here (concierge has no sign-out endpoint the app may
