@@ -37,6 +37,7 @@ export const ENGINE_MESSAGE_KEYS = [
   "engine.offline",
   "engine.read_marker_invalid",
   "engine.redact_failed",
+  "engine.reply_parent_gone",
   "engine.send_failed",
   "engine.state_inconsistent",
   "engine.storage_unavailable",

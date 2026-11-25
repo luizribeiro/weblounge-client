@@ -233,6 +233,8 @@ export const messages = {
   "engine.read_marker_invalid":
     "That read position isn't available on this server.",
   "engine.redact_failed": "Couldn't delete the message.",
+  "engine.reply_parent_gone":
+    "That message is no longer available to reply to.",
   "engine.send_failed": "The message couldn't be sent.",
   "engine.state_inconsistent":
     "The conversation changed unexpectedly. Try again.",

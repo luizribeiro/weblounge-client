@@ -480,9 +480,11 @@ impl Runtime {
                 buffer_id,
                 message_id,
             } => self.redact_message(envelope.id, buffer_id, message_id),
-            EngineRequest::SubmitInput { buffer_id, input } => {
-                self.submit_input(envelope.id, buffer_id, &input)
-            }
+            EngineRequest::SubmitInput {
+                buffer_id,
+                input,
+                reply_to,
+            } => self.submit_input(envelope.id, buffer_id, &input, reply_to),
             EngineRequest::CompleteInput {
                 buffer_id,
                 input,
@@ -910,7 +912,13 @@ impl Runtime {
         Vec::new()
     }
 
-    fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
+    fn submit_input(
+        &self,
+        id: String,
+        buffer_id: BufferId,
+        input: &str,
+        reply_to: Option<MessageId>,
+    ) -> Vec<EngineToUi> {
         let chantypes = lock(&self.state).network.as_ref().map_or_else(
             || "#&".to_owned(),
             |running| running.client.snapshot().isupport().chantypes().to_owned(),
@@ -946,7 +954,7 @@ impl Runtime {
         {
             running.model.remember_command(name);
         }
-        self.run_command(id, buffer_id, parsed)
+        self.run_command(id, buffer_id, parsed, reply_to)
     }
 
     fn run_command(
@@ -954,11 +962,13 @@ impl Runtime {
         id: String,
         buffer_id: BufferId,
         parsed: Result<Command, commands::InputError>,
+        reply_to: Option<MessageId>,
     ) -> Vec<EngineToUi> {
         match parsed {
-            Ok(Command::Say { text }) => {
-                self.send_input(id, buffer_id, text.0, &crate::MessageKind::Text)
-            }
+            Ok(Command::Say { text }) => match reply_to {
+                Some(parent) => self.send_reply(id, buffer_id, parent, text.0),
+                None => self.send_input(id, buffer_id, text.0, &crate::MessageKind::Text),
+            },
             Ok(Command::Me { text }) => {
                 self.send_input(id, buffer_id, text.0, &crate::MessageKind::Action)
             }
@@ -1688,28 +1698,47 @@ impl Runtime {
         {
             return self.message_direct(command_id, nick, text, false);
         }
+        self.queue_send(command_id, buffer_id, |model, state| {
+            match kind {
+                crate::MessageKind::Text => model.begin_send(buffer_id, text, state),
+                crate::MessageKind::Action => model.begin_action(buffer_id, text, state),
+                crate::MessageKind::IrcNotice(_)
+                | crate::MessageKind::Notice(_)
+                | crate::MessageKind::Redacted(_) => None,
+            }
+            .ok_or_else(|| model.send_rejection_key(buffer_id))
+        })
+    }
+
+    fn send_reply(
+        &self,
+        command_id: String,
+        buffer_id: crate::BufferId,
+        parent_id: MessageId,
+        text: String,
+    ) -> Vec<EngineToUi> {
+        self.queue_send(command_id, buffer_id, |model, state| {
+            model.begin_reply(buffer_id, parent_id, text, state)
+        })
+    }
+
+    fn queue_send(
+        &self,
+        command_id: String,
+        buffer_id: crate::BufferId,
+        begin: impl FnOnce(
+            &mut NetworkModel,
+            &papo::State,
+        ) -> Result<(PendingSend, Vec<EngineToUi>), EngineMessageKey>,
+    ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let await_live_target = running.model.awaits_live_target(buffer_id);
-        let pending = match kind {
-            crate::MessageKind::Text => {
-                running
-                    .model
-                    .begin_send(buffer_id, text, &running.client.snapshot())
-            }
-            crate::MessageKind::Action => {
-                running
-                    .model
-                    .begin_action(buffer_id, text, &running.client.snapshot())
-            }
-            crate::MessageKind::IrcNotice(_)
-            | crate::MessageKind::Notice(_)
-            | crate::MessageKind::Redacted(_) => None,
-        };
-        let Some((pending, mut output)) = pending else {
-            return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
+        let (pending, mut output) = match begin(&mut running.model, &running.client.snapshot()) {
+            Ok(started) => started,
+            Err(key) => return rejected_command(command_id, key),
         };
         let typing_done = running.typing.done(buffer_id);
         let typing_target = running.model.send_target(buffer_id);
@@ -3067,6 +3096,19 @@ async fn send(
     client: &papo::Client,
     pending: &PendingSend,
 ) -> Result<papo::SendOutcome, SendError> {
+    if let SendTarget::Direct { nick, pin, tls } = &pending.target {
+        check_direct_recipient(client, nick, pin.as_ref(), *tls)?;
+    }
+    if let Some(reply) = &pending.reply {
+        let parent = reply
+            .saved
+            .restore(client)
+            .map_err(|error| classify_send_error(&error))?;
+        return client
+            .reply(parent, pending.text.clone())
+            .await
+            .map_err(|error| classify_send_error(&error));
+    }
     let action = pending.kind == crate::MessageKind::Action;
     match pending.target.clone() {
         SendTarget::Channel(channel) => if action {
@@ -3075,13 +3117,10 @@ async fn send(
             client.privmsg(channel, pending.text.clone()).await
         }
         .map_err(|error| classify_send_error(&error)),
-        SendTarget::Direct { nick, pin, tls } => {
-            check_direct_recipient(client, &nick, pin.as_ref(), tls)?;
-            if action {
-                client.action(nick, pending.text.clone()).await
-            } else {
-                client.privmsg(nick, pending.text.clone()).await
-            }
+        SendTarget::Direct { nick, .. } => if action {
+            client.action(nick, pending.text.clone()).await
+        } else {
+            client.privmsg(nick, pending.text.clone()).await
         }
         .map_err(|error| classify_send_error(&error)),
     }
@@ -8607,6 +8646,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "hello".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "@+typing=done TAGMSG #room");
@@ -8710,6 +8750,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id: BufferId(1),
                     input: "/help join".into(),
+                    reply_to: None,
                 },
             }),
             [
@@ -8733,6 +8774,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id: BufferId(1),
                     input: input.into(),
+                    reply_to: None,
                 },
             })
         };
@@ -8781,6 +8823,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id: BufferId(1),
                     input: "/version".into(),
+                    reply_to: None,
                 },
             }),
             "weblounge test",
@@ -8795,6 +8838,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id: BufferId(1),
                     input: "/version".into(),
+                    reply_to: None,
                 },
             }),
             "weblounge test · update ready — restart the app",
@@ -8862,6 +8906,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/query mel".into(),
+                reply_to: None,
             },
         });
         assert!(immediate.is_empty());
@@ -8896,6 +8941,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id: BufferId(1),
                         input: "/query mel".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -9003,6 +9049,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/close".into(),
+                reply_to: None,
             },
         });
         assert!(matches!(
@@ -9048,6 +9095,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: alice,
                 input: "/close".into(),
+                reply_to: None,
             },
         });
 
@@ -9179,6 +9227,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id,
                     input: input.into(),
+                    reply_to: None,
                 },
             });
             loop {
@@ -9299,6 +9348,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: chanserv,
                 input: "INFO #room".into(),
+                reply_to: None,
             },
         });
 
@@ -9352,6 +9402,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id: BufferId(1),
                         input: "/msg alice hello".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -9687,6 +9738,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/?".into(),
+                reply_to: None,
             },
         });
         assert!(matches!(
@@ -9848,7 +9900,7 @@ async fn delay(duration: Duration) {
         };
         mark_runtime_online(&runtime);
 
-        _ = runtime.submit_input("join".into(), BufferId(1), "/join #new secret");
+        _ = runtime.submit_input("join".into(), BufferId(1), "/join #new secret", None);
         assert_eq!(wire.next_sent().await, "JOIN #new secret");
         wire.server(":weblounge!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
@@ -9877,6 +9929,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/topic new topic".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "TOPIC #new :new topic");
@@ -9887,6 +9940,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/nick lounge2".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "NICK lounge2");
@@ -9904,6 +9958,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/msg alice hello".into(),
+                reply_to: None,
             },
         }));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
@@ -9961,6 +10016,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/part later".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "PART #projects/weblounge later");
@@ -9992,6 +10048,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/close".into(),
+                reply_to: None,
             },
         });
         assert!(matches!(
@@ -10099,6 +10156,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id,
                         input: input.into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -10184,6 +10242,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/kick mel link spam".into(),
+                reply_to: None,
             },
         });
         assert!(kick.is_empty());
@@ -10201,6 +10260,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/kick mel".into(),
+                reply_to: None,
             },
         });
         assert!(matches!(
@@ -10224,6 +10284,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id,
                         input: "/op mel iris,ana".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -10255,6 +10316,7 @@ async fn delay(duration: Duration) {
                         request: EngineRequest::SubmitInput {
                             buffer_id,
                             input: input.into(),
+                            reply_to: None,
                         },
                     })
                     .is_empty()
@@ -10291,6 +10353,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id,
                         input: "/op iris".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -10539,6 +10602,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id,
                         input: "/mode +Z".into(),
+                        reply_to: None,
                     },
                 })
                 .as_slice(),
@@ -10588,6 +10652,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id,
                         input: input.into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty(),
@@ -10663,6 +10728,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "still here".into(),
+                reply_to: None,
             },
         });
         assert!(
@@ -10675,6 +10741,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/join #room".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "JOIN #room");
@@ -10693,6 +10760,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "back".into(),
+                reply_to: None,
             },
         });
         assert_eq!(wire.next_sent().await, "PRIVMSG #room back");
@@ -10752,6 +10820,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/identify hunter2".into(),
+                reply_to: None,
             },
         });
 
@@ -10801,6 +10870,7 @@ async fn delay(duration: Duration) {
             },
             text: "still you".into(),
             kind: crate::MessageKind::Text,
+            reply: None,
         };
 
         let sender = client.clone();
@@ -10870,6 +10940,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/close".into(),
+                reply_to: None,
             },
         });
         assert!(
@@ -10963,6 +11034,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: unavailable_id,
                 input: "/close".into(),
+                reply_to: None,
             },
         });
 
@@ -11169,6 +11241,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id: BufferId(1),
                         input: "/join #new".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -11216,6 +11289,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #room".into(),
+                reply_to: None,
             },
         });
         let [focus, result] = output.as_slice() else {
@@ -11276,6 +11350,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #room".into(),
+                reply_to: None,
             },
         }));
         assert_eq!(wire.next_sent().await, "JOIN #room");
@@ -11343,6 +11418,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #a,#b key1,key2".into(),
+                reply_to: None,
             },
         });
 
@@ -11480,6 +11556,7 @@ async fn delay(duration: Duration) {
                     request: EngineRequest::SubmitInput {
                         buffer_id: BufferId(1),
                         input: "/join #banned".into(),
+                        reply_to: None,
                     },
                 })
                 .is_empty()
@@ -11552,6 +11629,7 @@ async fn delay(duration: Duration) {
                         request: EngineRequest::SubmitInput {
                             buffer_id: BufferId(1),
                             input: format!("/join {channel}"),
+                            reply_to: None,
                         },
                     })
                     .is_empty()
@@ -11992,6 +12070,7 @@ async fn delay(duration: Duration) {
             request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/topic".into(),
+                reply_to: None,
             },
         });
         assert!(shown.iter().any(|event| matches!(
@@ -15884,6 +15963,7 @@ async fn delay(duration: Duration) {
                 request: EngineRequest::SubmitInput {
                     buffer_id: BufferId(1),
                     input: "/join #room".into(),
+                    reply_to: None,
                 },
             }),
             [EngineToUi::CommandRejected {
@@ -17316,6 +17396,88 @@ async fn delay(duration: Duration) {
                 nick_color_index: parent_color,
                 text: "who has the keys?".into(),
             })
+        );
+        harness.drain.abort();
+    }
+
+    impl ReplayHarness {
+        fn reply(&self, buffer_id: BufferId, parent_id: MessageId, input: &str) -> Vec<EngineToUi> {
+            Runtime {
+                state: Arc::clone(&self.state),
+                outbound: self.outbound.clone(),
+            }
+            .request(EngineRequestEnvelope {
+                id: "reply".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id,
+                    input: input.into(),
+                    reply_to: Some(parent_id),
+                },
+            })
+        }
+
+        async fn confirmed(&mut self, text: &str) -> crate::MessageProjection {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    let event = self.receiver.recv().await.expect("runtime remains active");
+                    if let Some(message) =
+                        event_timeline_messages(&event).into_iter().find(|message| {
+                            message.text == text && message.delivery == MessageDelivery::Confirmed
+                        })
+                    {
+                        return message.clone();
+                    }
+                }
+            })
+            .await
+            .expect("the confirmed row arrives")
+        }
+    }
+
+    #[tokio::test]
+    async fn a_channel_reply_names_its_parent_on_the_wire_and_quotes_it_once_echoed() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, parent_id) = harness
+            .live_room_message("parent", "who has the keys?")
+            .await;
+
+        harness.reply(buffer_id, parent_id, "I do");
+
+        let sent = next_sent_containing(&mut harness.wire, "PRIVMSG #room").await;
+        let (tags, line) = sent.split_once(' ').expect("a tagged line");
+        assert!(
+            tags.trim_start_matches('@')
+                .split(';')
+                .any(|tag| tag == "+reply=parent"),
+            "{sent}"
+        );
+        assert_eq!(line, "PRIVMSG #room :alice: I do");
+        let label = line_label(&sent);
+        harness
+            .wire
+            .server(format!(
+                "@label={label};msgid=mine;time=2026-10-27T13:02:00.000Z :weblounge!u@host PRIVMSG #room :alice: I do"
+            ))
+            .await;
+
+        let reply = harness.confirmed("I do").await;
+        assert!(matches!(
+            reply.reply,
+            Some(crate::ReplyParent::Loaded { message_id, .. }) if message_id == parent_id
+        ));
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_a_row_that_has_left_the_timeline_is_refused() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, _) = harness.live_room_message("parent", "ship it?").await;
+
+        let refused = harness.reply(buffer_id, MessageId(9_999), "yes");
+
+        assert_eq!(
+            rejection_key_and_nick(refused.into_iter().next().expect("a rejection")).0,
+            EngineMessageKey::ReplyParentGone
         );
         harness.drain.abort();
     }

@@ -216,13 +216,6 @@ struct RowFacts {
 }
 
 impl RowFacts {
-    fn saved(saved: Option<SavedMessage>) -> Self {
-        Self {
-            saved,
-            ..Self::default()
-        }
-    }
-
     fn of(incoming: &Incoming) -> Self {
         Self {
             saved: incoming.saved.clone(),
@@ -545,6 +538,14 @@ pub(crate) struct PendingSend {
     pub(crate) target: SendTarget,
     pub(crate) text: String,
     pub(crate) kind: MessageKind,
+    pub(crate) reply: Option<ReplyTarget>,
+}
+
+/// The message a send replies to, as papo needs it to thread the reply.
+#[derive(Clone, Debug)]
+pub(crate) struct ReplyTarget {
+    pub(crate) saved: SavedMessage,
+    pub(crate) msgid: String,
 }
 
 /// This account's reaction change awaiting papo and the server's echo.
@@ -1759,6 +1760,13 @@ impl NetworkModel {
         Some(())
     }
 
+    /// A parent that has left the timeline can no longer thread a retried reply.
+    fn reply_target(&self, msgid: String) -> Option<ReplyTarget> {
+        let (buffer_id, message_id) = self.msgids.get(&msgid)?.location?;
+        let saved = self.saved_message(buffer_id, message_id)?;
+        Some(ReplyTarget { saved, msgid })
+    }
+
     /// Papo's saved reference of a row, which every change to that message is sent through.
     fn saved_message(&self, buffer_id: BufferId, message_id: MessageId) -> Option<SavedMessage> {
         self.buffers
@@ -1917,7 +1925,49 @@ impl NetworkModel {
         text: String,
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
-        self.begin_send_kind(buffer_id, text, MessageKind::Text, state)
+        self.begin_send_kind(buffer_id, text, MessageKind::Text, None, state)
+    }
+
+    /// The parent must be a delivered text row papo can address. Channel replies start with
+    /// the parent's nick for plain IRC clients (design 25).
+    pub(crate) fn begin_reply(
+        &mut self,
+        buffer_id: BufferId,
+        parent_id: MessageId,
+        text: String,
+        state: &papo::State,
+    ) -> Result<(PendingSend, Vec<EngineToUi>), EngineMessageKey> {
+        let (reply, text) = self
+            .reply_parent(buffer_id, parent_id, text)
+            .ok_or(EngineMessageKey::ReplyParentGone)?;
+        self.begin_send_kind(buffer_id, text, MessageKind::Text, Some(reply), state)
+            .ok_or_else(|| self.send_rejection_key(buffer_id))
+    }
+
+    fn reply_parent(
+        &self,
+        buffer_id: BufferId,
+        parent_id: MessageId,
+        text: String,
+    ) -> Option<(ReplyTarget, String)> {
+        let saved = self.saved_message(buffer_id, parent_id)?;
+        let buffer = self.buffers.get(&buffer_id)?;
+        let parent = buffer
+            .timeline
+            .iter()
+            .find(|record| record.id == parent_id)
+            .and_then(chat_projection)
+            .filter(|message| {
+                is_committed(message)
+                    && matches!(message.kind, MessageKind::Text | MessageKind::Action)
+            })?;
+        let msgid = parent.server_ids.first()?.clone();
+        let text = if buffer.projection.kind == BufferKind::Channel {
+            format!("{}: {text}", parent.author)
+        } else {
+            text
+        };
+        Some((ReplyTarget { saved, msgid }, text))
     }
 
     pub(crate) fn begin_action(
@@ -1926,7 +1976,7 @@ impl NetworkModel {
         text: String,
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
-        self.begin_send_kind(buffer_id, text, MessageKind::Action, state)
+        self.begin_send_kind(buffer_id, text, MessageKind::Action, None, state)
     }
 
     pub(crate) fn append_notice(
@@ -2157,6 +2207,7 @@ impl NetworkModel {
         buffer_id: BufferId,
         text: String,
         kind: MessageKind,
+        reply: Option<ReplyTarget>,
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
@@ -2227,6 +2278,7 @@ impl NetworkModel {
                 message.clone(),
                 RowFacts {
                     send_text: Some(text.clone()),
+                    reply_to: reply.as_ref().map(|reply| reply.msgid.clone()),
                     ..RowFacts::default()
                 },
                 DedupReferences::default(),
@@ -2245,6 +2297,7 @@ impl NetworkModel {
                 target,
                 text,
                 kind,
+                reply,
             },
             events,
         ))
@@ -2613,7 +2666,11 @@ impl NetworkModel {
                 .insert(
                     pending.buffer_id,
                     message.clone(),
-                    RowFacts::saved(saved.clone()),
+                    RowFacts {
+                        saved: saved.clone(),
+                        reply_to: pending.reply.as_ref().map(|reply| reply.msgid.clone()),
+                        ..RowFacts::default()
+                    },
                     DedupReferences {
                         msgids: message.server_ids.clone(),
                         fallback: None,
@@ -2722,13 +2779,17 @@ impl NetworkModel {
             .and_then(chat_projection_mut)?;
         message.delivery = MessageDelivery::Optimistic;
         let kind = message.kind.clone();
-        let text = buffer.chat_metadata.get(&message_id)?.send_text.clone()?;
+        let metadata = buffer.chat_metadata.get(&message_id)?;
+        let text = metadata.send_text.clone()?;
+        let reply_to = metadata.reply_to.clone();
+        let reply = reply_to.and_then(|msgid| self.reply_target(msgid));
         let pending = PendingSend {
             buffer_id,
             local_send_id,
             target,
             text,
             kind,
+            reply,
         };
         self.dirty_timelines.insert(buffer_id);
         self.reconcilable_failed_sends.remove(&local_send_id);
@@ -7484,6 +7545,146 @@ mod tests {
         );
         assert!(model.begin_own_redaction(buffer_id, message_id).is_some());
         assert_eq!(emitted_inert(&mut model), vec![false]);
+    }
+
+    async fn addressable(
+        model: &mut NetworkModel,
+        state: &papo::State,
+        row: Incoming,
+    ) -> (BufferId, crate::MessageId) {
+        let target = match &row.destination {
+            IncomingDestination::Conversation(NameKey::Direct(_)) => "weblounge",
+            _ => "#room",
+        };
+        let line = format!(
+            "@msgid={} :{}!a@host PRIVMSG {target} :{}",
+            row.msgid.as_deref().expect("a delivered row"),
+            row.author,
+            row.text
+        );
+        let (_client, message) = crate::saved_message::received(&line).await;
+        let row = Incoming {
+            saved: crate::saved_message::SavedMessage::of_message(&message),
+            ..row
+        };
+        model
+            .receive_incoming_result(row, state)
+            .message
+            .expect("the row is inserted")
+    }
+
+    #[tokio::test]
+    async fn a_retried_channel_reply_names_and_threads_under_its_parent_again() {
+        let (mut model, state) = model(10);
+        let parent = incoming(
+            &state,
+            "ship it?",
+            Some("p1"),
+            Some(10),
+            10,
+            TimelineOrigin::Live,
+        );
+        let (buffer_id, parent_id) = addressable(&mut model, &state, parent).await;
+
+        let (pending, _) = model
+            .begin_reply(buffer_id, parent_id, "yes".into(), &state)
+            .expect("the room is sendable");
+        model.fail_send(&pending, EngineMessageKey::SendFailed);
+        let retried = model
+            .retry_send(buffer_id, pending.local_send_id)
+            .expect("the failed reply retries");
+
+        assert_eq!(retried.text, "alice: yes");
+        assert_eq!(
+            retried.reply.map(|reply| reply.msgid).as_deref(),
+            Some("p1")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reply_retried_after_its_parent_left_the_timeline_goes_out_unthreaded() {
+        let (mut model, state) = model(3);
+        let parent = incoming(
+            &state,
+            "ship it?",
+            Some("p1"),
+            Some(10),
+            10,
+            TimelineOrigin::Live,
+        );
+        let (buffer_id, parent_id) = addressable(&mut model, &state, parent).await;
+        let (pending, _) = model
+            .begin_reply(buffer_id, parent_id, "yes".into(), &state)
+            .expect("the room is sendable");
+        model.fail_send(&pending, EngineMessageKey::SendFailed);
+        for time in 20..24 {
+            let later = incoming(
+                &state,
+                "later",
+                Some(&format!("l{time}")),
+                Some(time),
+                time,
+                TimelineOrigin::Live,
+            );
+            model.receive_incoming_result(later, &state);
+        }
+        model.take_timeline_changes(false);
+
+        let retried = model
+            .retry_send(buffer_id, pending.local_send_id)
+            .expect("the failed reply retries");
+
+        assert_eq!(retried.text, "alice: yes");
+        assert!(retried.reply.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_direct_reply_carries_no_nick_prefix() {
+        let (mut model, state) = model(10);
+        let parent = direct_incoming(&state, "ana", "lunch?", 10);
+        let (buffer_id, parent_id) = addressable(&mut model, &state, parent).await;
+
+        let (pending, _) = model
+            .begin_reply(buffer_id, parent_id, "sure".into(), &state)
+            .expect("the conversation is sendable");
+
+        assert_eq!(pending.text, "sure");
+        assert_eq!(
+            pending.reply.map(|reply| reply.msgid).as_deref(),
+            Some("ana-10")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reply_needs_a_delivered_addressable_parent() {
+        let (mut model, state) = model(10);
+        let unsaved = incoming(
+            &state,
+            "pushed",
+            Some("p0"),
+            Some(5),
+            5,
+            TimelineOrigin::Live,
+        );
+        let (buffer_id, unsaved_id) = model
+            .receive_incoming_result(unsaved, &state)
+            .message
+            .expect("the row is inserted");
+        let (optimistic, _) = model
+            .begin_send(buffer_id, "still sending".into(), &state)
+            .expect("the room is sendable");
+        let optimistic_id = model
+            .pending_message_id(&optimistic)
+            .expect("the optimistic row");
+
+        for parent_id in [unsaved_id, optimistic_id, crate::MessageId(9_999)] {
+            assert_eq!(
+                model
+                    .begin_reply(buffer_id, parent_id, "yes".into(), &state)
+                    .err(),
+                Some(EngineMessageKey::ReplyParentGone)
+            );
+        }
     }
 
     fn emitted_inert(model: &mut NetworkModel) -> Vec<bool> {

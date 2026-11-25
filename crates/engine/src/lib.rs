@@ -276,6 +276,7 @@ mod tests {
                 request: EngineRequest::SubmitInput {
                     buffer_id: crate::BufferId(1),
                     input: "/whois mel".into(),
+                    reply_to: None,
                 },
             })),
             [EngineToUi::CommandRejected {

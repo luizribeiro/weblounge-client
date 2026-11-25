@@ -217,7 +217,11 @@ buffer_id: BufferId,
 /**
  * Nonempty composer contents.
  */
-input: string, } | { "type": "complete_input",
+input: string,
+/**
+ * The message plain text or `/say` answers; other commands are not replies.
+ */
+reply_to?: MessageId, } | { "type": "complete_input",
 /**
  * Buffer whose composer owns the completion session.
  */

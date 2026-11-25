@@ -71,6 +71,7 @@ engine_message_keys! {
     Offline => "engine.offline",
     ReadMarkerInvalid => "engine.read_marker_invalid",
     RedactFailed => "engine.redact_failed",
+    ReplyParentGone => "engine.reply_parent_gone",
     SendFailed => "engine.send_failed",
     StateInconsistent => "engine.state_inconsistent",
     StorageUnavailable => "engine.storage_unavailable",
@@ -1155,6 +1156,10 @@ pub enum EngineRequest {
         buffer_id: BufferId,
         /// Nonempty composer contents.
         input: String,
+        /// The message plain text or `/say` answers; other commands are not replies.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        reply_to: Option<MessageId>,
     },
     /// Resolve composer completion candidates from input around the caret.
     CompleteInput {
