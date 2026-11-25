@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     papo-test-infra = {
-      url = "github:luizribeiro/papo/7c7884aec81fa24ccc88011ab9fc302c940d0879";
+      url = "github:luizribeiro/papo/0c0b06b3d330d1c541726729027ee2cbc8ec1bdd";
       flake = false;
     };
     crane.url = "github:ipetkov/crane";
@@ -105,8 +105,8 @@
           version = "0.1.0";
           cargoLock = ./Cargo.lock;
           outputHashes = {
-            "git+https://github.com/luizribeiro/papo?rev=7c7884a#7c7884aec81fa24ccc88011ab9fc302c940d0879" =
-              "sha256-tD2T2459p8NPXpgrrI+7prfuywuTm0Y+jrN001I9zZI=";
+            "git+https://github.com/luizribeiro/papo?rev=0c0b06b#0c0b06b3d330d1c541726729027ee2cbc8ec1bdd" =
+              "sha256-QIdg/GnOe1ICTT91PZSDBgRCmxHGRF1yH4me69En/S8=";
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;
