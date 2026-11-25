@@ -16,7 +16,7 @@ import {
   messageRowOf,
   replyBar,
   replyQuote,
-  sendLines,
+  sendBacklog,
 } from "./replies";
 
 test.describe("message replies on desktop against local Ergo", () => {
@@ -93,7 +93,7 @@ test.describe("message replies on desktop against local Ergo", () => {
     await composer(page).fill(question);
     await composer(page).press("Enter");
     const asked = await peer.waitForPrivmsg(irc.channel, question, irc.account);
-    await sendLines(peer, irc.channel, 60, "unrelated");
+    await sendBacklog(irc, 60, "unrelated");
     const answer = "yes, channels only when mentioned";
     const replied = await peer.privmsgReplyConfirmed(
       irc.channel,
@@ -150,7 +150,7 @@ test.describe("message replies on desktop against local Ergo", () => {
     const peer = await irc.peer("reply-fetched");
     const question = "who owns the APNs key rotation?";
     const asked = await peer.privmsgConfirmed(irc.channel, question);
-    await sendLines(peer, irc.channel, 110, "backlog");
+    await sendBacklog(irc, 110, "backlog");
     const answer = "the relay does, every 90 days";
     await peer.privmsgReplyConfirmed(
       irc.channel,

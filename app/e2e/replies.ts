@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import type { IrcClient } from "./irc-client";
+import type { IrcTestAccount } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
 
 export function replyBar(page: Page): Locator {
@@ -31,16 +32,25 @@ export async function expectThreadedReply(
   return line;
 }
 
-export async function sendLines(
-  peer: IrcClient,
-  target: string,
+const backlogWriterCount = 10;
+
+/** Many writers share the lines, since Ergo's fakelag slows any one writer's burst. */
+export async function sendBacklog(
+  irc: IrcTestAccount,
   count: number,
   label: string,
-): Promise<string> {
-  let last = "";
-  for (let index = 1; index <= count; index += 1)
-    last = await peer.privmsgConfirmed(target, `${label} ${index}`);
-  return last;
+): Promise<void> {
+  const writers = await Promise.all(
+    Array.from({ length: backlogWriterCount }, (_, index) =>
+      irc.peer(`${label}-${index}`),
+    ),
+  );
+  await Promise.all(
+    writers.map(async (writer, writerIndex) => {
+      for (let index = writerIndex; index < count; index += writers.length)
+        await writer.privmsgConfirmed(irc.channel, `${label} ${index + 1}`);
+    }),
+  );
 }
 
 /** Saves a screenshot into screenshots/f27 when WEBLOUNGE_REPLY_SHOTS is set. */
