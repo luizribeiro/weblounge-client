@@ -19,7 +19,11 @@
   --wl-space-list-gap: 6px;
   --wl-space-list-inset: 8px;
   --wl-sidebar-prefix-width: 12px;
-  --wl-sidebar-row-end-inset: calc(var(--wl-space-list-inset) / 2);
+  --wl-sidebar-row-end-inset: calc(
+    var(--wl-space-list-inset) +
+    (var(--wl-sidebar-prefix-width) - var(--wl-sidebar-slot-width)) /
+    2
+  );
   --wl-sidebar-slot-width: 28px;
   --wl-sidebar-close-width: 22px;
   --wl-omnibar-slot-width: 116px;

@@ -31,7 +31,7 @@ test.describe("sidebar presence against local Ergo", () => {
     await nativeFeelAudit(page);
   });
 
-  test("centres every leading and trailing mark on its column's centre line", async ({
+  test("centres every leading and trailing mark on mirrored column centre lines", async ({
     page,
     irc,
   }) => {

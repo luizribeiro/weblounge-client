@@ -103,15 +103,19 @@ const columnSelectors = {
   trailing: "[data-sidebar-slot]",
 } as const;
 
-/** Every mark in a sidebar column sits on the column's centre line, whichever row holds it. */
+/**
+ * Every mark in a sidebar column sits on the column's centre line, whichever row holds it,
+ * and the two centre lines sit as far from their row's ends as each other.
+ */
 export async function expectSidebarColumnsCentredAtEachDensity(
   page: Page,
   header: Locator,
 ): Promise<void> {
   await atEachDensity(page, async (density) => {
+    const insets = { leading: 0, trailing: 0 };
     for (const side of ["leading", "trailing"] as const) {
       const centres = await header.evaluate(
-        (element, { column, marks }) => {
+        (element, { column, marks, side }) => {
           const section = element.closest("section");
           if (section == null) throw new Error("network header has no section");
           const of = (selector: string) =>
@@ -119,17 +123,24 @@ export async function expectSidebarColumnsCentredAtEachDensity(
               const box = mark.getBoundingClientRect();
               return (box.left + box.right) / 2;
             });
+          const row = section
+            .querySelector(column)
+            ?.closest("[data-sidebar-row]")
+            ?.getBoundingClientRect();
+          if (row === undefined) throw new Error(`${side} column has no row`);
           return {
             column: of(column),
             marks: Object.entries(marks).map(
               ([kind, selector]) => [kind, of(selector)] as const,
             ),
+            rowEnd: side === "leading" ? row.left : row.right,
           };
         },
-        { column: columnSelectors[side], marks: columnMarks[side] },
+        { column: columnSelectors[side], marks: columnMarks[side], side },
       );
       const line = centres.column[0];
       if (line === undefined) throw new Error(`no ${side} column`);
+      insets[side] = Math.abs(line - centres.rowEnd);
       for (const [kind, found] of [
         ["column", centres.column] as const,
         ...centres.marks,
@@ -142,6 +153,10 @@ export async function expectSidebarColumnsCentredAtEachDensity(
           ).toBeLessThanOrEqual(0.5);
       }
     }
+    expect(
+      Math.abs(insets.leading - insets.trailing),
+      `leading and trailing column insets at ${density} density`,
+    ).toBeLessThanOrEqual(0.5);
   });
 }
 
