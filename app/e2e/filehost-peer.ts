@@ -43,6 +43,13 @@ export async function settledScreenshot(
   name: string,
 ): Promise<void> {
   await mkdir(directory, { recursive: true });
+  await waitForAnimations(page);
+  await screenshotWithInter(page.locator("[data-app-root]"), {
+    path: path.join(directory, `${name}.png`),
+  });
+}
+
+export async function waitForAnimations(page: Page): Promise<void> {
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -52,7 +59,4 @@ export async function settledScreenshot(
       ),
     )
     .toBe(true);
-  await screenshotWithInter(page.locator("[data-app-root]"), {
-    path: path.join(directory, `${name}.png`),
-  });
 }

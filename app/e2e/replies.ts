@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
+import { waitForAnimations } from "./filehost-peer";
 import type { IrcClient } from "./irc-client";
 import type { IrcTestAccount } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
@@ -58,5 +59,7 @@ export async function replyShot(page: Page, name: string): Promise<void> {
   if (process.env.WEBLOUNGE_REPLY_SHOTS === undefined) return;
   const directory = path.join(process.cwd(), "..", "screenshots", "f27");
   await mkdir(directory, { recursive: true });
+  await waitForAnimations(page);
+  await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(directory, `${name}.png`) });
 }
