@@ -10,6 +10,7 @@ import type { AppSettings } from "../../engine/generated/AppSettings";
 import type { SettingChange } from "../../engine/generated/SettingChange";
 import { t } from "../../strings";
 import { trapTab } from "../../ui/focus-trap";
+import { CloseIcon } from "../../ui/icons/CloseIcon";
 import type { NotificationSwitch } from "./push-settings";
 import styles from "./SettingsModal.module.css";
 import { SettingsSectionNav } from "./SettingsSectionNav";
@@ -87,9 +88,7 @@ export function SettingsModal(props: SettingsModalProps) {
             title={t("settings.close")}
             type="button"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            <CloseIcon />
           </button>
         </header>
         <div class={styles.body}>

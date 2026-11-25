@@ -2,6 +2,7 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 import { t } from "../../strings";
 import { trapTab } from "../../ui/focus-trap";
 import { formatTime } from "../../ui/format-time";
+import { CloseIcon } from "../../ui/icons/CloseIcon";
 import { afterStartStatePaints } from "../../ui/transform-motion";
 import styles from "./ImageViewer.module.css";
 import type { ImageViewerRequest } from "./image-viewer-request";
@@ -101,9 +102,7 @@ export default function ImageViewer(props: {
           onClick={() => viewer?.close()}
           type="button"
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24">
-            <path d="M6 6l12 12M18 6 6 18" />
-          </svg>
+          <CloseIcon />
         </button>
       </header>
       <p class="visually-hidden" role="status">

@@ -1,4 +1,5 @@
 import { t } from "../../strings";
+import { CloseIcon } from "../../ui/icons/CloseIcon";
 import { Line } from "../../ui/Line";
 import styles from "./AttachmentChip.module.css";
 import { type Attachment, attachmentLabel, failureMessage } from "./attachment";
@@ -69,9 +70,7 @@ export function AttachmentChip(props: AttachmentChipProps) {
         onPointerDown={(event) => event.preventDefault()}
         type="button"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path d="M6 6l12 12M18 6 6 18" />
-        </svg>
+        <CloseIcon />
       </button>
       {progress() !== undefined && (
         <span class={styles.progress} data-upload-progress={progress()}>
