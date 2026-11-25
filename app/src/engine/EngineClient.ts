@@ -10,6 +10,7 @@ import { decodeTimelineItem } from "./decodeTimelineItem";
 import { decodePerson } from "./decodeTimelinePeople";
 import { decodeUploadResolution } from "./decodeUploadResolution";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
+import type { ReplyParent } from "./generated/ReplyParent";
 import type {
   BufferProjection,
   CommandRejected,
@@ -1241,6 +1242,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     ? decodeReactions(value.reactions)
     : undefined;
   const mentions = isRecord(value) ? decodeMentions(value.mentions) : undefined;
+  const reply = isRecord(value) ? decodeReplyParent(value.reply) : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
@@ -1263,6 +1265,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     ) ||
     (value.reactions !== undefined && reactions === undefined) ||
     (value.mentions !== undefined && mentions === undefined) ||
+    (value.reply !== undefined && reply === undefined) ||
     !(
       value.own_redaction === undefined ||
       isOneOf(value.own_redaction, ["sending", "failed"])
@@ -1302,6 +1305,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     ...(value.own_redaction === undefined
       ? {}
       : { own_redaction: value.own_redaction }),
+    ...(reply === undefined ? {} : { reply }),
     ...(value.inert === true ? { inert: true } : {}),
     delivery: value.delivery,
     local_send_id: value.local_send_id,
@@ -1309,6 +1313,44 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     server_time_ms: value.server_time_ms,
     received_at_ms: value.received_at_ms,
   };
+}
+
+type QuotedParent = Omit<Extract<ReplyParent, { state: "fetched" }>, "state">;
+
+function decodeReplyParent(value: unknown): ReplyParent | undefined {
+  if (!isRecord(value)) return undefined;
+  switch (value.state) {
+    case "loading":
+    case "deleted":
+    case "unavailable":
+      return { state: value.state };
+    case "fetched": {
+      const quoted = decodeQuotedParent(value);
+      return quoted && { state: "fetched", ...quoted };
+    }
+    case "loaded": {
+      const quoted = decodeQuotedParent(value);
+      return quoted && typeof value.message_id === "number"
+        ? { state: "loaded", message_id: value.message_id, ...quoted }
+        : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function decodeQuotedParent(
+  value: Record<string, unknown>,
+): QuotedParent | undefined {
+  return typeof value.author === "string" &&
+    typeof value.nick_color_index === "number" &&
+    typeof value.text === "string"
+    ? {
+        author: value.author,
+        nick_color_index: value.nick_color_index,
+        text: value.text,
+      }
+    : undefined;
 }
 
 function decodeMentions(

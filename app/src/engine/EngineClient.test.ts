@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { switchesOn } from "./app-settings-fixture";
 import {
+  decodeMessage,
   type EngineConnection,
   type EnginePort,
   WorkerEngineClient,
@@ -622,6 +623,45 @@ describe("WorkerEngineClient", () => {
     frames[0]?.(0);
 
     expect(listener).toHaveBeenCalledWith(patch);
+  });
+
+  it("decodes each reply parent state and rejects malformed ones", () => {
+    const reply = {
+      id: 14,
+      author: "bob",
+      text: "agreed",
+      kind: "text",
+      bot: null,
+      authorship: "other",
+      nick_color_index: 3,
+      highlighted: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: ["reply-1"],
+      server_time_ms: 40,
+      received_at_ms: 41,
+    };
+    const quoted = { author: "alice", nick_color_index: 5, text: "ship it?" };
+    const parents = [
+      { state: "loaded", message_id: 9, ...quoted },
+      { state: "fetched", ...quoted },
+      { state: "loading" },
+      { state: "deleted" },
+      { state: "unavailable" },
+    ];
+
+    for (const parent of parents)
+      expect(decodeMessage({ ...reply, reply: parent })?.reply).toEqual(parent);
+    expect(decodeMessage(reply)).not.toHaveProperty("reply");
+    for (const invalid of [
+      { state: "loaded", ...quoted },
+      { state: "fetched", author: "alice", text: "ship it?" },
+      { state: "loaded", ...quoted, message_id: "9" },
+      { state: "fetched", ...quoted, nick_color_index: "5" },
+      { state: "quoted" },
+      "loading",
+    ])
+      expect(decodeMessage({ ...reply, reply: invalid })).toBeUndefined();
   });
 
   it("decodes why a sender is unverified and rejects the old flag", () => {
