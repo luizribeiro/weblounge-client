@@ -25,9 +25,7 @@ interface MobileSettingsProps {
 export function MobileSettings(props: MobileSettingsProps) {
   const titleId = createUniqueId();
   const section = () =>
-    props.page === "root"
-      ? undefined
-      : shownSettingsSection(props.page, props.notifications);
+    props.page === "root" ? undefined : shownSettingsSection(props.page, props);
   return (
     <section
       aria-labelledby={titleId}
@@ -54,11 +52,11 @@ export function MobileSettings(props: MobileSettingsProps) {
       <div class={styles.scroll} data-settings-layout="phone">
         <Show
           fallback={
-            <For each={shownSettingsSections(props.notifications)}>
+            <For each={shownSettingsSections(props)}>
               {(root) => (
                 <SettingsRootRow
+                  host={props}
                   onOpen={() => props.onOpenPage(root.id)}
-                  notifications={props.notifications}
                   section={root}
                   settings={props.settings}
                 />

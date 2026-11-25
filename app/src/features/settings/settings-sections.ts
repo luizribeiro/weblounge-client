@@ -14,7 +14,7 @@ import type {
   PageSwitchStatus,
   PushSwitchStatus,
 } from "./push-settings";
-import type { SettingsPageProps } from "./settings-page-props";
+import type { SettingsHost, SettingsPageProps } from "./settings-page-props";
 import { themeName } from "./ThemeCards";
 
 const settingsSectionIds = ["appearance", "notifications", "about"] as const;
@@ -26,11 +26,8 @@ export interface SettingsSectionDefinition {
   readonly label: MessageKey;
   readonly Icon: Component;
   readonly Page: Component<SettingsPageProps>;
-  readonly summary: (
-    settings: AppSettings,
-    notifications?: NotificationSwitch | undefined,
-  ) => string;
-  readonly shown: (notifications: NotificationSwitch | undefined) => boolean;
+  readonly summary: (settings: AppSettings, host: SettingsHost) => string;
+  readonly shown: (host: SettingsHost) => boolean;
 }
 
 const always = () => true;
@@ -69,7 +66,7 @@ function summaryFor<S extends string>(
 
 function notificationsSummary(
   settings: AppSettings,
-  notifications?: NotificationSwitch | undefined,
+  { notifications }: SettingsHost,
 ): string {
   const summary = switchSummary(notifications);
   if (summary !== undefined) return t(summary);
@@ -98,7 +95,8 @@ const sections: Readonly<Record<SettingsSectionId, SettingsSectionDefinition>> =
       Icon: NotificationsIcon,
       Page: NotificationsSettings,
       summary: notificationsSummary,
-      shown: (notifications) => notifications !== undefined || inBrowserTab(),
+      shown: ({ notifications }) =>
+        notifications !== undefined || inBrowserTab(),
     },
     about: {
       id: "about",
@@ -111,17 +109,17 @@ const sections: Readonly<Record<SettingsSectionId, SettingsSectionDefinition>> =
   };
 
 export function shownSettingsSections(
-  notifications?: NotificationSwitch | undefined,
+  host: SettingsHost = {},
 ): readonly SettingsSectionDefinition[] {
   return settingsSectionIds
     .map((id) => sections[id])
-    .filter((section) => section.shown(notifications));
+    .filter((section) => section.shown(host));
 }
 
 export function shownSettingsSection(
   id: SettingsSectionId,
-  notifications?: NotificationSwitch | undefined,
+  host: SettingsHost = {},
 ): SettingsSectionDefinition | undefined {
   const section = sections[id];
-  return section.shown(notifications) ? section : undefined;
+  return section.shown(host) ? section : undefined;
 }

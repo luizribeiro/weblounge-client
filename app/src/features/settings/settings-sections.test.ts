@@ -54,7 +54,7 @@ function shownIn(
     removeEventListener: () => {},
   }));
   installPlatformEnvironment(document.body, window, { target });
-  return shownSettingsSections(notifications).map(({ id }) => id);
+  return shownSettingsSections({ notifications }).map(({ id }) => id);
 }
 
 describe("settings sections", () => {
@@ -82,7 +82,7 @@ describe("settings sections", () => {
 
   it("summarises About with the build version", () => {
     shownIn("web", undefined);
-    expect(shownSettingsSection("about")?.summary(settings)).toBe(
+    expect(shownSettingsSection("about")?.summary(settings, {})).toBe(
       buildVersion.version,
     );
   });
@@ -102,10 +102,9 @@ describe("settings sections", () => {
   ] as const)("summarises page notifications %s", (status, summary) => {
     shownIn("tauri-desktop", undefined);
     expect(
-      shownSettingsSection("notifications", page(status))?.summary(
-        settings,
-        page(status),
-      ),
+      shownSettingsSection("notifications", {
+        notifications: page(status),
+      })?.summary(settings, { notifications: page(status) }),
     ).toBe(summary);
   });
 
@@ -114,21 +113,21 @@ describe("settings sections", () => {
     expect(shownSettingsSection("notifications")?.id).toBe("notifications");
     shownIn("tauri-desktop", undefined);
     expect(shownSettingsSection("notifications")).toBeUndefined();
-    expect(shownSettingsSection("notifications", push("on"))?.id).toBe(
-      "notifications",
-    );
+    expect(
+      shownSettingsSection("notifications", { notifications: push("on") })?.id,
+    ).toBe("notifications");
     expect(shownSettingsSection("appearance")?.id).toBe("appearance");
   });
 
   it("summarises the tab row where there is no push row", () => {
     shownIn("web", undefined);
     const notifications = shownSettingsSection("notifications");
-    expect(shownSettingsSection("appearance")?.summary(settings)).toBe(
+    expect(shownSettingsSection("appearance")?.summary(settings, {})).toBe(
       "Lounge · Comfortable",
     );
-    expect(notifications?.summary(settings)).toBe("Unread in the tab");
+    expect(notifications?.summary(settings, {})).toBe("Unread in the tab");
     expect(
-      notifications?.summary({ ...settings, unread_tab_indicator: false }),
+      notifications?.summary({ ...settings, unread_tab_indicator: false }, {}),
     ).toBe("Unread hidden from the tab");
   });
 
@@ -140,14 +139,18 @@ describe("settings sections", () => {
   ] as const)("summarises push %s first", (status, summary) => {
     shownIn("web", undefined);
     expect(
-      shownSettingsSection("notifications")?.summary(settings, push(status)),
+      shownSettingsSection("notifications")?.summary(settings, {
+        notifications: push(status),
+      }),
     ).toBe(summary);
   });
 
   it("falls back to the tab value while push is still loading", () => {
     shownIn("web", undefined);
     expect(
-      shownSettingsSection("notifications")?.summary(settings, push(undefined)),
+      shownSettingsSection("notifications")?.summary(settings, {
+        notifications: push(undefined),
+      }),
     ).toBe("Unread in the tab");
   });
 });

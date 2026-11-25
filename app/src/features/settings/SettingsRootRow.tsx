@@ -2,13 +2,13 @@ import { Show } from "solid-js";
 import type { AppSettings } from "../../engine/generated/AppSettings";
 import { t } from "../../strings";
 import styles from "./MobileSettings.module.css";
-import type { NotificationSwitch } from "./push-settings";
+import type { SettingsHost } from "./settings-page-props";
 import type { SettingsSectionDefinition } from "./settings-sections";
 
 interface SettingsRootRowProps {
   readonly section: SettingsSectionDefinition;
   readonly settings: AppSettings | undefined;
-  readonly notifications?: NotificationSwitch | undefined;
+  readonly host: SettingsHost;
   readonly onOpen: () => void;
 }
 
@@ -27,9 +27,7 @@ export function SettingsRootRow(props: SettingsRootRowProps) {
         <b>{t(props.section.label)}</b>
         <Show when={props.settings} keyed>
           {(settings) => (
-            <small>
-              {props.section.summary(settings, props.notifications)}
-            </small>
+            <small>{props.section.summary(settings, props.host)}</small>
           )}
         </Show>
       </span>

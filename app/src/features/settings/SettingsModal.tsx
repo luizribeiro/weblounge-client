@@ -30,7 +30,7 @@ interface SettingsModalProps {
 export function SettingsModal(props: SettingsModalProps) {
   const titleId = createUniqueId();
   const labelIdFor = (id: SettingsSectionId) => `${titleId}-${id}`;
-  const shown = createMemo(() => shownSettingsSections(props.notifications));
+  const shown = createMemo(() => shownSettingsSections(props));
   const sections = createMemo(() =>
     shown().map((section) => ({
       id: section.id,

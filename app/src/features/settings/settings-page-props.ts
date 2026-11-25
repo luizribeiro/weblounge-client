@@ -8,3 +8,6 @@ export interface SettingsPageProps {
   /** Undefined where this host offers no notification switch. */
   readonly notifications?: NotificationSwitch | undefined;
 }
+
+/** What this host offers beyond the settings themselves; it decides which sections show. */
+export type SettingsHost = Pick<SettingsPageProps, "notifications">;
