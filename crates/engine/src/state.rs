@@ -1752,7 +1752,10 @@ impl NetworkModel {
             .get_mut(&buffer_id)?
             .chat_metadata
             .get_mut(&message_id)?;
-        metadata.saved.get_or_insert(saved);
+        if metadata.saved.is_none() {
+            metadata.saved = Some(saved);
+            self.dirty_timelines.insert(buffer_id);
+        }
         Some(())
     }
 
@@ -1946,6 +1949,7 @@ impl NetworkModel {
             reactions: None,
             own_redaction: None,
             reply: None,
+            inert: false,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -2210,6 +2214,7 @@ impl NetworkModel {
             reactions: None,
             own_redaction: None,
             reply: None,
+            inert: false,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -4298,6 +4303,7 @@ impl NetworkModel {
                 .and_then(nonempty_reactions),
             own_redaction: None,
             reply: None,
+            inert: false,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.clone().into_iter().collect(),
@@ -5164,10 +5170,15 @@ fn project_timeline(
             .map(|item| {
                 let body = match item.body {
                     FoldedBody::Chat(chat) => {
-                        let message = match reply_to(&item.id) {
+                        let mut message = match reply_to(&item.id) {
                             Some(parent) => loaded.quote(chat.projection, parent),
                             None => chat.projection,
                         };
+                        message.inert = !message.server_ids.is_empty()
+                            && buffer
+                                .chat_metadata
+                                .get(&item.id)
+                                .is_some_and(|metadata| metadata.saved.is_none());
                         ItemBody::Message(with_mentions(message, vocabulary))
                     }
                     FoldedBody::Run(run) => {
@@ -7447,12 +7458,16 @@ mod tests {
             .receive_incoming_result(own_line(None), &state)
             .message
             .expect("the row is inserted");
+        model
+            .begin_send(buffer_id, "draft".into(), &state)
+            .expect("an optimistic row without server ids");
         assert!(
             model
                 .toggle_own_reaction(buffer_id, message_id, "👍".into())
                 .is_none()
         );
         assert!(model.begin_own_redaction(buffer_id, message_id).is_none());
+        assert_eq!(emitted_inert(&mut model), vec![true, false]);
 
         let (_client, line) =
             crate::saved_message::received("@msgid=m1 :weblounge!u@host PRIVMSG #room :hello")
@@ -7468,6 +7483,22 @@ mod tests {
                 .is_some()
         );
         assert!(model.begin_own_redaction(buffer_id, message_id).is_some());
+        assert_eq!(emitted_inert(&mut model), vec![false]);
+    }
+
+    fn emitted_inert(model: &mut NetworkModel) -> Vec<bool> {
+        model
+            .take_timeline_changes(false)
+            .into_iter()
+            .flat_map(|event| match event {
+                EngineToUi::TimelineChanged { upserted, .. } => upserted,
+                _ => Vec::new(),
+            })
+            .filter_map(|item| match item.body {
+                ItemBody::Message(message) => Some(message.inert),
+                _ => None,
+            })
+            .collect()
     }
 
     fn notified_texts(events: &[EngineToUi]) -> Vec<(BufferKind, String)> {

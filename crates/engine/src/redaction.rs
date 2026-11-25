@@ -114,6 +114,7 @@ mod tests {
             }]),
             own_redaction: None,
             reply: None,
+            inert: false,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: vec!["m1".into()],

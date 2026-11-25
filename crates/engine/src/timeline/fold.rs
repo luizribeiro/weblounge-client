@@ -237,6 +237,7 @@ mod tests {
                     reactions: None,
                     own_redaction: None,
                     reply: None,
+                    inert: false,
                     delivery: MessageDelivery::Received,
                     local_send_id: None,
                     server_ids: Vec::new(),

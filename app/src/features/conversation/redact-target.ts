@@ -1,6 +1,6 @@
 import type { MessageProjection } from "../../engine/generated/MessageProjection";
 import type { NetworkProjection } from "../../engine/generated/NetworkProjection";
-import { isServerDelivered } from "./reaction-target";
+import { isAddressable } from "./reaction-target";
 
 export type RedactMessage = (messageId: number) => void;
 export type RedactBufferMessage = (bufferId: number, messageId: number) => void;
@@ -29,6 +29,6 @@ export function canRedact(
     redact !== undefined &&
     message.authorship === "own" &&
     message.own_redaction !== "sending" &&
-    isServerDelivered(message)
+    isAddressable(message)
   );
 }

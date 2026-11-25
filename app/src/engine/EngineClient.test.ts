@@ -577,7 +577,7 @@ describe("WorkerEngineClient", () => {
     });
   });
 
-  it("decodes a pending own deletion and rejects an unknown state", () => {
+  it("decodes a pending own deletion on an inert row and rejects unknown states", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
@@ -591,6 +591,7 @@ describe("WorkerEngineClient", () => {
       nick_color_index: 0,
       highlighted: false,
       own_redaction: "sending",
+      inert: true,
       delivery: "confirmed",
       local_send_id: null,
       server_ids: ["mine-1"],
@@ -610,6 +611,12 @@ describe("WorkerEngineClient", () => {
       port.emit({
         ...patch,
         upserted: [timelineMessage({ ...own, own_redaction: "done" })],
+      }),
+    ).toThrow("invalid engine message");
+    expect(() =>
+      port.emit({
+        ...patch,
+        upserted: [timelineMessage({ ...own, inert: "yes" })],
       }),
     ).toThrow("invalid engine message");
     frames[0]?.(0);

@@ -1265,6 +1265,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
       value.own_redaction === undefined ||
       isOneOf(value.own_redaction, ["sending", "failed"])
     ) ||
+    !(value.inert === undefined || typeof value.inert === "boolean") ||
     !isOneOf(value.delivery, [
       "received",
       "optimistic",
@@ -1299,6 +1300,7 @@ export function decodeMessage(value: unknown): MessageProjection | undefined {
     ...(value.own_redaction === undefined
       ? {}
       : { own_redaction: value.own_redaction }),
+    ...(value.inert === true ? { inert: true } : {}),
     delivery: value.delivery,
     local_send_id: value.local_send_id,
     server_ids: value.server_ids,

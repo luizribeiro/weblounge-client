@@ -52,6 +52,12 @@ describe("reactionTarget", () => {
       reactionTarget({ ...message, server_ids: [] }, toggle),
     ).toBeUndefined();
   });
+
+  it("offers no toggle on a row papo cannot address until the server repeats it", () => {
+    expect(
+      reactionTarget({ ...message, inert: true }, () => undefined),
+    ).toBeUndefined();
+  });
 });
 
 describe("bufferReactionToggle", () => {

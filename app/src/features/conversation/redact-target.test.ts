@@ -31,6 +31,7 @@ describe("canRedact", () => {
       { ...own, authorship: "other" as const },
       { ...own, delivery: "optimistic" as const, server_ids: [] },
       { ...own, own_redaction: "sending" as const },
+      { ...own, inert: true },
       { ...own, text: "", kind: { redacted: { by: null } } },
     ])
       expect(canRedact(message, redact)).toBe(false);

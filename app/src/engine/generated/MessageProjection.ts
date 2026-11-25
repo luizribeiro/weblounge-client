@@ -68,6 +68,11 @@ own_redaction?: OwnChangeDelivery,
  */
 reply?: ReplyParent,
 /**
+ * The server delivered this row, but papo has no saved reference to send a reaction,
+ * reply or deletion through until the server repeats the line.
+ */
+inert?: boolean,
+/**
  * Current delivery state.
  */
 delivery: MessageDelivery,

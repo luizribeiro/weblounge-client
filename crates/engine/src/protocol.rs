@@ -813,6 +813,11 @@ pub struct MessageProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reply: Option<ReplyParent>,
+    /// The server delivered this row, but papo has no saved reference to send a reaction,
+    /// reply or deletion through until the server repeats the line.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub inert: bool,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.
