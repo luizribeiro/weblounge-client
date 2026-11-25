@@ -319,6 +319,7 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     <App
       engineClient={client}
       hostedSession={{
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         network: {
@@ -420,6 +421,7 @@ it("leaves a cancelled hosted startup to the bootstrap redirect", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         network: {
@@ -475,6 +477,7 @@ it("acquires hosted reconnect tokens in the page", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         network: {
@@ -521,6 +524,7 @@ it("caps startup history hydration at 400ms", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         network: {
@@ -581,6 +585,7 @@ it("reveals and navigates restored rows while live projections update in place",
           endpoint: "wss://beta.weblounge.org/socket",
           autojoin: ["#cached"],
         },
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
@@ -1133,6 +1138,7 @@ it("retains engine focus until a delayed shell can consume it", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        membersSite: "https://members.weblounge.org",
         sessionTokenEndpoint:
           "https://members.weblounge.org/oauth/session-token",
         network: {

@@ -63,6 +63,7 @@ import {
   pushBlockedIn,
   pushSwitchStatus,
 } from "./features/settings/push-settings";
+import type { AccountControls } from "./features/settings/settings-page-props";
 import { createTabIndicator } from "./features/unread/createTabIndicator";
 import { CanvasImageCodec } from "./features/uploads/image-codec";
 import { networkUploads } from "./features/uploads/network-uploads";
@@ -73,6 +74,7 @@ import {
   SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
+import { signOutDevice } from "./hosted/sign-out";
 import { withStartupDeadline } from "./hosted/startup-deadline";
 import { bufferPath, resolveBufferRoute } from "./navigation/buffer-route";
 import {
@@ -172,7 +174,7 @@ interface AppProps {
   pushConfig?: PushDeploymentConfig | undefined;
   onReady?: () => void;
   onHostedAuthorizationRequired?: (
-    reason: "refresh_failed" | "revoked" | "worker_restarted",
+    reason: "refresh_failed" | "revoked" | "signed_out" | "worker_restarted",
   ) => void;
   onRetryStartup?: (() => void) | undefined;
   onStartupError?:
@@ -375,6 +377,13 @@ export function App(props: AppProps) {
     shellBridge === undefined
       ? undefined
       : () => void shellBridge.call("open_app_settings").catch(() => undefined);
+  const account: AccountControls | undefined =
+    props.hostedSession === undefined
+      ? undefined
+      : {
+          membersSite: props.hostedSession.membersSite,
+          onSignOut: () => void signOut(),
+        };
   const notificationSwitch = (): NotificationSwitch | undefined => {
     const app = engineSettings.current()?.app;
     const permission = notificationPermission();
@@ -1498,7 +1507,24 @@ export function App(props: AppProps) {
         : t("hosted.session_expired"),
     );
     // A refresh that failed in transit says nothing about the account; only revocation signs push out.
-    if (reason === "revoked") {
+    await endHostedSession(reason === "revoked");
+    props.onHostedAuthorizationRequired?.(reason);
+  }
+
+  async function signOut(): Promise<void> {
+    if (restartingHostedAuthorization) return;
+    restartingHostedAuthorization = true;
+    await signOutDevice({
+      endSession: () => endHostedSession(true),
+      notifications: notificationCenter,
+      deviceStorage: localStorage,
+      sessionStorage,
+    });
+    props.onHostedAuthorizationRequired?.("signed_out");
+  }
+
+  async function endHostedSession(signOutPush: boolean): Promise<void> {
+    if (signOutPush) {
       if (pushSynchronizer !== undefined) {
         await pushSynchronizer.signOut().catch(() => undefined);
       } else {
@@ -1517,7 +1543,6 @@ export function App(props: AppProps) {
         })
         .catch(() => undefined);
     }
-    props.onHostedAuthorizationRequired?.(reason);
   }
 
   async function handleInitialHostedFailure(error: unknown): Promise<void> {
@@ -1766,6 +1791,7 @@ export function App(props: AppProps) {
           }}
           onTurnOnNotifications={turnOnNotifications}
           notificationSwitch={notificationSwitch()}
+          account={account}
           settings={engineSettings.current()}
           onChangeSetting={engineSettings.change}
           pathForBuffer={pathForBuffer}

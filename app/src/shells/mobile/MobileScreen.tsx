@@ -22,6 +22,7 @@ import {
   type MobileSettingsPage,
 } from "../../features/settings/MobileSettings";
 import type { NotificationSwitch } from "../../features/settings/push-settings";
+import type { AccountControls } from "../../features/settings/settings-page-props";
 import type { NetworkUploads } from "../../features/uploads/types";
 import { movingTransform } from "../../ui/transform-motion";
 import type { SendText } from "../send-text";
@@ -83,6 +84,7 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
   readonly notificationSwitch?: NotificationSwitch | undefined;
+  readonly account?: AccountControls | undefined;
 }
 
 interface MobileScreenProps extends MobileShellData {
@@ -194,6 +196,7 @@ export function MobileScreen(props: MobileScreenProps) {
         />
       ) : props.screen.kind === "settings" ? (
         <MobileSettings
+          account={props.account}
           onBack={props.onBack}
           onChange={(change) => props.onChangeSetting?.(change)}
           onOpenPage={(page) => props.onOpenSettings?.(page)}

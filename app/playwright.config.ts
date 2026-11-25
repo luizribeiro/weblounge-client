@@ -31,6 +31,7 @@ export default defineConfig({
         "**/replies-phone.spec.ts",
         "**/replies-phone-screenshots.spec.ts",
         "**/settings-phone.spec.ts",
+        "**/account-settings-phone.spec.ts",
         "**/mobile-push-budget.spec.ts",
         "**/ios-app.spec.ts",
       ],
@@ -51,6 +52,16 @@ export default defineConfig({
       grep: /@phone/u,
       testMatch: "**/image-viewer.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-account-phone",
+      testMatch: "**/account-settings-phone.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-account-phone",
+      testMatch: "**/account-settings-phone.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
       name: "android-close-phone",

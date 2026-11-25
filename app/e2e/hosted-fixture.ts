@@ -364,6 +364,17 @@ export async function installFakeEngine(
             );
           }
         }
+        if (request?.type === "expire_hosted_authentication") {
+          // A sign-out reloads the page, so the log has to outlive it.
+          const ended = JSON.parse(
+            sessionStorage.getItem("e2e.hosted-sessions-ended") ?? "[]",
+          );
+          ended.push(request);
+          sessionStorage.setItem(
+            "e2e.hosted-sessions-ended",
+            JSON.stringify(ended),
+          );
+        }
         if (request?.type === "reconnect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
@@ -511,4 +522,10 @@ export async function installFakeEngine(
     });
     Reflect.set(globalThis, "Worker", FakeDedicatedWorker);
   }, holdConnection);
+}
+
+export async function endedHostedSessions(page: Page): Promise<unknown[]> {
+  return page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("e2e.hosted-sessions-ended") ?? "[]"),
+  );
 }

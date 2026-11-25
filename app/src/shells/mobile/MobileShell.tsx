@@ -781,6 +781,7 @@ export function MobileShell(props: MobileShellProps) {
             settings={props.settings}
             onChangeSetting={props.onChangeSetting}
             notificationSwitch={props.notificationSwitch}
+            account={props.account}
             motion={screen === movingScreen() ? motion() : undefined}
             onMotionEnd={settleMotion}
             query={query()}

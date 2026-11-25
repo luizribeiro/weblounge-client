@@ -37,6 +37,7 @@ import {
   type SessionAccessToken,
   SessionTokenProvider,
 } from "./hosted/session-token";
+import { clearSignedOut, isSignedOut } from "./hosted/signed-out";
 import { withStartupDeadline } from "./hosted/startup-deadline";
 import {
   failedStartupRetryCount,
@@ -157,6 +158,10 @@ function Bootstrap(props: BootstrapProps) {
       }
       const { config } = deployment;
       requireCurrentRedirect(config);
+      if (isSignedOut()) {
+        showSignedOut(config, deployment.metadata);
+        return;
+      }
       setHostedState(
         config,
         acquireInitialAccessToken(config, deployment.metadata),
@@ -213,6 +218,7 @@ function Bootstrap(props: BootstrapProps) {
       engineClient,
       session: {
         network: config.network,
+        membersSite: config.oauth.issuer,
         sessionTokenEndpoint: config.oauth.session_token_endpoint,
         startupCancelled: () => startupCancelled,
         token: tokenResult,
@@ -225,12 +231,32 @@ function Bootstrap(props: BootstrapProps) {
     setHostedState(config, acquireInitialAccessToken(config, metadata));
   }
 
+  function showSignedOut(
+    config: HostedConfig,
+    metadata: Promise<InitialMetadataResult>,
+  ): void {
+    props.showError(
+      t("hosted.signed_out"),
+      t("common.sign_in"),
+      () => {
+        clearSignedOut();
+        void restartAuthorization(config, metadata);
+      },
+      false,
+    );
+  }
+
   async function restartAuthorization(
     config: HostedConfig,
     prefetched?: Promise<InitialMetadataResult>,
   ): Promise<void> {
     if (authorizing) return;
     authorizing = true;
+    if (isSignedOut()) {
+      // A fresh launch shows the signed-out screen, which the revealed app has already removed.
+      window.location.replace(new URL("/", window.location.origin).href);
+      return;
+    }
     try {
       const metadata =
         prefetched === undefined

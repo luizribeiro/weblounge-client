@@ -38,6 +38,7 @@ import type { MemberWindow } from "../../features/members/MemberPanel";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import type { NotificationSwitch } from "../../features/settings/push-settings";
 import { SettingsModal } from "../../features/settings/SettingsModal";
+import type { AccountControls } from "../../features/settings/settings-page-props";
 import { createCloseUndo } from "../../features/sidebar/close-undo";
 import {
   Sidebar,
@@ -159,6 +160,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly settings?: Settings | undefined;
   readonly onChangeSetting?: ((change: SettingChange) => void) | undefined;
   readonly notificationSwitch?: NotificationSwitch | undefined;
+  readonly account?: AccountControls | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -581,6 +583,7 @@ export function DesktopShell(props: DesktopShellProps) {
       </main>
       <Show when={settingsOpen()}>
         <SettingsModal
+          account={props.account}
           onChange={(change) => props.onChangeSetting?.(change)}
           onClose={closeSettings}
           notifications={props.notificationSwitch}

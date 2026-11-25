@@ -21,6 +21,8 @@ export class OneShotAccessToken {
 
 export interface HostedSession {
   network: HostedNetworkConfig;
+  /** The OAuth issuer, which is also the members' site the account is managed on. */
+  membersSite: string;
   sessionTokenEndpoint: string;
   startupCancelled?: (() => boolean) | undefined;
   token:
