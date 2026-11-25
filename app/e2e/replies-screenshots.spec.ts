@@ -1,9 +1,13 @@
 import type { Page } from "@playwright/test";
-import { messageId } from "./irc-client";
 import { expect, test } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
 import { composer, conversationButton, openConversation } from "./redaction";
-import { replyBar, replyQuote, replyShot } from "./replies";
+import {
+  expectReviewQuotes,
+  replyBar,
+  replyShot,
+  seedReviewThread,
+} from "./replies";
 import { choose } from "./settings-fixture";
 
 test.skip(
@@ -18,34 +22,12 @@ test("captures desktop reply quotes and the reply bar in Lounge, Lounge Night an
 }) => {
   test.skip(isMobile, "desktop layout");
   await page.setViewportSize({ width: 1280, height: 720 });
-  const bruno = await irc.peer("bruno");
-  const question = "does the relay ever see plaintext?";
-  const asked = await bruno.privmsgConfirmed(irc.channel, question);
-  const oops = await bruno.privmsgConfirmed(irc.channel, "wrong window, sorry");
-  await bruno.privmsgReplyConfirmed(
-    irc.channel,
-    `${bruno.nickname}: ignore that`,
-    messageId(oops),
-  );
-  await bruno.redactConfirmed(irc.channel, messageId(oops));
-  const answer = "no, it only forwards ciphertext to APNs";
-  await bruno.privmsgReplyConfirmed(
-    irc.channel,
-    `${bruno.nickname}: ${answer}`,
-    messageId(asked),
-  );
+  const thread = await seedReviewThread(irc);
   await page.goto(irc.url());
   await expect(conversationButton(page, irc.channel)).toBeVisible();
   await openConversation(page, irc.channel);
-  await expect(replyQuote(page, answer)).toHaveAttribute(
-    "data-reply-quote",
-    "loaded",
-  );
-  await expect(replyQuote(page, "ignore that")).toHaveAttribute(
-    "data-reply-quote",
-    "unavailable",
-  );
-  await productionMessageRow(page, answer).hover();
+  await expectReviewQuotes(page, thread);
+  await productionMessageRow(page, thread.answer).hover();
   await page.getByRole("button", { name: "Reply", exact: true }).click();
   await expect(replyBar(page)).toBeVisible();
   await composer(page).fill("thanks, that settles it");
@@ -58,6 +40,7 @@ test("captures desktop reply quotes and the reply bar in Lounge, Lounge Night an
   await page.emulateMedia({ colorScheme: null });
   await useNeTheme(page);
   await expect(replyBar(page)).toBeVisible();
+  await composer(page).focus();
   await replyShot(page, "desktop-ne");
 });
 

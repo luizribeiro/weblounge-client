@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { waitForAnimations } from "./filehost-peer";
-import type { IrcClient } from "./irc-client";
+import { type IrcClient, messageId } from "./irc-client";
 import type { IrcTestAccount } from "./irc-fixture";
 import { productionMessageRow } from "./production-ergo";
 
@@ -62,4 +62,50 @@ export async function replyShot(page: Page, name: string): Promise<void> {
   await waitForAnimations(page);
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(directory, `${name}.png`) });
+}
+
+export interface ReviewThread {
+  readonly replierNick: string;
+  readonly answer: string;
+  readonly orphan: string;
+}
+
+/**
+ * A reply whose parent loads and one whose parent is unavailable: Ergo drops a redacted line from
+ * its history, so the app never learns that parent was deleted.
+ */
+export async function seedReviewThread(
+  irc: IrcTestAccount,
+): Promise<ReviewThread> {
+  const ana = await irc.peer("ana");
+  const bruno = await irc.peer("bruno");
+  const asked = await ana.privmsgConfirmed(
+    irc.channel,
+    "does the relay ever see plaintext?",
+  );
+  const oops = await ana.privmsgConfirmed(irc.channel, "wrong window, sorry");
+  const orphan = `${ana.nickname}: which window?`;
+  await bruno.privmsgReplyConfirmed(irc.channel, orphan, messageId(oops));
+  await ana.redactConfirmed(irc.channel, messageId(oops));
+  const answer = "no, it only forwards ciphertext to APNs";
+  await bruno.privmsgReplyConfirmed(
+    irc.channel,
+    `${ana.nickname}: ${answer}`,
+    messageId(asked),
+  );
+  return { replierNick: bruno.nickname, answer, orphan };
+}
+
+export async function expectReviewQuotes(
+  page: Page,
+  thread: ReviewThread,
+): Promise<void> {
+  await expect(replyQuote(page, thread.answer)).toHaveAttribute(
+    "data-reply-quote",
+    "loaded",
+  );
+  // A reply to an unavailable parent keeps its "nick: " prefix, so only its full text finds it.
+  await expect(
+    messageRowOf(page, thread.orphan).locator("[data-reply-quote]"),
+  ).toHaveAttribute("data-reply-quote", "unavailable");
 }
