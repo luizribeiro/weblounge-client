@@ -444,6 +444,10 @@ pub struct NetworkProjection {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     pub can_react: bool,
+    /// Whether this connection can thread a reply under the message it answers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub can_reply: bool,
     /// Whether this connection can delete the current account's messages and learn the outcome.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]

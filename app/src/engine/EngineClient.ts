@@ -1077,6 +1077,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
       typeof value.filehost_origin === "string"
     ) ||
     !(value.can_react === undefined || typeof value.can_react === "boolean") ||
+    !(value.can_reply === undefined || typeof value.can_reply === "boolean") ||
     !(
       value.can_redact === undefined || typeof value.can_redact === "boolean"
     ) ||
@@ -1094,6 +1095,7 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
       ? { filehost_origin: value.filehost_origin }
       : {}),
     ...(value.can_react === true ? { can_react: true } : {}),
+    ...(value.can_reply === true ? { can_reply: true } : {}),
     ...(value.can_redact === true ? { can_redact: true } : {}),
   };
 }

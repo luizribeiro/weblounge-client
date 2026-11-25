@@ -3153,10 +3153,11 @@ fn can_react(state: &papo::State) -> bool {
     .all(|feature| state.supports(feature))
 }
 
-/// Offline connections offer neither change, since neither could be confirmed.
+/// Offline connections offer no change, since none could be confirmed.
 fn project_own_change_actions(model: &mut NetworkModel, online: Option<&papo::State>) {
     model.set_own_change_actions(
         online.is_some_and(can_react),
+        online.is_some_and(|state| state.supports(papo::Feature::Replies)),
         online.is_some_and(can_redact),
     );
 }
@@ -17501,6 +17502,10 @@ async fn delay(duration: Duration) {
     }
 
     async fn next_can_react(harness: &mut ReplayHarness) -> bool {
+        next_online_network(harness).await.can_react
+    }
+
+    async fn next_online_network(harness: &mut ReplayHarness) -> crate::NetworkProjection {
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
                 if let EngineToUi::NetworkStateChanged { network } = harness
@@ -17510,7 +17515,7 @@ async fn delay(duration: Duration) {
                     .expect("runtime remains active")
                     && network.state == crate::NetworkConnectionState::Online
                 {
-                    return network.can_react;
+                    return network;
                 }
             }
         })
@@ -17530,6 +17535,18 @@ async fn delay(duration: Duration) {
 
         assert!(!next_can_react(&mut harness).await);
         harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn network_projects_replies_only_with_message_tags() {
+        let mut tagged = ReplayHarness::joined("message-tags").await;
+        let network = next_online_network(&mut tagged).await;
+        assert!(network.can_reply && !network.can_react);
+        tagged.drain.abort();
+
+        let mut plain = ReplayHarness::joined("server-time").await;
+        assert!(!next_online_network(&mut plain).await.can_reply);
+        plain.drain.abort();
     }
 
     #[tokio::test]

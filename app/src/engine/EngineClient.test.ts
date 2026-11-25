@@ -760,11 +760,16 @@ describe("WorkerEngineClient", () => {
       nickname: "weblounge",
       state: "online",
       can_react: true,
+      can_reply: true,
       can_redact: true,
     };
 
     port.emit({ type: "network_state_changed", network });
-    for (const invalid of [{ can_react: "yes" }, { can_redact: 1 }])
+    for (const invalid of [
+      { can_react: "yes" },
+      { can_reply: "no" },
+      { can_redact: 1 },
+    ])
       expect(() =>
         port.emit({
           type: "network_state_changed",

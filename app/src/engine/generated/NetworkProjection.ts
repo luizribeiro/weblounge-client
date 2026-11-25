@@ -35,6 +35,10 @@ filehost_origin?: string,
  */
 can_react?: boolean,
 /**
+ * Whether this connection can thread a reply under the message it answers.
+ */
+can_reply?: boolean,
+/**
  * Whether this connection can delete the current account's messages and learn the outcome.
  */
 can_redact?: boolean, };

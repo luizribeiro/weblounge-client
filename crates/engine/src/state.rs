@@ -656,6 +656,7 @@ impl NetworkModel {
                 state: NetworkConnectionState::Connecting,
                 filehost_origin: None,
                 can_react: false,
+                can_reply: false,
                 can_redact: false,
             },
             server_buffer_id: server_id,
@@ -747,8 +748,9 @@ impl NetworkModel {
         self.network.can_redact
     }
 
-    pub(crate) fn set_own_change_actions(&mut self, react: bool, delete: bool) {
+    pub(crate) fn set_own_change_actions(&mut self, react: bool, reply: bool, delete: bool) {
         self.network.can_react = react;
+        self.network.can_reply = reply;
         self.network.can_redact = delete;
     }
 
