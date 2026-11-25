@@ -316,6 +316,16 @@ it("starts a reply from a delivered row's toolbar and More menu", async () => {
   expect(replied).toEqual([1, 1]);
 });
 
+it("marks the row the composer is replying to", () => {
+  const [replyingTo, setReplyingTo] = createSignal<number | undefined>(1);
+  render(() => <MessageList messages={[message]} replyingTo={replyingTo()} />);
+  const item = screen.getByText("hello weblounge").closest("li");
+
+  expect(item).toHaveAttribute("data-reply-target", "true");
+  setReplyingTo(undefined);
+  expect(item).not.toHaveAttribute("data-reply-target");
+});
+
 const ownMessage: MessageProjection = {
   ...message,
   author: "weblounge",

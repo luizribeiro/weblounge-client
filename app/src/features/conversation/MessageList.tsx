@@ -150,6 +150,8 @@ interface MessageListProps {
   readonly heldMessageId?: number | undefined;
   readonly onRedactMessage?: RedactMessage | undefined;
   readonly onReplyMessage?: StartReply | undefined;
+  /** The message the composer is replying to, marked until the reply is sent or cancelled. */
+  readonly replyingTo?: number | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -1464,6 +1466,9 @@ export function MessageList(props: MessageListProps) {
                     }
                     data-engine-order={formatEngineOrder(row()?.engineOrder)}
                     data-flashed={showsMessage(flashedMessage()) || undefined}
+                    data-reply-target={
+                      showsMessage(props.replyingTo) || undefined
+                    }
                     data-index={virtualRow.index}
                     data-line-spacing={lineRowSpacing(rows(), virtualRow.index)}
                     data-row-key={String(virtualRow.key)}
