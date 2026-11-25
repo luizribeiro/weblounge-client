@@ -34,13 +34,17 @@ export function PaneComposer(props: PaneComposerProps) {
       onRequestCandidates={(input, cursor, explicit) =>
         props.onRequestCompletion(props.bufferId, input, cursor, explicit)
       }
+      onCancelReply={(reply) =>
+        props.replyDrafts?.cancel(props.bufferId, reply)
+      }
       onSelectLast={props.onSelectLast}
-      onSend={(text) => {
+      onSend={(text, replyTo) => {
         const current = buffer();
         return current === undefined
           ? Promise.resolve(false)
-          : props.onSendText(current, text);
+          : props.onSendText(current, text, replyTo);
       }}
+      reply={props.replyDrafts?.draft(props.bufferId)}
     />
   );
 }

@@ -1778,7 +1778,7 @@ export function App(props: AppProps) {
                   bearer: uploadBearer,
                 })
           }
-          onSend={(bufferId, text) => {
+          onSend={(bufferId, text, replyTo) => {
             if (client === undefined) return Promise.resolve(false);
             setComposerNotice(undefined);
             clearMessageFailureNotice(bufferId);
@@ -1795,6 +1795,7 @@ export function App(props: AppProps) {
                   type: "submit_input",
                   buffer_id: bufferId,
                   input: text,
+                  ...(replyTo === undefined ? {} : { reply_to: replyTo }),
                 },
               })
               .then(() => true)

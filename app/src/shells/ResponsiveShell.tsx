@@ -1,5 +1,6 @@
 import { createEffect, createSignal, splitProps } from "solid-js";
 import { ImageDropZone } from "../features/composer/ImageDropZone";
+import { createReplyDrafts } from "../features/composer/reply-drafts";
 import {
   selectBuffer as applyBufferSelection,
   type BufferSelection,
@@ -10,6 +11,7 @@ import { MobileShell } from "./mobile/MobileShell";
 
 export function ResponsiveShell(props: DesktopShellProps) {
   const platform = platformEnvironment();
+  const replyDrafts = createReplyDrafts();
   const [, sharedProps] = splitProps(props, [
     "activeBufferId",
     "bufferRemoval",
@@ -17,6 +19,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
     "onFocusRequestHandled",
     "onSelectBuffer",
     "pathForBuffer",
+    "replyDrafts",
   ]);
   const initialSelection: BufferSelection =
     props.activeBufferId === undefined
@@ -126,6 +129,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
       ) : (
         <DesktopShell
           {...sharedProps}
+          replyDrafts={replyDrafts}
           activeBufferId={selection().bufferId}
           focusRequest={pendingFocusRequest()}
           onFocusRequestHandled={(request) =>

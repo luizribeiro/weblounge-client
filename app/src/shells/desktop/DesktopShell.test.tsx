@@ -6,6 +6,7 @@ import type {
   BufferProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { createReplyDrafts } from "../../features/composer/reply-drafts";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { DesktopShell } from "./DesktopShell";
@@ -892,4 +893,59 @@ it("keeps the read dwell across equal buffer and message replacements", () => {
     visibility.mockRestore();
     vi.useRealTimers();
   }
+});
+
+it("replies from a row's toolbar and sends the reply threaded under it", async () => {
+  sessionStorage.clear();
+  const send = vi.fn(async () => true);
+  const drafts = createReplyDrafts();
+  const parent: MessageProjection = {
+    ...nickMessage,
+    id: 40,
+    text: "does the relay see plaintext?",
+    server_ids: ["parent-40"],
+  };
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map([[channel.id, [parent]]])}
+      networks={[
+        {
+          id: 1,
+          label: "Local",
+          nickname: "me",
+          state: "online",
+          can_reply: true,
+        },
+      ]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={send}
+      replyDrafts={drafts}
+    />
+  ));
+
+  const row = screen
+    .getByText(parent.text)
+    .closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("parent row is missing");
+  fireEvent.pointerEnter(row);
+  fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+  const input = screen.getByRole("textbox", { name: "Message #room" });
+  expect(input).toHaveAttribute("placeholder", "Reply to mel");
+  expect(row.closest("li")).toHaveAttribute("data-reply-target", "true");
+  fireEvent.input(input, { target: { value: "only ciphertext" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(send).toHaveBeenCalledWith(channel.id, "only ciphertext", 40);
+  await waitFor(() =>
+    expect(input).toHaveAttribute("placeholder", "Message #room"),
+  );
+  expect(row.closest("li")).not.toHaveAttribute("data-reply-target");
 });

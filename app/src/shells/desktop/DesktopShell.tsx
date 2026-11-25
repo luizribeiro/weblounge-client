@@ -30,6 +30,7 @@ import type {
   TypingProjection,
 } from "../../engine/protocol";
 import type { TimelineView } from "../../engine/timeline-store";
+import type { ReplyDrafts } from "../../features/composer/reply-drafts";
 import type { MessageListController } from "../../features/conversation/MessageList";
 import type { ToggleBufferReaction } from "../../features/conversation/reaction-target";
 import type { RedactBufferMessage } from "../../features/conversation/redact-target";
@@ -73,6 +74,7 @@ import { windowDragRegion } from "../../platform/window-controls";
 import { translate } from "../../strings";
 import { returnFocus } from "../../ui/focus-return";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
+import type { SendText } from "../send-text";
 import { DesktopPane } from "./DesktopPane";
 import styles from "./DesktopShell.module.css";
 import { focusComposerIn } from "./focus-composer";
@@ -119,7 +121,8 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly pathForBuffer?:
     | ((bufferId: number) => string | undefined)
     | undefined;
-  readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly onSend: SendText;
+  readonly replyDrafts?: ReplyDrafts | undefined;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (
     bufferId: number,
@@ -549,11 +552,12 @@ export function DesktopShell(props: DesktopShellProps) {
           onRedactMessage={props.onRedactMessage}
           onRequestCompletion={props.onRequestCompletion}
           onRetry={props.onRetry}
-          onSendText={(buffer, text) =>
+          onSendText={(buffer, text, replyTo) =>
             closesDirect(buffer, text)
               ? closeDirect(buffer)
-              : props.onSend(buffer.id, text)
+              : props.onSend(buffer.id, text, replyTo)
           }
+          replyDrafts={props.replyDrafts}
           onRequestMemberRange={(bufferId, offset) =>
             props.onRequestMembers?.(memberViewId(), bufferId, offset)
           }

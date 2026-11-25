@@ -1,5 +1,6 @@
 import { createMemo, onCleanup, onMount, Show } from "solid-js";
 import { bufferSyncPresentation } from "../../engine/buffer-sync";
+import type { MessageId } from "../../engine/generated/MessageId";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -12,6 +13,7 @@ import {
 } from "../../features/conversation/MessageList";
 import { bufferReactionToggle } from "../../features/conversation/reaction-target";
 import { bufferRedaction } from "../../features/conversation/redact-target";
+import { bufferReply } from "../../features/conversation/reply-target";
 import {
   MemberPanel,
   type MemberPanelChrome,
@@ -49,6 +51,7 @@ type SharedShellProps = Pick<
   | "onRequestCompletion"
   | "onRetry"
   | "onToggleReaction"
+  | "replyDrafts"
   | "onTrustDirectIdentity"
   | "showMemberModeSymbols"
   | "timelines"
@@ -73,6 +76,7 @@ export interface DesktopPaneProps extends SharedShellProps {
   readonly onSendText: (
     buffer: BufferProjection,
     text: string,
+    replyTo?: MessageId,
   ) => Promise<boolean>;
   readonly onRequestMemberRange: (bufferId: number, offset: number) => void;
   readonly onToggleMembers: () => void;
@@ -112,6 +116,9 @@ function PaneConversation(props: DesktopPaneProps) {
   );
   const redactMessage = createMemo(() =>
     bufferRedaction(buffer().id, props.network, props.onRedactMessage),
+  );
+  const replyMessage = createMemo(() =>
+    bufferReply(buffer().id, props.network, props.replyDrafts?.start),
   );
   const send = (text: string) => props.onSendText(buffer(), text);
   let messageList: MessageListController | undefined;
@@ -219,6 +226,8 @@ function PaneConversation(props: DesktopPaneProps) {
             onRetry={(localSendId) => props.onRetry?.(buffer().id, localSendId)}
             onToggleReaction={toggleReaction()}
             onRedactMessage={redactMessage()}
+            onReplyMessage={replyMessage()}
+            replyingTo={props.replyDrafts?.draft(buffer().id)?.messageId}
             readAtMs={buffer().read_at_ms}
             unread={buffer().unread}
             syncState={buffer().sync_state}
