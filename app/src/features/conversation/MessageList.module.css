@@ -459,7 +459,11 @@
   padding-inline-start: 0;
 }
 .virtualRow[data-reply-target] .row {
-  background: color-mix(in srgb, var(--wl-color-selection) 60%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--wl-color-mention-bg) 50%,
+    var(--wl-color-panel-alt)
+  );
 }
 .virtualRow[data-flashed] .row {
   animation: replyParentFlash 1600ms ease-out;
