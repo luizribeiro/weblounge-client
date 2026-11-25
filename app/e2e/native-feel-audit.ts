@@ -27,6 +27,7 @@ const idleObservationMilliseconds = 5_000;
 interface NativeFeelMetrics extends WasteCounters {
   engineEvents: string[];
   enginePatches: number;
+  frameSites: string[];
   intervalRegistrations: IntervalRegistration[];
   layoutShift: number;
   pointerLog: string[];
@@ -42,6 +43,7 @@ export async function installNativeFeelInstrumentation(
       animationFrames: 0,
       engineEvents: [],
       enginePatches: 0,
+      frameSites: [],
       intervalRegistrations: [],
       intervals: 0,
       layoutShift: 0,
@@ -120,11 +122,16 @@ export async function installNativeFeelInstrumentation(
     };
 
     const requestFrame = window.requestAnimationFrame.bind(window);
-    window.requestAnimationFrame = (callback) =>
-      requestFrame((time) => {
-        if (metrics.trackingWaste) metrics.animationFrames += 1;
+    window.requestAnimationFrame = (callback) => {
+      const request = new Error();
+      return requestFrame((time) => {
+        if (metrics.trackingWaste) {
+          metrics.animationFrames += 1;
+          metrics.frameSites.push(request.stack ?? "unknown call site");
+        }
         callback(time);
       });
+    };
 
     const setTimeout = window.setTimeout.bind(window);
     window.setTimeout = ((
@@ -292,6 +299,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
         __nativeFeelMetrics?: {
           animationFrames: number;
           engineEvents: string[];
+          frameSites: string[];
           intervals: number;
           timeouts: number;
           timeoutSites: string[];
@@ -303,6 +311,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       throw new Error("native-feel metrics are missing");
     metrics.animationFrames = 0;
     metrics.engineEvents = [];
+    metrics.frameSites = [];
     metrics.intervals = 0;
     metrics.timeouts = 0;
     metrics.timeoutSites = [];
@@ -314,6 +323,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       window as Window & {
         __nativeFeelMetrics?: WasteCounters & {
           engineEvents: string[];
+          frameSites: string[];
           intervalRegistrations: IntervalRegistration[];
           timeoutSites: string[];
           trackingWaste: boolean;
@@ -327,6 +337,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       registrations: metrics.intervalRegistrations,
       engineEvents: metrics.engineEvents,
       timeoutSites: metrics.timeoutSites,
+      frameSites: metrics.frameSites,
       waste: {
         animationFrames: metrics.animationFrames,
         intervals: metrics.intervals,
@@ -348,7 +359,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   );
   expect(
     result.waste,
-    `engine events: ${result.engineEvents.join(", ")}; timeouts fired from:\n${result.timeoutSites.join("\n")}`,
+    `engine events: ${result.engineEvents.join(", ")}; timeouts fired from:\n${result.timeoutSites.join("\n")}\nframes requested from:\n${countedSites(result.frameSites)}`,
   ).toEqual({
     animationFrames: 0,
     intervals: 0,
@@ -368,6 +379,12 @@ function recentPointerEvents(page: Page): Promise<string> {
 
 // Emulated phones have no virtual keyboard, so a tapped composer's pan guard ends only by its
 // one-second fallback.
+function countedSites(sites: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const site of sites) counts.set(site, (counts.get(site) ?? 0) + 1);
+  return [...counts].map(([site, count]) => `${count}x ${site}`).join("\n");
+}
+
 export async function waitForKeyboardGeometrySettle(page: Page): Promise<void> {
   await expect(page.locator("#root")).not.toHaveAttribute(
     "data-keyboard-watch",
