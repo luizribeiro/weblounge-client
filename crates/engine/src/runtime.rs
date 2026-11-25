@@ -30,6 +30,7 @@ use crate::{
     pushed_messages::{self, PushedMessage},
     reactions::ReactionAction,
     request_error::{StateLimitOutcome, state_limit_outcome},
+    saved_message::SavedMessage,
     settings,
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
@@ -1852,7 +1853,7 @@ impl Runtime {
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
-            let deleted = send_redaction(&client, &redaction).await;
+            let deleted = send_redaction(&client, &redaction).await.is_ok();
             let mut state = lock(&state);
             if let Some(running) = state
                 .network
@@ -1862,9 +1863,7 @@ impl Runtime {
                 let mut events = Vec::new();
                 // TODO(papo-0.1 reaction-confirm): papo resolves `redact` with `()` once its
                 // labeled response arrives, so that stands in for the server's confirming REDACT.
-                // Once any line is gone from the server the row is a tombstone, as a received
-                // redaction of any one of its lines makes it.
-                if deleted > 0 {
+                if deleted {
                     events.extend(running.model.confirm_own_redaction(&redaction));
                 } else {
                     running.model.fail_own_redaction(&redaction);
@@ -3145,53 +3144,32 @@ fn can_redact(state: &papo::State) -> bool {
     state.supports(papo::Feature::Redaction) && state.supports(papo::Feature::LabeledResponse)
 }
 
+/// Restores a row's saved reference once its DM peer, if any, is still the pinned one.
 fn message_reference(
     client: &papo::Client,
     target: &SendTarget,
-    msgid: &str,
+    saved: &SavedMessage,
 ) -> Result<papo::MessageRef, SendError> {
-    let address = match target {
-        SendTarget::Channel(channel) => channel.to_string(),
-        SendTarget::Direct { nick, pin, tls } => {
-            check_direct_recipient(client, nick, pin.as_ref(), *tls)?;
-            nick.to_string()
-        }
-    };
-    client
-        .saved_message(&saved_message_reference(&address, msgid))
+    if let SendTarget::Direct { nick, pin, tls } = target {
+        check_direct_recipient(client, nick, pin.as_ref(), *tls)?;
+    }
+    saved
+        .restore(client)
         .map_err(|error| classify_send_error(&error))
 }
 
-// TODO(F27): rows keep only their target and ids, so this writes papo's saved-reference text for
-// them; storing each line's `return_address().to_saved()` would keep its exact audience.
-fn saved_message_reference(address: &str, msgid: &str) -> String {
-    let escape = |value: &str| {
-        value
-            .replace('%', "%25")
-            .replace(';', "%3B")
-            .replace('=', "%3D")
-    };
-    format!("papo-ref:1;to={};id={}", escape(address), escape(msgid))
-}
-
-/// Redacts the row's lines in order and returns how many the server deleted before any error.
-async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> usize {
-    let mut deleted = 0;
-    for msgid in &redaction.msgids {
-        let Ok(message) = message_reference(client, &redaction.target, msgid) else {
-            break;
-        };
-        if client.redact(message, "").await.is_err() {
-            break;
-        }
-        deleted += 1;
-    }
-    deleted
+async fn send_redaction(client: &papo::Client, redaction: &OwnRedaction) -> Result<(), SendError> {
+    let message = message_reference(client, &redaction.target, &redaction.saved)?;
+    client
+        .redact(message, "")
+        .await
+        .map(|_| ())
+        .map_err(|error| classify_send_error(&error))
 }
 
 async fn send_reaction(client: &papo::Client, change: &OwnReactionChange) -> Result<(), SendError> {
     let target = change.target.as_ref().ok_or(SendError::DirectTargetGone)?;
-    let message = message_reference(client, target, &change.msgid)?;
+    let message = message_reference(client, target, &change.saved)?;
     let text = change.text.clone();
     match change.action {
         ReactionAction::Added => client.react(message, text).await,
@@ -11918,26 +11896,6 @@ async fn delay(duration: Duration) {
                 }
         )));
         assert!(!client.snapshot().is_connected());
-    }
-
-    #[test]
-    fn saved_message_references_restore_the_row_they_were_written_for() {
-        let (client, _events, _driver) = papo::Client::builder("irc://offline.test", "weblounge")
-            .casemapping(papo::Casemapping::Rfc1459)
-            .build();
-        for (address, msgid) in [("#room", "m1"), ("alice", "id;with=odd%chars")] {
-            let restored = client
-                .saved_message(&super::saved_message_reference(address, msgid))
-                .expect("papo restores the reference");
-            assert_eq!(
-                restored.msgid().map(ToString::to_string).as_deref(),
-                Some(msgid)
-            );
-            assert_eq!(
-                restored.to_saved(),
-                super::saved_message_reference(address, msgid)
-            );
-        }
     }
 
     fn known_nick(client: &papo::Client, name: &str) -> papo::Nick {

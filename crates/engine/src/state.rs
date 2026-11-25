@@ -23,6 +23,7 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     redaction::{EarlyRedactions, REDACTED_PREVIEW, redact_projection, redactor_name},
+    saved_message::SavedMessage,
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
         LocalCalendar, LocalDay, MemberRank, MentionVocabulary, ModeMeaning, ModeProjection,
@@ -140,6 +141,13 @@ impl ChatInput<'_> {
         }
     }
 
+    fn saved(&self) -> Option<SavedMessage> {
+        match self {
+            Self::Message(message) => SavedMessage::of_message(message),
+            Self::Notice(_) => None,
+        }
+    }
+
     const fn server_time(&self) -> Option<papo::ServerTime> {
         match self {
             Self::Message(message) => message.server_time,
@@ -191,10 +199,27 @@ struct DirectMismatch {
     deferred: bool,
 }
 
+/// What a row keeps beside its projection when it enters the timeline.
+#[derive(Default)]
+struct RowFacts {
+    send_text: Option<String>,
+    saved: Option<SavedMessage>,
+}
+
+impl RowFacts {
+    fn saved(saved: Option<SavedMessage>) -> Self {
+        Self {
+            saved,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ChatMetadata {
     counts_as_mention: bool,
     send_text: Option<String>,
+    saved: Option<SavedMessage>,
     dedup: DedupReferences,
     provisional_identity: Option<ProvisionalIdentity>,
 }
@@ -510,6 +535,7 @@ pub(crate) struct OwnReactionChange {
     pub(crate) message_id: MessageId,
     /// `None` when the conversation cannot be sent to, so the change can only fail visibly.
     pub(crate) target: Option<SendTarget>,
+    pub(crate) saved: SavedMessage,
     pub(crate) msgid: String,
     pub(crate) text: String,
     pub(crate) action: ReactionAction,
@@ -521,6 +547,7 @@ pub(crate) struct OwnRedaction {
     pub(crate) buffer_id: BufferId,
     pub(crate) message_id: MessageId,
     pub(crate) target: SendTarget,
+    pub(crate) saved: SavedMessage,
     pub(crate) msgids: Vec<String>,
 }
 
@@ -1366,6 +1393,7 @@ impl NetworkModel {
             bot: input.bot(state, history),
             authorship: map_authorship(authorship),
             msgid: input.msgid(),
+            saved: input.saved(),
             server_time_ms: input.server_time().map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(input.received_at()),
             origin,
@@ -1416,6 +1444,7 @@ impl NetworkModel {
                 .and_then(papo::User::is_bot),
             authorship: map_authorship(notice.actor_party),
             msgid: notice.msgid().map(ToString::to_string),
+            saved: None,
             server_time_ms: notice.server_time.map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(notice.received_at),
             origin: if history {
@@ -1488,6 +1517,7 @@ impl NetworkModel {
         text: String,
     ) -> Option<OwnReactionChange> {
         let target = self.action_target(buffer_id);
+        let saved = self.saved_message(buffer_id, message_id)?;
         let msgid = self
             .buffers
             .get(&buffer_id)?
@@ -1512,6 +1542,7 @@ impl NetworkModel {
             buffer_id,
             message_id,
             target,
+            saved,
             msgid,
             text,
             action,
@@ -1668,6 +1699,7 @@ impl NetworkModel {
         message_id: MessageId,
     ) -> Option<OwnRedaction> {
         let target = self.action_target(buffer_id)?;
+        let saved = self.saved_message(buffer_id, message_id)?;
         let message = self.chat_message_mut(buffer_id, message_id)?;
         let redactable = message.authorship == MessageAuthorship::Own
             && matches!(message.kind, MessageKind::Text | MessageKind::Action)
@@ -1684,8 +1716,33 @@ impl NetworkModel {
             buffer_id,
             message_id,
             target,
+            saved,
             msgids,
         })
+    }
+
+    /// A row confirmed from a split send or restored from a push has no saved reference of its
+    /// own; the server's copy of the line supplies it when history or a replay repeats it.
+    fn backfill_saved(&mut self, incoming: &Incoming) -> Option<()> {
+        let saved = incoming.saved.clone()?;
+        let (buffer_id, message_id) = self.msgids.get(incoming.msgid.as_deref()?)?.location?;
+        let metadata = self
+            .buffers
+            .get_mut(&buffer_id)?
+            .chat_metadata
+            .get_mut(&message_id)?;
+        metadata.saved.get_or_insert(saved);
+        Some(())
+    }
+
+    /// Papo's saved reference of a row, which every change to that message is sent through.
+    fn saved_message(&self, buffer_id: BufferId, message_id: MessageId) -> Option<SavedMessage> {
+        self.buffers
+            .get(&buffer_id)?
+            .chat_metadata
+            .get(&message_id)?
+            .saved
+            .clone()
     }
 
     pub(crate) fn confirm_own_redaction(&mut self, redaction: &OwnRedaction) -> Vec<EngineToUi> {
@@ -1792,6 +1849,7 @@ impl NetworkModel {
                     bot: None,
                     authorship: MessageAuthorship::Other,
                     msgid: Some(message.msgid),
+                    saved: None,
                     server_time_ms: Some(server_time_ms),
                     received_at_ms: server_time_ms,
                     origin: TimelineOrigin::Push,
@@ -1871,8 +1929,13 @@ impl NetworkModel {
             server_time_ms: None,
             received_at_ms: time_millis(papo::time::now()),
         };
-        self.insert(buffer_id, message.clone(), None, DedupReferences::default())
-            .ok()?;
+        self.insert(
+            buffer_id,
+            message.clone(),
+            RowFacts::default(),
+            DedupReferences::default(),
+        )
+        .ok()?;
         Some(())
     }
 
@@ -2133,7 +2196,10 @@ impl NetworkModel {
             .insert(
                 buffer_id,
                 message.clone(),
-                Some(text.clone()),
+                RowFacts {
+                    send_text: Some(text.clone()),
+                    ..RowFacts::default()
+                },
                 DedupReferences::default(),
             )
             .ok()?;
@@ -2477,6 +2543,7 @@ impl NetworkModel {
         let record = buffer.timeline.remove(index);
         let original = chat_projection(&record)?.clone();
         buffer.chat_metadata.remove(&record.id);
+        let saved = SavedMessage::of_outcome(sent);
         let (lines, server_time) = confirmed_lines(sent).map_or((None, None), |(lines, time)| {
             (Some(lines), time.map(papo::ServerTime::as_millis))
         });
@@ -2517,7 +2584,7 @@ impl NetworkModel {
                 .insert(
                     pending.buffer_id,
                     message.clone(),
-                    None,
+                    RowFacts::saved(saved.clone()),
                     DedupReferences {
                         msgids: message.server_ids.clone(),
                         fallback: None,
@@ -3889,6 +3956,7 @@ impl NetworkModel {
             };
         }
         let Some(dedup) = self.deduplicate_incoming(&incoming) else {
+            self.backfill_saved(&incoming);
             return IncomingResult::default();
         };
 
@@ -3919,7 +3987,8 @@ impl NetworkModel {
             }
         }
         let message = self.project_incoming(message_id, &incoming, state, identity, false);
-        let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
+        let facts = RowFacts::saved(incoming.saved.clone());
+        let Ok(order_changed) = self.insert(buffer_id, message.clone(), facts, dedup) else {
             return IncomingResult {
                 events: inconsistent_state_notice(),
                 carry_read: None,
@@ -4038,7 +4107,8 @@ impl NetworkModel {
         let identity = self.incoming_identity(buffer_id, incoming);
         let mut message = self.project_incoming(message_id, incoming, state, identity, false);
         message.delivery = MessageDelivery::Confirmed;
-        let order_changed = self.insert(buffer_id, message.clone(), None, dedup).ok()?;
+        let facts = RowFacts::saved(incoming.saved.clone());
+        let order_changed = self.insert(buffer_id, message.clone(), facts, dedup).ok()?;
         let cursor = incoming
             .server_time_ms
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
@@ -4107,6 +4177,7 @@ impl NetworkModel {
             let metadata = buffer.chat_metadata.get_mut(&message_id)?;
             metadata.counts_as_mention = counts_as_mention;
             metadata.provisional_identity = None;
+            metadata.saved.clone_from(&incoming.saved);
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
                 time: ServerTimeMs::new(message_time(&message)),
@@ -4445,7 +4516,7 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         mut projection: MessageProjection,
-        send_text: Option<String>,
+        facts: RowFacts,
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
         if !self.buffers.contains_key(&buffer_id) {
@@ -4476,7 +4547,8 @@ impl NetworkModel {
         };
         let metadata = ChatMetadata {
             counts_as_mention,
-            send_text,
+            send_text: facts.send_text,
+            saved: facts.saved,
             dedup,
             provisional_identity: None,
         };
@@ -5320,6 +5392,7 @@ struct Incoming {
     bot: Option<bool>,
     authorship: MessageAuthorship,
     msgid: Option<String>,
+    saved: Option<SavedMessage>,
     server_time_ms: Option<i64>,
     received_at_ms: i64,
     origin: TimelineOrigin,
@@ -5989,6 +6062,7 @@ mod tests {
             bot: Some(false),
             authorship: MessageAuthorship::Other,
             msgid: msgid.map(str::to_owned),
+            saved: None,
             server_time_ms,
             received_at_ms,
             origin,
@@ -7255,6 +7329,7 @@ mod tests {
             bot: Some(false),
             authorship: MessageAuthorship::Other,
             msgid: Some(format!("{nick}-{server_time_ms}")),
+            saved: None,
             server_time_ms: Some(server_time_ms),
             received_at_ms: server_time_ms,
             origin: TimelineOrigin::Live,
@@ -7300,6 +7375,48 @@ mod tests {
         };
         assert_eq!(peer_bot("ana"), Some(false));
         assert_eq!(peer_bot("concierge"), Some(true));
+    }
+
+    #[tokio::test]
+    async fn a_row_acts_only_once_papo_has_saved_its_reference() {
+        let (mut model, state) = model(10);
+        let own_line = |saved| Incoming {
+            authorship: MessageAuthorship::Own,
+            saved,
+            ..incoming(
+                &state,
+                "hello",
+                Some("m1"),
+                Some(10),
+                10,
+                TimelineOrigin::Live,
+            )
+        };
+        let (buffer_id, message_id) = model
+            .receive_incoming_result(own_line(None), &state)
+            .message
+            .expect("the row is inserted");
+        assert!(
+            model
+                .toggle_own_reaction(buffer_id, message_id, "👍".into())
+                .is_none()
+        );
+        assert!(model.begin_own_redaction(buffer_id, message_id).is_none());
+
+        let (_client, line) =
+            crate::saved_message::received("@msgid=m1 :weblounge!u@host PRIVMSG #room :hello")
+                .await;
+        model.receive_incoming_result(
+            own_line(crate::saved_message::SavedMessage::of_message(&line)),
+            &state,
+        );
+
+        assert!(
+            model
+                .toggle_own_reaction(buffer_id, message_id, "👍".into())
+                .is_some()
+        );
+        assert!(model.begin_own_redaction(buffer_id, message_id).is_some());
     }
 
     fn notified_texts(events: &[EngineToUi]) -> Vec<(BufferKind, String)> {
