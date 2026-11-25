@@ -27,7 +27,7 @@ export async function expectThreadedReply(
   parentMsgid: string,
 ): Promise<string> {
   const line = await peer.waitForPrivmsg(target, `${prefix}${text}`, sender);
-  expect(line).toContain(`+draft/reply=${parentMsgid}`);
+  expect(line).toContain(`+reply=${parentMsgid}`);
   return line;
 }
 
