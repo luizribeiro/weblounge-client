@@ -80,6 +80,27 @@ describe("settings sections", () => {
     expect(shownIn("tauri-mobile", row)).toEqual(all);
   });
 
+  it("offers Account before About where the app signed in to weblounge", () => {
+    shownIn("web", undefined);
+    const account = {
+      membersSite: "https://members.weblounge.org",
+      onSignOut: () => {},
+    };
+
+    expect(shownSettingsSections({ account }).map(({ id }) => id)).toEqual([
+      "appearance",
+      "notifications",
+      "account",
+      "about",
+    ]);
+    expect(shownSettingsSection("account")).toBeUndefined();
+    expect(
+      shownSettingsSection("account", { account })?.summary(settings, {
+        account,
+      }),
+    ).toBe("members.weblounge.org");
+  });
+
   it("summarises About with the build version", () => {
     shownIn("web", undefined);
     expect(shownSettingsSection("about")?.summary(settings, {})).toBe(

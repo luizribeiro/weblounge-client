@@ -4,6 +4,8 @@ import type { AppSettings } from "../../engine/generated/AppSettings";
 import { type MessageKey, t } from "../../strings";
 import { AboutIcon } from "./AboutIcon";
 import { AboutSettings } from "./AboutSettings";
+import { AccountIcon } from "./AccountIcon";
+import { AccountSettings, membersSiteName } from "./AccountSettings";
 import { AppearanceIcon } from "./AppearanceIcon";
 import { AppearanceSettings, densityLabel } from "./AppearanceSettings";
 import { inBrowserTab } from "./in-browser-tab";
@@ -17,7 +19,12 @@ import type {
 import type { SettingsHost, SettingsPageProps } from "./settings-page-props";
 import { themeName } from "./ThemeCards";
 
-const settingsSectionIds = ["appearance", "notifications", "about"] as const;
+const settingsSectionIds = [
+  "appearance",
+  "notifications",
+  "account",
+  "about",
+] as const;
 
 export type SettingsSectionId = (typeof settingsSectionIds)[number];
 
@@ -97,6 +104,15 @@ const sections: Readonly<Record<SettingsSectionId, SettingsSectionDefinition>> =
       summary: notificationsSummary,
       shown: ({ notifications }) =>
         notifications !== undefined || inBrowserTab(),
+    },
+    account: {
+      id: "account",
+      label: "settings.account",
+      Icon: AccountIcon,
+      Page: AccountSettings,
+      summary: (_settings, { account }) =>
+        account === undefined ? "" : membersSiteName(account),
+      shown: ({ account }) => account !== undefined,
     },
     about: {
       id: "about",

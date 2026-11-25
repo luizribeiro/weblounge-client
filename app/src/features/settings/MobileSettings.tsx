@@ -5,6 +5,7 @@ import { t } from "../../strings";
 import styles from "./MobileSettings.module.css";
 import type { NotificationSwitch } from "./push-settings";
 import { SettingsRootRow } from "./SettingsRootRow";
+import type { AccountControls } from "./settings-page-props";
 import {
   type SettingsSectionId,
   shownSettingsSection,
@@ -18,6 +19,7 @@ interface MobileSettingsProps {
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
   readonly notifications?: NotificationSwitch | undefined;
+  readonly account?: AccountControls | undefined;
   readonly onBack: () => void;
   readonly onOpenPage: (page: MobileSettingsPage) => void;
 }
@@ -68,6 +70,7 @@ export function MobileSettings(props: MobileSettingsProps) {
         >
           {(page) => (
             <page.Page
+              account={props.account}
               onChange={props.onChange}
               notifications={props.notifications}
               settings={props.settings}

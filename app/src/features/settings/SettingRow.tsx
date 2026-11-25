@@ -18,7 +18,7 @@ export interface SettingNote {
 interface SettingRowProps {
   readonly label: string;
   readonly description: string;
-  readonly control: "choice" | "switch";
+  readonly control: "action" | "choice" | "switch";
   readonly note?: SettingNote | undefined;
   readonly children: (ids: SettingControlIds) => JSX.Element;
 }

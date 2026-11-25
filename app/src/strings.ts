@@ -402,6 +402,15 @@ export const messages = {
   "notice.invite_sent": "Invited {nick} to {target}.",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "settings.about": "About",
+  "settings.account": "Account",
+  "settings.account.members": "Members site",
+  "settings.account.members.description":
+    "Manage your account and invite people.",
+  "settings.account.sign_out": "Sign out",
+  "settings.account.sign_out.confirm": "Sign out of weblounge on this device?",
+  "settings.account.sign_out.description":
+    "Removes this device's saved chats and push notifications.",
+  "settings.account.signing_out": "Signing out…",
   "settings.about.built": "Built",
   "settings.about.built.dev": "Development server",
   "settings.about.channel": "Channel",

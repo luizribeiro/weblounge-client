@@ -1,0 +1,35 @@
+.action {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.action svg {
+  fill: none;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 13px;
+}
+
+.signOut {
+  color: var(--wl-color-error);
+}
+
+.signOut:disabled {
+  color: var(--wl-color-muted);
+}
+
+.confirmation {
+  font-size: 13px;
+  padding-top: 10px;
+}
+
+[data-settings-layout="phone"] .confirmation {
+  font-size: 15px;
+}

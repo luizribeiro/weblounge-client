@@ -14,6 +14,7 @@ import { CloseIcon } from "../../ui/icons/CloseIcon";
 import type { NotificationSwitch } from "./push-settings";
 import styles from "./SettingsModal.module.css";
 import { SettingsSectionNav } from "./SettingsSectionNav";
+import type { AccountControls } from "./settings-page-props";
 import {
   type SettingsSectionId,
   shownSettingsSections,
@@ -23,6 +24,7 @@ interface SettingsModalProps {
   readonly settings: AppSettings | undefined;
   readonly onChange: (change: SettingChange) => void;
   readonly notifications?: NotificationSwitch | undefined;
+  readonly account?: AccountControls | undefined;
   readonly onClose: () => void;
   readonly rail?: boolean | undefined;
 }
@@ -108,6 +110,7 @@ export function SettingsModal(props: SettingsModalProps) {
               >
                 <section.Page
                   onChange={props.onChange}
+                  account={props.account}
                   notifications={props.notifications}
                   settings={props.settings}
                 />
