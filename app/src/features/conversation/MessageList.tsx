@@ -83,6 +83,7 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionPicker } from "./ReactionPicker";
 import { ReactionToolbar } from "./ReactionToolbar";
 import { RedactedText, redactedLabel } from "./RedactedText";
+import { ReplyQuote } from "./ReplyQuote";
 import {
   ownReactions,
   reactionTarget,
@@ -906,6 +907,16 @@ export function MessageList(props: MessageListProps) {
     virtualizer.scrollToIndex(index, { align: "auto" });
     queueMicrotask(() => list?.focus());
   };
+  const [flashedMessage, setFlashedMessage] = createSignal<number>();
+  const jumpToMessage = (messageId: number) => {
+    const index = rows().findIndex(
+      (row) => row.kind === "message" && row.message.id === messageId,
+    );
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: "center" });
+    setFlashedMessage(undefined);
+    requestAnimationFrame(() => setFlashedMessage(messageId));
+  };
   props.registerController?.({
     jumpBottom: jumpToBottom,
     selectLastOwn,
@@ -1432,13 +1443,13 @@ export function MessageList(props: MessageListProps) {
                     virtualizer.getVirtualItems(),
                   );
                 };
-                const selected = () => {
+                const showsMessage = (messageId: number | undefined) => {
                   const item = row();
                   return (
-                    item?.kind === "message" &&
-                    item.message.id === selectedMessage()
+                    item?.kind === "message" && item.message.id === messageId
                   );
                 };
+                const selected = () => showsMessage(selectedMessage());
                 return (
                   <li
                     class={styles.virtualRow}
@@ -1447,10 +1458,15 @@ export function MessageList(props: MessageListProps) {
                       copiedRows.includes(virtualRow.index) || undefined
                     }
                     data-engine-order={formatEngineOrder(row()?.engineOrder)}
+                    data-flashed={showsMessage(flashedMessage()) || undefined}
                     data-index={virtualRow.index}
                     data-line-spacing={lineRowSpacing(rows(), virtualRow.index)}
                     data-row-key={String(virtualRow.key)}
                     data-selected={selected()}
+                    onAnimationEnd={(event) => {
+                      if (event.animationName.includes("replyParentFlash"))
+                        setFlashedMessage(undefined);
+                    }}
                     ref={(element) => measureRow(element, virtualRow.index)}
                     style={{
                       transform: `translateY(${measuredStart() + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
@@ -1474,6 +1490,7 @@ export function MessageList(props: MessageListProps) {
                       onToggleSystem={toggleSystem}
                       onRetry={props.onRetry}
                       onMessageActions={props.onMessageActions}
+                      onJumpToMessage={jumpToMessage}
                       heldMessageId={props.heldMessageId}
                       reactions={rowReactions()}
                       menu={messageMenu.row()}
@@ -1571,6 +1588,7 @@ function TimelineRowView(props: {
   readonly onToggleSystem: (itemId: number, expanded: boolean) => void;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onMessageActions?: OpenMessageActions | undefined;
+  readonly onJumpToMessage: (messageId: number) => void;
   readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1657,6 +1675,7 @@ function TimelineRowView(props: {
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
                 onMessageActions={props.onMessageActions}
+                onJumpToMessage={props.onJumpToMessage}
                 held={props.heldMessageId === row.message.id}
                 reactions={props.reactions}
                 menu={props.menu}
@@ -1743,6 +1762,7 @@ function MessageRow(props: {
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onMessageActions?: OpenMessageActions | undefined;
+  readonly onJumpToMessage: (messageId: number) => void;
   readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1824,7 +1844,7 @@ function MessageRow(props: {
       : createLongPress(() => openActions(message));
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender !== undefined ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender !== undefined ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""} ${message.reply !== undefined ? styles.quoted : ""}`}
       data-delivery={message.delivery}
       data-held={props.held || undefined}
       data-message-row="true"
@@ -1874,6 +1894,15 @@ function MessageRow(props: {
             />
           )}
         </Show>
+      </Show>
+      <Show when={message.reply}>
+        {(parent) => (
+          <ReplyQuote
+            class={styles.replyQuote}
+            onJump={props.onJumpToMessage}
+            parent={parent()}
+          />
+        )}
       </Show>
       {message.kind === "action" ? (
         <>

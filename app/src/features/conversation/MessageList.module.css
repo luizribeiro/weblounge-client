@@ -429,3 +429,44 @@
 .virtualRow[data-copy-selected] .time [data-line] {
   inline-size: fit-content;
 }
+
+.quoted {
+  row-gap: 2px;
+}
+.replyQuote {
+  grid-column: 3;
+  grid-row: 1;
+}
+.quoted > :not(.replyQuote, [data-reaction-toolbar]) {
+  grid-row: 2;
+}
+.action > .replyQuote {
+  padding-inline-start: 58px;
+}
+.list[data-presentation="mobile"] .quoted:not(.action) {
+  grid-template-areas:
+    "quote quote quote"
+    "time nick status"
+    "content content content";
+  grid-template-rows: 26px 1lh auto;
+}
+.list[data-presentation="mobile"] .replyQuote {
+  block-size: 26px;
+  font-size: 13px;
+  grid-area: quote;
+}
+.list[data-presentation="mobile"] .action > .replyQuote {
+  padding-inline-start: 0;
+}
+.virtualRow[data-flashed] .row {
+  animation: replyParentFlash 1600ms ease-out;
+}
+@keyframes replyParentFlash {
+  0%,
+  75% {
+    background: var(--wl-color-mention-bg);
+  }
+  100% {
+    background: transparent;
+  }
+}

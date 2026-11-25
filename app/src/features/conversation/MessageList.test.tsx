@@ -3744,6 +3744,56 @@ function timelineView(items: readonly TimelineItem[]): TimelineView {
   };
 }
 
+it("quotes a reply's parent and flashes the parent when the quote is activated", async () => {
+  const parent = {
+    ...message,
+    id: 30,
+    highlighted: false,
+    delivery: "received" as const,
+    server_ids: ["parent-1"],
+    text: "ship it?",
+  };
+  const reply: MessageProjection = {
+    ...parent,
+    id: 31,
+    author: "bob",
+    server_ids: ["reply-1"],
+    text: "yes",
+    reply: {
+      state: "loaded",
+      message_id: parent.id,
+      author: parent.author,
+      nick_color_index: parent.nick_color_index,
+      text: parent.text,
+    },
+  };
+  render(() => <MessageList messages={[parent, reply]} />);
+
+  const replyRow = screen.getByText("yes").closest("[data-message-row]");
+  expect(replyRow?.className).toContain("quoted");
+  const parentItem = screen
+    .getAllByText("ship it?")
+    .map((text) => text.closest("li"))
+    .find((item) => item?.querySelector("[data-reply-quote]") === null);
+  expect(parentItem).not.toHaveAttribute("data-flashed");
+
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Reply to alice. Go to the original message",
+    }),
+  );
+
+  await waitFor(() =>
+    expect(parentItem).toHaveAttribute("data-flashed", "true"),
+  );
+  const flashEnd = new Event("animationend", { bubbles: true });
+  Object.defineProperty(flashEnd, "animationName", {
+    value: "_replyParentFlash_1a2b",
+  });
+  parentItem?.querySelector("[data-message-row]")?.dispatchEvent(flashEnd);
+  expect(parentItem).not.toHaveAttribute("data-flashed");
+});
+
 function rect(top: number, height: number): DOMRect {
   return {
     bottom: top + height,
