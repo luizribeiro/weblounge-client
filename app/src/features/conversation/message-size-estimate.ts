@@ -10,7 +10,7 @@ import type { RowSpacing as LineSpacing } from "./timeline/row-spacing";
 
 type EstimatedMessage = Pick<
   MessageProjection,
-  "delivery" | "kind" | "reactions" | "text"
+  "delivery" | "kind" | "reactions" | "reply" | "text"
 >;
 
 export type { RowSpacing as LineSpacing } from "./timeline/row-spacing";
@@ -26,6 +26,9 @@ const rowInlinePadding = 16;
 const nickColumnWidth = 112;
 const gridGapWidth = 30;
 const fullWidthIndent = 58;
+const desktopQuoteLineHeight = 18;
+const desktopQuoteGap = 2;
+const mobileQuoteHeight = 26;
 
 export function estimateMessageHeight(
   message: EstimatedMessage,
@@ -106,6 +109,7 @@ export function estimateMessageHeight(
       ? lineHeight + Number.parseFloat(preset.mobileHeaderGap)
       : 0;
     return (
+      replyQuoteHeight(message, preset, presentation) +
       topPadding +
       headerHeight +
       textHeight +
@@ -141,10 +145,26 @@ export function estimateMessageHeight(
       ? Math.ceil(11 * Number.parseFloat(preset.lineHeight))
       : 0;
   return (
+    replyQuoteHeight(message, preset, presentation) +
     textHeight +
     deliveryHeight +
     estimatedReactionHeight(message, textWidth, presentation)
   );
+}
+
+function replyQuoteHeight(
+  message: EstimatedMessage,
+  preset: DensityPreset,
+  presentation: "desktop" | "mobile",
+): number {
+  if (message.reply === undefined) return 0;
+  const action = message.kind === "action";
+  if (presentation === "mobile")
+    return (
+      mobileQuoteHeight +
+      (action ? 0 : Number.parseFloat(preset.mobileHeaderGap))
+    );
+  return desktopQuoteLineHeight + (action ? 0 : desktopQuoteGap);
 }
 
 function inlineImageBlockHeight(
@@ -181,7 +201,7 @@ export function messageSizeRevision(
   const reactions = message.reactions
     ?.map((reaction) => `${reaction.text}:${reaction.actors.length}`)
     .join("\u0001");
-  return `${messageKindRevision(message.kind)}\u0000${message.text}\u0000${message.delivery}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
+  return `${messageKindRevision(message.kind)}\u0000${message.text}\u0000${message.delivery}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}\u0000${message.reply === undefined ? "" : "quoted"}`;
 }
 
 function messageKindRevision(kind: EstimatedMessage["kind"]): string {

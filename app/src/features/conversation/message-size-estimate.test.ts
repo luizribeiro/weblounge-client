@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { densityPresets } from "../../density/density";
 import {
   currentMessageDensity,
   estimateMessageHeight,
@@ -75,6 +76,35 @@ describe("estimateMessageHeight", () => {
       estimateMessageHeight(base, 402, "cozy"),
     );
     expect(messageSizeRevision(reacted)).not.toBe(messageSizeRevision(base));
+  });
+
+  it("adds the reply quote line and invalidates the estimate when it appears", () => {
+    const line = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "right, it only forwards ciphertext",
+    };
+    const reply = { ...line, reply: { state: "loading" as const } };
+    const action = { ...line, kind: "action" as const };
+    const actionReply = { ...action, reply: { state: "deleted" as const } };
+    const height = (
+      message: Parameters<typeof estimateMessageHeight>[0],
+      presentation: "desktop" | "mobile",
+    ) => estimateMessageHeight(message, 402, "cozy", presentation);
+    const mobileHeaderGap = Number.parseFloat(
+      densityPresets.cozy.mobileHeaderGap,
+    );
+
+    expect(height(reply, "desktop") - height(line, "desktop")).toBe(20);
+    expect(height(actionReply, "desktop") - height(action, "desktop")).toBe(18);
+    expect(height(reply, "mobile") - height(line, "mobile")).toBe(
+      26 + mobileHeaderGap,
+    );
+    expect(height(actionReply, "mobile") - height(action, "mobile")).toBe(26);
+    expect(messageSizeRevision(reply)).not.toBe(messageSizeRevision(line));
+    expect(messageSizeRevision(reply)).toBe(
+      messageSizeRevision({ ...line, reply: { state: "unavailable" } }),
+    );
   });
 
   it("estimates phone headers and continuation rows separately", () => {
