@@ -15,6 +15,7 @@ use crate::{
         ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
     direct_peer::DirectPeer,
+    fetched_parents::{FetchedParent, FetchedParents},
     name_key::NameKey,
     peer_pin::{PeerPin, PinCheck, PinMismatch},
     pushed_messages::{PushedMessage, PushedMessageKind},
@@ -298,6 +299,7 @@ struct BufferState {
     newest: Option<HistoryCursor>,
     pushed_history_pending: bool,
     pushed_history_retry_available: bool,
+    fetched_parents: FetchedParents,
 }
 
 impl BufferState {
@@ -548,6 +550,14 @@ pub(crate) struct ReplyTarget {
     pub(crate) msgid: String,
 }
 
+/// A reply's parent outside the loaded timeline, to look up in its conversation's history.
+#[derive(Clone, Debug)]
+pub(crate) struct ParentFetch {
+    pub(crate) buffer_id: BufferId,
+    pub(crate) target: HistoryTarget,
+    pub(crate) msgid: String,
+}
+
 /// This account's reaction change awaiting papo and the server's echo.
 #[derive(Clone, Debug)]
 pub(crate) struct OwnReactionChange {
@@ -604,6 +614,7 @@ pub(crate) struct NetworkModel {
     system_dedup: HashSet<SystemDedupReference>,
     reactions: ReactionIndex,
     early_redactions: EarlyRedactions,
+    parent_fetches: Vec<ParentFetch>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     dirty_timelines: HashSet<BufferId>,
     held_motd: Option<Vec<String>>,
@@ -675,6 +686,7 @@ impl NetworkModel {
             system_dedup: HashSet::new(),
             reactions: ReactionIndex::with_preload_limit(window_limit),
             early_redactions: EarlyRedactions::default(),
+            parent_fetches: Vec::new(),
             fallbacks: HashMap::new(),
             dirty_timelines: HashSet::new(),
             held_motd: None,
@@ -1639,6 +1651,7 @@ impl NetworkModel {
             .get(&target)
             .and_then(|reference| reference.location)
         else {
+            self.redact_fetched_parent(redacted, &target);
             let restored = self
                 .buffer_id_for_conversation(redacted.conversation())
                 .filter(|buffer_id| self.redact_restored(*buffer_id, &target));
@@ -1653,6 +1666,58 @@ impl NetworkModel {
             .into_iter()
             .chain([withdrawn])
             .collect()
+    }
+
+    fn redact_fetched_parent(&mut self, redacted: &papo::event::Redacted, msgid: &str) {
+        let Some(buffer_id) = self.buffer_id_for_conversation(redacted.conversation()) else {
+            return;
+        };
+        if self
+            .buffers
+            .get_mut(&buffer_id)
+            .is_some_and(|buffer| buffer.fetched_parents.redact(msgid))
+        {
+            self.dirty_timelines.insert(buffer_id);
+        }
+    }
+
+    /// A replaced connection's lookups never answer, so their parents are asked for again.
+    pub(crate) fn forget_parent_lookups(&mut self) {
+        for buffer in self.buffers.values_mut() {
+            buffer.fetched_parents.forget_loading();
+        }
+    }
+
+    pub(crate) fn take_parent_fetches(&mut self) -> Vec<ParentFetch> {
+        std::mem::take(&mut self.parent_fetches)
+    }
+
+    /// Records what history said about a parent. A lookup that failed for now is forgotten, so
+    /// the conversation's next projection asks again.
+    pub(crate) fn resolve_parent(
+        &mut self,
+        fetch: &ParentFetch,
+        found: Result<Option<papo::Event>, papo::Error>,
+    ) {
+        let casemapping = self.casemapping;
+        let Some(buffer) = self.buffers.get_mut(&fetch.buffer_id) else {
+            return;
+        };
+        let parent = match found {
+            Ok(Some(papo::Event::Message(message))) => FetchedParent::Fetched {
+                nick_color_index: nick_color_index(casemapping, message.actor.nick().as_str()),
+                author: message.actor.nick().to_string(),
+                text: collapse_blank_lines(message.text),
+            },
+            Ok(_) | Err(papo::Error::Unsupported(_)) => FetchedParent::Missing,
+            Err(_) => {
+                buffer.fetched_parents.forget(&fetch.msgid);
+                return;
+            }
+        };
+        if buffer.fetched_parents.resolve(&fetch.msgid, parent) {
+            self.dirty_timelines.insert(fetch.buffer_id);
+        }
     }
 
     /// Forgets a deleted message known only from the restored chat list: its unread fact, and
@@ -4534,6 +4599,7 @@ impl NetworkModel {
                 newest: None,
                 pushed_history_pending: false,
                 pushed_history_retry_available: false,
+                fetched_parents: FetchedParents::default(),
             },
         );
         if let Some(direct_key) = direct_key {
@@ -4685,12 +4751,29 @@ impl NetworkModel {
                 continue;
             };
             let vocabulary = mention_vocabulary(buffer, casemapping, &own_nick);
-            let Ok(desired) = project_timeline(buffer, &vocabulary, casemapping) else {
+            let Ok((desired, wanted)) = project_timeline(buffer, &vocabulary, casemapping) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
                 ));
                 continue;
             };
+            let named = buffer
+                .chat_metadata
+                .values()
+                .filter_map(|metadata| metadata.reply_to.as_deref())
+                .collect::<HashSet<_>>();
+            buffer.fetched_parents.retain(|msgid| named.contains(msgid));
+            if let Some(key) = &buffer.key {
+                for msgid in wanted {
+                    if buffer.fetched_parents.request(&msgid) {
+                        self.parent_fetches.push(ParentFetch {
+                            buffer_id,
+                            target: HistoryTarget::from_key(key.clone()),
+                            msgid,
+                        });
+                    }
+                }
+            }
             let Ok(timeline_diff) = diff(&buffer.emitted_timeline, &desired) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
@@ -5206,11 +5289,12 @@ fn safe_raw_mode(change: &papo::ModeChange) -> String {
     raw
 }
 
+/// Also names the reply parents history should be asked for.
 fn project_timeline(
     buffer: &BufferState,
     vocabulary: &MentionVocabulary,
     casemapping: papo::Casemapping,
-) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
+) -> Result<(Vec<TimelineItem>, Vec<String>), crate::timeline::TimelineError> {
     let reply_to = |id: &MessageId| {
         buffer
             .chat_metadata
@@ -5224,11 +5308,21 @@ fn project_timeline(
                 reply_to: reply_to(&record.id),
             })
         }),
+        &buffer.fetched_parents,
         casemapping,
         buffer.projection.kind == BufferKind::Channel,
     );
+    let mut wanted = buffer
+        .chat_metadata
+        .values()
+        .filter_map(|metadata| metadata.reply_to.as_deref())
+        .filter(|parent| loaded.needs_fetch(parent))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    wanted.sort_unstable();
+    wanted.dedup();
     fold(&buffer.timeline).map(|items| {
-        items
+        let items = items
             .into_iter()
             .map(|item| {
                 let body = match item.body {
@@ -5267,7 +5361,8 @@ fn project_timeline(
                     body,
                 }
             })
-            .collect()
+            .collect();
+        (items, wanted)
     })
 }
 
@@ -5790,6 +5885,7 @@ fn server_buffer(
         newest: None,
         pushed_history_pending: false,
         pushed_history_retry_available: false,
+        fetched_parents: FetchedParents::default(),
     }
 }
 

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{MessageKind, MessageProjection, ReplyParent};
+use crate::{
+    MessageKind, MessageProjection, ReplyParent,
+    fetched_parents::{FetchedParent, FetchedParents},
+};
 
 /// One loaded row a reply can quote, with the parent it replies to in turn.
 #[derive(Clone, Copy)]
@@ -9,9 +12,10 @@ pub(crate) struct QuotableRow<'a> {
     pub(crate) reply_to: Option<&'a str>,
 }
 
-/// A conversation's loaded rows by server message identifier.
+/// A conversation's loaded rows by server message identifier, and the parents it fetched.
 pub(crate) struct LoadedRows<'a> {
     rows: HashMap<&'a str, QuotableRow<'a>>,
+    fetched: &'a FetchedParents,
     casemapping: papo::Casemapping,
     strips_prefix: bool,
 }
@@ -20,6 +24,7 @@ impl<'a> LoadedRows<'a> {
     /// Channel replies carry their parent's nick for plain IRC clients; DMs never do.
     pub(crate) fn new(
         rows: impl IntoIterator<Item = QuotableRow<'a>>,
+        fetched: &'a FetchedParents,
         casemapping: papo::Casemapping,
         channel: bool,
     ) -> Self {
@@ -34,6 +39,7 @@ impl<'a> LoadedRows<'a> {
             .collect();
         Self {
             rows,
+            fetched,
             casemapping,
             strips_prefix: channel,
         }
@@ -46,13 +52,21 @@ impl<'a> LoadedRows<'a> {
         reply_to: &str,
     ) -> MessageProjection {
         let row = self.rows.get(reply_to);
-        if let Some(text) =
-            row.and_then(|parent| self.without_prefix(&message, &parent.message.author))
-        {
+        let author = row.map_or_else(
+            || self.fetched.get(reply_to).and_then(FetchedParent::author),
+            |parent| Some(parent.message.author.as_str()),
+        );
+        if let Some(text) = author.and_then(|author| self.without_prefix(&message, author)) {
             message.text = text.to_owned();
         }
-        message.reply = Some(row.map_or(ReplyParent::Unavailable, |row| self.parent(row)));
+        message.reply =
+            Some(row.map_or_else(|| self.fetched.projection(reply_to), |row| self.parent(row)));
         message
+    }
+
+    /// A parent neither loaded nor looked up yet, which history should be asked for.
+    pub(crate) fn needs_fetch(&self, reply_to: &str) -> bool {
+        !self.rows.contains_key(reply_to) && self.fetched.get(reply_to).is_none()
     }
 
     fn parent(&self, row: &QuotableRow<'a>) -> ReplyParent {
@@ -88,6 +102,7 @@ impl<'a> LoadedRows<'a> {
 #[cfg(test)]
 mod tests {
     use super::{LoadedRows, QuotableRow};
+    use crate::fetched_parents::{FetchedParent, FetchedParents};
     use crate::{
         MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection, Redaction,
         ReplyParent,
@@ -118,11 +133,20 @@ mod tests {
     }
 
     fn rows<'a>(rows: &'a [(MessageProjection, Option<&'a str>)], channel: bool) -> LoadedRows<'a> {
+        with_fetched(rows, Box::leak(Box::default()), channel)
+    }
+
+    fn with_fetched<'a>(
+        rows: &'a [(MessageProjection, Option<&'a str>)],
+        fetched: &'a FetchedParents,
+        channel: bool,
+    ) -> LoadedRows<'a> {
         LoadedRows::new(
             rows.iter().map(|(message, reply_to)| QuotableRow {
                 message,
                 reply_to: *reply_to,
             }),
+            fetched,
             papo::Casemapping::Rfc1459,
             channel,
         )
@@ -205,8 +229,49 @@ mod tests {
     }
 
     #[test]
-    fn a_parent_outside_the_timeline_is_unavailable() {
-        let reply = rows(&[], true).quote(row(2, "luiz", "bruno: ok", "r1"), "p1");
+    fn a_parent_outside_the_timeline_loads_until_history_answers() {
+        let loaded = rows(&[], true);
+        let reply = loaded.quote(row(2, "luiz", "bruno: ok", "r1"), "p1");
+
+        assert_eq!(reply.reply, Some(ReplyParent::Loading));
+        assert_eq!(reply.text, "bruno: ok");
+        assert!(loaded.needs_fetch("p1"));
+    }
+
+    #[test]
+    fn a_fetched_parent_is_quoted_and_its_nick_prefix_hidden() {
+        let mut fetched = FetchedParents::default();
+        fetched.request("p1");
+        fetched.resolve(
+            "p1",
+            FetchedParent::Fetched {
+                author: "Bruno".into(),
+                nick_color_index: 4,
+                text: "ship it?".into(),
+            },
+        );
+        let loaded = with_fetched(&[], &fetched, true);
+        let reply = loaded.quote(row(2, "luiz", "bruno: ok", "r1"), "p1");
+
+        assert_eq!(reply.text, "ok");
+        assert_eq!(
+            reply.reply,
+            Some(ReplyParent::Fetched {
+                author: "Bruno".into(),
+                nick_color_index: 4,
+                text: "ship it?".into(),
+            })
+        );
+        assert!(!loaded.needs_fetch("p1"));
+    }
+
+    #[test]
+    fn a_parent_history_lacks_is_unavailable() {
+        let mut fetched = FetchedParents::default();
+        fetched.request("p1");
+        fetched.resolve("p1", FetchedParent::Missing);
+        let reply =
+            with_fetched(&[], &fetched, true).quote(row(2, "luiz", "bruno: ok", "r1"), "p1");
 
         assert_eq!(reply.reply, Some(ReplyParent::Unavailable));
         assert_eq!(reply.text, "bruno: ok");

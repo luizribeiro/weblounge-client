@@ -771,6 +771,19 @@ pub enum ReplyParent {
         /// The parent's text as its own row shows it.
         text: String,
     },
+    /// The parent is outside the loaded timeline and history is being asked for it.
+    Loading,
+    /// History had the parent, which the loaded timeline doesn't hold, so there is nothing to
+    /// scroll to.
+    Fetched {
+        /// Display nick of the parent's author.
+        author: String,
+        /// Palette index of the parent's author.
+        #[ts(type = "number")]
+        nick_color_index: u32,
+        /// The parent's text.
+        text: String,
+    },
     /// The parent was deleted.
     Deleted,
     /// Neither the timeline nor history has the parent.

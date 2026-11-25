@@ -6,6 +6,7 @@ mod chat_list_snapshot;
 /// Runtime slash-command metadata and registration.
 pub mod commands;
 mod direct_peer;
+mod fetched_parents;
 mod filehost;
 mod members;
 mod mode_string;

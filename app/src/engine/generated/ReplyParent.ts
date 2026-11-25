@@ -20,4 +20,16 @@ nick_color_index: number,
 /**
  * The parent's text as its own row shows it.
  */
+text: string, } | { "state": "loading" } | { "state": "fetched",
+/**
+ * Display nick of the parent's author.
+ */
+author: string,
+/**
+ * Palette index of the parent's author.
+ */
+nick_color_index: number,
+/**
+ * The parent's text.
+ */
 text: string, } | { "state": "deleted" } | { "state": "unavailable" };

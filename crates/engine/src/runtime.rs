@@ -34,8 +34,9 @@ use crate::{
     settings,
     state::{
         ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
-        NetworkModel, OwnReactionChange, OwnRedaction, PendingSend, PendingTargetState,
-        ReadAdvance, SendTarget, event_millis, is_own_nick, server_time, time_millis,
+        NetworkModel, OwnReactionChange, OwnRedaction, ParentFetch, PendingSend,
+        PendingTargetState, ReadAdvance, SendTarget, event_millis, is_own_nick, server_time,
+        time_millis,
     },
     timeline::{FixedOffsetCalendar, LocalCalendar},
     upload_target::{self, ConnectionIdentity, UploadContext, UploadCredential},
@@ -111,9 +112,23 @@ struct RunningNetwork {
     chat_list: ChatListSync,
     push: PushRegistration,
     typing: crate::typing::OutgoingTyping,
+    parent_fetcher: ParentFetcher,
 }
 
+/// Where a connection's reply-parent lookups go; tests that don't drive history have none.
+#[derive(Default)]
+struct ParentFetcher(Option<mpsc::UnboundedSender<ParentFetch>>);
+
 impl RunningNetwork {
+    fn flush_parent_fetches(&mut self) {
+        let fetches = self.model.take_parent_fetches();
+        if let Some(sender) = &self.parent_fetcher.0 {
+            for fetch in fetches {
+                let _ = sender.send(fetch);
+            }
+        }
+    }
+
     fn read_markers_server_backed(&self) -> bool {
         let snapshot = self.client.snapshot();
         !snapshot.is_connected() || can_sync_read_markers(&snapshot)
@@ -1325,6 +1340,7 @@ impl Runtime {
             },
             push: PushRegistration::default(),
             typing: crate::typing::OutgoingTyping::default(),
+            parent_fetcher: self.parent_fetcher(&client, instance),
         });
         let output = finish_timeline_turn(state, output);
         if restored_push {
@@ -1396,7 +1412,7 @@ impl Runtime {
         state.network = Some(RunningNetwork {
             instance,
             identity: ConnectionIdentity::hosted(endpoint.clone()),
-            client,
+            client: client.clone(),
             model,
             connection_attempt: 1,
             device_online: true,
@@ -1419,6 +1435,7 @@ impl Runtime {
             },
             push: PushRegistration::default(),
             typing: crate::typing::OutgoingTyping::default(),
+            parent_fetcher: ParentFetcher::default(),
         });
         let output = finish_timeline_turn(state, output);
         if restored_push {
@@ -1464,6 +1481,8 @@ impl Runtime {
         running.flushing_sends = false;
         running.flushing_reads = false;
         running.typing = crate::typing::OutgoingTyping::default();
+        running.model.forget_parent_lookups();
+        running.parent_fetcher = self.parent_fetcher(&client, instance);
         state.network = Some(running);
         drop(state);
 
@@ -1708,6 +1727,15 @@ impl Runtime {
             }
             .ok_or_else(|| model.send_rejection_key(buffer_id))
         })
+    }
+
+    fn parent_fetcher(&self, client: &papo::Client, instance: u64) -> ParentFetcher {
+        spawn_parent_fetcher(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client.clone(),
+            instance,
+        )
     }
 
     fn send_reply(
@@ -3536,8 +3564,39 @@ fn finish_timeline_turn(
 ) -> Vec<EngineToUi> {
     if let Some(running) = state.network.as_mut() {
         events.extend(running.model.take_timeline_changes(false));
+        running.flush_parent_fetches();
     }
     events
+}
+
+/// Looks up reply parents in history one at a time for one connection, until it is replaced.
+fn spawn_parent_fetcher(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+) -> ParentFetcher {
+    let (sender, mut fetches) = mpsc::unbounded_channel::<ParentFetch>();
+    spawn_task(async move {
+        while let Some(fetch) = fetches.recv().await {
+            let found = fetch
+                .target
+                .history(&client)
+                .message(fetch.msgid.as_str())
+                .await;
+            let mut guard = lock(&state);
+            let Some(running) = guard
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            running.model.resolve_parent(&fetch, found);
+            send_events(&outbound, finish_timeline_turn(guard, Vec::new()));
+        }
+    });
+    ParentFetcher(Some(sender))
 }
 
 fn send_optional_events(
@@ -4279,6 +4338,7 @@ async fn fetch_history_page(
         let buffer_id = history_buffer_id.or(gap_buffer_id);
         let retry = history_buffer_id.and_then(|id| running.model.retry_pushed_history(id));
         let timeline = running.model.take_timeline_changes(false);
+        running.flush_parent_fetches();
         (buffer_id, retry, timeline, history_buffer_id.is_some())
     };
     if let Some(buffer_id) = buffer_id {
@@ -8799,22 +8859,10 @@ async fn delay(duration: Duration) {
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
                 client,
-                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-            }))),
+                NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            )))),
             outbound,
         };
 
@@ -8882,22 +8930,10 @@ async fn delay(duration: Duration) {
         .await;
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
                 client,
-                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-            }))),
+                NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            )))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -9458,6 +9494,7 @@ async fn delay(duration: Duration) {
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
                     typing: crate::typing::OutgoingTyping::default(),
+                    parent_fetcher: super::ParentFetcher::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -9556,6 +9593,7 @@ async fn delay(duration: Duration) {
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
                     typing: crate::typing::OutgoingTyping::default(),
+                    parent_fetcher: super::ParentFetcher::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -9658,22 +9696,10 @@ async fn delay(duration: Duration) {
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
                 client,
-                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-            }))),
+                NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            )))),
             outbound,
         };
 
@@ -9881,22 +9907,10 @@ async fn delay(duration: Duration) {
         while !matches!(events.next_event().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
                 client,
-                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-            }))),
+                NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            )))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -10001,6 +10015,7 @@ async fn delay(duration: Duration) {
                 },
                 push: PushRegistration::default(),
                 typing: crate::typing::OutgoingTyping::default(),
+                parent_fetcher: super::ParentFetcher::default(),
                 client,
                 model,
             }))),
@@ -10212,22 +10227,9 @@ async fn delay(duration: Duration) {
             .buffer_id_for_channel(&known_channel(&client, "#room"))
             .expect("joined buffer exists");
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
-                client,
-                model,
-            }))),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
+                client, model,
+            )))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -10381,6 +10383,26 @@ async fn delay(duration: Duration) {
                 Some("mel".into())
             )
         );
+    }
+
+    fn test_running_network(client: papo::Client, model: NetworkModel) -> RunningNetwork {
+        RunningNetwork {
+            instance: 1,
+            identity: ConnectionIdentity::test_plain(),
+            client,
+            model,
+            connection_attempt: 1,
+            device_online: true,
+            pending_sends: VecDeque::new(),
+            flushing_sends: false,
+            pending_reads: VecDeque::new(),
+            flushing_reads: false,
+            hosted_reconnect: None,
+            chat_list: ChatListSync::default(),
+            push: PushRegistration::default(),
+            typing: crate::typing::OutgoingTyping::default(),
+            parent_fetcher: super::ParentFetcher::default(),
+        }
     }
 
     fn rejection_key_and_nick(output: EngineToUi) -> (EngineMessageKey, Option<String>) {
@@ -10677,22 +10699,9 @@ async fn delay(duration: Duration) {
             .buffer_id_for_channel(&known_channel(&client, "#room"))
             .expect("joined buffer exists");
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
-                client,
-                model,
-            }))),
+            state: Arc::new(Mutex::new(runtime_state(test_running_network(
+                client, model,
+            )))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -10795,22 +10804,10 @@ async fn delay(duration: Duration) {
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 inflight_send_cancel: None,
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    identity: ConnectionIdentity::test_plain(),
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    pending_reads: VecDeque::new(),
-                    flushing_reads: false,
-                    hosted_reconnect: None,
-                    chat_list: ChatListSync::default(),
-                    push: PushRegistration::default(),
-                    typing: crate::typing::OutgoingTyping::default(),
+                network: Some(test_running_network(
                     client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
+                    NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                )),
             })),
             outbound,
         };
@@ -11393,22 +11390,10 @@ async fn delay(duration: Duration) {
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 inflight_send_cancel: None,
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    identity: ConnectionIdentity::test_plain(),
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    pending_reads: VecDeque::new(),
-                    flushing_reads: false,
-                    hosted_reconnect: None,
-                    chat_list: ChatListSync::default(),
-                    push: PushRegistration::default(),
-                    typing: crate::typing::OutgoingTyping::default(),
+                network: Some(test_running_network(
                     client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
+                    NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                )),
             })),
             outbound,
         };
@@ -11529,22 +11514,10 @@ async fn delay(duration: Duration) {
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 inflight_send_cancel: None,
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    identity: ConnectionIdentity::test_plain(),
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    pending_reads: VecDeque::new(),
-                    flushing_reads: false,
-                    hosted_reconnect: None,
-                    chat_list: ChatListSync::default(),
-                    push: PushRegistration::default(),
-                    typing: crate::typing::OutgoingTyping::default(),
+                network: Some(test_running_network(
                     client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
+                    NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                )),
             })),
             outbound,
         };
@@ -11600,22 +11573,10 @@ async fn delay(duration: Duration) {
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 inflight_send_cancel: None,
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    identity: ConnectionIdentity::test_plain(),
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    pending_reads: VecDeque::new(),
-                    flushing_reads: false,
-                    hosted_reconnect: None,
-                    chat_list: ChatListSync::default(),
-                    push: PushRegistration::default(),
-                    typing: crate::typing::OutgoingTyping::default(),
+                network: Some(test_running_network(
                     client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
+                    NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                )),
             })),
             outbound,
         };
@@ -12136,22 +12097,7 @@ async fn delay(duration: Duration) {
             build_version: "weblounge test".into(),
             update_ready: false,
             inflight_send_cancel: None,
-            network: Some(RunningNetwork {
-                instance: 1,
-                identity: ConnectionIdentity::test_plain(),
-                connection_attempt: 1,
-                device_online: true,
-                pending_sends: VecDeque::new(),
-                flushing_sends: false,
-                pending_reads: VecDeque::new(),
-                flushing_reads: false,
-                hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
-                push: PushRegistration::default(),
-                typing: crate::typing::OutgoingTyping::default(),
-                client,
-                model,
-            }),
+            network: Some(test_running_network(client, model)),
         }));
         let (outbound, receiver) = mpsc::unbounded_channel();
         (state, outbound, receiver)
@@ -17483,21 +17429,95 @@ async fn delay(duration: Duration) {
         harness.drain.abort();
     }
 
+    impl ReplayHarness {
+        fn fetch_parents(&self) {
+            let mut state = lock(&self.state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.parent_fetcher = super::spawn_parent_fetcher(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                self.client.clone(),
+                running.instance,
+            );
+        }
+
+        async fn reply_quote(&mut self, text: &str, quote: impl Fn(&crate::ReplyParent) -> bool) {
+            tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    let event = self.receiver.recv().await.expect("runtime remains active");
+                    if event_timeline_messages(&event).into_iter().any(|message| {
+                        message.text == text && message.reply.as_ref().is_some_and(&quote)
+                    }) {
+                        return;
+                    }
+                }
+            })
+            .await
+            .expect("the reply's quote arrives");
+        }
+    }
+
     #[tokio::test]
-    async fn a_reply_to_an_unloaded_parent_keeps_its_text_and_says_so() {
+    async fn a_reply_to_a_parent_history_cannot_be_asked_for_says_so() {
         let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        harness.fetch_parents();
         harness
             .wire
             .server("@time=2026-10-27T13:02:00.000Z;msgid=reply;+draft/reply=gone :bob!b@host PRIVMSG #room :alice: I do")
             .await;
 
-        let output = harness.timeline_output(&["alice: I do"]).await;
+        harness
+            .reply_quote("alice: I do", |quote| {
+                *quote == crate::ReplyParent::Unavailable
+            })
+            .await;
+        harness.drain.abort();
+    }
 
-        let reply = timeline_messages(&output)
-            .into_iter()
-            .find(|message| message.text == "alice: I do")
-            .expect("the reply row");
-        assert_eq!(reply.reply, Some(crate::ReplyParent::Unavailable));
+    #[tokio::test]
+    async fn a_reply_to_an_unloaded_parent_quotes_it_from_history_until_it_is_deleted() {
+        let mut harness = ReplayHarness::joined(
+            "draft/chathistory draft/message-redaction batch labeled-response message-tags server-time",
+        )
+        .await;
+        harness.fetch_parents();
+        harness
+            .wire
+            .server("@time=2026-10-27T13:02:00.000Z;msgid=reply;+draft/reply=old :bob!b@host PRIVMSG #room :alice: I do")
+            .await;
+        harness
+            .reply_quote("alice: I do", |quote| *quote == crate::ReplyParent::Loading)
+            .await;
+
+        let request = next_sent_containing(&mut harness.wire, "CHATHISTORY AROUND").await;
+        assert!(
+            request.ends_with("CHATHISTORY AROUND #room msgid=old 3"),
+            "{request}"
+        );
+        send_ergo_history_page(
+            &mut harness.wire,
+            &request,
+            &["@batch={batch};time=2026-10-27T12:00:00.000Z;msgid=old :alice!a@host PRIVMSG #room :who has the keys?"],
+        )
+        .await;
+        harness
+            .reply_quote("I do", |quote| {
+                *quote
+                    == crate::ReplyParent::Fetched {
+                        author: "alice".into(),
+                        nick_color_index: crate::state::nick_color_index(
+                            papo::Casemapping::Rfc1459,
+                            "alice",
+                        ),
+                        text: "who has the keys?".into(),
+                    }
+            })
+            .await;
+
+        harness.wire.server(":alice!a@host REDACT #room old").await;
+        harness
+            .reply_quote("I do", |quote| *quote == crate::ReplyParent::Deleted)
+            .await;
         harness.drain.abort();
     }
 
