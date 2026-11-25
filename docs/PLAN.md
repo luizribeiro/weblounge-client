@@ -184,6 +184,7 @@ pointer says. "Memory" is the maintainer's session notes, not the repo.
 - SV4: Ergo DM history is disabled on weblounge, so client-side search cannot cover DMs; a link-preview proxy has no standard and would be an SSRF surface. `docs/design/commands-catalog.md` gap 5.
 - SV5: serve `"channel": "beta"` in beta.weblounge.org's `/config.json` (irc.weblounge.org may send `"release"` or nothing); irc.weblounge.org is switching to the client at `v0.2.0` (64b912c4). Design 37.
 - SV6: keep each client pin (beta, release) with its version, `{ rev; version; }` from `node apps/tauri/release/describe-version.mjs <rev>`, build `clientPackages.app.withVersion version`, and build the push relay from the beta pin. `docs/RELEASING.md`, design 37.
+- SV7: serve uploads on files.weblounge.org with `Cache-Control: public, max-age=2592000, immutable` (the 30 days they are kept). Their names are random and their bytes never change, but the upload location in `services/files.nix` sets no `Cache-Control` or `Expires`, so browsers fall back to heuristic freshness from Last-Modified and revalidate every image once it lapses. B51.
 
 #### Device checks
 - V4: real iOS/Android/Tauri checks of long-press, rubber-band, Dynamic Type and native menus. Design 15.
