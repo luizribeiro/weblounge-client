@@ -8,8 +8,16 @@ const modifierKeys: ReadonlySet<string> = new Set([
   "Shift",
 ]);
 
+type ModifierState = Pick<
+  KeyboardEvent,
+  "altKey" | "ctrlKey" | "getModifierState" | "metaKey" | "shiftKey"
+>;
+
+const pointerEvents = ["pointerdown", "pointermove", "wheel"] as const;
+const listenerOptions = { capture: true, passive: true } as const;
+
 export function isExactChord(
-  event: KeyboardEvent,
+  event: ModifierState,
   chord: ModifierChord,
 ): boolean {
   return (
@@ -37,17 +45,24 @@ export function createModifierHold(
   const keyup = (event: KeyboardEvent) => {
     if (modifierKeys.has(event.key)) release();
   };
+  const resyncFromPointer = (event: MouseEvent) => {
+    if (!isExactChord(event, chord)) release();
+  };
   const visibilityChanged = () => {
     if (target.document.visibilityState !== "visible") release();
   };
   target.addEventListener("keydown", keydown, true);
   target.addEventListener("keyup", keyup, true);
   target.addEventListener("blur", release);
+  for (const type of pointerEvents)
+    target.addEventListener(type, resyncFromPointer, listenerOptions);
   target.document.addEventListener("visibilitychange", visibilityChanged);
   onCleanup(() => {
     target.removeEventListener("keydown", keydown, true);
     target.removeEventListener("keyup", keyup, true);
     target.removeEventListener("blur", release);
+    for (const type of pointerEvents)
+      target.removeEventListener(type, resyncFromPointer, listenerOptions);
     target.document.removeEventListener("visibilitychange", visibilityChanged);
   });
   return held;

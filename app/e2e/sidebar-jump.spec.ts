@@ -118,6 +118,41 @@ test.describe("sidebar conversation jumps against local Ergo", () => {
     ).toBeHidden();
   });
 
+  test("the Mac app hides the hints after Command-Tab swallows the release", async ({
+    page,
+    irc,
+  }) => {
+    await emulateMacApp(page);
+    await installNativeFeelInstrumentation(page);
+    await openWithExtraChannel(page, irc);
+    const ids = await conversationRowIds(page);
+    const hint = sidebarRow(page, ids[0]).locator("[data-jump-hint]");
+    const title = page.getByRole("heading", { level: 2 });
+    const titleBox = await title.boundingBox();
+    if (titleBox === null) throw new Error("conversation title has no box");
+    const overTitle = (dx: number) =>
+      page.mouse.move(titleBox.x + dx, titleBox.y + titleBox.height / 2);
+    const conversation = await title.textContent();
+    const returns = [
+      () => overTitle(4),
+      () => page.mouse.wheel(0, 10),
+      async () => {
+        await page.mouse.down();
+        await page.mouse.up();
+      },
+    ];
+
+    for (const returnToTheApp of returns) {
+      await overTitle(2);
+      await pressCommandWithoutKeyup(page);
+      await expect(hint).toBeVisible();
+      await returnToTheApp();
+      await expect(hint).toBeHidden();
+    }
+    await expect(title).toHaveText(conversation ?? "");
+    await nativeFeelAudit(page);
+  });
+
   test("the Mac browser keeps Command+digit for the browser", async ({
     page,
     irc,
@@ -175,6 +210,14 @@ async function holdJumpModifier(page: Page): Promise<void> {
 async function releaseJumpModifier(page: Page): Promise<void> {
   await page.keyboard.up("Alt");
   await page.keyboard.up("Control");
+}
+
+async function pressCommandWithoutKeyup(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Meta", metaKey: true }),
+    ),
+  );
 }
 
 async function rightEdge(locator: Locator): Promise<number> {

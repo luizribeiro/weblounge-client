@@ -127,11 +127,66 @@ describe("modifier hold", () => {
     }
   });
 
+  it.each([
+    ["pointermove", () => new PointerEvent("pointermove")],
+    ["pointerdown", () => new PointerEvent("pointerdown")],
+    ["wheel", () => new WheelEvent("wheel")],
+  ])(
+    "releases a hold whose keyup it missed on a %s without the chord",
+    (_, event) => {
+      const held = hold(command);
+      key("keydown", "Meta", { metaKey: true });
+      expect(held()).toBe(true);
+      window.dispatchEvent(event());
+      expect(held()).toBe(false);
+    },
+  );
+
+  it("releases a multi-key chord when a pointer event lacks one of its keys", () => {
+    const held = hold(controlAlt);
+    key("keydown", "Control", { ctrlKey: true });
+    key("keydown", "Alt", { ctrlKey: true, altKey: true });
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { ctrlKey: true, altKey: true }),
+    );
+    expect(held()).toBe(true);
+    window.dispatchEvent(new PointerEvent("pointermove", { ctrlKey: true }));
+    expect(held()).toBe(false);
+  });
+
+  it("keeps the hold through pointer events that still carry the chord", () => {
+    const held = hold(command);
+    key("keydown", "Meta", { metaKey: true });
+    window.dispatchEvent(new PointerEvent("pointermove", { metaKey: true }));
+    window.dispatchEvent(new WheelEvent("wheel", { metaKey: true }));
+    expect(held()).toBe(true);
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { metaKey: true, shiftKey: true }),
+    );
+    expect(held()).toBe(false);
+  });
+
+  it("never holds from a pointer event alone", () => {
+    const held = hold(command);
+    window.dispatchEvent(new PointerEvent("pointermove", { metaKey: true }));
+    expect(held()).toBe(false);
+  });
+
   it("stops listening once disposed", () => {
     const held = hold(command);
     dispose();
     key("keydown", "Meta", { metaKey: true });
     expect(held()).toBe(false);
+  });
+
+  it("stops resyncing from the pointer once disposed", () => {
+    const held = hold(command);
+    key("keydown", "Meta", { metaKey: true });
+    dispose();
+    window.dispatchEvent(new PointerEvent("pointermove"));
+    window.dispatchEvent(new PointerEvent("pointerdown"));
+    window.dispatchEvent(new WheelEvent("wheel"));
+    expect(held()).toBe(true);
   });
 
   it("never holds without a jump binding", () => {
