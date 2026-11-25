@@ -45,3 +45,21 @@ it("lets other keys reach the surface around it", () => {
 
   expect(surfaceKeydown).toHaveBeenCalledOnce();
 });
+
+it("keeps focus where it was without cancelling a touch tap", () => {
+  render(() => (
+    <InlineConfirmation
+      action="Sign out"
+      label="Sign out"
+      message="Sign out of weblounge on this device?"
+      onCancel={() => {}}
+      onConfirm={() => {}}
+    />
+  ));
+
+  for (const name of ["Sign out", "Cancel"]) {
+    const button = screen.getByRole("button", { name });
+    expect(fireEvent.pointerDown(button)).toBe(true);
+    expect(fireEvent.mouseDown(button)).toBe(false);
+  }
+});

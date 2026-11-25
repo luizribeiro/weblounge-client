@@ -24,10 +24,11 @@ export function InlineConfirmation(props: InlineConfirmationProps) {
       role="alertdialog"
     >
       <span>{props.message}</span>
+      {/* Mousedown, not pointerdown: WebKit drops a touch tap's click when its pointerdown is prevented. */}
       <button
         class={styles.confirm}
         onClick={() => props.onConfirm()}
-        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => event.preventDefault()}
         ref={(button) => props.confirmRef?.(button)}
         type="button"
       >
@@ -36,7 +37,7 @@ export function InlineConfirmation(props: InlineConfirmationProps) {
       <button
         class={styles.cancel}
         onClick={() => props.onCancel()}
-        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => event.preventDefault()}
         type="button"
       >
         {t("common.cancel")}
