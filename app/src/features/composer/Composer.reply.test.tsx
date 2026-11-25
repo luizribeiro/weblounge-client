@@ -122,6 +122,14 @@ it("cancels with Escape or the × and keeps the typed text", () => {
   expect(document.querySelector("[data-reply-bar]")).toBeNull();
 });
 
+it("keeps focus in the field from the × without cancelling its touch tap", () => {
+  renderReplying(async () => true);
+  const cancelButton = screen.getByRole("button", { name: "Cancel reply" });
+
+  expect(fireEvent.pointerDown(cancelButton)).toBe(true);
+  expect(fireEvent.mouseDown(cancelButton)).toBe(false);
+});
+
 it("announces the bar's geometry change around it appearing", () => {
   const { input, setReply } = renderReplying(async () => true);
   const seen: string[] = [];

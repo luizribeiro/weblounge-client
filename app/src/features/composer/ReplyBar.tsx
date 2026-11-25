@@ -23,11 +23,12 @@ export function ReplyBar(props: {
         </span>
       </span>{" "}
       <span class={styles.text}>{props.reply.text}</span>
+      {/* Mousedown, not pointerdown: WebKit drops a touch tap's click when its pointerdown is prevented. */}
       <button
         aria-label={t("reply.cancel")}
         class={styles.cancel}
         onClick={() => props.onCancel()}
-        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => event.preventDefault()}
         type="button"
       >
         <CloseIcon />
