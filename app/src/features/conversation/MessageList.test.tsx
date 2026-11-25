@@ -279,6 +279,43 @@ it("draws a redacted message as aria-hidden bars with no toolbar or reactions", 
   expect(screen.queryByRole("toolbar")).toBeNull();
 });
 
+it("starts a reply from a delivered row's toolbar and More menu", async () => {
+  const replied: number[] = [];
+  const received: MessageProjection = {
+    ...message,
+    delivery: "received",
+    server_ids: ["msg-1"],
+  };
+  render(() => (
+    <MessageList
+      messages={[received, { ...message, id: 2, text: "still sending" }]}
+      onReplyMessage={(parent) => replied.push(parent.id)}
+    />
+  ));
+  const row = screen
+    .getByText("hello weblounge")
+    .closest<HTMLElement>("[data-message-row]");
+  if (row === null) throw new Error("message row is missing");
+
+  expect(row).toHaveAttribute("tabindex", "0");
+  fireEvent.pointerEnter(row);
+  fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Reply" }));
+  fireEvent.pointerLeave(row);
+  const pending = screen
+    .getByText("still sending")
+    .closest<HTMLElement>("[data-message-row]");
+  if (pending === null) throw new Error("pending row is missing");
+  fireEvent.pointerEnter(pending);
+  fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+  await screen.findByRole("menuitem", { name: "Copy text" });
+
+  expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Reply" })).toBeNull();
+  expect(replied).toEqual([1, 1]);
+});
+
 const ownMessage: MessageProjection = {
   ...message,
   author: "weblounge",

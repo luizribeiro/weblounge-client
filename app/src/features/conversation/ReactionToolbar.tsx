@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import { t } from "../../strings";
 import { AddReactionIcon } from "../../ui/icons/AddReactionIcon";
 import { MoreIcon } from "../../ui/icons/MoreIcon";
+import { ReplyIcon } from "../../ui/icons/ReplyIcon";
 import { desktopQuickReactions } from "./quick-reactions";
 import styles from "./ReactionToolbar.module.css";
 
@@ -9,6 +10,7 @@ export function ReactionToolbar(props: {
   readonly mine: ReadonlySet<string>;
   readonly onReact?: ((reaction: string) => void) | undefined;
   readonly onOpenPicker?: ((invoker: HTMLElement) => void) | undefined;
+  readonly onReply?: (() => void) | undefined;
   readonly onOpenMore?: ((invoker: HTMLElement) => void) | undefined;
 }) {
   return (
@@ -52,6 +54,19 @@ export function ReactionToolbar(props: {
               <AddReactionIcon class={styles.icon} />
             </button>
           </>
+        )}
+      </Show>
+      <Show when={props.onReply}>
+        {(reply) => (
+          <button
+            aria-label={t("reply.action")}
+            class={styles.button}
+            data-focus-key="toolbar:reply"
+            onClick={() => reply()()}
+            type="button"
+          >
+            <ReplyIcon class={styles.icon} />
+          </button>
         )}
       </Show>
       <Show when={props.onOpenMore}>

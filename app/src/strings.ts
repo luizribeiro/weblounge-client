@@ -315,6 +315,7 @@ export const messages = {
     "It will be deleted for everyone in this conversation.",
   "message.delete_prompt": "Delete this message?",
   "message.more_actions": "More actions",
+  "reply.action": "Reply",
   "reply.quote_jump": "Reply to {nick}. Go to the original message",
   "reply.quote_fetched": "Reply to {nick}",
   "reply.parent_loading": "Loading the original message…",

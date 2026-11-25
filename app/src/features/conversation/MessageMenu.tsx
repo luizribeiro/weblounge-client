@@ -8,6 +8,7 @@ import { ContextMenu, type ContextMenuItem } from "../../ui/ContextMenu";
 import type { ContextMenuRequest } from "../../ui/context-menu";
 import { copyText } from "../../ui/copy-text";
 import { canRedact, type RedactMessage } from "./redact-target";
+import { replyTarget, type StartReply } from "./reply-target";
 
 /** What a desktop message row needs to open its actions menu. */
 export interface MessageRowMenu {
@@ -45,9 +46,11 @@ export function hasMessageMenu(message: MessageProjection): boolean {
   return !isRedacted(message.kind);
 }
 
-export function createMessageMenu(
-  redact: () => RedactMessage | undefined,
-): MessageMenu {
+export function createMessageMenu(actions: {
+  readonly redact: () => RedactMessage | undefined;
+  readonly reply: () => StartReply | undefined;
+}): MessageMenu {
+  const { redact } = actions;
   const [opened, setOpened] = createSignal<OpenedMenu>();
   const [pending, setPending] = createSignal<PendingDeletion>();
   const confirmDelete = (message: MessageProjection, invoker: HTMLElement) => {
@@ -57,10 +60,17 @@ export function createMessageMenu(
     setPending(undefined);
     queueMicrotask(() => deletion.invoker.focus({ preventScroll: true }));
   };
-  const copyItems = (menu: OpenedMenu | undefined): ContextMenuItem[] =>
+  const replyItems = (menu: OpenedMenu): ContextMenuItem[] => {
+    const reply = replyTarget(menu.message, actions.reply());
+    return reply === undefined
+      ? []
+      : [{ id: "message.reply", label: t("reply.action"), onSelect: reply }];
+  };
+  const items = (menu: OpenedMenu | undefined): ContextMenuItem[] =>
     menu === undefined || !hasMessageMenu(menu.message)
       ? []
       : [
+          ...replyItems(menu),
           {
             id: "message.copy_text",
             label: t("message.copy_text"),
@@ -88,7 +98,7 @@ export function createMessageMenu(
       <>
         <ContextMenu
           destructiveItems={deleteItems(opened())}
-          items={copyItems(opened())}
+          items={items(opened())}
           label={t("message.actions")}
           onDismiss={() => setOpened(undefined)}
           request={opened()?.request}

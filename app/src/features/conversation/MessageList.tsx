@@ -90,6 +90,7 @@ import {
   type ToggleReaction,
 } from "./reaction-target";
 import { canRedact, type RedactMessage } from "./redact-target";
+import { replyTarget, type StartReply } from "./reply-target";
 import {
   createRowReactions,
   focusControl,
@@ -148,6 +149,7 @@ interface MessageListProps {
   readonly onMessageActions?: OpenMessageActions | undefined;
   readonly heldMessageId?: number | undefined;
   readonly onRedactMessage?: RedactMessage | undefined;
+  readonly onReplyMessage?: StartReply | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -429,7 +431,10 @@ export function MessageList(props: MessageListProps) {
   );
   const rowReactions = () =>
     props.onToggleReaction === undefined ? undefined : reactionActions;
-  const messageMenu = createMessageMenu(() => props.onRedactMessage);
+  const messageMenu = createMessageMenu({
+    redact: () => props.onRedactMessage,
+    reply: () => props.onReplyMessage,
+  });
   const toolbars = createRowToolbars(messageMenu.menuRow);
   const copiedRows = createCopiedRows();
   const confirmDelete = (
@@ -1491,6 +1496,7 @@ export function MessageList(props: MessageListProps) {
                       onRetry={props.onRetry}
                       onMessageActions={props.onMessageActions}
                       onJumpToMessage={jumpToMessage}
+                      onReplyMessage={props.onReplyMessage}
                       heldMessageId={props.heldMessageId}
                       reactions={rowReactions()}
                       menu={messageMenu.row()}
@@ -1589,6 +1595,7 @@ function TimelineRowView(props: {
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onMessageActions?: OpenMessageActions | undefined;
   readonly onJumpToMessage: (messageId: number) => void;
+  readonly onReplyMessage?: StartReply | undefined;
   readonly heldMessageId?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1676,6 +1683,7 @@ function TimelineRowView(props: {
                 onRetry={props.onRetry}
                 onMessageActions={props.onMessageActions}
                 onJumpToMessage={props.onJumpToMessage}
+                onReplyMessage={props.onReplyMessage}
                 held={props.heldMessageId === row.message.id}
                 reactions={props.reactions}
                 menu={props.menu}
@@ -1763,6 +1771,7 @@ function MessageRow(props: {
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly onMessageActions?: OpenMessageActions | undefined;
   readonly onJumpToMessage: (messageId: number) => void;
+  readonly onReplyMessage?: StartReply | undefined;
   readonly held: boolean;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly reactions?: RowReactions | undefined;
@@ -1795,6 +1804,9 @@ function MessageRow(props: {
   const react = reactionTarget(message, props.reactions?.toggle);
   const desktop = props.presentation !== "mobile";
   const hoverToolbarReact = desktop ? react : undefined;
+  const hoverToolbarReply = createMemo(() =>
+    desktop ? replyTarget(message, props.onReplyMessage) : undefined,
+  );
   const menu = createMemo(() => {
     const current = props.menu;
     return desktop && current !== undefined && hasMessageMenu(message)
@@ -1804,7 +1816,9 @@ function MessageRow(props: {
   // Copy text alone does not make a row a tab stop: on a network without reactions every row
   // would join the Tab order.
   const isRowTabStop = () =>
-    hoverToolbarReact !== undefined || canRedact(message, menu()?.redact);
+    hoverToolbarReact !== undefined ||
+    hoverToolbarReply() !== undefined ||
+    canRedact(message, menu()?.redact);
   const [rowElement, setRowElement] = createSignal<HTMLElement>();
   createEffect(() => {
     const row = rowElement();
@@ -1874,7 +1888,9 @@ function MessageRow(props: {
       <Show
         when={
           toolbar.shown() &&
-          (hoverToolbarReact !== undefined || openMoreMenu() !== undefined)
+          (hoverToolbarReact !== undefined ||
+            hoverToolbarReply() !== undefined ||
+            openMoreMenu() !== undefined)
         }
       >
         <ReactionToolbar
@@ -1882,6 +1898,7 @@ function MessageRow(props: {
           onOpenMore={openMoreMenu()}
           onOpenPicker={setPickerInvoker}
           onReact={hoverToolbarReact}
+          onReply={hoverToolbarReply()}
         />
         <Show when={hoverToolbarReact !== undefined && pickerInvoker()}>
           {(invoker) => (
