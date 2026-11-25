@@ -83,7 +83,7 @@ test("long-pressing a message opens the sheet and its reaction reaches the peer"
     "✅",
   ]);
   await expect(sheet.getByRole("button", { name: "Copy text" })).toBeVisible();
-  await expect(sheet.getByRole("button", { name: "Reply" })).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Reply" })).toBeVisible();
 
   await irc.forwarder.pauseIncoming();
   await tap(page, sheet.getByRole("button", { name: "React with 🎉" }));
