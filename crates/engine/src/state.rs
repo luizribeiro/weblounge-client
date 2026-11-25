@@ -1809,8 +1809,8 @@ impl NetworkModel {
         })
     }
 
-    /// A row confirmed from a split send or restored from a push has no saved reference of its
-    /// own; the server's copy of the line supplies it when history or a replay repeats it.
+    /// A row restored from a push has no saved reference of its own; the server's copy of the line
+    /// supplies it when history or a replay repeats it.
     fn backfill_saved(&mut self, incoming: &Incoming) -> Option<()> {
         let saved = incoming.saved.clone()?;
         let (buffer_id, message_id) = self.msgids.get(incoming.msgid.as_deref()?)?.location?;
@@ -2691,7 +2691,6 @@ impl NetworkModel {
         let record = buffer.timeline.remove(index);
         let original = chat_projection(&record)?.clone();
         buffer.chat_metadata.remove(&record.id);
-        let saved = SavedMessage::of_outcome(sent);
         let (lines, server_time) = confirmed_lines(sent).map_or((None, None), |(lines, time)| {
             (Some(lines), time.map(papo::ServerTime::as_millis))
         });
@@ -2699,27 +2698,27 @@ impl NetworkModel {
             lines
                 .into_iter()
                 .enumerate()
-                .map(|(index, (msgid, text))| {
+                .map(|(index, (msgid, line))| {
                     let mut message = original.clone();
                     if index != 0 {
                         message.id = self.allocate_message_id();
                     }
-                    message.text = collapse_blank_lines(confirmed_text(&message.kind, text));
+                    message.text = collapse_blank_lines(confirmed_text(&message.kind, &line.text));
                     message.server_ids = vec![msgid.to_string()];
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
                     message.local_send_id = None;
-                    message
+                    (message, SavedMessage::of_sent_line(line))
                 })
                 .collect::<Vec<_>>()
         } else {
             let mut message = original;
             message.delivery = MessageDelivery::Confirmed;
             message.local_send_id = None;
-            vec![message]
+            vec![(message, None)]
         };
         let mut order_changed = false;
-        for message in &messages {
+        for (message, saved) in messages {
             for msgid in &message.server_ids {
                 let reference = self.msgids.entry(msgid.clone()).or_insert(MsgidReference {
                     count: 0,
@@ -2733,7 +2732,7 @@ impl NetworkModel {
                     pending.buffer_id,
                     message.clone(),
                     RowFacts {
-                        saved: saved.clone(),
+                        saved,
                         reply_to: pending.reply.as_ref().map(|reply| reply.msgid.clone()),
                         ..RowFacts::default()
                     },
@@ -5904,11 +5903,11 @@ fn pushed_time_millis(time: &str) -> Option<i64> {
 }
 
 type ConfirmedLines<'a> = (
-    Vec<(&'a papo::MessageId, &'a str)>,
+    Vec<(&'a papo::MessageId, &'a papo::SentLine)>,
     Option<papo::ServerTime>,
 );
 
-/// The id and text of every line of a send, with the first stamp among them; `None` unless the
+/// Each line of a send with its msgid, plus the first server time among them; `None` unless the
 /// server confirmed every line.
 fn confirmed_lines(sent: &papo::SendOutcome) -> Option<ConfirmedLines<'_>> {
     let mut time = None;
@@ -5921,7 +5920,7 @@ fn confirmed_lines(sent: &papo::SendOutcome) -> Option<ConfirmedLines<'_>> {
             return None;
         };
         time = time.or(*server_time);
-        lines.push((msgid, line.text.as_str()));
+        lines.push((msgid, line));
     }
     (!lines.is_empty()).then_some((lines, time))
 }

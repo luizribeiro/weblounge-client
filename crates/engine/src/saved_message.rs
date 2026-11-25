@@ -15,12 +15,9 @@ impl SavedMessage {
         Self::of(&message.return_address())
     }
 
-    /// One saved form per confirmed send. A send papo split into several lines has no single
-    /// row to name, so it saves nothing.
-    pub(crate) fn of_outcome(outcome: &papo::SendOutcome) -> Option<Self> {
-        (outcome.lines.len() == 1)
-            .then(|| Self::of(&papo::MessageRef::from(outcome)))
-            .flatten()
+    /// Each line of a split send keeps the send's audience under its own confirmed msgid.
+    pub(crate) fn of_sent_line(line: &papo::SentLine) -> Option<Self> {
+        Self::of(&line.return_address())
     }
 
     pub(crate) fn restore(&self, client: &papo::Client) -> Result<papo::MessageRef, papo::Error> {

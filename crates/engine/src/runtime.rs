@@ -6784,6 +6784,7 @@ mod tests {
     mod mentions;
     mod redaction;
     mod server_buffer;
+    mod split_send;
 
     use std::{
         collections::VecDeque,
@@ -16628,84 +16629,6 @@ async fn delay(duration: Duration) {
         assert!(changed_messages(&timeline).iter().any(|(_, message)| {
             message.server_ids == ["whole"] && message.text == text && !message.text.contains('\n')
         }));
-    }
-
-    #[tokio::test]
-    async fn labelled_split_send_preserves_every_msgid_without_an_echo_row() {
-        let caps = ["echo-message", "labeled-response", "message-tags"];
-        let (client, mut events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&caps).await;
-        _ = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Connected(_))
-        })
-        .await;
-        wire.server(":weblounge!u@host JOIN #room").await;
-        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        model.sync_channels(&client.snapshot());
-        let channel = model
-            .history_targets()
-            .into_iter()
-            .find_map(|target| match target {
-                HistoryTarget::Channel(channel) if channel == "#room" => Some(channel),
-                _ => None,
-            })
-            .expect("joined channel is projected");
-        let buffer_id = model
-            .buffer_id_for_target(&SendTarget::Channel(channel))
-            .expect("projected channel has a stable id");
-        let text = "a".repeat(600);
-        let (pending, _) = model
-            .begin_send(buffer_id, text, &client.snapshot())
-            .expect("channel is sendable");
-        let sender = client.clone();
-        let send_task = tokio::spawn(async move {
-            super::send(&sender, &pending)
-                .await
-                .map(|sent| (pending, sent))
-        });
-        let first_text = wire
-            .next_sent()
-            .await
-            .strip_prefix("@label=0 PRIVMSG #room ")
-            .expect("first labelled line")
-            .to_owned();
-        let second_text = wire
-            .next_sent()
-            .await
-            .strip_prefix("@label=0-1 PRIVMSG #room ")
-            .expect("second labelled line")
-            .to_owned();
-        assert_eq!(format!("{first_text}{second_text}"), "a".repeat(600));
-        wire.server("@label=0;msgid=first :weblounge!u@host PRIVMSG #room :first part")
-            .await;
-        wire.server("@label=0-1;msgid=second :weblounge!u@host PRIVMSG #room :second part")
-            .await;
-        let (pending, metadata) = send_task
-            .await
-            .expect("send task completes")
-            .expect("send succeeds");
-        let confirmation_events = model
-            .confirm_send(&pending, &metadata)
-            .expect("optimistic row exists");
-        let timeline = model.take_timeline_changes(false);
-        let messages = changed_messages(&timeline);
-        assert!(!confirmation_events.is_empty());
-        assert!(
-            messages.iter().any(|(_, message)| {
-                message.server_ids == ["first"] && message.text == first_text
-            })
-        );
-        assert!(messages.iter().any(|(_, message)| {
-            message.server_ids == ["second"] && message.text == second_text
-        }));
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(10), events.next())
-                .await
-                .is_err(),
-            "correlated own echoes must be consumed into Sent"
-        );
     }
 
     struct ReplayHarness {
