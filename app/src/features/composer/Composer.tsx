@@ -9,6 +9,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import type { MessageId } from "../../engine/generated/MessageId";
 import type {
   CommandSpec,
   CompletionCandidate,
@@ -40,6 +41,8 @@ import {
 import { ImagePicker } from "./ImagePicker";
 import { InlineConfirmation } from "./InlineConfirmation";
 import { type DropAvailability, imageDropTargets } from "./image-drop";
+import { ReplyBar } from "./ReplyBar";
+import type { ReplyDraft } from "./reply-drafts";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { TypingIndicator } from "./TypingIndicator";
@@ -63,7 +66,10 @@ interface ComposerProps {
   readonly onSelectLast?: () => void;
   readonly onSend: (
     text: string,
+    replyTo?: MessageId,
   ) => boolean | undefined | Promise<boolean | undefined>;
+  readonly reply?: ReplyDraft | undefined;
+  readonly onCancelReply?: ((reply: ReplyDraft) => void) | undefined;
   readonly typers?: readonly TypingProjection[] | undefined;
   readonly uploads?: NetworkUploads | undefined;
 }
@@ -129,6 +135,7 @@ export function Composer(props: ComposerProps) {
         attachments.attachment() !== undefined,
         uploadNote() !== undefined,
         attachments.pendingReplacement() !== undefined,
+        props.reply !== undefined,
       ] as const,
     undefined,
     {
@@ -149,6 +156,15 @@ export function Composer(props: ComposerProps) {
     on(uploadSurfaces, () => announceGeometry(composerGeometryChangeEvent), {
       defer: true,
     }),
+  );
+  createEffect(
+    on(
+      () => props.reply,
+      (reply) => {
+        if (reply !== undefined) textarea?.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
   );
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
@@ -289,10 +305,16 @@ export function Composer(props: ComposerProps) {
     message = submitted,
     submittedBuffer = currentBuffer,
     submittedDraftKey = currentDraftKey,
+    reply = props.reply,
   ) =>
-    Promise.resolve(props.onSend(message))
+    Promise.resolve(
+      reply === undefined
+        ? props.onSend(message)
+        : props.onSend(message, reply.messageId),
+    )
       .then((accepted) => {
         if (accepted === false) return false;
+        if (reply !== undefined) props.onCancelReply?.(reply);
         if (readDraft(submittedDraftKey) === submitted) {
           removeDraft(submittedDraftKey);
         }
@@ -308,8 +330,9 @@ export function Composer(props: ComposerProps) {
     if (attachments.attachment() !== undefined) {
       const buffer = currentBuffer;
       const draftKey = currentDraftKey;
+      const reply = props.reply;
       void attachments.send(submitted, props.commandSpecs ?? [], (message) =>
-        deliver(submitted, message, buffer, draftKey),
+        deliver(submitted, message, buffer, draftKey, reply),
       );
       return;
     }
@@ -500,6 +523,9 @@ export function Composer(props: ComposerProps) {
     ) {
       event.preventDefault();
       dropAttachment();
+    } else if (event.key === "Escape" && props.reply !== undefined) {
+      event.preventDefault();
+      props.onCancelReply?.(props.reply);
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!accept(undefined, false) && !runFileCommand()) submit();
@@ -640,7 +666,19 @@ export function Composer(props: ComposerProps) {
           class={styles.field}
           data-composer-field="true"
           data-attachment={attachments.attachment() !== undefined}
+          data-replying={props.reply !== undefined}
         >
+          <Show when={props.reply}>
+            {(reply) => (
+              <ReplyBar
+                onCancel={() => {
+                  props.onCancelReply?.(reply());
+                  focusAfterOverlay();
+                }}
+                reply={reply()}
+              />
+            )}
+          </Show>
           <Show when={attachments.attachment()}>
             {(attachment) => (
               <AttachmentChip
@@ -682,7 +720,11 @@ export function Composer(props: ComposerProps) {
               onFocus={() => dropTarget.raise()}
               onKeyDown={keydown}
               onPaste={paste}
-              placeholder={t("composer.input", { target: props.bufferTitle })}
+              placeholder={
+                props.reply === undefined
+                  ? t("composer.input", { target: props.bufferTitle })
+                  : t("reply.placeholder", { nick: props.reply.author })
+              }
               ref={(element) => {
                 textarea = element;
                 if (props.focusOnMount === true)

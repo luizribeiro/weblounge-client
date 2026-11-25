@@ -90,17 +90,17 @@ textarea.input {
   min-height: var(--wl-composer-single-line);
 }
 
-.field[data-attachment="true"] {
+.field:is([data-attachment="true"], [data-replying="true"]) {
   background: var(--wl-color-input-bg);
   border: 1px solid var(--wl-color-border);
   border-radius: var(--wl-radius-composer);
 }
 
-.field[data-attachment="true"]:focus-within {
+.field:is([data-attachment="true"], [data-replying="true"]):focus-within {
   border-color: var(--wl-color-focus-ring);
 }
 
-.field[data-attachment="true"] .input {
+.field:is([data-attachment="true"], [data-replying="true"]) .input {
   background: transparent;
   border-color: transparent;
 }
@@ -338,4 +338,8 @@ textarea.input {
   font-size: var(--wl-font-section-size);
   margin: 0 0 8px;
   padding-inline: var(--wl-composer-typing-inset, 12px);
+}
+
+:global(#root[data-input="touch"]) .field[data-replying="true"] {
+  border-radius: var(--wl-radius-composer);
 }

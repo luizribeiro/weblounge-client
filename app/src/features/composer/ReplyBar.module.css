@@ -1,0 +1,69 @@
+.bar {
+  align-items: center;
+  background: var(--wl-color-chip);
+  border-block-end: 1px solid var(--wl-color-border);
+  border-start-end-radius: inherit;
+  border-start-start-radius: inherit;
+  box-sizing: border-box;
+  color: var(--wl-color-muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  height: 34px;
+  min-inline-size: 0;
+  padding-inline: 12px 4px;
+}
+.icon {
+  block-size: 14px;
+  flex: 0 0 14px;
+  inline-size: 14px;
+}
+.label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.nick {
+  font-weight: 650;
+}
+.text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cancel {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-fg);
+  cursor: pointer;
+  display: grid;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-items: center;
+  margin-inline-start: auto;
+  padding: 0;
+}
+.cancel svg {
+  fill: none;
+  height: 14px;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-width: 2.4;
+  width: 14px;
+}
+:global(#root[data-input="touch"]) .bar {
+  font-size: 13px;
+  height: 40px;
+  padding-inline-end: 0;
+}
+:global(#root[data-input="touch"]) .icon {
+  display: none;
+}
+:global(#root[data-input="touch"]) .cancel {
+  border-radius: 0;
+  flex-basis: var(--wl-size-touch-target);
+  height: 40px;
+}
