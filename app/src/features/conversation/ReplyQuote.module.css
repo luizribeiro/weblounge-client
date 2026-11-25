@@ -1,0 +1,40 @@
+.quote {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-muted);
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  gap: 6px;
+  line-height: 18px;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  padding: 0;
+  text-align: start;
+}
+button.quote {
+  cursor: pointer;
+}
+.icon {
+  block-size: 14px;
+  flex: 0 0 14px;
+  inline-size: 14px;
+  transform: scaleY(-1);
+}
+.nick {
+  flex: 0 0 auto;
+  font-weight: 650;
+}
+.text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  button.quote:hover .text {
+    color: var(--wl-color-fg);
+  }
+}
