@@ -33,6 +33,9 @@ test.describe("message replies on desktop against local Ergo", () => {
     await openConversation(page, irc.channel);
     const question = "does the relay see plaintext?";
     const asked = await peer.privmsgConfirmed(irc.channel, question);
+    // The question arms the 500ms read dwell, which must finish before the idle audit; Ergo moves
+    // the marker on your own send, so only the question's time proves the dwell ran.
+    await waitForReadDwell(irc, irc.channel, serverTime(asked));
     const parent = productionMessageRow(page, question);
     const reply = page.getByRole("button", { name: "Reply", exact: true });
 
