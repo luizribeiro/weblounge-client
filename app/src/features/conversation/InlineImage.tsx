@@ -2,11 +2,7 @@ import { createSignal, Match, Switch } from "solid-js";
 import { t } from "../../strings";
 import { openImageViewer } from "../image-viewer/image-viewer-request";
 import styles from "./InlineImage.module.css";
-
-interface NaturalSize {
-  readonly height: number;
-  readonly width: number;
-}
+import { inlineImageSizes, type NaturalSize } from "./inline-image-sizes";
 
 type ImageState =
   | { readonly kind: "loading"; readonly size?: NaturalSize }
@@ -20,10 +16,6 @@ type ImageState =
 
 const animatedPath = /\.(?:gif|webp)$/iu;
 
-// Virtualisation remounts rows; remembering each loaded size keeps a
-// scrolled-back image at its final width instead of re-growing from 4:3.
-const loadedSizes = new Map<string, NaturalSize>();
-
 export function InlineImage(props: {
   readonly author: string;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
@@ -32,7 +24,7 @@ export function InlineImage(props: {
   readonly url: string;
 }) {
   const still = prefersStill(props.url);
-  const knownSize = loadedSizes.get(props.url);
+  const knownSize = inlineImageSizes.recall(props.url);
   const [state, setState] = createSignal<ImageState>(
     knownSize === undefined
       ? { kind: "loading" }
@@ -56,7 +48,7 @@ export function InlineImage(props: {
       return;
     }
     const size = { height: image.naturalHeight, width: image.naturalWidth };
-    loadedSizes.set(props.url, size);
+    inlineImageSizes.remember(props.url, size);
     const frame = still ? firstFrame(image) : undefined;
     setState(
       frame === undefined
