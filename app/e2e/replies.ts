@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import type { IrcClient } from "./irc-client";
 import { productionMessageRow } from "./production-ergo";
@@ -39,4 +41,12 @@ export async function sendLines(
   for (let index = 1; index <= count; index += 1)
     last = await peer.privmsgConfirmed(target, `${label} ${index}`);
   return last;
+}
+
+/** Saves a screenshot into screenshots/f27 when WEBLOUNGE_REPLY_SHOTS is set. */
+export async function replyShot(page: Page, name: string): Promise<void> {
+  if (process.env.WEBLOUNGE_REPLY_SHOTS === undefined) return;
+  const directory = path.join(process.cwd(), "..", "screenshots", "f27");
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: path.join(directory, `${name}.png`) });
 }
