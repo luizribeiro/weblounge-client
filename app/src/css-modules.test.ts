@@ -24,10 +24,16 @@ describe("CSS modules", () => {
         .sheet h2, :global(#root[data-x]) .sheet { margin: 0; }
         a[href$=".pdf"] { color: inherit; }
         h2:not(.title) { margin: 0; }
+        .field:is([data-a], [data-b]) .input, h3:not(.title, [data-x]) { margin: 0; }
         @media (min-width: 1px) { .title { margin: 0; } }
         @keyframes pulse { 0%, 12.5% { opacity: 0; } to { opacity: 1; } }
       `),
-    ).toEqual(["h2", 'a[href$=".pdf"]', "h2:not(.title)"]);
+    ).toEqual([
+      "h2",
+      'a[href$=".pdf"]',
+      "h2:not(.title)",
+      "h3:not(.title, [data-x])",
+    ]);
   });
 });
 
@@ -39,12 +45,16 @@ function cssModules(directory: string): string[] {
   });
 }
 
+const commaOutsideParentheses = /,(?![^(]*\))/u;
+
 function unscopedSelectors(css: string): string[] {
   const withoutComments = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
   return [...withoutComments.matchAll(/([^{};]+)\{/gu)]
     .map((match) => match[1]?.trim() ?? "")
     .filter((prelude) => !prelude.startsWith("@"))
-    .flatMap((prelude) => prelude.split(",").map((part) => part.trim()))
+    .flatMap((prelude) =>
+      prelude.split(commaOutsideParentheses).map((part) => part.trim()),
+    )
     .filter((selector) => !/^(?:from|to|\d+(?:\.\d+)?%)$/u.test(selector))
     .filter((selector) => !isScoped(selector));
 }
