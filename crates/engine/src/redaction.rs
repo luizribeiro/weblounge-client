@@ -113,6 +113,7 @@ mod tests {
                 own_delivery: None,
             }]),
             own_redaction: None,
+            reply: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: vec!["m1".into()],

@@ -236,6 +236,7 @@ mod tests {
                     unverified_sender: None,
                     reactions: None,
                     own_redaction: None,
+                    reply: None,
                     delivery: MessageDelivery::Received,
                     local_send_id: None,
                     server_ids: Vec::new(),

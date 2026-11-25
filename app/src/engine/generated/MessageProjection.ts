@@ -7,6 +7,7 @@ import type { MessageKind } from "./MessageKind";
 import type { OwnChangeDelivery } from "./OwnChangeDelivery";
 import type { Person } from "./Person";
 import type { ReactionProjection } from "./ReactionProjection";
+import type { ReplyParent } from "./ReplyParent";
 import type { UnverifiedSender } from "./UnverifiedSender";
 
 /**
@@ -62,6 +63,10 @@ reactions?: Array<ReactionProjection>,
  * after it failed.
  */
 own_redaction?: OwnChangeDelivery,
+/**
+ * The message this one replies to, as its quote shows it.
+ */
+reply?: ReplyParent,
 /**
  * Current delivery state.
  */

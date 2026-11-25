@@ -19,6 +19,7 @@ mod pushed_messages;
 mod reactions;
 pub mod read_model;
 mod redaction;
+mod reply_quote;
 mod request_error;
 mod runtime;
 mod saved_message;
@@ -53,8 +54,9 @@ pub use protocol::{
     NetworkProjection, NoticeAction, NoticeKind, NoticeSource, NoticeTone, OfflineReason,
     OwnChangeDelivery, PeerPresence, PushDeploymentConfig, PushDeviceCredentials, PushFailure,
     PushRoute, PushState, PushUnsupportedReason, ReactionActorProjection, ReactionProjection,
-    RedactedSecret, Redaction, ReleaseChannel, SaslCredentials, ShellKind, TypingProjection,
-    UiToEngine, UnverifiedSender, UploadApproval, UploadAuthorization, UploadResolution,
+    RedactedSecret, Redaction, ReleaseChannel, ReplyParent, SaslCredentials, ShellKind,
+    TypingProjection, UiToEngine, UnverifiedSender, UploadApproval, UploadAuthorization,
+    UploadResolution,
 };
 
 /// Reads service-worker push records while constructing the web engine.

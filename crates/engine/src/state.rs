@@ -23,6 +23,7 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     redaction::{EarlyRedactions, REDACTED_PREVIEW, redact_projection, redactor_name},
+    reply_quote::{LoadedRows, QuotableRow},
     saved_message::SavedMessage,
     timeline::{
         Actor, ChatRecord, FoldEvent, FoldedBody, GapProjection, ItemBody, LineEvent,
@@ -141,6 +142,13 @@ impl ChatInput<'_> {
         }
     }
 
+    fn reply_to(&self) -> Option<String> {
+        match self {
+            Self::Message(message) => message.in_reply_to.as_ref().map(ToString::to_string),
+            Self::Notice(notice) => notice.in_reply_to.as_ref().map(ToString::to_string),
+        }
+    }
+
     fn saved(&self) -> Option<SavedMessage> {
         match self {
             Self::Message(message) => SavedMessage::of_message(message),
@@ -204,12 +212,21 @@ struct DirectMismatch {
 struct RowFacts {
     send_text: Option<String>,
     saved: Option<SavedMessage>,
+    reply_to: Option<String>,
 }
 
 impl RowFacts {
     fn saved(saved: Option<SavedMessage>) -> Self {
         Self {
             saved,
+            ..Self::default()
+        }
+    }
+
+    fn of(incoming: &Incoming) -> Self {
+        Self {
+            saved: incoming.saved.clone(),
+            reply_to: incoming.reply_to.clone(),
             ..Self::default()
         }
     }
@@ -220,6 +237,8 @@ struct ChatMetadata {
     counts_as_mention: bool,
     send_text: Option<String>,
     saved: Option<SavedMessage>,
+    /// The server message identifier of the message this row replies to.
+    reply_to: Option<String>,
     dedup: DedupReferences,
     provisional_identity: Option<ProvisionalIdentity>,
 }
@@ -1394,6 +1413,7 @@ impl NetworkModel {
             authorship: map_authorship(authorship),
             msgid: input.msgid(),
             saved: input.saved(),
+            reply_to: input.reply_to(),
             server_time_ms: input.server_time().map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(input.received_at()),
             origin,
@@ -1445,6 +1465,7 @@ impl NetworkModel {
             authorship: map_authorship(notice.actor_party),
             msgid: notice.msgid().map(ToString::to_string),
             saved: None,
+            reply_to: None,
             server_time_ms: notice.server_time.map(papo::ServerTime::as_millis),
             received_at_ms: time_millis(notice.received_at),
             origin: if history {
@@ -1850,6 +1871,7 @@ impl NetworkModel {
                     authorship: MessageAuthorship::Other,
                     msgid: Some(message.msgid),
                     saved: None,
+                    reply_to: None,
                     server_time_ms: Some(server_time_ms),
                     received_at_ms: server_time_ms,
                     origin: TimelineOrigin::Push,
@@ -1923,6 +1945,7 @@ impl NetworkModel {
             unverified_sender: None,
             reactions: None,
             own_redaction: None,
+            reply: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -2186,6 +2209,7 @@ impl NetworkModel {
             unverified_sender: None,
             reactions: None,
             own_redaction: None,
+            reply: None,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -3987,7 +4011,7 @@ impl NetworkModel {
             }
         }
         let message = self.project_incoming(message_id, &incoming, state, identity, false);
-        let facts = RowFacts::saved(incoming.saved.clone());
+        let facts = RowFacts::of(&incoming);
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), facts, dedup) else {
             return IncomingResult {
                 events: inconsistent_state_notice(),
@@ -4107,7 +4131,7 @@ impl NetworkModel {
         let identity = self.incoming_identity(buffer_id, incoming);
         let mut message = self.project_incoming(message_id, incoming, state, identity, false);
         message.delivery = MessageDelivery::Confirmed;
-        let facts = RowFacts::saved(incoming.saved.clone());
+        let facts = RowFacts::of(incoming);
         let order_changed = self.insert(buffer_id, message.clone(), facts, dedup).ok()?;
         let cursor = incoming
             .server_time_ms
@@ -4178,6 +4202,7 @@ impl NetworkModel {
             metadata.counts_as_mention = counts_as_mention;
             metadata.provisional_identity = None;
             metadata.saved.clone_from(&incoming.saved);
+            metadata.reply_to.clone_from(&incoming.reply_to);
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
                 time: ServerTimeMs::new(message_time(&message)),
@@ -4272,6 +4297,7 @@ impl NetworkModel {
                 .map(|msgid| self.reactions.summaries(msgid))
                 .and_then(nonempty_reactions),
             own_redaction: None,
+            reply: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.clone().into_iter().collect(),
@@ -4549,6 +4575,7 @@ impl NetworkModel {
             counts_as_mention,
             send_text: facts.send_text,
             saved: facts.saved,
+            reply_to: facts.reply_to,
             dedup,
             provisional_identity: None,
         };
@@ -4589,7 +4616,7 @@ impl NetworkModel {
                 continue;
             };
             let vocabulary = mention_vocabulary(buffer, casemapping, &own_nick);
-            let Ok(desired) = project_timeline(buffer, &vocabulary) else {
+            let Ok(desired) = project_timeline(buffer, &vocabulary, casemapping) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
                 ));
@@ -5113,14 +5140,35 @@ fn safe_raw_mode(change: &papo::ModeChange) -> String {
 fn project_timeline(
     buffer: &BufferState,
     vocabulary: &MentionVocabulary,
+    casemapping: papo::Casemapping,
 ) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
+    let reply_to = |id: &MessageId| {
+        buffer
+            .chat_metadata
+            .get(id)
+            .and_then(|metadata| metadata.reply_to.as_deref())
+    };
+    let loaded = LoadedRows::new(
+        buffer.timeline.iter().filter_map(|record| {
+            Some(QuotableRow {
+                message: chat_projection(record)?,
+                reply_to: reply_to(&record.id),
+            })
+        }),
+        casemapping,
+        buffer.projection.kind == BufferKind::Channel,
+    );
     fold(&buffer.timeline).map(|items| {
         items
             .into_iter()
             .map(|item| {
                 let body = match item.body {
                     FoldedBody::Chat(chat) => {
-                        ItemBody::Message(with_mentions(chat.projection, vocabulary))
+                        let message = match reply_to(&item.id) {
+                            Some(parent) => loaded.quote(chat.projection, parent),
+                            None => chat.projection,
+                        };
+                        ItemBody::Message(with_mentions(message, vocabulary))
                     }
                     FoldedBody::Run(run) => {
                         let time_ms = run.newest_time_ms();
@@ -5393,6 +5441,7 @@ struct Incoming {
     authorship: MessageAuthorship,
     msgid: Option<String>,
     saved: Option<SavedMessage>,
+    reply_to: Option<String>,
     server_time_ms: Option<i64>,
     received_at_ms: i64,
     origin: TimelineOrigin,
@@ -6063,6 +6112,7 @@ mod tests {
             authorship: MessageAuthorship::Other,
             msgid: msgid.map(str::to_owned),
             saved: None,
+            reply_to: None,
             server_time_ms,
             received_at_ms,
             origin,
@@ -7330,6 +7380,7 @@ mod tests {
             authorship: MessageAuthorship::Other,
             msgid: Some(format!("{nick}-{server_time_ms}")),
             saved: None,
+            reply_to: None,
             server_time_ms: Some(server_time_ms),
             received_at_ms: server_time_ms,
             origin: TimelineOrigin::Live,

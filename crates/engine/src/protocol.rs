@@ -750,6 +750,28 @@ pub enum OwnChangeDelivery {
     Failed,
 }
 
+/// The message a reply answers, as far as this client knows it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ReplyParent {
+    /// The parent is in this conversation's loaded timeline.
+    Loaded {
+        /// The parent's timeline identity, which activating the quote scrolls to.
+        message_id: MessageId,
+        /// Display nick of the parent's author.
+        author: String,
+        /// Palette index of the parent's author.
+        #[ts(type = "number")]
+        nick_color_index: u32,
+        /// The parent's text as its own row shows it.
+        text: String,
+    },
+    /// The parent was deleted.
+    Deleted,
+    /// Neither the timeline nor history has the parent.
+    Unavailable,
+}
+
 /// UI projection of one chat message.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct MessageProjection {
@@ -787,6 +809,10 @@ pub struct MessageProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub own_redaction: Option<OwnChangeDelivery>,
+    /// The message this one replies to, as its quote shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reply: Option<ReplyParent>,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.

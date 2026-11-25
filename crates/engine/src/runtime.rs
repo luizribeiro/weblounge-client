@@ -17281,6 +17281,63 @@ async fn delay(duration: Duration) {
         harness.drain.abort();
     }
 
+    #[tokio::test]
+    async fn a_received_reply_quotes_its_loaded_parent_without_the_nick_prefix() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        let (buffer_id, parent_id) = harness
+            .live_room_message("parent", "who has the keys?")
+            .await;
+        let parent_color = lock(&harness.state)
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model
+            .projected_messages(buffer_id)
+            .into_iter()
+            .find(|message| message.id == parent_id)
+            .expect("the parent row")
+            .nick_color_index;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:02:00.000Z;msgid=reply;+draft/reply=parent :bob!b@host PRIVMSG #room :alice: I do")
+            .await;
+
+        let output = harness.timeline_output(&["I do"]).await;
+
+        let reply = timeline_messages(&output)
+            .into_iter()
+            .find(|message| message.text == "I do")
+            .expect("the reply row");
+        assert_eq!(
+            reply.reply,
+            Some(crate::ReplyParent::Loaded {
+                message_id: parent_id,
+                author: "alice".into(),
+                nick_color_index: parent_color,
+                text: "who has the keys?".into(),
+            })
+        );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn a_reply_to_an_unloaded_parent_keeps_its_text_and_says_so() {
+        let mut harness = ReplayHarness::joined(REACTION_CAPS).await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:02:00.000Z;msgid=reply;+draft/reply=gone :bob!b@host PRIVMSG #room :alice: I do")
+            .await;
+
+        let output = harness.timeline_output(&["alice: I do"]).await;
+
+        let reply = timeline_messages(&output)
+            .into_iter()
+            .find(|message| message.text == "alice: I do")
+            .expect("the reply row");
+        assert_eq!(reply.reply, Some(crate::ReplyParent::Unavailable));
+        harness.drain.abort();
+    }
+
     async fn next_can_react(harness: &mut ReplayHarness) -> bool {
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
