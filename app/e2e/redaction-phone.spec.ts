@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { snapshotRow } from "./engine-database";
 import { messageId, serverTime } from "./irc-client";
 import { expect, type IrcTestAccount, test } from "./irc-fixture";
 import { longPressMessage } from "./message-sheet";
@@ -87,6 +88,8 @@ test("shows a peer's direct-message deletion as bars on the phone", async ({
   const peer = await irc.peer("dm-bars");
   await openChat(page, irc);
   await peer.privmsgConfirmed(irc.account, "opening line");
+  // A DM URL resolves against the chat list the relaunch restores, so the DM must be cached first.
+  await expect.poll(() => snapshotRow(page, peer.nickname)).toBeDefined();
   await page.goto(irc.url({ path: `/Local%20Ergo/@${peer.nickname}` }));
   await expectSettled(page, { conversation: peer.nickname });
   await expectRedactedByPeer(page, irc, peer, irc.account, "direct secret");
