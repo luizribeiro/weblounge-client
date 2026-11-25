@@ -2,6 +2,7 @@ import type { Component } from "solid-js";
 import type { MessageProjection } from "../../engine/protocol";
 import { t } from "../../strings";
 import { CopyIcon } from "../../ui/icons/CopyIcon";
+import { ReplyIcon } from "../../ui/icons/ReplyIcon";
 import { TrashIcon } from "../../ui/icons/TrashIcon";
 
 export interface MessageSheetAction {
@@ -14,6 +15,8 @@ export interface MessageSheetAction {
 
 export interface MessageSheetCommands {
   readonly copyText: (text: string) => void;
+  /** Present only where the network can thread a reply to this message. */
+  readonly reply?: (() => void) | undefined;
   /** Present only for a message you can delete; it asks before deleting. */
   readonly delete?: (() => void) | undefined;
 }
@@ -42,5 +45,17 @@ export function messageSheetActions(
             tone: "danger",
           },
         ];
-  return [copy, ...deletion];
+  const reply = commands.reply;
+  const replying: readonly MessageSheetAction[] =
+    reply === undefined
+      ? []
+      : [
+          {
+            id: "reply",
+            label: t("reply.action"),
+            icon: ReplyIcon,
+            run: reply,
+          },
+        ];
+  return [...replying, copy, ...deletion];
 }

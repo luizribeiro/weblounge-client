@@ -146,3 +146,29 @@ it("lists Delete as a danger action only when the message can be deleted", () =>
     ),
   ).toEqual(["copy-text"]);
 });
+
+it("lists Reply first when the message can be replied to", () => {
+  const replied = vi.fn();
+  const dismiss = vi.fn();
+  render(() => (
+    <MobileMessageActionSheet
+      actions={messageSheetActions(message, {
+        copyText: () => undefined,
+        reply: replied,
+      })}
+      message={message}
+      onDismiss={dismiss}
+      onReact={undefined}
+    />
+  ));
+  const reply = screen.getByRole("button", { name: "Reply" });
+
+  expect(
+    reply.compareDocumentPosition(
+      screen.getByRole("button", { name: "Copy text" }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  fireEvent.click(reply);
+  expect(replied).toHaveBeenCalledOnce();
+  expect(dismiss).toHaveBeenCalledOnce();
+});
