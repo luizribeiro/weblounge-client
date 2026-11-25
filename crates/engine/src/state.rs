@@ -171,20 +171,19 @@ impl ChatInput<'_> {
         }
     }
 
-    fn tags(&self) -> &papo::Tags {
+    const fn actor_is_bot(&self) -> Option<bool> {
         match self {
-            Self::Message(message) => &message.tags,
-            Self::Notice(notice) => &notice.tags,
+            Self::Message(message) => message.actor_is_bot(),
+            Self::Notice(notice) => notice.actor_is_bot(),
         }
     }
 
-    /// papo keeps replayed lines out of its live user facts, so a history row's own `bot` tag is
-    /// the only witness that its sender spoke as a bot; an untagged row says nothing either way.
-    fn bot(&self, state: &papo::State, history: bool) -> Option<bool> {
-        if history && self.tags().contains("bot") {
-            return Some(true);
-        }
-        crate::name_key::known_user(state, self.actor()).and_then(papo::User::is_bot)
+    /// papo keeps replayed lines out of its live user facts, so a line's own `bot` tag is the only
+    /// witness that a history row's sender spoke as a bot; an untagged row says nothing either way.
+    fn bot(&self, state: &papo::State) -> Option<bool> {
+        self.actor_is_bot().or_else(|| {
+            crate::name_key::known_user(state, self.actor()).and_then(papo::User::is_bot)
+        })
     }
 }
 
@@ -1424,7 +1423,7 @@ impl NetworkModel {
             author: actor.nick().to_string(),
             text: input.text().to_owned(),
             kind: input.kind(),
-            bot: input.bot(state, history),
+            bot: input.bot(state),
             authorship: map_authorship(authorship),
             msgid: input.msgid(),
             saved: input.saved(),
