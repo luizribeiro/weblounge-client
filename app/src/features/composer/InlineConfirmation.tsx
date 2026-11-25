@@ -17,7 +17,9 @@ export function InlineConfirmation(props: InlineConfirmationProps) {
       aria-label={props.label}
       class={styles.confirmation}
       onKeyDown={(event) => {
-        if (event.key === "Escape") props.onCancel();
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        props.onCancel();
       }}
       role="alertdialog"
     >
