@@ -15,7 +15,10 @@ done
 install_ios_icon() {
   local set="$1" identity="$2" identifier
   identifier="$(node -p "require('./$identity').identifier")"
-  install -m 644 "$set/ios-source.png" "gen/apple/Assets.xcassets/$identifier.appiconset/AppIcon.png"
+  local appiconset="gen/apple/Assets.xcassets/$identifier.appiconset"
+  install -m 644 "$set/ios-source.png" "$appiconset/AppIcon.png"
+  # iOS recolours a single-image icon in dark mode; a dark entry with the same art keeps it matching the PWA's.
+  install -m 644 "$set/ios-source.png" "$appiconset/AppIcon-Dark.png"
 }
 install_ios_icon icons tauri.ios.release.conf.json
 install_ios_icon icons-dev tauri.ios.conf.json
