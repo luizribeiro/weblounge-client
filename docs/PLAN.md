@@ -2320,7 +2320,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `0c0b06b`, which masks credentials only in failure replies. Open
+- **papo:** papo 0.1 pinned at `a5c7cc4`, which masks credentials only in failure replies. Open
   papo bug: when a password equals a nick we ask for, `set_nick` can hang on a `433` and
   `regain_nick` may not start; no fixture account does that. The
   foreground and pageshow probe is `Client::check_connection`, which ends and redials a socket that
