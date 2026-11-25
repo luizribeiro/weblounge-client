@@ -83,4 +83,20 @@ describe("startsMobileMessageGroup", () => {
       startsMobileMessageGroup(message(), message({ id: 2, kind: "action" })),
     ).toBe(true);
   });
+
+  it("starts a group at a reply so its quote sits above a header", () => {
+    const previous = message({ server_time_ms: minute + 10_000 });
+    const reply = message({
+      server_time_ms: minute + 20_000,
+      reply: { state: "unavailable" },
+    });
+
+    expect(startsMobileMessageGroup(previous, reply)).toBe(true);
+    expect(
+      startsMobileMessageGroup(
+        reply,
+        message({ server_time_ms: minute + 30_000 }),
+      ),
+    ).toBe(false);
+  });
 });

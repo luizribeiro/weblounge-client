@@ -9,7 +9,8 @@ export function startsMobileMessageGroup(
     current.kind !== "text" ||
     previous.author !== current.author ||
     previous.authorship !== current.authorship ||
-    previous.unverified_sender !== current.unverified_sender
+    previous.unverified_sender !== current.unverified_sender ||
+    current.reply !== undefined
   )
     return true;
 
