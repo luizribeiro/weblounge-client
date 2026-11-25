@@ -18,6 +18,7 @@ import {
   replyQuote,
   sendBacklog,
 } from "./replies";
+import { expectSettled } from "./settled";
 
 test.describe("message replies on desktop against local Ergo", () => {
   test.skip(({ isMobile }) => isMobile, "desktop layout");
@@ -80,6 +81,7 @@ test.describe("message replies on desktop against local Ergo", () => {
     );
     await waitForReadDwell(irc, irc.channel, serverTime(sent));
     await page.mouse.move(0, 0);
+    await expectSettled(page);
     await nativeFeelAudit(page);
   });
 
