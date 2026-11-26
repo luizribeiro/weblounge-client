@@ -22,9 +22,7 @@ export function DirectPresence(props: DirectPresenceProps) {
           data-direct-presence={presence()}
         >
           <PresenceMark bot={props.bot} presence={presence()} />
-          <Line class={styles.text}>
-            {presenceStatus(presence(), props.sinceMs)}
-          </Line>
+          <Line>{presenceStatus(presence(), props.sinceMs)}</Line>
         </span>
       )}
     </Show>

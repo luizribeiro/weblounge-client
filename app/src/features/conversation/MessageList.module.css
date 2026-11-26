@@ -175,7 +175,6 @@
   background: var(--wl-color-selection);
 }
 .botIcon {
-  align-self: center;
   margin-left: 4px;
 }
 .text {

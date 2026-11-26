@@ -174,6 +174,11 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "webkit-bot-icon-alignment",
+      testMatch: "**/bot-icon-alignment.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },

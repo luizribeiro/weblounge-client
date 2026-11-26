@@ -1,13 +1,8 @@
 .presence {
   --wl-presence-halo: var(--wl-color-surface);
 
-  align-items: center;
+  align-items: baseline;
   display: flex;
   gap: 6px;
   min-width: 0;
-}
-
-/* The header lines its title and this status up on their baselines, so only the text takes part. */
-.text {
-  align-self: baseline;
 }
