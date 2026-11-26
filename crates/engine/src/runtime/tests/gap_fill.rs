@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use super::{
-    EngineRequest, EngineRequestEnvelope, EngineToUi, HISTORY_CAPS, ReplayHarness, Runtime,
-    collect, drain_events, harness, known_channel, lock, next_sent_containing,
-    register_for_history, request_label, send_ergo_history_page, send_recent_targets,
-    timeline_texts, wire, wire_time,
+    EngineRequest, EngineRequestEnvelope, EngineToUi, HISTORY_CAPS, HistoryFetch, HistoryTarget,
+    ReplayHarness, Runtime, collect, drain_events, fetch_history_page, harness, known_channel,
+    lock, next_sent_containing, register_for_history, request_label, send_ergo_history_page,
+    send_recent_targets, timeline_texts, wire, wire_time,
 };
 use crate::{BufferId, HistoryDirection, name_key::NameKey, timeline::ItemBody};
 
@@ -371,5 +371,72 @@ async fn a_catch_up_cut_off_after_one_of_several_same_millisecond_lines_fetches_
     assert!(
         again.ends_with("CHATHISTORY LATEST #room msgid=seed 100"),
         "{again}"
+    );
+}
+
+/// A lag-resync page cut off by a disconnect must leave the lagged span for the failed request to
+/// record as a gap.
+#[tokio::test]
+async fn a_lag_resync_cut_off_mid_page_still_records_the_lagged_span() {
+    let (mut harness, buffer_id, latest) = joined_with_gap().await;
+    finish_catch_up(&mut harness, &latest).await;
+    let lag_from_ms = GAP_TO_MS + 60_000;
+    let lag_to_ms = lag_from_ms + 1_000;
+    let room = room(&harness);
+    lock(&harness.state)
+        .network
+        .as_mut()
+        .expect("network")
+        .model
+        .note_lagged_gap(&room, lag_from_ms, lag_to_ms);
+    let NameKey::Channel(channel) = room else {
+        unreachable!("#room is a channel");
+    };
+    let state = Arc::clone(&harness.state);
+    let outbound = harness.outbound.clone();
+    let client = harness.client.clone();
+    let mut resync = Box::pin(async move {
+        fetch_history_page(
+            &state,
+            &outbound,
+            &client,
+            1,
+            HistoryFetch::Latest(HistoryTarget::Channel(channel)),
+        )
+        .await;
+    });
+    assert!(
+        tokio::time::timeout(Duration::ZERO, &mut resync)
+            .await
+            .is_err(),
+        "the resync waits for its page"
+    );
+    let request = next_sent_containing(&mut harness.wire, " CHATHISTORY LATEST #room * ").await;
+    harness
+        .wire
+        .server(format!(
+            "@label={} :offline.test BATCH +cut chathistory #room",
+            request_label(&request)
+        ))
+        .await;
+    harness
+        .wire
+        .server("@batch=cut;time=2026-10-27T12:00:06.000Z;msgid=early :alice!a@host PRIVMSG #room :early")
+        .await;
+    harness.wire.close().await;
+    events_until(&mut harness, |events| {
+        timeline_texts(events).iter().any(|text| text == "early")
+    })
+    .await;
+    resync.await;
+
+    let mut state = lock(&harness.state);
+    let model = &mut state.network.as_mut().expect("network").model;
+    let lagged = model
+        .begin_gap_fill(buffer_id)
+        .expect("the lagged span stays a gap");
+    assert_eq!(
+        (lagged.span.from_ms, lagged.span.to_ms),
+        (lag_from_ms, lag_to_ms)
     );
 }

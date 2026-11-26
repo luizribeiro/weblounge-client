@@ -5790,15 +5790,16 @@ fn process_history(
         running.model.restore_newest_cursor(&conversation, newest);
     }
     let read_flush = start_read_flush(running);
-    let finished = finish_history_page(
-        &mut running.model,
-        load,
-        &conversation,
-        bounds,
-        item_count,
-        end,
-    );
-    output.extend(finished);
+    if requested {
+        output.extend(finish_history_page(
+            &mut running.model,
+            load,
+            &conversation,
+            bounds,
+            item_count,
+            end,
+        ));
+    }
     let gap_fill = catch_up_gap_fill(&mut running.model, load, &conversation);
     publish_history_turn(state, &shared_state, outbound, instance, output, read_flush);
     if let Some(fetch) = gap_fill {
@@ -5813,9 +5814,9 @@ fn process_history(
 }
 
 /// papo also delivers a batch still open when the connection drops, and one the server sends
-/// unasked, as a replay page. Only the page a request returns may finish that request's load or
-/// move the buffer's catch-up cursor: a cut-off page's lines can share their millisecond with
-/// the lines it left out, and a catch-up from them would skip those.
+/// unasked, as a replay page. Only the page a request returns may finish that request's load,
+/// settle a lagged span or move the buffer's catch-up cursor: a cut-off page's lines can share
+/// their millisecond with the lines it left out, and a catch-up from them would skip those.
 fn answers_history_request(page: &papo::event::HistoryPage) -> bool {
     matches!(page.reason, papo::HistoryReason::Requested)
 }
@@ -6816,8 +6817,8 @@ mod tests {
         PUSH_REFRESH_INTERVAL, PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX,
         ReadRetryState, RunningNetwork, Runtime, RuntimeState,
         SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS, attach_shell, completion_context,
-        connection_failure_notice, drain_events, fetch_history, finish_history_page,
-        flush_pending_sends, join_request_events, launch_monitor_budget, lock,
+        connection_failure_notice, drain_events, fetch_history, fetch_history_page,
+        finish_history_page, flush_pending_sends, join_request_events, launch_monitor_budget, lock,
         monitor_shown_direct_peers, next_connection_state, permanent_mark_read_error,
         person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
         record_read_advances, restore_target_rows, schedule_snapshot_write, spawn_history_fetch,
