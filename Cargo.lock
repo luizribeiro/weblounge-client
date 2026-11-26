@@ -1411,7 +1411,7 @@ dependencies = [
 [[package]]
 name = "papo"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=a5c7cc4#a5c7cc4935c111c613dcc72ea43d847967d7c419"
+source = "git+https://github.com/luizribeiro/papo?rev=e89e100#e89e100ece632004855a384549adeaab54095ce1"
 dependencies = [
  "futures-io",
  "futures-util",
@@ -1436,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "papo-core"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=a5c7cc4#a5c7cc4935c111c613dcc72ea43d847967d7c419"
+source = "git+https://github.com/luizribeiro/papo?rev=e89e100#e89e100ece632004855a384549adeaab54095ce1"
 dependencies = [
  "base64 0.22.1",
  "hmac",
@@ -1450,12 +1450,12 @@ dependencies = [
 [[package]]
 name = "papo-format"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=a5c7cc4#a5c7cc4935c111c613dcc72ea43d847967d7c419"
+source = "git+https://github.com/luizribeiro/papo?rev=e89e100#e89e100ece632004855a384549adeaab54095ce1"
 
 [[package]]
 name = "papo-proto"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=a5c7cc4#a5c7cc4935c111c613dcc72ea43d847967d7c419"
+source = "git+https://github.com/luizribeiro/papo?rev=e89e100#e89e100ece632004855a384549adeaab54095ce1"
 dependencies = [
  "precis-profiles",
  "zeroize",
@@ -1464,7 +1464,7 @@ dependencies = [
 [[package]]
 name = "papo-testing"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=a5c7cc4#a5c7cc4935c111c613dcc72ea43d847967d7c419"
+source = "git+https://github.com/luizribeiro/papo?rev=e89e100#e89e100ece632004855a384549adeaab54095ce1"
 dependencies = [
  "papo",
  "tokio",
