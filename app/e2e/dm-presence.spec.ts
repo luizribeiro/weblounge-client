@@ -10,6 +10,7 @@ import {
 import { expectPresenceDot } from "./presence-marks";
 import { choose, choosePhoneAppearance } from "./settings-fixture";
 import { backToChatList, expectSettled } from "./settled";
+import { expectCentredOnText } from "./text-centre";
 
 const screenshotDirectory = path.join(
   process.cwd(),
@@ -140,20 +141,6 @@ async function expectHeader(
   const mark = header.locator("[data-presence-dot]");
   await expectPresenceDot(page, mark, presence);
   await expectCentredOnText(mark, header.locator("[data-line]"));
-}
-
-async function expectCentredOnText(mark: Locator, text: Locator) {
-  const markBox = await mark.boundingBox();
-  const glyphs = await text.evaluate((element) => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const { top, height } = range.getBoundingClientRect();
-    return { top, height };
-  });
-  if (markBox === null) throw new Error("presence mark has no box");
-  expect(
-    Math.abs(markBox.y + markBox.height / 2 - (glyphs.top + glyphs.height / 2)),
-  ).toBeLessThanOrEqual(1);
 }
 
 async function capture(
