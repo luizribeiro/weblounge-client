@@ -7,7 +7,6 @@
 
   border: var(--wl-size-presence-ring) solid var(--wl-color-panel-muted);
   border-radius: 50%;
-  display: inline-block;
   flex: none;
   height: var(--wl-size-presence-dot);
   vertical-align: middle;

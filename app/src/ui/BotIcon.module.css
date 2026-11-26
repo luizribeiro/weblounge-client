@@ -4,9 +4,7 @@
   -webkit-mask: var(--wl-bot-icon) center / contain no-repeat;
   background: currentcolor;
   block-size: var(--wl-size-bot-icon);
-  display: inline-block;
   flex: none;
   inline-size: var(--wl-size-bot-icon);
   mask: var(--wl-bot-icon) center / contain no-repeat;
-  vertical-align: -0.2em;
 }

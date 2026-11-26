@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import type { PeerPresence } from "../engine/protocol";
 import { BotIcon } from "./BotIcon";
 import styles from "./PresenceMark.module.css";
+import primitives from "./primitives.module.css";
 
 interface PresenceMarkProps {
   readonly presence: PeerPresence | undefined;
@@ -19,7 +20,7 @@ export function PresenceMark(props: PresenceMarkProps) {
           {(presence) => (
             <span
               aria-hidden="true"
-              class={classes(styles.dot)}
+              class={classes(`${styles.dot} ${primitives.textMark}`)}
               data-presence={presence()}
               data-presence-dot="true"
             />

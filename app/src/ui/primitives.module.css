@@ -16,3 +16,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* An empty line in the surrounding font gives the mark that text's baseline, so wherever it is
+   baseline-aligned (inline, or in a baseline flex row) its centre lands on the text's centre. */
+.textMark {
+  align-items: center;
+  display: inline-flex;
+}
+
+.textMark::before {
+  content: "\200b";
+}
