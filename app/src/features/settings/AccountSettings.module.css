@@ -1,10 +1,14 @@
 .action {
   align-items: center;
-  cursor: pointer;
   display: inline-flex;
   gap: 6px;
   justify-content: center;
   text-decoration: none;
+}
+
+/* Outranks base.css's `[data-app-root] *` cursor reset in whichever order the sheets load. */
+a.action {
+  cursor: pointer;
 }
 
 .action svg {
