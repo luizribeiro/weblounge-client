@@ -5780,7 +5780,9 @@ fn process_history(
     else {
         return;
     };
-    let load = running.model.history_load(&conversation);
+    let load = answers_history_request(&page)
+        .then(|| running.model.history_load(&conversation))
+        .flatten();
     let mut output = receive_history_items(running, client, page.items);
     let read_flush = start_read_flush(running);
     let finished = finish_history_page(
@@ -5803,6 +5805,12 @@ fn process_history(
             fetch,
         );
     }
+}
+
+/// papo also delivers a batch still open when the connection drops, and one the server sends
+/// unasked, as a replay page; only the page a request returns may finish that request's load.
+fn answers_history_request(page: &papo::event::HistoryPage) -> bool {
+    matches!(page.reason, papo::HistoryReason::Requested)
 }
 
 fn publish_history_turn(
