@@ -2324,9 +2324,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `a5c7cc4`, which masks credentials only in failure replies. Open
-  papo bug: when a password equals a nick we ask for, `set_nick` can hang on a `433` and
-  `regain_nick` may not start; no fixture account does that. The
+- **papo:** papo 0.1 pinned at `e89e100`, which masks credentials only in what failure replies,
+  errors and Debug show, never in its own logic, so a password equal to a nick no longer stalls
+  `set_nick` or `regain_nick`. The engine sends no server password, so papo's new `PASS`-after-`CAP LS`
+  registration order doesn't reach it. The
   foreground and pageshow probe is `Client::check_connection`, which ends and redials a socket that
   stays silent past the 4s deadline. History needs chathistory, labeled-response and batch, and
   read markers need labeled-response, or papo refuses them up front; the engine treats either as
