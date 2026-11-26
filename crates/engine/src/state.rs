@@ -3077,6 +3077,19 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn newest_cursor(&self, key: &NameKey) -> Option<HistoryCursor> {
+        self.buffers.get(self.names.get(key)?)?.newest.clone()
+    }
+
+    pub(crate) fn restore_newest_cursor(&mut self, key: &NameKey, newest: Option<HistoryCursor>) {
+        let Some(buffer_id) = self.names.get(key).copied() else {
+            return;
+        };
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.newest = newest;
+        }
+    }
+
     pub(crate) fn history_load(&self, key: &NameKey) -> Option<HistoryLoad> {
         let buffer = self.buffers.get(self.names.get(key)?)?;
         match buffer.history {

@@ -253,75 +253,123 @@ async fn reconnect_for_history(client: &papo::Client, wire: &mut papo_testing::W
     register_for_history(wire).await;
 }
 
+/// A reconnect whose catch-up page the connection cut off after `first_item`, which reaches the
+/// engine as a replay page; the next connection has just asked for its targets.
+struct CutOffCatchUp {
+    wire: papo_testing::Wire,
+    drain: tokio::task::JoinHandle<()>,
+    cursor_before_cut: std::time::SystemTime,
+    outage_time: String,
+    targets: String,
+}
+
+impl CutOffCatchUp {
+    async fn new(first_item: impl FnOnce(&str, &str) -> String) -> Self {
+        let (client, events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        let (state, outbound, _receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound,
+            client.clone(),
+            events,
+            1,
+        ));
+        register_for_history(&mut wire).await;
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        send_recent_targets(&mut wire, request_label(&targets), &[]).await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let latest = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room * ").await;
+        let seed_time = wire_time(papo::time::now() - Duration::from_secs(5));
+        let seed = format!(
+            "@batch={{batch}};time={seed_time};msgid=seed :alice!a@host PRIVMSG #room :seed"
+        );
+        send_ergo_history_page(&mut wire, &latest, &[&seed]).await;
+
+        reconnect_for_history(&client, &mut wire).await;
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        let outage_time = wire_time(papo::time::now());
+        send_recent_targets(
+            &mut wire,
+            request_label(&targets),
+            &[("#room", &outage_time)],
+        )
+        .await;
+        let refresh =
+            next_sent_containing(&mut wire, " CHATHISTORY LATEST #room msgid=seed ").await;
+        let cursor_before_cut = lock(&state)
+            .network
+            .as_ref()
+            .and_then(|running| running.model.cursor())
+            .expect("the first connection settled its cursor");
+        wire.server(format!(
+            "@label={} :offline.test BATCH +cut chathistory #room",
+            request_label(&refresh)
+        ))
+        .await;
+        wire.server(first_item(&seed_time, &outage_time)).await;
+
+        reconnect_for_history(&client, &mut wire).await;
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        Self {
+            wire,
+            drain,
+            cursor_before_cut,
+            outage_time,
+            targets,
+        }
+    }
+
+    /// Lists `#room` with its outage as the next connection's target and returns its catch-up.
+    async fn next_catch_up(mut self) -> String {
+        send_recent_targets(
+            &mut self.wire,
+            request_label(&self.targets),
+            &[("#room", &self.outage_time)],
+        )
+        .await;
+        let again = tokio::time::timeout(
+            Duration::from_secs(1),
+            next_sent_containing(&mut self.wire, " CHATHISTORY LATEST #room "),
+        )
+        .await
+        .expect("the cut-off catch-up runs again");
+        self.drain.abort();
+        again
+    }
+}
+
 /// A catch-up page cut off by a disconnect reaches the engine as a replay of its first item.
 #[tokio::test]
 async fn a_catch_up_cut_off_mid_page_is_caught_up_again_on_the_next_connection() {
-    let (client, events, mut wire) =
-        wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
-    let (state, outbound, _receiver) = harness(client.clone());
-    let drain = tokio::spawn(drain_events(
-        Arc::clone(&state),
-        outbound,
-        client.clone(),
-        events,
-        1,
-    ));
-    register_for_history(&mut wire).await;
-    let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
-    send_recent_targets(&mut wire, request_label(&targets), &[]).await;
-    wire.server(":weblounge!u@host JOIN #room").await;
-    let latest = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room * ").await;
-    let seed_time = wire_time(papo::time::now() - Duration::from_secs(5));
-    let seed =
-        format!("@batch={{batch}};time={seed_time};msgid=seed :alice!a@host PRIVMSG #room :seed");
-    send_ergo_history_page(&mut wire, &latest, &[&seed]).await;
-
-    reconnect_for_history(&client, &mut wire).await;
-    let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
-    let outage_time = wire_time(papo::time::now());
-    send_recent_targets(
-        &mut wire,
-        request_label(&targets),
-        &[("#room", &outage_time)],
-    )
-    .await;
-    let refresh = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room msgid=seed ").await;
-    let cursor_before_cut = lock(&state)
-        .network
-        .as_ref()
-        .and_then(|running| running.model.cursor())
-        .expect("the first connection settled its cursor");
-    wire.server(format!(
-        "@label={} :offline.test BATCH +cut chathistory #room",
-        request_label(&refresh)
-    ))
-    .await;
-    wire.server(format!(
-        "@batch=cut;time={seed_time};msgid=rejoin :weblounge!u@host JOIN #room"
-    ))
+    let cut = CutOffCatchUp::new(|seed_time, _| {
+        format!("@batch=cut;time={seed_time};msgid=rejoin :weblounge!u@host JOIN #room")
+    })
     .await;
 
-    reconnect_for_history(&client, &mut wire).await;
-    let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
-    assert!(
-        targets.contains(&format!("timestamp={}", wire_time(cursor_before_cut))),
-        "{targets}"
-    );
-    send_recent_targets(
-        &mut wire,
-        request_label(&targets),
-        &[("#room", &outage_time)],
-    )
-    .await;
-    let again = tokio::time::timeout(
-        Duration::from_secs(1),
-        next_sent_containing(&mut wire, " CHATHISTORY LATEST #room "),
-    )
-    .await
-    .expect("the cut-off catch-up runs again");
+    let since = format!("timestamp={}", wire_time(cut.cursor_before_cut));
+    assert!(cut.targets.contains(&since), "{}", cut.targets);
+    let again = cut.next_catch_up().await;
     assert!(
         again.ends_with("CHATHISTORY LATEST #room msgid=seed 100"),
         "{again}"
     );
-    drain.abort();
+}
+
+/// Ergo stamps lines sent together with one millisecond, so the replayed first line can share its
+/// time with the lines the cut left out.
+#[tokio::test]
+async fn a_catch_up_cut_off_after_one_of_several_same_millisecond_lines_fetches_the_rest() {
+    let cut = CutOffCatchUp::new(|_, outage_time| {
+        format!(
+            "@batch=cut;time={outage_time};msgid=outage-1 :alice!a@host PRIVMSG #room :outage 1"
+        )
+    })
+    .await;
+
+    let again = cut.next_catch_up().await;
+    assert!(
+        again.ends_with("CHATHISTORY LATEST #room msgid=seed 100"),
+        "{again}"
+    );
 }

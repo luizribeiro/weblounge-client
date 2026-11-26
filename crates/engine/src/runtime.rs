@@ -5780,10 +5780,15 @@ fn process_history(
     else {
         return;
     };
-    let load = answers_history_request(&page)
+    let requested = answers_history_request(&page);
+    let load = requested
         .then(|| running.model.history_load(&conversation))
         .flatten();
+    let newest_before_replay = (!requested).then(|| running.model.newest_cursor(&conversation));
     let mut output = receive_history_items(running, client, page.items);
+    if let Some(newest) = newest_before_replay {
+        running.model.restore_newest_cursor(&conversation, newest);
+    }
     let read_flush = start_read_flush(running);
     let finished = finish_history_page(
         &mut running.model,
@@ -5808,7 +5813,9 @@ fn process_history(
 }
 
 /// papo also delivers a batch still open when the connection drops, and one the server sends
-/// unasked, as a replay page; only the page a request returns may finish that request's load.
+/// unasked, as a replay page. Only the page a request returns may finish that request's load or
+/// move the buffer's catch-up cursor: a cut-off page's lines can share their millisecond with
+/// the lines it left out, and a catch-up from them would skip those.
 fn answers_history_request(page: &papo::event::HistoryPage) -> bool {
     matches!(page.reason, papo::HistoryReason::Requested)
 }
